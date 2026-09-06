@@ -6,6 +6,7 @@ members = [
     "crates/engine",
     "crates/cli",
     "crates/solver-greedy",
+    "crates/coordinator",
 ]
 exclude = [".tmp/**"]
 
