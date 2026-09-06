@@ -4,13 +4,16 @@
 //!   - `hello`                            : print the engine's hello payload.
 //!   - `replay <path>`                    : run a JSON replay file end-to-end.
 //!   - `warmup`                           : measure cold / warm / 1-day-smoke timing per solver.
-//!   - `coordinator`                      : drive the per-match solver loop (in-process transport).
+//!   - `loop <days>`                      : drive the per-match solver loop (in-process transport).
+//!   - `coordinator`                      : contest venue runtime (LAN match-server
+//!                                          auto-detect + /agent POST with retry/timeout).
 //!   - `match-config load <path>`         : pretty-print a match config JSON.
 //!   - `match-config validate <path>`     : structurally validate a match config.
 //!   - `version`                          : print package + protocol versions.
 //!   - `bundle build <output.zip>`        : build a contest deliverable zip.
 
 mod bundle;
+mod coordinator;
 mod fixtures;
 mod loop_runner;
 mod match_config;
@@ -27,6 +30,7 @@ use engine::{EngineServer, EngineServerConfig};
 use serde_json::json;
 use tracing_subscriber::EnvFilter;
 
+use crate::coordinator::{AgentRequest, CliOverrides, CoordinatorConfig, post_agent_with_retry};
 use crate::loop_runner::{
     DayAction, DayPlan, DaySignal, LoopConfig, LoopError, MatchSetting, Solver, Submission,
     SubmissionAck, Transport, run_match_loop,
@@ -58,13 +62,45 @@ enum Cmd {
         json: bool,
     },
     /// Drive the per-match solver loop end-to-end with an in-process transport.
-    Coordinator {
+    Loop {
         /// Number of days the synthetic match will run for.
         #[arg(long, default_value_t = 3)]
         days: u32,
         /// Player id to register for the synthetic match.
         #[arg(long, default_value = "player-alpha")]
         player: String,
+    },
+    /// Run the contest coordinator. Auto-detects the match server on the LAN
+    /// (`PROCON_SERVER` or default localhost), POSTs to /agent with retry +
+    /// timeout. The actual solver loop body is wired up by #45.
+    Coordinator {
+        /// Override `PROCON_SERVER` (host:port or http(s)://host:port).
+        #[arg(long, env = "PROCON_SERVER")]
+        server: Option<String>,
+
+        /// Override `PROCON_AGENT_URL`.
+        #[arg(long, env = "PROCON_AGENT_URL")]
+        agent_url: Option<String>,
+
+        /// Override `PROCON_SETTING_URL`.
+        #[arg(long, env = "PROCON_SETTING_URL")]
+        setting_url: Option<String>,
+
+        /// Override `PROCON_TOKEN`.
+        #[arg(long, env = "PROCON_TOKEN")]
+        token: Option<String>,
+
+        /// agent id to advertise to the match server.
+        #[arg(long, default_value = "agent-0")]
+        agent_id: String,
+
+        /// Only resolve config + print it. Do not actually POST /agent.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Send a single /agent POST then exit. Used by smoke tests.
+        #[arg(long)]
+        once: bool,
     },
     /// Inspect or validate a match configuration JSON file.
     #[command(subcommand)]
@@ -159,8 +195,37 @@ async fn run(cli: Cli) -> Result<()> {
                 println!("{}", warmup::format_report_human(&report));
             }
         }
-        Cmd::Coordinator { days, player } => {
-            run_coordinator(days, &player).await?;
+        Cmd::Loop { days, player } => {
+            run_loop(days, &player).await?;
+        }
+        Cmd::Coordinator { server, agent_url, setting_url, token, agent_id, dry_run, once } => {
+            let overrides = CliOverrides { server, agent_url, setting_url, token };
+            let cfg = CoordinatorConfig::from_env(&overrides)?;
+            println!("{}", serde_json::to_string_pretty(&cfg.describe())?);
+
+            if dry_run {
+                return Ok(());
+            }
+
+            if once {
+                let body =
+                    AgentRequest { agent_id, day: 0, turn: 0, payload: serde_json::Value::Null };
+                let resp = post_agent_with_retry(&cfg, &body)?;
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+                return Ok(());
+            }
+
+            // Default behaviour: stay alive, waiting for the real solver loop
+            // that #45 will provide. Until then we just block here so the
+            // container stays in a healthy state for ops to inspect.
+            tracing::warn!(
+                "coordinator loop body not yet implemented (see #45); \
+                 idle-blocking. Use --once to send a single probe POST."
+            );
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                ticker.tick().await;
+            }
         }
         Cmd::MatchConfig(sub) => match sub {
             MatchConfigCmd::Load { path } => {
@@ -205,7 +270,7 @@ async fn run(cli: Cli) -> Result<()> {
 }
 
 /// Drive the per-match solver loop with an in-process transport.
-async fn run_coordinator(days: u32, player: &str) -> Result<()> {
+async fn run_loop(days: u32, player: &str) -> Result<()> {
     let match_id =
         MatchId::new("match-cli-1").map_err(|e| anyhow::anyhow!("build match id: {e}"))?;
     let player_id = PlayerId::new(player).map_err(|e| anyhow::anyhow!("build player id: {e}"))?;
@@ -313,6 +378,15 @@ mod tests {
                 assert_eq!(path.to_str(), Some("/tmp/foo.json"));
             }
             _ => panic!("expected match-config validate"),
+        }
+    }
+
+    #[test]
+    fn parses_coordinator_dry_run() {
+        let cli = Cli::try_parse_from(["procon", "coordinator", "--dry-run"]).unwrap();
+        match cli.cmd {
+            Cmd::Coordinator { dry_run, .. } => assert!(dry_run),
+            _ => panic!("expected Coordinator variant"),
         }
     }
 }
