@@ -4,6 +4,7 @@ members = [
     "crates/domain",
     "crates/protocol",
     "crates/engine",
+    "crates/coordinator",
     "crates/cli",
     "crates/solver-greedy",
     "crates/coordinator",
