@@ -8,11 +8,13 @@
 //!
 //! # Contest framing
 //!
-//! Spec: 募集要項「試合の進行」 — a match is played in **days**, and a team
-//! submits **one answer per day** covering that day's steps for all of its
-//! agents. Q&A Q3 gives each day a wall-clock budget (`daySeconds`), and Q&A Q6
-//! splits a step into a 反映フェーズ / アクションフェーズ pair where an answer
-//! that contains any invalid action is rejected *as a whole*.
+//! Spec: 募集要項「試合の進行」 + Q&A その2 A23/A24 — a match is played in
+//! **days**, and a team submits **one answer per day** that spells out every
+//! step of that day for every one of its agents (not one action per step).
+//! Q&A Q3 gives each day its own budget (`daySeconds[day]`), and Q&A Q6 puts a
+//! 反映フェーズ / アクションフェーズ pair inside each step: an answer holding
+//! any invalid action is rejected *as a whole*, and a team with no accepted
+//! answer simply waits out the day.
 //!
 //! Three consequences are baked into the types here:
 //!
@@ -22,6 +24,10 @@
 //! - A solver cannot fail. `decide` returns a decision, never a `Result`,
 //!   because "no answer" loses the day outright; a solver that runs out of
 //!   time must degrade to a valid fallback such as [`SolverDecision::wait_all`].
+//!
+//! Wire encoding is *not* a solver concern: the answer's nested integer arrays
+//! and run-length waits belong to the submission layer, which translates a
+//! [`SolverDecision`] into them.
 
 use std::time::Duration;
 
@@ -39,13 +45,22 @@ pub type TeamId = PlayerId;
 
 /// Zero-based index of an agent inside a team.
 ///
-/// Spec: 募集要項 — a team fields 3..=8 agents, so a byte is sufficient.
+/// Spec: the official answer identifies agents **positionally** — the same
+/// order is used by `MatchSetting.agents`, `MatchState.agents`, the agent-kind
+/// answer, and the action plan — so an id *is* an index. A team fields 3..=8
+/// agents, so a byte is sufficient.
 pub type AgentId = u8;
 
 /// Movement direction on the hex grid.
 ///
-/// Spec: 募集要項「移動と燃料」 — six neighbours under the even-row
-/// right-offset layout fixed by Q&A Q1.
+/// Variant order follows the official answer encoding (`POST /` action codes):
+/// `0` upper-left, `1` upper-right, then clockwise to `5` left. Keeping the
+/// declaration order identical to the wire codes means the protocol layer can
+/// map them positionally instead of hand-writing a lookup table.
+///
+/// Spec: 募集要項「移動と燃料」 + the answer-system API spec bundled in
+/// `docs/pdf/回答システムに関する情報・簡易版の回答用サーバー_1.zip`; even-row
+/// right-offset layout per Q&A Q1.
 ///
 /// **Stub.** The canonical `Direction` / [`Action`] pair lands in `domain`
 /// with issue #53; this module then re-exports those types and deletes the
@@ -54,30 +69,30 @@ pub type AgentId = u8;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
-    /// `col + 1`, same row.
-    East,
-    /// One row up, to the right.
-    NorthEast,
-    /// One row up, to the left.
-    NorthWest,
-    /// `col - 1`, same row.
-    West,
-    /// One row down, to the left.
-    SouthWest,
-    /// One row down, to the right.
-    SouthEast,
+    /// Wire code `0`.
+    UpperLeft,
+    /// Wire code `1`.
+    UpperRight,
+    /// Wire code `2` — `col + 1`, same row.
+    Right,
+    /// Wire code `3`.
+    LowerRight,
+    /// Wire code `4`.
+    LowerLeft,
+    /// Wire code `5` — `col - 1`, same row.
+    Left,
 }
 
 impl Direction {
-    /// Every direction, in a stable order. Useful for exhaustive neighbour
+    /// Every direction, in wire-code order. Useful for exhaustive neighbour
     /// scans in greedy solvers and for property tests.
     pub const ALL: [Self; 6] = [
-        Self::East,
-        Self::NorthEast,
-        Self::NorthWest,
-        Self::West,
-        Self::SouthWest,
-        Self::SouthEast,
+        Self::UpperLeft,
+        Self::UpperRight,
+        Self::Right,
+        Self::LowerRight,
+        Self::LowerLeft,
+        Self::Left,
     ];
 }
 
@@ -137,20 +152,27 @@ pub struct SolverContext {
     pub match_state: MatchSnapshot,
     /// Wall-clock budget left for answering the current day, in milliseconds.
     ///
-    /// Spec: Q&A Q3 (`daySeconds`). The coordinator owns the clock and passes
-    /// the remainder down; solvers must treat this as a hard deadline and keep
-    /// a valid partial answer available at all times.
+    /// Spec: Q&A Q3 — the per-day budget is `daySeconds[day]`, and the server
+    /// also publishes an absolute deadline for the day. The coordinator owns
+    /// the clock and should derive this from that deadline rather than from a
+    /// locally started timer, so that clock skew and request latency are
+    /// already accounted for. Solvers treat it as a hard limit and keep a
+    /// valid answer available at all times.
     pub remaining_time_ms: u64,
     /// The team this solver plays for.
     pub my_team_id: TeamId,
     /// Ids of the agents this solver controls, in submission order.
     ///
-    /// A decision must cover exactly these agents; actions for anyone else are
-    /// rejected with the rest of the answer (Q&A Q6).
+    /// A decision must cover exactly these agents: a plan naming anyone else —
+    /// or missing one — is rejected together with every other agent's plan
+    /// (Q&A Q6).
     pub my_agent_ids: Vec<AgentId>,
     /// Zero-based index of the day being planned.
     pub day: u32,
-    /// Number of steps in the day being planned.
+    /// Number of steps in the day being planned (`daySteps[day]`).
+    ///
+    /// The submitted plan must cover exactly this many steps — neither short
+    /// nor long — so a solver that finishes early pads with waits.
     pub day_steps: u32,
 }
 
@@ -225,8 +247,10 @@ impl SolverDecision {
     /// The always-legal fallback: every controlled agent waits every step.
     ///
     /// Solvers should return this (or a better partial plan) instead of an
-    /// empty decision when the budget runs out, because a malformed answer is
-    /// rejected as a whole (Q&A Q6).
+    /// empty decision when the budget runs out. A malformed answer is rejected
+    /// as a whole and an unanswered day makes every agent wait anyway (Q&A Q6),
+    /// so this is never worse than sending nothing — and it is strictly better
+    /// when resubmission is allowed, because it banks a valid answer early.
     #[must_use]
     pub fn wait_all(ctx: &SolverContext) -> Self {
         let mut actions = Vec::with_capacity(ctx.expected_action_count());
@@ -256,16 +280,20 @@ impl SolverDecision {
         self.actions.chunks(agent_count.max(1))
     }
 
-    /// Cheap shape check against the context that produced it: one action per
-    /// controlled agent per step, and no action for a foreign agent.
+    /// Cheap shape check against the context that produced it: every step
+    /// carries exactly one action per controlled agent, in
+    /// `SolverContext::my_agent_ids` order.
     ///
     /// This is *not* rule validation — legality of each move (bounds, ponds,
     /// fuel) belongs to `domain` (issue #53). It only catches solvers that
-    /// return a differently-shaped plan than the day asked for.
+    /// return a differently-shaped plan than the day asked for: a short plan,
+    /// a foreign agent id, or the same agent acting twice in one step.
     #[must_use]
     pub fn is_well_shaped(&self, ctx: &SolverContext) -> bool {
         self.actions.len() == ctx.expected_action_count()
-            && self.actions.iter().all(|a| ctx.my_agent_ids.contains(&a.agent_id))
+            && self
+                .steps(ctx.my_agent_ids.len())
+                .all(|step| step.iter().map(|a| a.agent_id).eq(ctx.my_agent_ids.iter().copied()))
     }
 }
 
@@ -327,6 +355,12 @@ pub trait Solver: Send + Sync {
     /// a given `ctx` — see [`SolverContext`]. Taking `&self` keeps the method
     /// callable from several threads at once; solvers needing per-day scratch
     /// state should allocate it locally or use interior mutability.
+    ///
+    /// The coordinator may call this more than once for the same day — e.g.
+    /// bank a cheap plan first and replace it with a better one while budget
+    /// remains — so an implementation must not assume one call per day, and
+    /// must not carry hidden state between calls that would make the second
+    /// answer depend on the first.
     fn decide(&self, ctx: &SolverContext) -> SolverDecision;
 }
 
@@ -389,26 +423,26 @@ mod tests {
     #[test]
     fn fixed_solver_plans_one_action_per_agent_per_step() {
         let ctx = ctx(3, &[0, 1]);
-        let solver = FixedSolver::new("fixed-east", Direction::East);
+        let solver = FixedSolver::new("fixed-right", Direction::Right);
 
         let decision = solver.decide(&ctx);
 
         assert_eq!(decision.len(), 6, "3 steps x 2 agents");
         assert!(decision.is_well_shaped(&ctx));
-        assert_eq!(decision.actions[0], Action::step(0, Direction::East));
-        assert_eq!(decision.metadata["solver"], "fixed-east");
+        assert_eq!(decision.actions[0], Action::step(0, Direction::Right));
+        assert_eq!(decision.metadata["solver"], "fixed-right");
     }
 
     #[test]
     fn solver_is_usable_through_dyn_dispatch() {
         let ctx = ctx(2, &[0, 1, 2]);
         let solvers: Vec<Box<dyn Solver>> = vec![
-            Box::new(FixedSolver::new("fixed-east", Direction::East)),
-            Box::new(FixedSolver::new("fixed-west", Direction::West)),
+            Box::new(FixedSolver::new("fixed-right", Direction::Right)),
+            Box::new(FixedSolver::new("fixed-left", Direction::Left)),
         ];
 
         let names: Vec<&str> = solvers.iter().map(|s| s.name()).collect();
-        assert_eq!(names, ["fixed-east", "fixed-west"]);
+        assert_eq!(names, ["fixed-right", "fixed-left"]);
 
         for solver in &solvers {
             let decision = solver.decide(&ctx);
@@ -435,7 +469,7 @@ mod tests {
         stateless.init(&ctx);
         assert_eq!(stateless.decide(&ctx).len(), 1);
 
-        let mut fixed = FixedSolver::new("fixed", Direction::East);
+        let mut fixed = FixedSolver::new("fixed", Direction::Right);
         fixed.init(&ctx);
         assert_eq!(fixed.init_calls, 1);
     }
@@ -446,7 +480,7 @@ mod tests {
         ctx.remaining_time_ms = 0;
         assert!(ctx.is_out_of_time());
 
-        let decision = FixedSolver::new("fixed", Direction::East).decide(&ctx);
+        let decision = FixedSolver::new("fixed", Direction::Right).decide(&ctx);
 
         assert!(decision.is_well_shaped(&ctx));
         assert!(decision.actions.iter().copied().all(Action::is_wait));
@@ -472,6 +506,10 @@ mod tests {
         assert!(!SolverDecision::new(vec![Action::wait(0); 3]).is_well_shaped(&ctx), "short plan");
         let foreign = vec![Action::wait(0), Action::wait(9), Action::wait(0), Action::wait(1)];
         assert!(!SolverDecision::new(foreign).is_well_shaped(&ctx), "foreign agent id");
+        let doubled = vec![Action::wait(0), Action::wait(0), Action::wait(1), Action::wait(1)];
+        assert!(!SolverDecision::new(doubled).is_well_shaped(&ctx), "agent acts twice in a step");
+        let swapped = vec![Action::wait(1), Action::wait(0), Action::wait(0), Action::wait(1)];
+        assert!(!SolverDecision::new(swapped).is_well_shaped(&ctx), "wrong submission order");
     }
 
     #[test]
@@ -483,7 +521,7 @@ mod tests {
     #[test]
     fn decision_round_trips_through_json() {
         let ctx = ctx(2, &[0, 1]);
-        let decision = FixedSolver::new("fixed", Direction::SouthWest).decide(&ctx);
+        let decision = FixedSolver::new("fixed", Direction::LowerLeft).decide(&ctx);
 
         let json = serde_json::to_string(&decision).expect("serialise");
         let back: SolverDecision = serde_json::from_str(&json).expect("deserialise");
