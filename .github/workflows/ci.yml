@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'release-*-*-*']
+  pull_request:
+    branches: [main, 'release-*-*-*']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }} / ${{ matrix.toolchain }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        toolchain: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            crates/domain -> target
+            crates/protocol -> target
+            crates/engine -> target
+            crates/cli -> target
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Build release
+        run: cargo build --workspace --release --locked
+
+  frontend:
+    name: Frontend (bun)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Cache bun modules
+        uses: actions/cache@v4
+        with:
+          path: packages/frontend/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('packages/frontend/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - name: Install
+        working-directory: packages/frontend
+        run: bun install --frozen-lockfile
+      - name: Type-check
+        working-directory: packages/frontend
+        run: bun run check
+      - name: Lint
+        working-directory: packages/frontend
+        run: bun run lint
+      - name: Format check
+        working-directory: packages/frontend
+        run: bun run format:check
+      - name: Test
+        working-directory: packages/frontend
+        run: bun test
+      - name: Build
+        working-directory: packages/frontend
+        run: bun run build
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ github.sha }}
+          path: packages/frontend/dist
+          retention-days: 7
+
+  protocol-consistency:
+    name: Protocol consistency check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Check that protocol version matches across crates
+        run: bash scripts/check-protocol-consistency.sh

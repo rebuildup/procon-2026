@@ -1,0 +1,131 @@
+# AGENTS.md — Project-local Root Agent Contract
+
+このファイルは **dispatcher** であり、すべての canonical policy を要約しません。
+詳細な policy / spec / role 定義は `docs/` と `.claude/skills/` にあります。
+
+## Project identity
+
+- **Name**: procon-2026 — 全国高専プロコン 競技部門 プロジェクト
+- **Repository**: <https://github.com/rebuildup/procon-2026> (private)
+- **Domain**: Competitive programming contest — game/algorithm contest (Rust core + SolidJS + WebGPU frontend)
+- **Language policy**:
+  - Source code / commit message: **English**
+  - Internal docs / Issues / PRs / reviews: **日本語**
+
+## Source / Work state (canonical SoT)
+
+| State kind | Location |
+|---|---|
+| Released source state | `main` |
+| Active sprint integration | `release-<major>-<minor>-<patch>` |
+| Durable work items | GitHub Issues |
+| Work-in-progress board | GitHub Projects (Kanban) |
+| Ticket review / integration | Pull Requests |
+| Project policy / architecture / decisions | `docs/` + `.claude/skills/` |
+| Recovery / immutable worker results | durable Git refs + structured checkpoints |
+| Transient execution | Supervisor / sandbox (not SoT) |
+
+## Active release rule
+
+- 1 sprint = 1 target semantic version. Sprint start cuts `release-<major>-<minor>-<patch>` from `main`.
+- 1 top-level Issue = 1 durable ticket branch named **only with the Issue number**.
+- After a meaningful first commit, open a Draft PR from the ticket branch to the active `release-x-y-z` branch.
+- The release PR `release-x-y-z -> main` represents release integration.
+
+## Engineering decision precedence
+
+Resolve decisions in this order:
+
+1. `docs/` + `.claude/skills/` (project-local canonical policy / invariant)
+2. ADR (`docs/adr/`) and explicit design/spec
+3. coherent existing implementation majority
+4. current official framework / runtime / SDK guidance
+5. established ecosystem convention
+6. local best judgment
+
+Same-level conflicts: prefer the more specific and more recent canonical source.
+Old migration residue does not override current canonical design.
+When a decision is uniquely determined by precedence and is reversible / local, do not escalate to the user.
+
+## User escalation boundary
+
+Escalate only when:
+
+- canonical sources conflict and product semantics change
+- acceptance criteria is multi-interpretable and user-visible behavior shifts
+- the operation is irreversible / destructive
+- public / external API contract is being fixed
+- security / privacy / compliance risk acceptance
+- meaningful cost increase
+- release scope / date change
+- explicit design-first approval gate is required
+
+Always prepare options, impact, and a recommended path before asking.
+
+## Environment bootstrap
+
+Quick start for a fresh clone:
+
+```bash
+# Toolchains: Rust 1.85+ (edition 2024), Bun (latest), Node 22+, gh CLI 2.50+
+rustup toolchain install stable
+cargo install just cargo-watch  # optional but recommended
+bun install
+gh auth login                  # required for Issues / Projects / PR work
+```
+
+`docs/development.md` has the full local bootstrap recipe and per-component commands.
+
+## Supervisor / subagent / recovery entry point
+
+- Subagent / parallel work model: `.claude/skills/parallel-orchestration/SKILL.md`
+- Sandbox / runtime portability: `.claude/skills/sandbox-runtime/SKILL.md`
+- Recovery / interruption handling: `.claude/skills/agent-recovery/SKILL.md`
+- Release / Issue / PR workflow: `.claude/skills/github-delivery/SKILL.md`
+
+Always spawn mutable workers in isolated sandboxes; never share mutable DB / cache / queue / process state between workers.
+Parent → child uses immutable snapshots; child → parent returns immutable commit/ref + validation results.
+Each mutable worker task carries an `execution_generation` token; stale generations must not integrate.
+
+## Validation entry point
+
+Single deterministic validation entry point — `just` (see `justfile`):
+
+```bash
+just --list                  # discover available gates
+just check                   # fmt + clippy + type-check + lint
+just test                    # unit tests
+just test-integration        # integration (real component boundaries)
+just ci                      # full local CI parity
+```
+
+Detailed quality profile: `.claude/skills/quality-gate/SKILL.md`.
+Stack-aware quality choices: `docs/quality.md`.
+
+## Skill discovery
+
+Project-local Agent Skills (Japanese descriptions, English body) are under `.claude/skills/`:
+
+| Skill | When to load |
+|---|---|
+| `parallel-orchestration` | decomposing non-trivial work across multiple AI workers |
+| `sandbox-runtime` | creating / validating isolated worker sandboxes |
+| `github-delivery` | Issue / Project / PR / release branch flow |
+| `quality-gate` | designing verification gates for this stack |
+| `engineering-decisions` | resolving design decisions against project precedence |
+| `security-maintenance` | tracking framework / dependency advisories |
+| `onboarding` | writing / updating onboarding docs |
+| `agent-recovery` | recovering work after session / sandbox / context loss |
+
+Do not re-read the full `project-init` prompt for routine tasks — load only the Skill(s) that match the current objective.
+
+## Quick navigation
+
+- Architecture: `docs/architecture.md`
+- Development / run / debug: `docs/development.md`
+- Release process: `docs/release.md`
+- Security / advisories: `docs/security.md`
+- Recovery: `docs/recovery.md`
+- ADRs: `docs/adr/`
+- Troubleshooting: `docs/troubleshooting.md`
+- Roles / responsibilities: `docs/roles/`

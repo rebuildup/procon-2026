@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-recovery": {
+      "source": "rebuildup/project-init",
+      "sourceType": "github",
+      "skillPath": "skills/agent-recovery/SKILL.md",
+      "computedHash": "ebd4dcd6d68bf64165cb820eed9a2ceffdef46e473f16985c0a0b87bfc8157fe"
+    },
+    "engineering-decisions": {
+      "source": "rebuildup/project-init",
+      "sourceType": "github",
+      "skillPath": "skills/engineering-decisions/SKILL.md",
+      "computedHash": "5e17fbbe7582e350f174e773685c4f4800cb01fc5656cd12eb6a9e864541b77c"
+    },
+    "github-delivery": {
+      "source": "rebuildup/project-init",
+      "sourceType": "github",
+      "skillPath": "skills/github-delivery/SKILL.md",
+      "computedHash": "952a49f865adc503a11ae4702b49123a01cc7817839ab97868b4bfcbf2b94cf4"
+    },
+    "onboarding": {
+      "source": "rebuildup/project-init",
+      "sourceType": "github",
+      "skillPath": "skills/onboarding/SKILL.md",
+      "computedHash": "1c5cd8ec7bebd2541fc8d1415b3a24c95a020820721b17cc35fec123b7a8e2a4"
+    },
+    "parallel-orchestration": {
+      "source": "rebuildup/project-init",
+      "sourceType": "github",
+      "skillPath": "skills/parallel-orchestration/SKILL.md",
+      "computedHash": "c80f9881b35ea3ca49d661a42e0d7a07539f7288bad151da1a9ac504a42dba4f"
+    },
+    "quality-gate": {
+      "source": "rebuildup/project-init",
+      "sourceType": "github",
+      "skillPath": "skills/quality-gate/SKILL.md",
+      "computedHash": "bdabdf529e9495a74696a9f0e3322c8d602b9ddcfb0ff17f9920e4d01fe2d44c"
+    },
+    "sandbox-runtime": {
+      "source": "rebuildup/project-init",
+      "sourceType": "github",
+      "skillPath": "skills/sandbox-runtime/SKILL.md",
+      "computedHash": "6179bfc85aa3f50a92c859046b1a39f016ea10badd27947096bb1ed5927f3601"
+    },
+    "security-maintenance": {
+      "source": "rebuildup/project-init",
+      "sourceType": "github",
+      "skillPath": "skills/security-maintenance/SKILL.md",
+      "computedHash": "eed576588718eb5c658dc8e6e67fd31cf518c732f9ba60efc4ed78981a53520d"
+    }
+  }
+}

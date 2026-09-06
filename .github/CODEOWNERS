@@ -1,0 +1,12 @@
+# Code ownership. GitHub auto-assigns reviewers from the owners of changed
+# paths. Keep this list small and authoritative — every entry should map to
+# someone with merge authority on that surface.
+
+/crates/         @rebuildup
+/packages/       @rebuildup
+/.github/        @rebuildup
+/docs/           @rebuildup
+/AGENTS.md       @rebuildup
+/CLAUDE.md       @rebuildup
+/justfile        @rebuildup
+/Cargo.toml      @rebuildup
