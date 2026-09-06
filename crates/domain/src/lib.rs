@@ -9,9 +9,11 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod coordinate;
 pub mod id;
 pub mod state;
 
+pub use coordinate::{Bounds, HexCoord, MapLayout, MapSize};
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
 
