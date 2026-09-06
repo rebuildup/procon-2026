@@ -9,10 +9,16 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod cell;
 pub mod coordinate;
 pub mod id;
 pub mod state;
 
+pub use cell::{
+    BUSY_THRESHOLD_DEFAULT, BUSY_THRESHOLD_MAX, BUSY_THRESHOLD_MIN, Cell, FUEL_COSTS,
+    JAMMED_THRESHOLD_DEFAULT, JAMMED_THRESHOLD_MAX, JAMMED_THRESHOLD_MIN, MOVE_STEPS, Series, Spot,
+    TrafficState, validate_traffic_thresholds,
+};
 pub use coordinate::{Bounds, HexCoord, MapLayout, MapSize};
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
