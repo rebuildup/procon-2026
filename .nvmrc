@@ -1,0 +1,2 @@
+# Node toolchain hint (`.nvmrc` is read by nvm / fnm / Volta).
+22

@@ -1,0 +1,19 @@
+[package]
+name = "protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Wire format between the Rust core and the SolidJS frontend (JSON v1)."
+
+[lints]
+workspace = true
+
+[dependencies]
+domain = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }

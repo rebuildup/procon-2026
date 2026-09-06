@@ -1,0 +1,48 @@
+{
+  "name": "procon-2026",
+  "image": "ghcr.io/rebuildup/procon-2026-dev:latest",
+  "context": "..",
+  "dockerFile": "../Containerfile",
+  "features": {
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "1.85"
+    },
+    "ghcr.io/devcontainers/features/bun:1": {
+      "version": "1.4.2"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "rust-analyzer.cargo.allFeatures": true,
+        "rust-analyzer.check.command": "clippy",
+        "editor.formatOnSave": true,
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        },
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        }
+      },
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  },
+  "forwardPorts": [5173, 7878],
+  "portsAttributes": {
+    "5173": {
+      "label": "Frontend (vite)",
+      "onAutoForward": "notify"
+    },
+    "7878": {
+      "label": "Engine (planned)",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "cargo build --workspace && (cd packages/frontend && bun install)",
+  "remoteUser": "root"
+}

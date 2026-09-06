@@ -1,0 +1,55 @@
+# ============================================================
+# procon-2026 — generated / transient artefacts
+# ============================================================
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Rust / Cargo
+/target
+**/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Bun / Node
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.tsbuildinfo
+bun.lockb
+bun.lock.json
+
+# Vite
+.vite/
+
+# Frontend coverage / cache
+packages/frontend/coverage/
+packages/frontend/.vite/
+
+# ----------------------------------------
+# Secrets / env files — NEVER commit
+# ----------------------------------------
+.env
+.env.*
+!.env.example
+!.env.development.example
+!.env.production.example
+
+# ----------------------------------------
+# Temporary artefacts / reference repos
+# ----------------------------------------
+.tmp/
+.reference/
+
+# ----------------------------------------
+# Skills local install state (kept under .claude/skills/ as
+# committed project-local knowledge; ignore local override dirs)
+# ----------------------------------------
+.agents/
