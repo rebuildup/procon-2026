@@ -9,11 +9,13 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod action;
 pub mod cell;
 pub mod coordinate;
 pub mod id;
 pub mod state;
 
+pub use action::{Action, ActionKind, Direction, move_to, neighbor, validate_batch};
 pub use cell::{
     BUSY_THRESHOLD_DEFAULT, BUSY_THRESHOLD_MAX, BUSY_THRESHOLD_MIN, Cell, FUEL_COSTS,
     JAMMED_THRESHOLD_DEFAULT, JAMMED_THRESHOLD_MAX, JAMMED_THRESHOLD_MIN, MOVE_STEPS, Series, Spot,
