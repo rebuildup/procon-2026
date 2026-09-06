@@ -10,6 +10,7 @@
 #![doc(test(attr(deny(warnings))))]
 
 pub mod id;
+pub mod refuel;
 pub mod state;
 
 pub use id::{MatchId, PlayerId, TurnId};
