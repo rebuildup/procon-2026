@@ -5,9 +5,9 @@ members = [
     "crates/protocol",
     "crates/engine",
     "crates/coordinator",
+    "crates/solver-mcts",
     "crates/cli",
     "crates/solver-greedy",
-    "crates/coordinator",
     "crates/solver-localsearch",
     "crates/solver-ilp-cross",
 ]
