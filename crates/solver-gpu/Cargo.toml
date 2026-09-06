@@ -1,0 +1,35 @@
+[package]
+name = "solver-gpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "GPU-accelerated shortest-path solver skeleton: WGSL compute shader + CPU Dijkstra fallback."
+
+[lints]
+workspace = true
+
+# Heavy GPU dependency kept behind a feature flag so the CPU path (and CI
+# without a GPU device) compiles quickly and tests run cheaply. Enable with
+# `cargo build -p solver-gpu --features wgpu` to pull in real wgpu support.
+[features]
+default = []
+wgpu = ["dep:wgpu", "dep:bytemuck"]
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dependencies.wgpu]
+version = "23"
+optional = true
+default-features = false
+features = ["wgsl"]
+
+[dependencies.bytemuck]
+version = "1"
+features = ["derive"]
+optional = true
