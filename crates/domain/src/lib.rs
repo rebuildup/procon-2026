@@ -11,9 +11,11 @@
 
 pub mod id;
 pub mod state;
+pub mod traffic;
 
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
+pub use traffic::{Thresholds, TrafficCell, TrafficMap, TrafficState};
 
 /// Library-wide error type. Pure-domain errors only; I/O errors belong to other crates.
 #[derive(Debug, thiserror::Error)]
