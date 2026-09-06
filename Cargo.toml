@@ -12,6 +12,7 @@ members = [
     "crates/solver-ilp-cross",
     "crates/solver-gpu",
     "crates/solver-loop",
+    "crates/solver-series-clustered",
 ]
 exclude = [".tmp/**"]
 
