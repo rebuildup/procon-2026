@@ -45,6 +45,12 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --workspace --locked
+      - name: Test (ignored / heavy property tests)
+        # `cargo test --workspace -- --ignored` exercises integration suites
+        # marked #[ignore] (e.g. large-scale property tests in
+        # crates/domain and crates/protocol). Keeping this in a separate step
+        # lets the fast suite stay under the main "Test" gate.
+        run: cargo test --workspace --locked -- --ignored --nocapture
       - name: Build release
         run: cargo build --workspace --release --locked
 
