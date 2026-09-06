@@ -9,9 +9,15 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod agent;
 pub mod id;
 pub mod state;
 
+pub use agent::{
+    AGENT_COUNT_MAX, AGENT_COUNT_MIN, Agent, AgentId, AgentKind, Day, DaySeconds, DaySteps,
+    FUEL_UPPER_BOUND_MULTIPLIER, FuelAmount, FuelPolicy, MatchState, Patrol, Position, Supply,
+    Traffic,
+};
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
 
