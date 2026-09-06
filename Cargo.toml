@@ -38,8 +38,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# Archive
+zip = { version = "3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
 # Async runtime (engine server / protocol)
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
 
 # Time
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
