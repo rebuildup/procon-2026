@@ -11,6 +11,7 @@ members = [
     "crates/solver-localsearch",
     "crates/solver-ilp-cross",
     "crates/solver-gpu",
+    "crates/solver-loop",
 ]
 exclude = [".tmp/**"]
 
@@ -27,6 +28,7 @@ publish = false
 domain = { path = "crates/domain" }
 protocol = { path = "crates/protocol" }
 engine = { path = "crates/engine" }
+solver-loop = { path = "crates/solver-loop" }
 
 # Serialization (core ↔ frontend wire format)
 serde = { version = "1", features = ["derive"] }
