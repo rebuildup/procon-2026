@@ -350,7 +350,8 @@ mod tests {
     #[test]
     fn direction_from_wire_accepts_zero_through_five() {
         for (i, expected) in Direction::ALL.iter().enumerate() {
-            assert_eq!(Direction::from_wire(i as i8), Some(*expected));
+            let wire = i8::try_from(i).expect("ALL has at most 6 entries");
+            assert_eq!(Direction::from_wire(wire), Some(*expected));
         }
     }
 
@@ -383,7 +384,8 @@ mod tests {
     #[test]
     fn action_kind_from_wire_move_for_zero_to_five() {
         for (i, d) in Direction::ALL.iter().enumerate() {
-            assert_eq!(ActionKind::from_wire(i as i8), Some(ActionKind::Move(*d)));
+            let wire = i8::try_from(i).expect("ALL has at most 6 entries");
+            assert_eq!(ActionKind::from_wire(wire), Some(ActionKind::Move(*d)));
         }
     }
 
