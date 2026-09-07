@@ -12,8 +12,10 @@
 pub mod agent;
 pub mod cell;
 pub mod id;
+pub mod outcome;
 pub mod refuel;
 pub mod state;
+pub mod traffic;
 
 pub use agent::{
     AGENT_COUNT_MAX, AGENT_COUNT_MIN, Agent, AgentId, AgentKind, Day, DaySeconds, DaySteps,
@@ -27,6 +29,7 @@ pub use cell::{
 };
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
+pub use traffic::{Thresholds, TrafficCell, TrafficMap};
 
 /// Library-wide error type. Pure-domain errors only; I/O errors belong to other crates.
 #[derive(Debug, thiserror::Error)]

@@ -1,0 +1,707 @@
+//! Self-contained game model used by the local match simulator.
+//!
+//! EXPECTED INTEGRATION: types in this module are temporary. The authoritative
+//! home for them is `crates/domain` once issues #11 / #12 / #13 (hex / cell /
+//! agent) and #53 (action / direction) ship. The simulator stays useful while
+//! the migration is pending because its public surface is `MatchSim`, not
+//! these types — once `domain` lands, the `MatchSim` API keeps the same shape
+//! and only the type aliases swap.
+//!
+//! Likewise [`Solver`] below is a minimal local stand-in for the trait
+//! introduced by issue #57 (`engine::Solver`). Once #57 merges, this local
+//! trait is replaced by a `pub use engine::solver::Solver` and the helper
+//! [`Action::wait_all`] / [`AgentActions`] constructors move with it.
+
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use domain::{MatchId, PlayerId};
+use serde::{Deserialize, Serialize};
+
+// ---------------------------------------------------------------------------
+// Hex coordinate system (Q&A Q1 — even-row right-offset layout).
+// ---------------------------------------------------------------------------
+
+/// Hex coordinate.
+///
+/// Layout: even rows (`row % 2 == 0`) shift right by half a column relative
+/// to odd rows. Bounds are enforced by [`MapSize`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct HexCoord {
+    pub col: i32,
+    pub row: i32,
+}
+
+impl HexCoord {
+    #[must_use]
+    pub const fn new(col: i32, row: i32) -> Self {
+        Self { col, row }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Map size & grid.
+// ---------------------------------------------------------------------------
+
+/// Map dimensions.
+///
+/// Spec: 募集要項「ヘキサうどん」 — `8 <= W,H <= 32`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MapSize {
+    pub width: u8,
+    pub height: u8,
+}
+
+impl MapSize {
+    /// Minimum allowed dimension (Q&A + 募集要項).
+    pub const MIN: u8 = 8;
+    /// Maximum allowed dimension.
+    pub const MAX: u8 = 32;
+
+    /// Construct a [`MapSize`], validating the bounds.
+    ///
+    /// # Errors
+    /// Returns `Err` if either dimension is out of `[Self::MIN, Self::MAX]`.
+    pub fn new(width: u8, height: u8) -> Result<Self, String> {
+        if !(Self::MIN..=Self::MAX).contains(&width) {
+            return Err(format!("width {width} out of bounds [{}, {}]", Self::MIN, Self::MAX));
+        }
+        if !(Self::MIN..=Self::MAX).contains(&height) {
+            return Err(format!("height {height} out of bounds [{}, {}]", Self::MIN, Self::MAX));
+        }
+        Ok(Self { width, height })
+    }
+
+    /// `true` iff `coord` falls inside this size.
+    #[must_use]
+    pub fn contains(&self, coord: HexCoord) -> bool {
+        coord.col >= 0
+            && coord.row >= 0
+            && coord.col < i32::from(self.width)
+            && coord.row < i32::from(self.height)
+    }
+}
+
+/// Traffic state for a road cell.
+///
+/// Spec: 募集要項「道路セルと交通量」 + Q&A Q11 (step count) / Q13 (thresholds).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TrafficState {
+    Smooth,
+    Busy,
+    Jammed,
+}
+
+impl TrafficState {
+    /// Step cost in time units for one *traversal* (not one move action).
+    ///
+    /// Smooth = 1 step, Busy = 2 steps, Jammed = 4 steps (Q&A Q11).
+    #[must_use]
+    pub const fn step_cost(self) -> u32 {
+        match self {
+            Self::Smooth => 1,
+            Self::Busy => 2,
+            Self::Jammed => 4,
+        }
+    }
+}
+
+/// Terrain type of a cell.
+///
+/// `Road` carries the current traffic state. Spot-bearing plains are modelled
+/// by [`Cell::spot`] being `Some`, not by a separate terrain variant, so the
+/// acquisition logic stays a single code path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Terrain {
+    Plain,
+    Mountain,
+    Pond,
+    Road(TrafficState),
+}
+
+impl Terrain {
+    /// Whether agents can enter this terrain with a `Move` action.
+    #[must_use]
+    pub const fn traversable(self) -> bool {
+        !matches!(self, Self::Pond)
+    }
+}
+
+/// Stockpile at a `Plain` cell.
+///
+/// Spec: Q&A Q18 — one cell can host at most one spot. `max_stock` is the
+/// number of agents on the team (Q&A Q15 + 募集要項).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Spot {
+    /// Series id (1-based). Distinct series are the primary scoring key
+    /// (募集要項「順位決定」).
+    pub series: u32,
+    pub pos: HexCoord,
+    /// Maximum balls in stock (`1..=agent_count`, Q&A Q15).
+    pub max_stock: u32,
+    /// Current stock; refilled to `max_stock` at the start of each day.
+    pub current_stock: u32,
+}
+
+impl Spot {
+    /// Validate the spec invariants for a spot.
+    ///
+    /// # Errors
+    /// Returns `Err` if `series == 0`, `max_stock == 0`, or stock exceeds the
+    /// cap.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.series == 0 {
+            return Err("spot series must be >= 1".to_owned());
+        }
+        if self.max_stock == 0 {
+            return Err("spot max_stock must be >= 1".to_owned());
+        }
+        if self.current_stock > self.max_stock {
+            return Err("spot current_stock exceeds max_stock".to_owned());
+        }
+        Ok(())
+    }
+}
+
+/// One map cell.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Cell {
+    pub coord: HexCoord,
+    pub terrain: Terrain,
+    pub spot: Option<Spot>,
+}
+
+impl Cell {
+    /// Convenience: look up by coordinate via the owning [`MapGrid`].
+    #[must_use]
+    pub fn spot(&self) -> Option<&Spot> {
+        self.spot.as_ref()
+    }
+}
+
+/// Dense map representation. Cells are row-major, indexed as
+/// `row * width + col`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MapGrid {
+    pub size: MapSize,
+    cells: Vec<Cell>,
+}
+
+impl MapGrid {
+    /// Build a grid from cells. Validates dimensions and bounds.
+    ///
+    /// # Errors
+    /// Returns `Err` if the cell count does not match `size`, any cell is
+    /// out of bounds, or any spot fails its own validation.
+    pub fn new(size: MapSize, mut cells: Vec<Cell>) -> Result<Self, String> {
+        let expected = usize::from(size.width) * usize::from(size.height);
+        if cells.len() != expected {
+            return Err(format!(
+                "expected {expected} cells for size {size:?}, got {}",
+                cells.len()
+            ));
+        }
+        for cell in &cells {
+            if !size.contains(cell.coord) {
+                return Err(format!("cell {:?} outside map bounds", cell.coord));
+            }
+            if let Some(spot) = &cell.spot {
+                spot.validate()?;
+                if spot.pos != cell.coord {
+                    return Err(format!(
+                        "spot pos {:?} does not match cell {:?}",
+                        spot.pos, cell.coord
+                    ));
+                }
+            }
+        }
+        // Sort row-major by (row, col) for predictable indexing.
+        cells.sort_by_key(|c| (c.coord.row, c.coord.col));
+        Ok(Self { size, cells })
+    }
+
+    /// Look up a cell by coordinate.
+    #[must_use]
+    pub fn get(&self, coord: HexCoord) -> Option<&Cell> {
+        if !self.size.contains(coord) {
+            return None;
+        }
+        let idx = coord.row as usize * self.size.width as usize + coord.col as usize;
+        self.cells.get(idx)
+    }
+
+    /// Mutable lookup.
+    pub fn get_mut(&mut self, coord: HexCoord) -> Option<&mut Cell> {
+        if !self.size.contains(coord) {
+            return None;
+        }
+        let idx = coord.row as usize * self.size.width as usize + coord.col as usize;
+        self.cells.get_mut(idx)
+    }
+
+    /// All cells, row-major.
+    #[must_use]
+    pub fn cells(&self) -> &[Cell] {
+        &self.cells
+    }
+
+    /// Mutable cell slice, row-major. Exposed so transitions that refill
+    /// spots in place do not have to round-trip through [`MapGrid::get_mut`].
+    pub fn cells_mut(&mut self) -> &mut [Cell] {
+        &mut self.cells
+    }
+
+    /// Iterate road cells (convenience for traffic bookkeeping).
+    pub fn roads(&self) -> impl Iterator<Item = &Cell> {
+        self.cells.iter().filter(|c| matches!(c.terrain, Terrain::Road(_)))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Agents.
+// ---------------------------------------------------------------------------
+
+/// Agent kind — determines the fuel rule.
+///
+/// Spec: 募集要項「エージェント」 — `Supply` has no fuel cap; `Patrol` is
+/// bounded by `day_steps * multiplier`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AgentKind {
+    Patrol,
+    Supply,
+}
+
+/// One controllable agent.
+///
+/// `fuel_cap` is pre-computed at construction time:
+/// - `Supply`: `u32::MAX` (effectively unlimited)
+/// - `Patrol`: `day_steps * MULTIPLIER` (default MULTIPLIER = 3, Q&A Q14)
+///
+/// `inventory` is `Vec<(series, count)>` so multiple series can be carried
+/// in a single day if the agent visits several spots.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Agent {
+    /// Team-local id. Stable across days so `AgentActions` can reference it.
+    pub id: u8,
+    pub kind: AgentKind,
+    pub pos: HexCoord,
+    /// Current fuel. Decremented by movement; refilled on supply contact.
+    pub fuel: u32,
+    /// Maximum fuel. `u32::MAX` for `Supply` agents.
+    pub fuel_cap: u32,
+    /// Balls currently held, grouped by series.
+    pub inventory: BTreeMap<u32, u32>,
+}
+
+impl Agent {
+    /// Construct a patrol agent at `pos` with `day_steps * multiplier` fuel.
+    #[must_use]
+    pub fn patrol(id: u8, pos: HexCoord, day_steps: u32, multiplier: u32) -> Self {
+        let cap = day_steps.saturating_mul(multiplier);
+        Self {
+            id,
+            kind: AgentKind::Patrol,
+            pos,
+            fuel: cap,
+            fuel_cap: cap,
+            inventory: BTreeMap::new(),
+        }
+    }
+
+    /// Construct a supply agent at `pos`. Fuel is uncapped.
+    #[must_use]
+    pub fn supply(id: u8, pos: HexCoord) -> Self {
+        Self {
+            id,
+            kind: AgentKind::Supply,
+            pos,
+            fuel: u32::MAX,
+            fuel_cap: u32::MAX,
+            inventory: BTreeMap::new(),
+        }
+    }
+
+    /// Number of balls currently held (sum over all series).
+    #[must_use]
+    pub fn total_inventory(&self) -> u32 {
+        self.inventory.values().sum()
+    }
+
+    /// Whether the agent can pay a fuel cost of `cost` right now.
+    #[must_use]
+    pub fn can_afford(&self, cost: u32) -> bool {
+        self.fuel >= cost
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Actions.
+// ---------------------------------------------------------------------------
+
+/// Movement direction on the hex grid.
+///
+/// Order matches the official answer encoding: `0` upper-left, going
+/// clockwise to `5` left. Kept identical so the protocol layer can map
+/// positionally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Direction {
+    UpperLeft,
+    UpperRight,
+    Right,
+    LowerRight,
+    LowerLeft,
+    Left,
+}
+
+impl Direction {
+    /// Every direction, in wire-code order.
+    pub const ALL: [Self; 6] = [
+        Self::UpperLeft,
+        Self::UpperRight,
+        Self::Right,
+        Self::LowerRight,
+        Self::LowerLeft,
+        Self::Left,
+    ];
+
+    /// Apply this direction to a hex coordinate, assuming even-row
+    /// right-offset layout (Q&A Q1). Even rows are pushed right by half a
+    /// column, so an even-row cell has more "right" upper/lower neighbours
+    /// than "left" ones.
+    #[must_use]
+    pub fn step(self, from: HexCoord) -> HexCoord {
+        let even_row = from.row.rem_euclid(2) == 0;
+        let (d_col, d_row) = match self {
+            // Even rows are shifted right; their upper-left / lower-left
+            // neighbours sit at the same column.
+            Self::UpperLeft => {
+                if even_row {
+                    (0, -1)
+                } else {
+                    (-1, -1)
+                }
+            }
+            Self::UpperRight => {
+                if even_row {
+                    (1, -1)
+                } else {
+                    (0, -1)
+                }
+            }
+            Self::Right => (1, 0),
+            Self::LowerRight => {
+                if even_row {
+                    (1, 1)
+                } else {
+                    (0, 1)
+                }
+            }
+            Self::LowerLeft => {
+                if even_row {
+                    (0, 1)
+                } else {
+                    (-1, 1)
+                }
+            }
+            Self::Left => (-1, 0),
+        };
+        HexCoord::new(from.col + d_col, from.row + d_row)
+    }
+}
+
+/// What a single agent does in a single step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ActionKind {
+    /// Stay put. Always legal — the safe fallback.
+    Wait,
+    /// Move one cell in `direction`.
+    Move(Direction),
+}
+
+/// One agent's action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Action {
+    pub agent_id: u8,
+    pub kind: ActionKind,
+}
+
+impl Action {
+    #[must_use]
+    pub const fn wait(agent_id: u8) -> Self {
+        Self { agent_id, kind: ActionKind::Wait }
+    }
+
+    #[must_use]
+    pub const fn step(agent_id: u8, direction: Direction) -> Self {
+        Self { agent_id, kind: ActionKind::Move(direction) }
+    }
+
+    #[must_use]
+    pub const fn is_wait(self) -> bool {
+        matches!(self.kind, ActionKind::Wait)
+    }
+}
+
+/// One team's answer for one day.
+///
+/// Layout: step-major. The first `agent_count` entries cover step 0 (one
+/// action per controlled agent, in agent-id ascending order); the next
+/// `agent_count` cover step 1; etc.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentActions {
+    pub actions: Vec<Action>,
+}
+
+impl AgentActions {
+    #[must_use]
+    pub fn new(actions: Vec<Action>) -> Self {
+        Self { actions }
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.actions.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.actions.is_empty()
+    }
+
+    /// The always-legal fallback: every controlled agent waits every step.
+    #[must_use]
+    pub fn wait_all(agent_ids: &[u8], day_steps: u32) -> Self {
+        let mut actions = Vec::with_capacity(agent_ids.len() * day_steps as usize);
+        for _ in 0..day_steps {
+            actions.extend(agent_ids.iter().copied().map(Action::wait));
+        }
+        Self { actions }
+    }
+
+    /// Cheap shape check: every step has exactly one action per agent, in
+    /// ascending agent-id order.
+    #[must_use]
+    pub fn is_well_shaped(&self, agent_ids: &[u8], day_steps: u32) -> bool {
+        let n = agent_ids.len();
+        if self.actions.len() != n * day_steps as usize {
+            return false;
+        }
+        self.actions
+            .chunks(n.max(1))
+            .all(|step| step.iter().map(|a| a.agent_id).eq(agent_ids.iter().copied()))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Setting, state, result.
+// ---------------------------------------------------------------------------
+
+/// Initial configuration for a single-team match.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MatchSetting {
+    pub match_id: MatchId,
+    pub team: PlayerId,
+    pub map: MapGrid,
+    pub agents: Vec<Agent>,
+    /// Steps per day (`daySteps`).
+    pub day_steps: u32,
+    /// Total days in the match (`numDays`).
+    pub num_days: u32,
+}
+
+impl MatchSetting {
+    /// Validate the spec invariants for the team composition.
+    ///
+    /// # Errors
+    /// Returns `Err` if the agent count, fuel cap, or day parameters are
+    /// invalid.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.agents.len() < 3 || self.agents.len() > 8 {
+            return Err(format!("team must have 3..=8 agents, got {}", self.agents.len()));
+        }
+        if self.day_steps == 0 {
+            return Err("day_steps must be >= 1".to_owned());
+        }
+        if self.num_days == 0 {
+            return Err("num_days must be >= 1".to_owned());
+        }
+        let mut ids = BTreeSet::new();
+        for agent in &self.agents {
+            if !ids.insert(agent.id) {
+                return Err(format!("duplicate agent id {}", agent.id));
+            }
+            if !self.map.size.contains(agent.pos) {
+                return Err(format!(
+                    "agent {} starts outside map bounds at {:?}",
+                    agent.id, agent.pos
+                ));
+            }
+            let cell = self
+                .map
+                .get(agent.pos)
+                .ok_or_else(|| format!("agent {} start cell missing", agent.id))?;
+            if cell.spot.is_some() {
+                return Err(format!(
+                    "agent {} starts on a spot cell (spec: starts on plain)",
+                    agent.id
+                ));
+            }
+            if !cell.terrain.traversable() {
+                return Err(format!(
+                    "agent {} starts on impassable terrain {:?}",
+                    agent.id, cell.terrain
+                ));
+            }
+            match agent.kind {
+                AgentKind::Patrol if agent.fuel_cap == 0 => {
+                    return Err(format!("patrol agent {} has zero fuel cap", agent.id));
+                }
+                AgentKind::Supply => {}
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Ascending agent-id list. Convenience for `AgentActions` shape checks.
+    #[must_use]
+    pub fn agent_ids(&self) -> Vec<u8> {
+        let mut ids: Vec<u8> = self.agents.iter().map(|a| a.id).collect();
+        ids.sort_unstable();
+        ids
+    }
+}
+
+/// Live state during a match.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MatchState {
+    pub setting: MatchSetting,
+    /// Current day (0-based).
+    pub day: u32,
+    /// Current step inside the day (0-based; 0..`day_steps`).
+    pub day_step: u32,
+    pub agents: Vec<Agent>,
+    /// Traffic count for road cells *this* day, accumulated as agents
+    /// enter them. Reset at the start of each day.
+    pub traffic_today: HashMap<HexCoord, u32>,
+    /// Traffic count for the *previous* day. Used by the Q&A Q13 transition
+    /// (today + yesterday → tomorrow's `TrafficState`).
+    pub traffic_yesterday: HashMap<HexCoord, u32>,
+    /// `(agent_id, coord) -> count` of balls picked at this coord today.
+    /// Caps acquisition at 1 per agent per spot per day (募集要項).
+    pub spot_picks_today: HashMap<(u8, HexCoord), u32>,
+    /// Set of series ever acquired across all days. Drives the
+    /// "variety" tie-breaker (募集要項「順位決定」).
+    pub series_taken: BTreeSet<u32>,
+    /// Per-day first-acquisition time (step index). Used for the
+    /// "early finish" tie-breaker (募集要項「順位決定」).
+    pub series_first_taken_at: BTreeMap<u32, (u32, u32)>,
+}
+
+impl MatchState {
+    /// Build the initial state from a validated setting. Spot stock is
+    /// refilled to `max_stock`.
+    ///
+    /// # Errors
+    /// Propagates setting validation errors.
+    pub fn new(setting: MatchSetting) -> Result<Self, String> {
+        setting.validate()?;
+        let mut map = setting.map.clone();
+        // Refill every spot to its max.
+        for cell in map.cells.iter_mut() {
+            if let Some(spot) = &mut cell.spot {
+                spot.current_stock = spot.max_stock;
+            }
+        }
+        Ok(Self {
+            day: 0,
+            day_step: 0,
+            agents: setting.agents.clone(),
+            traffic_today: HashMap::new(),
+            traffic_yesterday: HashMap::new(),
+            spot_picks_today: HashMap::new(),
+            series_taken: BTreeSet::new(),
+            series_first_taken_at: BTreeMap::new(),
+            setting: MatchSetting { map, ..setting.clone() },
+        })
+    }
+
+    /// Convenience accessor.
+    #[must_use]
+    pub fn day_steps(&self) -> u32 {
+        self.setting.day_steps
+    }
+
+    /// Convenience accessor.
+    #[must_use]
+    pub fn num_days(&self) -> u32 {
+        self.setting.num_days
+    }
+
+    /// Convenience accessor.
+    #[must_use]
+    pub fn team(&self) -> &PlayerId {
+        &self.setting.team
+    }
+
+    /// `true` once the match has finished.
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.day >= self.num_days()
+    }
+}
+
+/// Summary returned by [`super::MatchSim::run`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunResult {
+    pub final_state: MatchState,
+    /// Number of distinct series ever acquired.
+    pub variety: u32,
+    /// Sum over days of distinct series acquired on that day.
+    pub daily_variety_sum: u32,
+    /// Total balls acquired across the whole match.
+    pub total_balls: u32,
+    /// `(day, step)` of the last acquisition — earlier is better per
+    /// 募集要項「順位決定」.
+    pub last_acquisition_at: Option<(u32, u32)>,
+}
+
+// ---------------------------------------------------------------------------
+// Solver trait — local stand-in for issue #57's `engine::Solver`.
+// ---------------------------------------------------------------------------
+
+/// Local solver contract.
+///
+/// EXPECTED INTEGRATION: replaced by `engine::solver::Solver` (issue #57).
+/// Once that lands, callers implement that trait directly and this module
+/// becomes a thin re-export.
+pub trait Solver: Send + Sync {
+    /// Stable, human-readable identifier. Used in logs and metadata.
+    fn name(&self) -> &'static str;
+
+    /// Plan one day for the calling team.
+    ///
+    /// Must be a pure function of `ctx`. Taking `&self` keeps it callable
+    /// through `dyn Solver` from multiple threads.
+    fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions;
+}
+
+/// Everything a solver is allowed to look at when planning a day.
+///
+/// Local stand-in — the canonical [`super::super::solver::SolverContext`]
+/// carries the same fields once #57 lands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SolverContext<'a> {
+    pub state: &'a MatchState,
+    pub team: &'a PlayerId,
+    pub day: u32,
+    pub day_steps: u32,
+    pub agent_ids: Vec<u8>,
+}
+
+impl<'a> SolverContext<'a> {
+    #[must_use]
+    pub fn from_state(state: &'a MatchState) -> Self {
+        let agent_ids = state.setting.agent_ids();
+        Self { team: state.team(), state, day: state.day, day_steps: state.day_steps(), agent_ids }
+    }
+}
