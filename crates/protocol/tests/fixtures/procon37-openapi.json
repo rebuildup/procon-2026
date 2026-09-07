@@ -1,0 +1,581 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Procon 37 API",
+    "version": "0.0.0"
+  },
+  "tags": [
+    {
+      "name": "1_初期アクセス"
+    },
+    {
+      "name": "2_初期設定"
+    },
+    {
+      "name": "3_状態取得"
+    },
+    {
+      "name": "4_行動提出"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "ProconApi_getMatchState",
+        "summary": "試合状態取得API",
+        "description": "現在の試合状態を取得する",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PlayerAuth.tokenHeader"
+          },
+          {
+            "$ref": "#/components/parameters/PlayerAuth.tokenQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTimeError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "3_状態取得"
+        ]
+      },
+      "post": {
+        "operationId": "ProconApi_submitActions",
+        "summary": "行動計画提出API",
+        "description": "行動計画を提出する",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PlayerAuth.tokenHeader"
+          },
+          {
+            "$ref": "#/components/parameters/PlayerAuth.tokenQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTimeError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "4_行動提出"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32"
+                  }
+                }
+              }
+            }
+          },
+          "description": "全エージェント分の行動列\n配下は1エージェント分の行動列。\n\n各要素の意味:\n- -1 以下: 待機。待機ステップ数はその絶対値\n- 0..5: 移動方向（0:左上, 1:右上, 2:右, 3:右下, 4:左下, 5:左）\n\n例:\n- [-15] は 15 ステップ待機\n- [0, 1, -10] は移動後に 10 ステップ待機\n\n妥当性ルール:\n- 合計ステップ数がその日のステップ数と一致しない場合は不正\n- 移動できない方向への移動は不正\n- 必要燃料が不足する移動は不正\n- 1つでも不正な行動が含まれる場合、全エージェントの行動計画を不正として扱う"
+        }
+      }
+    },
+    "/agent": {
+      "post": {
+        "operationId": "ProconApi_submitAgentKinds",
+        "summary": "エージェント種別決定API",
+        "description": "エージェント種別を提出する",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PlayerAuth.tokenHeader"
+          },
+          {
+            "$ref": "#/components/parameters/PlayerAuth.tokenQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded."
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTimeError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "2_初期設定"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentKind"
+                }
+              }
+            }
+          },
+          "description": "エージェント種別決定で提出するエージェント種別一覧。\n配列の要素数はエージェント数と一致する必要がある。\n\n例:\n[0, 1, 0, 1]"
+        }
+      }
+    },
+    "/setting": {
+      "get": {
+        "operationId": "ProconApi_getMatchSetting",
+        "summary": "試合設定取得API",
+        "description": "試合設定を取得する",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PlayerAuth.tokenHeader"
+          },
+          {
+            "$ref": "#/components/parameters/PlayerAuth.tokenQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchSetting"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTimeError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "1_初期アクセス"
+        ]
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "PlayerAuth.tokenHeader": {
+        "name": "Procon-Token",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "PlayerAuth.tokenQuery": {
+        "name": "token",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "explode": false
+      }
+    },
+    "schemas": {
+      "AccessTimeError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "AccessTimeError"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "試合が設定される前、または試合終了後であることを示すメッセージ"
+          }
+        }
+      },
+      "ActionAccepted": {
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "提出の受理結果。\n0 未満なら失敗、0 以上なら受理。\n同じ日に複数回提出した場合（並列リクエストを含む）は、値が大きい提出がより後に受理されたものです。"
+          }
+        }
+      },
+      "AgentKind": {
+        "type": "number",
+        "enum": [
+          0,
+          1
+        ],
+        "description": "エージェント種別"
+      },
+      "AgentState": {
+        "type": "object",
+        "required": [
+          "kind",
+          "pos",
+          "fuel"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AgentKind"
+          },
+          "pos": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fuel": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "AuthError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "AuthError"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "認証失敗を示すメッセージ"
+          }
+        }
+      },
+      "CellType": {
+        "type": "number",
+        "enum": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "description": "セルタイプ"
+      },
+      "Map": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "cells"
+        ],
+        "properties": {
+          "height": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 8,
+            "maximum": 32
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 8,
+            "maximum": 32
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/CellType"
+              }
+            },
+            "description": "セルタイプの2次元配列"
+          }
+        }
+      },
+      "MatchSetting": {
+        "type": "object",
+        "required": [
+          "startsAt",
+          "daySeconds",
+          "daySteps",
+          "map",
+          "spots",
+          "agents",
+          "fuelLimits",
+          "players",
+          "busyThreshold",
+          "jammedThreshold"
+        ],
+        "properties": {
+          "startsAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UNIX TIME 形式の開始時間 - 開始時間が確定するまでは 0 が返ります"
+          },
+          "daySeconds": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "description": "各日の回答時間（秒）"
+          },
+          "daySteps": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "description": "各日のステップ数。範囲は W+H 〜 (W+H)×4"
+          },
+          "map": {
+            "$ref": "#/components/schemas/Map"
+          },
+          "spots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Spot"
+            }
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "description": "自プレイヤーのエージェント初期位置"
+          },
+          "fuelLimits": {
+            "type": "integer",
+            "format": "int32",
+            "description": "燃料積載量上限（正整数、1日目ステップ数の1〜3倍）"
+          },
+          "players": {
+            "type": "integer",
+            "format": "int32",
+            "description": "参加競技者数"
+          },
+          "busyThreshold": {
+            "type": "integer",
+            "format": "int32",
+            "description": "混雑基準値（1〜5）"
+          },
+          "jammedThreshold": {
+            "type": "integer",
+            "format": "int32",
+            "description": "渋滞基準値（2〜10）"
+          }
+        },
+        "description": "試合開始前に与えられる試合設定"
+      },
+      "MatchState": {
+        "type": "object",
+        "required": [
+          "endsAt",
+          "day",
+          "agents",
+          "others",
+          "traffics"
+        ],
+        "properties": {
+          "endsAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UNIX TIME 形式の終了時間"
+          },
+          "day": {
+            "type": "integer",
+            "format": "int32",
+            "description": "日（初日は 0）"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentState"
+            },
+            "description": "自プレイヤーのエージェント一覧"
+          },
+          "others": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OtherPlayer"
+            },
+            "description": "他プレイヤーのエージェント一覧"
+          },
+          "traffics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrafficInfo"
+            },
+            "description": "道路状態一覧"
+          }
+        },
+        "description": "各日開始時点の試合状態"
+      },
+      "OtherPlayer": {
+        "type": "object",
+        "required": [
+          "id",
+          "agents"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentState"
+            }
+          }
+        }
+      },
+      "Spot": {
+        "type": "object",
+        "required": [
+          "brand",
+          "pos",
+          "stocks"
+        ],
+        "properties": {
+          "brand": {
+            "type": "integer",
+            "format": "int32",
+            "description": "系列"
+          },
+          "pos": {
+            "type": "integer",
+            "format": "int32",
+            "description": "位置"
+          },
+          "stocks": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "description": "最大在庫量"
+          }
+        }
+      },
+      "TrafficInfo": {
+        "type": "object",
+        "required": [
+          "pos",
+          "status"
+        ],
+        "properties": {
+          "pos": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TrafficStatus"
+          }
+        }
+      },
+      "TrafficStatus": {
+        "type": "number",
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "description": "道路状態"
+      }
+    }
+  }
+}
