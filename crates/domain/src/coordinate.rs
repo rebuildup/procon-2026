@@ -231,8 +231,8 @@ mod tests {
     fn map_size_in_range_is_const_compatible() {
         const OK: bool = MapSize::in_range(20);
         const BAD: bool = !MapSize::in_range(0);
-        assert!(OK);
-        assert!(BAD);
+        const { assert!(OK) };
+        const { assert!(BAD) };
     }
 
     // -- HexCoord ---------------------------------------------------------
