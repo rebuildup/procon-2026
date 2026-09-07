@@ -9,11 +9,31 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod action;
+pub mod agent;
+pub mod cell;
+pub mod coordinate;
 pub mod id;
+pub mod outcome;
+pub mod refuel;
 pub mod state;
+pub mod traffic;
 
+pub use action::{Action, ActionKind, Direction, move_to, neighbor, validate_batch};
+pub use coordinate::{Bounds, HexCoord, MapLayout, MapSize};
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
+pub use agent::{
+    AGENT_COUNT_MAX, AGENT_COUNT_MIN, Agent, AgentId, AgentKind, Day, DaySeconds, DaySteps,
+    FUEL_UPPER_BOUND_MULTIPLIER, FuelAmount, FuelPolicy, MatchState, Patrol, Position, Supply,
+    Traffic,
+};
+pub use cell::{
+    BUSY_THRESHOLD_DEFAULT, BUSY_THRESHOLD_MAX, BUSY_THRESHOLD_MIN, Cell, FUEL_COSTS,
+    JAMMED_THRESHOLD_DEFAULT, JAMMED_THRESHOLD_MAX, JAMMED_THRESHOLD_MIN, MOVE_STEPS, Series, Spot,
+    TrafficState, validate_traffic_thresholds,
+};
+pub use traffic::{Thresholds, TrafficCell, TrafficMap};
 
 /// Library-wide error type. Pure-domain errors only; I/O errors belong to other crates.
 #[derive(Debug, thiserror::Error)]
