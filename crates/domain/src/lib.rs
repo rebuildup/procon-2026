@@ -10,6 +10,7 @@
 #![doc(test(attr(deny(warnings))))]
 
 pub mod agent;
+pub mod cell;
 pub mod id;
 pub mod state;
 
@@ -17,6 +18,11 @@ pub use agent::{
     AGENT_COUNT_MAX, AGENT_COUNT_MIN, Agent, AgentId, AgentKind, Day, DaySeconds, DaySteps,
     FUEL_UPPER_BOUND_MULTIPLIER, FuelAmount, FuelPolicy, MatchState, Patrol, Position, Supply,
     Traffic,
+};
+pub use cell::{
+    BUSY_THRESHOLD_DEFAULT, BUSY_THRESHOLD_MAX, BUSY_THRESHOLD_MIN, Cell, FUEL_COSTS,
+    JAMMED_THRESHOLD_DEFAULT, JAMMED_THRESHOLD_MAX, JAMMED_THRESHOLD_MIN, MOVE_STEPS, Series, Spot,
+    TrafficState, validate_traffic_thresholds,
 };
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
