@@ -27,7 +27,7 @@ pub use cell::{
 };
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
-pub use traffic::{Thresholds, TrafficCell, TrafficMap, TrafficState};
+pub use traffic::{Thresholds, TrafficCell, TrafficMap};
 
 /// Library-wide error type. Pure-domain errors only; I/O errors belong to other crates.
 #[derive(Debug, thiserror::Error)]
