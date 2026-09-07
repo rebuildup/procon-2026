@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 pub mod envelope;
 pub mod event;
 pub mod frame;
+pub mod match_config;
 
 pub use envelope::{Envelope, ProtocolVersion};
 pub use event::{ClientEvent, ServerEvent};
