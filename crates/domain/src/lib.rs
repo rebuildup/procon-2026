@@ -13,6 +13,7 @@ pub mod agent;
 pub mod cell;
 pub mod id;
 pub mod outcome;
+pub mod refuel;
 pub mod state;
 pub mod traffic;
 
