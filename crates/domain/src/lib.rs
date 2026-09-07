@@ -9,6 +9,7 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod action;
 pub mod agent;
 pub mod cell;
 pub mod coordinate;
@@ -18,6 +19,7 @@ pub mod refuel;
 pub mod state;
 pub mod traffic;
 
+pub use action::{Action, ActionKind, Direction, move_to, neighbor, validate_batch};
 pub use coordinate::{Bounds, HexCoord, MapLayout, MapSize};
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
