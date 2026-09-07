@@ -12,6 +12,7 @@
 pub mod agent;
 pub mod cell;
 pub mod id;
+pub mod outcome;
 pub mod state;
 
 pub use agent::{
