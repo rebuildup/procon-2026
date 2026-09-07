@@ -10,6 +10,9 @@
 //! - [`sim`] — the local, deterministic [`sim::MatchSim`] that drives a
 //!   match step-by-step without a network round-trip. Used by solvers and
 //!   the bench harness for offline planning.
+//! - [`solver`] — the unified `Solver` contract; every `solver-*` crate
+//!   implements `Solver`, so the engine can drive any strategy through
+//!   `dyn Solver` without depending on it.
 
 #![doc(test(attr(deny(warnings))))]
 // The new sim / model / rules / transitions modules are self-contained and
@@ -47,6 +50,7 @@ pub mod replay;
 pub mod rules;
 pub mod server;
 pub mod sim;
+pub mod solver;
 pub mod transitions;
 
 pub use match_table::{MatchTable, MatchTableError};
@@ -58,5 +62,9 @@ pub use sim::{MatchSim, SimConfig};
 // engine::*;` without descending into the module tree.
 pub use model::{
     Action, ActionKind, Agent, AgentActions, AgentKind, Direction, HexCoord, MapGrid, MapSize,
-    RunResult, Solver, SolverContext, Spot, Terrain, TrafficState,
+    RunResult, Solver as ModelSolver, SolverContext as ModelSolverCtx, Spot, Terrain, TrafficState,
+};
+pub use solver::{
+    Action as SolverAction, ActionKind as SolverActionKind, AgentId, Direction as SolverDirection,
+    Solver, SolverContext, SolverDecision, TeamId,
 };
