@@ -60,7 +60,7 @@ jobs:
         with:
           node-version: '22'
       - name: Cache bun modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: packages/frontend/node_modules
           key: ${{ runner.os }}-bun-${{ hashFiles('packages/frontend/bun.lock') }}
