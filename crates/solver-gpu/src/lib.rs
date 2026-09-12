@@ -27,6 +27,8 @@
 //!   integration work in a later ticket.
 //! - [`gpu`] — feature-gated (`wgpu`) stub exposing the buffer / bind-group
 //!   plumbing the compute shader will need once a real device is wired in.
+//! - [`transfer`] — host-side upload / dispatch / read-back layer plus the
+//!   [`GpuSolver`] trait and [`FallbackGpuSolver`] (issue #36).
 //!
 //! Both `wasm32` and native builds compile: `wasm32` simply disables the
 //! `wgpu` feature, falling back to the CPU implementation.
@@ -35,12 +37,14 @@
 
 pub mod cpu;
 pub mod map;
+pub mod transfer;
 pub mod wgsl;
 
 #[cfg(feature = "wgpu")]
 pub mod gpu;
 
 pub use map::{Cell, HexCoord, MAX_CELLS, MAX_MAP_DIM, Map, MapError, MapSize};
+pub use transfer::{Agent, AgentId, GpuContext, HexGrid, Kernel, Spot, SpotId, TransferError};
 
 /// One source–destination pair for batch shortest-path evaluation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -93,5 +97,146 @@ impl<'m> BatchShortestPath<'m> {
         queue: &wgpu::Queue,
     ) -> Result<Vec<PathResult>, gpu::GpuError> {
         gpu::solve_batch(device, queue, self.map, &self.queries)
+    }
+}
+
+/// Unified solver trait that hides the GPU / CPU boundary.
+///
+/// [`GpuSolver::run`] consumes the state already uploaded into
+/// [`GpuContext`] and returns one [`PathResult`] per query in the most
+/// recently dispatched [`Kernel::ShortestPath`] kernel. The trait is
+/// **dyn-compatible** (`&dyn GpuSolver` works) so the engine can pick a
+/// backend at runtime based on device availability.
+///
+/// # Examples
+///
+/// ```
+/// use solver_gpu::{
+///     FallbackGpuSolver, GpuContext, GpuSolver, HexCoord, Kernel, Map, Query,
+/// };
+/// let grid = vec![vec![1u8, 1, 1], vec![1, 1, 1]];
+/// let map = Map::from_costs(&grid, 3).unwrap();
+/// let mut ctx = GpuContext::new();
+/// ctx.upload_state(&map, &[], &[]).unwrap();
+/// let q = Query::new(HexCoord::new(0, 0), HexCoord::new(2, 0));
+/// ctx.dispatch(Kernel::ShortestPath { queries: vec![q] }).unwrap();
+///
+/// let solver: &dyn GpuSolver = &FallbackGpuSolver;
+/// let results = solver.run(&ctx).unwrap();
+/// assert_eq!(results.len(), 1);
+/// ```
+///
+/// The same call signature works against a future `WgpuGpuSolver` that
+/// runs the real compute pipeline; the engine does not need to branch.
+pub trait GpuSolver {
+    /// Execute the most-recently dispatched kernel on `ctx` and return the
+    /// results. The solver may consume the CPU shadow state in `ctx`
+    /// directly (CPU fallback) or schedule a GPU read-back (real backend).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransferError::NothingToRead`] when `ctx` has not been
+    /// populated with a dispatchable kernel. CPU-fallback implementations
+    /// additionally reject an un-uploaded [`GpuContext`] via
+    /// [`TransferError::InvalidInput`].
+    fn run(&self, ctx: &GpuContext) -> Result<Vec<PathResult>, TransferError>;
+}
+
+/// CPU-backed [`GpuSolver`] implementation. Always available — used in
+/// CI, `wasm32`, and any environment where a real GPU device cannot be
+/// requested. Delegates directly to [`cpu::shortest_path_batch`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FallbackGpuSolver;
+
+impl GpuSolver for FallbackGpuSolver {
+    fn run(&self, ctx: &GpuContext) -> Result<Vec<PathResult>, TransferError> {
+        let grid = ctx.grid().ok_or(TransferError::InvalidInput("upload_state was not called"))?;
+        let kernel = ctx.last_kernel().ok_or(TransferError::NothingToRead)?;
+        let queries = match kernel {
+            Kernel::ShortestPath { queries } => queries.clone(),
+        };
+        Ok(cpu::shortest_path_batch(grid, &queries))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tiny_map() -> Map {
+        let grid = vec![vec![1u8, 1, 1], vec![1, 1, 1]];
+        Map::from_costs(&grid, 3).unwrap()
+    }
+
+    #[test]
+    fn fallback_solver_returns_one_result_per_query() {
+        let map = tiny_map();
+        let q1 = Query::new(HexCoord::new(0, 0), HexCoord::new(2, 0));
+        let q2 = Query::new(HexCoord::new(0, 0), HexCoord::new(0, 0));
+        let q3 = Query::new(HexCoord::new(0, 0), HexCoord::new(99, 99));
+
+        let mut ctx = GpuContext::new();
+        ctx.upload_state(&map, &[], &[]).unwrap();
+        ctx.dispatch(Kernel::ShortestPath { queries: vec![q1, q2, q3] }).unwrap();
+
+        let results = FallbackGpuSolver.run(&ctx).unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].cost, cpu::shortest_path(&map, q1.start, q1.goal));
+        assert_eq!(results[1].cost, Some(0));
+        assert_eq!(results[2].cost, None);
+    }
+
+    #[test]
+    fn fallback_solver_rejects_empty_context() {
+        let ctx = GpuContext::new();
+        let err = FallbackGpuSolver.run(&ctx).unwrap_err();
+        assert!(matches!(err, TransferError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn gpu_solver_trait_is_dyn_compatible() {
+        // If this compiles, the trait is dyn-compatible (`&dyn GpuSolver`
+        // and `Box<dyn GpuSolver>` are both legal).
+        let solver: &dyn GpuSolver = &FallbackGpuSolver;
+        let map = tiny_map();
+        let mut ctx = GpuContext::new();
+        ctx.upload_state(&map, &[], &[]).unwrap();
+        let q = Query::new(HexCoord::new(0, 0), HexCoord::new(1, 0));
+        ctx.dispatch(Kernel::ShortestPath { queries: vec![q] }).unwrap();
+        let results = solver.run(&ctx).unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn gpu_solver_boxed_dyn_dispatch() {
+        // Exercise the boxed dyn path explicitly so trait-object safety
+        // is verified end-to-end.
+        let solver: Box<dyn GpuSolver> = Box::new(FallbackGpuSolver);
+        let map = tiny_map();
+        let mut ctx = GpuContext::new();
+        ctx.upload_state(&map, &[], &[]).unwrap();
+        ctx.dispatch(Kernel::ShortestPath { queries: vec![] }).unwrap();
+        let results = solver.run(&ctx).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn fallback_solver_matches_batch_solver_struct() {
+        // Cross-check: FallbackGpuSolver and the existing
+        // BatchShortestPath::solve_cpu must agree result-by-result.
+        let map = tiny_map();
+        let queries = vec![
+            Query::new(HexCoord::new(0, 0), HexCoord::new(2, 0)),
+            Query::new(HexCoord::new(1, 0), HexCoord::new(1, 1)),
+        ];
+        let batch = BatchShortestPath::new(&map, queries.clone());
+        let via_batch = batch.solve_cpu();
+
+        let mut ctx = GpuContext::new();
+        ctx.upload_state(&map, &[], &[]).unwrap();
+        ctx.dispatch(Kernel::ShortestPath { queries }).unwrap();
+        let via_fallback = FallbackGpuSolver.run(&ctx).unwrap();
+
+        assert_eq!(via_batch, via_fallback);
     }
 }
