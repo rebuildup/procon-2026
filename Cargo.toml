@@ -9,6 +9,7 @@ members = [
     "crates/solver-greedy",
     "crates/coordinator",
     "crates/solver-localsearch",
+    "crates/solver-ilp-cross",
 ]
 exclude = [".tmp/**"]
 
