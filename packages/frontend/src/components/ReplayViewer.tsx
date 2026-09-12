@@ -1,8 +1,28 @@
 import type { Component } from 'solid-js';
-import { createEffect, createMemo, For, onCleanup } from 'solid-js';
+import { createEffect, createMemo, For, onCleanup, Show } from 'solid-js';
 
 import { MapViewer } from '@/components/MapViewer';
+import type { HexMap } from '@/types/map';
 import { createReplayStore, PLAYBACK_RATES, type PlaybackRate, type Replay } from '@/stores/replay';
+
+/**
+ * Empty placeholder map used when the replay has no current frame. The full
+ * SVG renderer stays mounted; an empty map triggers the `<Show>` fallback in
+ * `MapViewer.tsx` rather than producing a no-op render.
+ */
+const PLACEHOLDER_MAP: HexMap = {
+  width: 4,
+  height: 3,
+  cells: (() => {
+    const out = [];
+    for (let row = 0; row < 3; row += 1) {
+      for (let col = 0; col < 4; col += 1) {
+        out.push({ coord: { col, row }, terrain: 'plain' as const });
+      }
+    }
+    return out;
+  })(),
+};
 
 export interface ReplayViewerProps {
   replay: Replay;
@@ -75,7 +95,42 @@ export const ReplayViewer: Component<ReplayViewerProps> = (props) => {
       </header>
 
       <div class="replay-viewer__map">
-        <MapViewer state={store.currentFrame()} />
+        <Show
+          when={store.currentFrame()}
+          fallback={
+            <div class="replay-viewer__map-empty" data-testid="map-viewer-empty">
+              <p>No replay loaded.</p>
+            </div>
+          }
+        >
+          {(state) => (
+            <div class="map-viewer" data-testid="map-viewer">
+              <header class="map-viewer__hud">
+                <span class="map-viewer__match">{state().matchId.value}</span>
+                <span class="map-viewer__turn">turn {state().turn}</span>
+              </header>
+              <MapViewer map={PLACEHOLDER_MAP} width={800} height={420} />
+              <table class="map-viewer__scores" data-testid="map-viewer-scores">
+                <thead>
+                  <tr>
+                    <th scope="col">player</th>
+                    <th scope="col">score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={state().scores}>
+                    {(entry) => (
+                      <tr>
+                        <td>{entry[0].value}</td>
+                        <td>{entry[1]}</td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Show>
       </div>
 
       <div class="replay-viewer__transport" role="group" aria-label="Replay transport">
