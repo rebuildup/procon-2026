@@ -10,11 +10,13 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod multi_agent;
 pub mod node;
 pub mod rollout;
 pub mod solver;
 pub mod types;
 
+pub use multi_agent::{AgentId, JointAction, MultiAgentError, MultiAgentMCTS, MultiAgentNode};
 pub use node::MctsNode;
 pub use rollout::{
     GreedyRollout, NearestSpotHeuristic, RolloutError, RolloutOutcome, RolloutPolicy, rollout,
