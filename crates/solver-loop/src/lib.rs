@@ -20,12 +20,14 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod dual_direction;
 pub mod score;
 pub mod solver;
 pub mod three_opt;
 pub mod two_opt;
 pub mod types;
 
+pub use dual_direction::{Direction, DualDirectionLoop, ccw_position, cw_position, score_dual};
 pub use score::{DailyScore, DayObservation, ScoreRanking, ScoreReport, simulate_day};
 pub use solver::{
     InitialStrategy, LoopSolver, SolveOutcome, SolveProblem, SolveStats, Solver, SolverError,
