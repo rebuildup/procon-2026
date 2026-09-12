@@ -42,9 +42,11 @@
 #![warn(missing_docs)]
 
 mod greedy;
+mod nearest;
 mod types;
 
 pub use greedy::GreedySolver;
+pub use nearest::{NearestSpotGreedy, STRATEGY_NAME as NEAREST_STRATEGY_NAME};
 pub use types::{Action, Agent, AgentId, HexCoord, SolveContext, Spot, SpotId};
 
 /// Strategy descriptor, used by the bench harness (issue #20) to label
