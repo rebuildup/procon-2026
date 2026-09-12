@@ -18,6 +18,16 @@
 //! this crate today is the integration surface and the smoke test. Heavier
 //! heuristics land in subsequent issues (#23, #24).
 //!
+//! ## Variants
+//!
+//! - [`GreedySolver`] — Phase 1 closest-spot + variety-first tie-break
+//!   (issue #23).
+//! - [`FuelTrafficGreedy`] — Phase 3 fuel-aware + traffic-avoiding
+//!   variant (issue #24). Picks the nearest refill spot when the
+//!   agent's fuel is below a configurable threshold, otherwise minimises
+//!   `distance + traffic_weight × Σ traffic_penalty` along the greedy
+//!   path to each candidate.
+//!
 //! ## Integration status
 //!
 //! EXPECTED INTEGRATION INTERFACE
@@ -41,10 +51,15 @@
 #![doc(test(attr(deny(warnings))))]
 #![warn(missing_docs)]
 
+mod fuel_traffic;
 mod greedy;
 mod nearest;
 mod types;
 
+pub use fuel_traffic::{
+    DEFAULT_FUEL_LOW_THRESHOLD, DEFAULT_TRAFFIC_WEIGHT, FuelTrafficGreedy, FuelTrafficSolveContext,
+    FuelTrafficSolver, TrafficState,
+};
 pub use greedy::GreedySolver;
 pub use nearest::{NearestSpotGreedy, STRATEGY_NAME as NEAREST_STRATEGY_NAME};
 pub use types::{Action, Agent, AgentId, HexCoord, SolveContext, Spot, SpotId};
