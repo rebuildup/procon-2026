@@ -24,12 +24,16 @@ pub mod map;
 pub mod stub;
 
 mod solver;
+pub mod time_expanded;
 
 pub use cost::{BaseFuelCost, BaseStepCost, CostModel, CostPolicy, DefaultCostModel};
 pub use hex::{CellKind, Direction, HexCoord, MapLayout, MapSize, TrafficState};
 pub use map::{HexMap, HexMapError};
 pub use solver::{AstarSolver, Solver, SolverStats};
 pub use stub::{Action, Path, SolveContext, SolverFailure, SolverResult};
+pub use time_expanded::{
+    TimeExpandedAStar, TimeExpandedNode, TimeExpandedResult, TimeExpandedSolver,
+};
 
 /// Re-export of the crate's error type. Currently a thin alias for
 /// [`HexMapError`]; expand when the solver gains more failure modes that
