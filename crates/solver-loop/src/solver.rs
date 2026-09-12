@@ -109,6 +109,19 @@ pub enum SolverError {
     ZeroDays,
     #[error("spot id {0} referenced but not present in problem")]
     UnknownSpotId(u32),
+    /// Multi-loop composer: `num_regions` must be > 0.
+    #[error("num_regions must be > 0")]
+    ZeroRegions,
+    /// Multi-loop composer: `num_regions` field does not match the
+    /// effective region count of the configured clustering strategy
+    /// (e.g. `Grid { rows, cols }` produces `rows * cols` regions).
+    #[error("configured num_regions={configured} does not match strategy num_regions={strategy}")]
+    RegionMismatch {
+        /// Value the user passed in `MultiLoopComposer::num_regions`.
+        configured: usize,
+        /// Value implied by the chosen [`crate::multi_loop::ClusteringStrategy`].
+        strategy: usize,
+    },
 }
 
 /// The default [`Solver`] implementation: greedy init + 2-opt / 3-opt refinement.

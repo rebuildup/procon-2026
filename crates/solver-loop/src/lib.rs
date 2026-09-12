@@ -12,15 +12,18 @@
 //! delegated to `domain::engine::simulate_day()`.
 //!
 //! Crate layout:
-//! - [`types`]    : minimal stubs for `HexCoord`, `Spot`, `Series`, `Agent`, `Action`.
-//! - [`score`]    : local approximation of `ScoreReport::judge()` + day simulation.
-//! - [`two_opt`]  : 2-opt swap primitive + best-improvement scan.
-//! - [`three_opt`]: 3-opt swap primitive (single canonical move).
-//! - [`solver`]  : the [`Solver`] trait stub + the [`LoopSolver`] implementation.
+//! - [`types`]      : minimal stubs for `HexCoord`, `Spot`, `Series`, `Agent`, `Action`.
+//! - [`score`]      : local approximation of `ScoreReport::judge()` + day simulation.
+//! - [`two_opt`]    : 2-opt swap primitive + best-improvement scan.
+//! - [`three_opt`]  : 3-opt swap primitive (single canonical move).
+//! - [`solver`]     : the [`Solver`] trait stub + the [`LoopSolver`] implementation.
+//! - [`multi_loop`] : [`MultiLoopComposer`] — cluster spots into regions and build one
+//!   independent loop per region. Used for parallel coverage of large maps.
 
 #![doc(test(attr(deny(warnings))))]
 
 pub mod dual_direction;
+pub mod multi_loop;
 pub mod score;
 pub mod solver;
 pub mod three_opt;
@@ -28,6 +31,7 @@ pub mod two_opt;
 pub mod types;
 
 pub use dual_direction::{Direction, DualDirectionLoop, ccw_position, cw_position, score_dual};
+pub use multi_loop::{ClusteringStrategy, MultiLoopComposer};
 pub use score::{DailyScore, DayObservation, ScoreRanking, ScoreReport, simulate_day};
 pub use solver::{
     InitialStrategy, LoopSolver, SolveOutcome, SolveProblem, SolveStats, Solver, SolverError,
