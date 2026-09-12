@@ -151,7 +151,11 @@ fn score_delta(new: DayScore, old: DayScore) -> i64 {
 /// substitute terrain-aware moves and fuel accounting; here we use the
 /// spot's coordinate as the destination of the `Move` so the action list
 /// is self-describing for downstream stages.
-fn route_to_actions(route: &[u32], instance: &Instance) -> Vec<Action> {
+///
+/// Crate-visible so that sibling solver drivers (e.g. [`crate::simulated_annealing`])
+/// can reuse the same expansion without duplicating the route-to-actions
+/// mapping.
+pub(crate) fn route_to_actions(route: &[u32], instance: &Instance) -> Vec<Action> {
     let mut actions: Vec<Action> = Vec::with_capacity(route.len() * 2);
     let mut budget = instance.agent.step_budget;
     for &spot_id in route {
