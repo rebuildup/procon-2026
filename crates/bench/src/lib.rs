@@ -27,6 +27,10 @@ use thiserror::Error;
 pub use protocol::PROTOCOL_VERSION;
 pub use {engine as engine_reexport, protocol as protocol_reexport};
 
+// Known-map fixture loader (Issue #59).
+pub mod fixture;
+pub use fixture::{FixtureCategory, FixtureError, FixtureResult, MatchFixture, MatchFixtureLoader};
+
 /// A single solver action. This is a stub enum; once the full domain types
 /// from issues #11/#12/#13 land, this will be replaced by a richer action
 /// set covering movement, supply, and pickup intents.

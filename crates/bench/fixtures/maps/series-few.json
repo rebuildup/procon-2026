@@ -1,0 +1,239 @@
+{
+  "name": "series-few",
+  "description": "12x12 map with 8 spots on a single brand (kake) and 5 agents, divided by a mountain wall. Designed for total-noodles solvers (solver-greedy) to dominate the leaderboard.",
+  "category": "series_few",
+  "startsAt": 0,
+  "daySeconds": [
+    60
+  ],
+  "daySteps": [
+    24
+  ],
+  "map": {
+    "height": 12,
+    "width": 12,
+    "cells": [
+      [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        0,
+        3,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        3,
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    ]
+  },
+  "spots": [
+    {
+      "brand": 0,
+      "pos": 29,
+      "stocks": 3
+    },
+    {
+      "brand": 0,
+      "pos": 32,
+      "stocks": 2
+    },
+    {
+      "brand": 0,
+      "pos": 62,
+      "stocks": 2
+    },
+    {
+      "brand": 0,
+      "pos": 69,
+      "stocks": 2
+    },
+    {
+      "brand": 0,
+      "pos": 110,
+      "stocks": 1
+    },
+    {
+      "brand": 0,
+      "pos": 117,
+      "stocks": 1
+    },
+    {
+      "brand": 0,
+      "pos": 125,
+      "stocks": 1
+    },
+    {
+      "brand": 0,
+      "pos": 127,
+      "stocks": 1
+    }
+  ],
+  "agents": [
+    13,
+    22,
+    121,
+    130,
+    66
+  ],
+  "fuelLimits": 48,
+  "players": 1,
+  "busyThreshold": 1,
+  "jammedThreshold": 2
+}
