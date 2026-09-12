@@ -1,9 +1,12 @@
 //! `procon` — operator CLI.
 //!
 //! Subcommands:
-//!   - `hello`           : print the engine's hello payload.
-//!   - `replay <path>`   : run a JSON replay file end-to-end.
-//!   - `version`         : print package + protocol versions.
+//!   - `hello`                     : print the engine's hello payload.
+//!   - `replay <path>`             : run a JSON replay file end-to-end.
+//!   - `version`                   : print package + protocol versions.
+//!   - `bundle build <output.zip>` : build a contest deliverable zip.
+
+mod bundle;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -33,6 +36,20 @@ enum Cmd {
     },
     /// Print package and protocol versions.
     Version,
+    /// Build, inspect, and verify contest deliverable bundles.
+    Bundle {
+        #[command(subcommand)]
+        action: BundleCmd,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum BundleCmd {
+    /// Build a contest deliverable zip at the given output path.
+    Build {
+        /// Destination path for the produced zip file.
+        output: PathBuf,
+    },
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -90,6 +107,11 @@ async fn run(cli: Cli) -> Result<()> {
                 })
             );
         }
+        Cmd::Bundle { action } => match action {
+            BundleCmd::Build { output } => {
+                bundle::run_build(&output).await?;
+            }
+        },
     }
     Ok(())
 }
@@ -103,5 +125,19 @@ mod tests {
     fn parses_version() {
         let cli = Cli::try_parse_from(["procon", "version"]).unwrap();
         assert!(matches!(cli.cmd, Cmd::Version));
+    }
+
+    #[test]
+    fn parses_bundle_build() {
+        let cli =
+            Cli::try_parse_from(["procon", "bundle", "build", "/tmp/deliverable.zip"]).unwrap();
+        match cli.cmd {
+            Cmd::Bundle { action } => match action {
+                BundleCmd::Build { output } => {
+                    assert_eq!(output, PathBuf::from("/tmp/deliverable.zip"));
+                }
+            },
+            _ => panic!("expected Bundle"),
+        }
     }
 }
