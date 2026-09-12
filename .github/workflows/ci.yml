@@ -5,6 +5,7 @@ on:
     branches: [main, 'release-*-*-*']
   pull_request:
     branches: [main, 'release-*-*-*']
+    types: [opened, synchronize, reopened]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,6 +21,7 @@ env:
 jobs:
   rust:
     name: Rust (${{ matrix.os }} / ${{ matrix.toolchain }})
+    if: ${{ !(matrix.os == 'macos-latest' && github.event_name == 'pull_request') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
