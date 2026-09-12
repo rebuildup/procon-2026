@@ -549,3 +549,7 @@ mod tests {
         assert_eq!(format!("{}", Outcome::Draw), "draw");
     }
 }
+
+// Tournament runner module (issue #21). Types live in `bench::tournament::*`
+// to keep them namespaced from the scoring harness types defined above.
+pub mod tournament;
