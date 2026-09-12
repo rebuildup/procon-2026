@@ -46,13 +46,17 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 
 # Archive
 zip = { version = "3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # Async runtime (engine server / protocol)
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
+
+# HTTP client (coordinator / /agent POST with retry + timeout).
+# Sync API — used inside spawn_blocking from async contexts.
+ureq = { version = "2.10", default-features = false, features = ["tls", "json"] }
 
 # Time
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
