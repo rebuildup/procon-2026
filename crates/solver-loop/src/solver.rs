@@ -135,7 +135,7 @@ impl LoopSolver {
 
     /// Build the initial tour through the spots according to the configured
     /// initial strategy.
-    fn initial_tour(&self, problem: &SolveProblem) -> Vec<u32> {
+    pub(crate) fn initial_tour(&self, problem: &SolveProblem) -> Vec<u32> {
         let spot_ids: Vec<u32> = problem.spots.iter().map(|s| s.id).collect();
         match self.initial {
             InitialStrategy::Identity => spot_ids,
@@ -145,7 +145,11 @@ impl LoopSolver {
 
     /// Refine the initial tour via repeated 2-opt / 3-opt passes.
     /// Returns the refined tour and the solve stats.
-    fn refine(&self, mut tour: Vec<u32>, problem: &SolveProblem) -> (Vec<u32>, SolveStats) {
+    pub(crate) fn refine(
+        &self,
+        mut tour: Vec<u32>,
+        problem: &SolveProblem,
+    ) -> (Vec<u32>, SolveStats) {
         let initial_score = score_tour(&tour, problem);
         let mut improvements_applied: u32 = 0;
         let mut max_iter_reached = false;
