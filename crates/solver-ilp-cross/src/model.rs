@@ -71,10 +71,9 @@
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-use crate::types::DaySpec;
+use crate::constraints::{FuelRow, InventoryRow, SeriesInventoryRow, SupplyArc};
 use crate::types::{
-    Action, Agent, AgentId, CellKind, Direction, HexCoord, SeriesId, SolveContext, Spot,
+    Action, Agent, AgentId, CellKind, DaySpec, Direction, HexCoord, SeriesId, SolveContext, Spot,
 };
 
 /// Total cost weight for distinct series across the whole match.
@@ -161,6 +160,31 @@ pub struct Model {
     pub cells: Vec<(HexCoord, CellKind)>,
     /// Spots available (with per-day stock).
     pub spots: Vec<Spot>,
+    /// Per-day fuel-capacity constraint rows. Populated by
+    /// [`crate::constraints::add_fuel_constraints`].
+    #[serde(default)]
+    pub fuel_rows: Vec<FuelRow>,
+    /// Per-spot simultaneous-occupancy rows. Populated by
+    /// [`crate::constraints::add_spot_inventory_constraints`].
+    #[serde(default)]
+    pub inventory_rows: Vec<InventoryRow>,
+    /// Per-series aggregate inventory rows. Populated by
+    /// [`crate::constraints::add_spot_inventory_constraints`].
+    #[serde(default)]
+    pub series_inventory_rows: Vec<SeriesInventoryRow>,
+    /// Supply/refill arcs (agent, day, coord, capacity). Populated by
+    /// [`crate::constraints::add_supply_arc_constraints`].
+    #[serde(default)]
+    pub supply_arcs: Vec<SupplyArc>,
+    /// Cached agents (mirrors [`SolveContext::agents`]) — needed by the
+    /// constraint builders so they can emit rows without a back-pointer
+    /// to the originating context. Populated by [`Self::from_context`].
+    #[serde(default)]
+    pub agents: Vec<Agent>,
+    /// Cached day specs (mirrors [`SolveContext::days`]). Same rationale
+    /// as [`Self::agents`].
+    #[serde(default)]
+    pub days: Vec<DaySpec>,
 }
 
 impl Model {
@@ -223,6 +247,12 @@ impl Model {
             noodle_value: NOODLE_WEIGHT,
             cells: ctx.cells.clone(),
             spots: ctx.spots.clone(),
+            fuel_rows: Vec::new(),
+            inventory_rows: Vec::new(),
+            series_inventory_rows: Vec::new(),
+            supply_arcs: Vec::new(),
+            agents: ctx.agents.clone(),
+            days: ctx.days.clone(),
         }
     }
 
@@ -242,6 +272,32 @@ impl Model {
     #[must_use]
     pub fn forced_zero_count(&self) -> usize {
         self.variables.iter().filter(|v| v.forced_zero).count()
+    }
+}
+
+impl Default for Model {
+    /// Construct an empty model — no variables, no agents, no days, no
+    /// constraint rows. Useful for tests and for the constraint builders
+    /// in [`crate::constraints`], which expect to mutate the model in
+    /// place.
+    fn default() -> Self {
+        Self {
+            variables: Vec::new(),
+            fuel_cap: Vec::new(),
+            day_steps: Vec::new(),
+            response_budget: Vec::new(),
+            daily_variety_bonus: Vec::new(),
+            global_variety_value: VARIETY_GLOBAL_WEIGHT,
+            noodle_value: NOODLE_WEIGHT,
+            cells: Vec::new(),
+            spots: Vec::new(),
+            fuel_rows: Vec::new(),
+            inventory_rows: Vec::new(),
+            series_inventory_rows: Vec::new(),
+            supply_arcs: Vec::new(),
+            agents: Vec::new(),
+            days: Vec::new(),
+        }
     }
 }
 

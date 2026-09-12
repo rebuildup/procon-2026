@@ -64,10 +64,16 @@
 #![doc(test(attr(deny(warnings))))]
 #![warn(missing_docs)]
 
+pub mod constraints;
 mod model;
 mod solver;
 mod types;
 
+pub use constraints::{
+    ConstraintError, ConstraintResult, FuelParams, FuelRow, InventoryParams, InventoryRow,
+    SeriesInventoryRow, SupplyArc, SupplyParams, add_fuel_constraints,
+    add_spot_inventory_constraints, add_supply_arc_constraints,
+};
 pub use model::{
     Model, NOODLE_WEIGHT, RESPONSE_TIME_WEIGHT, VARIETY_DAILY_WEIGHT, VARIETY_GLOBAL_WEIGHT,
     VarKey, Variable, count_active_variables, greedy_decode, score_plan,
