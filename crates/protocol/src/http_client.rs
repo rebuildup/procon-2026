@@ -1,0 +1,426 @@
+//! Async HTTP client for the Procon contest server.
+//!
+//! Wraps [`reqwest::Client`] and adds:
+//!
+//! - `Procon-Token` header on every request.
+//! - Per-request timeout (default 5 seconds).
+//! - Retry-on-transient-failure with exponential backoff
+//!   (`100 ms, 200 ms, 400 ms, 800 ms`, max 4 retries).
+//!
+//! The wire payload types ([`AgentKind`](crate::match_config::AgentKind),
+//! [`MatchState`](crate::match_config::MatchState), error envelopes) are
+//! shared with the rest of the protocol crate and live in
+//! [`crate::match_config`].
+
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::match_config::{AccessTimeError, AgentKind, AgentKindsBody, AuthError, MatchState};
+
+/// Default timeout for a single request attempt.
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Number of retries performed after the initial attempt fails with a
+/// transient error (i.e. `1 + MAX_RETRIES` total attempts).
+pub const MAX_RETRIES: usize = 4;
+
+/// Backoff schedule, in milliseconds, applied between retries.
+///
+/// Index `i` is the delay before retry attempt `i + 1`. Total worst-case
+/// backoff before giving up is `100 + 200 + 400 + 800 = 1500 ms`.
+pub const BACKOFF_MILLIS: [u64; MAX_RETRIES] = [100, 200, 400, 800];
+
+/// Header name carrying the player authentication token.
+///
+/// Source: Procon 37 `OpenAPI` `PlayerAuth.tokenHeader` parameter.
+const TOKEN_HEADER: &str = "Procon-Token";
+
+/// Successful acknowledgement of `POST /agent`.
+///
+/// The official `OpenAPI` schema declares a `200` response with no body
+/// schema. We still wrap the call in a typed result so that callers can
+/// pattern-match on the outcome without inspecting HTTP details.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubmitAck {
+    /// HTTP status code returned by the server (always `200` on success).
+    pub status: u16,
+}
+
+impl SubmitAck {
+    /// Convenience constructor for the canonical success case.
+    #[must_use]
+    pub const fn ok() -> Self {
+        Self { status: 200 }
+    }
+}
+
+/// Retry behaviour for transient failures.
+#[derive(Debug, Clone, Copy)]
+pub struct RetryPolicy {
+    /// Maximum number of retries after the initial attempt.
+    pub max_retries: usize,
+    /// Backoff schedule between retries, in milliseconds. Length should be
+    /// at least `max_retries`; entries beyond that are ignored.
+    pub backoff_millis: &'static [u64],
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self { max_retries: MAX_RETRIES, backoff_millis: &BACKOFF_MILLIS }
+    }
+}
+
+impl PartialEq for RetryPolicy {
+    fn eq(&self, other: &Self) -> bool {
+        self.max_retries == other.max_retries && self.backoff_millis == other.backoff_millis
+    }
+}
+
+impl Eq for RetryPolicy {}
+
+/// Errors produced by [`MatchClient`].
+#[derive(Debug, Error)]
+pub enum HttpClientError {
+    /// A non-transient HTTP error (4xx other than 408/429, or a final
+    /// exhausted-retry on transient errors).
+    #[error("HTTP {status}: {message}")]
+    Http { status: u16, message: String },
+    /// Authentication failure (`401`). Never retried.
+    #[error("authentication failed: {message}")]
+    Auth { message: String },
+    /// Out-of-window failure (`403`). Never retried.
+    #[error("access time error: {message}")]
+    AccessTime { message: String },
+    /// The server returned a body we could not decode.
+    #[error("failed to decode response body: {0}")]
+    Decode(#[from] serde_json::Error),
+    /// The underlying transport failed (timeout, connect, DNS, ...).
+    #[error("transport error: {0}")]
+    Transport(#[from] reqwest::Error),
+    /// The URL supplied to the client is malformed.
+    #[error("invalid URL: {0}")]
+    InvalidUrl(String),
+}
+
+impl From<AuthError> for HttpClientError {
+    fn from(value: AuthError) -> Self {
+        Self::Auth { message: value.message }
+    }
+}
+
+impl From<AccessTimeError> for HttpClientError {
+    fn from(value: AccessTimeError) -> Self {
+        Self::AccessTime { message: value.message }
+    }
+}
+
+/// Asynchronous HTTP client for the contest server.
+///
+/// `MatchClient` is cheap to clone: the underlying [`reqwest::Client`]
+/// internally holds an `Arc` and is designed for concurrent use.
+#[derive(Debug, Clone)]
+pub struct MatchClient {
+    base_url: String,
+    token: String,
+    http: reqwest::Client,
+    retry_policy: RetryPolicy,
+    request_timeout: Duration,
+}
+
+impl MatchClient {
+    /// Build a new client targeting `base_url` (e.g. `https://game.example.com`)
+    /// with the given player token.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HttpClientError::Transport`] if the underlying
+    /// [`reqwest::Client`] builder fails, or [`HttpClientError::InvalidUrl`]
+    /// if `base_url` cannot be parsed.
+    pub fn new(
+        base_url: impl Into<String>,
+        token: impl Into<String>,
+    ) -> Result<Self, HttpClientError> {
+        Self::builder(base_url, token).build()
+    }
+
+    /// Create a configurable builder.
+    #[must_use]
+    pub fn builder(base_url: impl Into<String>, token: impl Into<String>) -> MatchClientBuilder {
+        MatchClientBuilder {
+            base_url: base_url.into(),
+            token: token.into(),
+            retry_policy: RetryPolicy::default(),
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
+        }
+    }
+
+    /// Submit the per-agent [`AgentKind`] assignments to `POST /agent`.
+    ///
+    /// # Errors
+    ///
+    /// See [`HttpClientError`].
+    pub async fn submit_agent(&self, kinds: Vec<AgentKind>) -> Result<SubmitAck, HttpClientError> {
+        let url = self.endpoint("/agent")?;
+        let body: AgentKindsBody = kinds;
+        let body_bytes = serde_json::to_vec(&body)?;
+        let response =
+            self.execute_with_retry(reqwest::Method::POST, &url, Some(body_bytes)).await?;
+        handle_submit_response(response).await
+    }
+
+    /// Fetch the current [`MatchState`] snapshot from `GET /`.
+    ///
+    /// # Errors
+    ///
+    /// See [`HttpClientError`].
+    pub async fn get_match_state(&self) -> Result<MatchState, HttpClientError> {
+        let url = self.endpoint("/")?;
+        let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
+        Self::decode_match_state(response).await
+    }
+
+    /// Decode a `MatchState` from a successful response.
+    async fn decode_match_state(
+        response: reqwest::Response,
+    ) -> Result<MatchState, HttpClientError> {
+        let status = response.status();
+        if !status.is_success() {
+            return Err(classify_error(status, response).await);
+        }
+        Ok(response.json::<MatchState>().await?)
+    }
+
+    /// Compute the full URL for an endpoint path.
+    fn endpoint(&self, path: &str) -> Result<String, HttpClientError> {
+        let trimmed = path.trim_start_matches('/');
+        let base = self.base_url.trim_end_matches('/');
+        let combined = format!("{base}/{trimmed}");
+        // Validate parseability so callers fail fast.
+        reqwest::Url::parse(&combined).map_err(|e| HttpClientError::InvalidUrl(e.to_string()))?;
+        Ok(combined)
+    }
+
+    /// Dispatch a request, retrying on transient failures.
+    async fn execute_with_retry(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<reqwest::Response, HttpClientError> {
+        let mut last_error: Option<HttpClientError> = None;
+        for attempt in 0..=self.retry_policy.max_retries {
+            if attempt > 0 {
+                let delay =
+                    self.retry_policy.backoff_millis.get(attempt - 1).copied().unwrap_or(800);
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+            }
+
+            let mut builder = self
+                .http
+                .request(method.clone(), url)
+                .header(TOKEN_HEADER, &self.token)
+                .timeout(self.request_timeout);
+            if let Some(bytes) = &body {
+                builder = builder
+                    .header(reqwest::header::CONTENT_TYPE, "application/json")
+                    .body(bytes.clone());
+            }
+
+            match builder.send().await {
+                Ok(response) => {
+                    if Self::is_transient_status(response.status())
+                        && attempt < self.retry_policy.max_retries
+                    {
+                        last_error = Some(HttpClientError::Http {
+                            status: response.status().as_u16(),
+                            message: "transient failure".to_owned(),
+                        });
+                        continue;
+                    }
+                    return Ok(response);
+                }
+                Err(err) => {
+                    let transient = err.is_timeout() || err.is_connect() || err.is_request();
+                    if transient && attempt < self.retry_policy.max_retries {
+                        last_error = Some(HttpClientError::Transport(err));
+                        continue;
+                    }
+                    return Err(HttpClientError::Transport(err));
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| HttpClientError::Http {
+            status: 0,
+            message: "retries exhausted".to_owned(),
+        }))
+    }
+
+    /// Decide whether a `4xx/5xx` status code is transient (worth retrying).
+    fn is_transient_status(status: reqwest::StatusCode) -> bool {
+        let code = status.as_u16();
+        matches!(code, 408 | 425 | 429) || (500..600).contains(&code)
+    }
+}
+
+/// Translate an error response into the typed [`HttpClientError`] variant.
+async fn classify_error(
+    status: reqwest::StatusCode,
+    response: reqwest::Response,
+) -> HttpClientError {
+    let code = status.as_u16();
+    let body = response.text().await.unwrap_or_default();
+    match code {
+        401 => match serde_json::from_str::<AuthError>(&body) {
+            Ok(auth) => HttpClientError::from(auth),
+            Err(_) => HttpClientError::Http { status: code, message: body },
+        },
+        403 => match serde_json::from_str::<AccessTimeError>(&body) {
+            Ok(access) => HttpClientError::from(access),
+            Err(_) => HttpClientError::Http { status: code, message: body },
+        },
+        other => HttpClientError::Http { status: other, message: body },
+    }
+}
+
+/// Translate a `POST /agent` response into either `Ok(SubmitAck)` or an
+/// [`HttpClientError`]. The body of the success path is empty per spec.
+async fn handle_submit_response(response: reqwest::Response) -> Result<SubmitAck, HttpClientError> {
+    let status = response.status();
+    if status.is_success() {
+        return Ok(SubmitAck::ok());
+    }
+    Err(classify_error(status, response).await)
+}
+
+/// Builder for [`MatchClient`].
+#[derive(Debug, Clone)]
+pub struct MatchClientBuilder {
+    base_url: String,
+    token: String,
+    retry_policy: RetryPolicy,
+    request_timeout: Duration,
+}
+
+impl MatchClientBuilder {
+    /// Override the retry policy.
+    #[must_use]
+    pub const fn retry_policy(mut self, policy: RetryPolicy) -> Self {
+        self.retry_policy = policy;
+        self
+    }
+
+    /// Override the per-request timeout.
+    #[must_use]
+    pub const fn request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
+        self
+    }
+
+    /// Build the [`MatchClient`].
+    ///
+    /// # Errors
+    ///
+    /// See [`MatchClient::new`].
+    pub fn build(self) -> Result<MatchClient, HttpClientError> {
+        let http = reqwest::Client::builder().timeout(self.request_timeout).build()?;
+        Ok(MatchClient {
+            base_url: self.base_url,
+            token: self.token,
+            http,
+            retry_policy: self.retry_policy,
+            request_timeout: self.request_timeout,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockito::Server;
+
+    /// Build a client that targets a mockito server with zero backoff so
+    /// tests run quickly.
+    fn fast_client(server: &Server) -> MatchClient {
+        let policy = RetryPolicy { max_retries: 4, backoff_millis: &[0, 0, 0, 0] };
+        MatchClient::builder(server.url(), "test-token")
+            .retry_policy(policy)
+            .request_timeout(Duration::from_secs(5))
+            .build()
+            .expect("client builds")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn submit_agent_success_path() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/agent")
+            .match_header("Procon-Token", "test-token")
+            .match_body(mockito::Matcher::JsonString("[0,1,0]".into()))
+            .with_status(200)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let ack = client
+            .submit_agent(vec![AgentKind::KIND_0, AgentKind::KIND_1, AgentKind::KIND_0])
+            .await
+            .expect("submit succeeds");
+        assert_eq!(ack, SubmitAck::ok());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn submit_agent_retries_transient_failure() {
+        let mut server = Server::new_async().await;
+        let m1 = server.mock("POST", "/agent").with_status(503).create_async().await;
+        let m2 = server.mock("POST", "/agent").with_status(502).create_async().await;
+        let m3 = server.mock("POST", "/agent").with_status(200).create_async().await;
+
+        let client = fast_client(&server);
+        let ack = client
+            .submit_agent(vec![AgentKind::KIND_0, AgentKind::KIND_1])
+            .await
+            .expect("submit succeeds after retries");
+        assert_eq!(ack, SubmitAck::ok());
+        m1.assert_async().await;
+        m2.assert_async().await;
+        m3.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn submit_agent_does_not_retry_auth_error() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/agent")
+            .with_status(401)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"code":"AuthError","message":"bad token"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let err = client.submit_agent(vec![AgentKind::KIND_0]).await.expect_err("auth must fail");
+        assert!(matches!(err, HttpClientError::Auth { .. }));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn submit_agent_timeout_retries_then_fails() {
+        // A non-routable address causes connect timeouts.
+        let policy = RetryPolicy { max_retries: 1, backoff_millis: &[0] };
+        let client = MatchClient::builder("http://10.255.255.1:1", "t")
+            .retry_policy(policy)
+            .request_timeout(Duration::from_millis(50))
+            .build()
+            .unwrap();
+        let err = client
+            .submit_agent(vec![AgentKind::KIND_0])
+            .await
+            .expect_err("timeout must surface as error");
+        assert!(matches!(err, HttpClientError::Transport(_)), "got {err:?}");
+    }
+}
