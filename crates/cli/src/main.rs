@@ -4,11 +4,13 @@
 //!   - `hello`                     : print the engine's hello payload.
 //!   - `replay <path>`             : run a JSON replay file end-to-end.
 //!   - `warmup`                    : measure cold / warm / 1-day-smoke timing per solver.
+//!   - `coordinator`               : drive the per-match solver loop (in-process transport).
 //!   - `version`                   : print package + protocol versions.
 //!   - `bundle build <output.zip>` : build a contest deliverable zip.
 
 mod bundle;
 mod fixtures;
+mod loop_runner;
 mod warmup;
 
 use std::path::PathBuf;
@@ -16,10 +18,16 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use domain::{MatchId, PlayerId};
 use engine::replay::Replay;
 use engine::{EngineServer, EngineServerConfig};
 use serde_json::json;
 use tracing_subscriber::EnvFilter;
+
+use crate::loop_runner::{
+    DayAction, DayPlan, DaySignal, LoopConfig, LoopError, MatchSetting, Solver, Submission,
+    SubmissionAck, Transport, run_match_loop,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "procon", about = "procon-2026 operator CLI")]
@@ -45,6 +53,15 @@ enum Cmd {
         /// Emit only the JSON report (no human-readable summary).
         #[arg(long)]
         json: bool,
+    },
+    /// Drive the per-match solver loop end-to-end with an in-process transport.
+    Coordinator {
+        /// Number of days the synthetic match will run for.
+        #[arg(long, default_value_t = 3)]
+        days: u32,
+        /// Player id to register for the synthetic match.
+        #[arg(long, default_value = "player-alpha")]
+        player: String,
     },
     /// Print package and protocol versions.
     Version,
@@ -120,6 +137,9 @@ async fn run(cli: Cli) -> Result<()> {
                 println!("{}", warmup::format_report_human(&report));
             }
         }
+        Cmd::Coordinator { days, player } => {
+            run_coordinator(days, &player).await?;
+        }
         Cmd::Version => {
             println!(
                 "{}",
@@ -137,6 +157,77 @@ async fn run(cli: Cli) -> Result<()> {
         },
     }
     Ok(())
+}
+
+/// Drive the per-match solver loop with an in-process transport.
+///
+/// The CLI does not yet have an HTTP transport; this wires the loop runner to
+/// a deterministic in-memory transport so the operator path can be exercised
+/// locally. Once `crates/cli/src/coordinator.rs` lands, this stub will be
+/// replaced with an HTTP-backed transport.
+async fn run_coordinator(days: u32, player: &str) -> Result<()> {
+    let match_id =
+        MatchId::new("match-cli-1").map_err(|e| anyhow::anyhow!("build match id: {e}"))?;
+    let player_id = PlayerId::new(player).map_err(|e| anyhow::anyhow!("build player id: {e}"))?;
+    let setting = MatchSetting::new(match_id.clone(), days, vec![player_id.clone()], 60);
+
+    let solver = EchoSolver { player: player_id };
+    let transport = StubTransport;
+    let config = LoopConfig::default();
+
+    let score = run_match_loop(setting, &solver, &transport, &config)
+        .await
+        .map_err(|e| anyhow::anyhow!("coordinator loop failed: {e}"))?;
+
+    println!(
+        "{}",
+        json!({
+            "match_id": match_id,
+            "final_score": score.0,
+            "days_requested": days,
+        })
+    );
+    Ok(())
+}
+
+/// Placeholder solver that emits a single no-op action per day. The real
+/// per-day solver will be plugged in once the engine-level trait lands.
+struct EchoSolver {
+    player: PlayerId,
+}
+
+impl Solver for EchoSolver {
+    fn decide(
+        &self,
+        _setting: &MatchSetting,
+        day: u32,
+    ) -> Result<DayPlan, crate::loop_runner::LoopError> {
+        let action_index = u16::try_from(day).unwrap_or(u16::MAX);
+        Ok(DayPlan::new(
+            day,
+            vec![DayAction {
+                agent_id: self.player.clone(),
+                action_index,
+                payload: serde_json::json!({ "noop": true, "day": day }),
+            }],
+        ))
+    }
+}
+
+/// In-process transport that always acks and advances the day. Real transport
+/// is wired in once the network layer lands.
+struct StubTransport;
+
+impl Transport for StubTransport {
+    async fn post_submission(&self, _submission: &Submission) -> Result<SubmissionAck, LoopError> {
+        tokio::task::yield_now().await;
+        Ok(SubmissionAck { accepted: true, reason: None })
+    }
+
+    async fn wait_for_next_day(&self, current_day: u32) -> Result<DaySignal, LoopError> {
+        tokio::task::yield_now().await;
+        Ok(DaySignal::Continue { next_day: current_day + 1 })
+    }
 }
 
 #[cfg(test)]
