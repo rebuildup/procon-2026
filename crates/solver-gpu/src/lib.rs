@@ -29,6 +29,9 @@
 //!   plumbing the compute shader will need once a real device is wired in.
 //! - [`transfer`] — host-side upload / dispatch / read-back layer plus the
 //!   [`GpuSolver`] trait and [`FallbackGpuSolver`] (issue #36).
+//! - [`batched`] — `BatchedSearcher`, the parallel workgroup-shared-memory
+//!   path-search driver added in #35. Provides a CPU fallback so callers
+//!   never see a hard GPU requirement.
 //!
 //! Both `wasm32` and native builds compile: `wasm32` simply disables the
 //! `wgpu` feature, falling back to the CPU implementation.
@@ -40,6 +43,8 @@ pub mod map;
 pub mod transfer;
 pub mod wgsl;
 
+#[cfg(feature = "wgpu")]
+pub mod batched;
 #[cfg(feature = "wgpu")]
 pub mod gpu;
 

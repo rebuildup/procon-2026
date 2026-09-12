@@ -15,8 +15,8 @@
 //   @group(0) @binding(3) reachable   storage write : array<u32, Q>  (1 = reachable)
 
 const MAX_CELLS: u32 = 1024u;
-const INFINITY_U: u32 = 0xFFFF_FFFFu;
-const UNREACHABLE: u32 = 0xFFFF_FFFFu;
+const INFINITY_U: u32 = 0xFFFFFFFFu;
+const UNREACHABLE: u32 = 0xFFFFFFFFu;
 
 // Map metadata. Layout chosen so the struct stays 16-byte aligned.
 struct Map {
