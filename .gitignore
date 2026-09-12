@@ -48,6 +48,9 @@ packages/frontend/.vite/
 .tmp/
 .reference/
 
+# proptest local regression seed files (regenerated on next test run)
+*.proptest-regressions
+
 # ----------------------------------------
 # Skills local install state (kept under .claude/skills/ as
 # committed project-local knowledge; ignore local override dirs)
