@@ -35,16 +35,21 @@
 //!   Metropolis acceptance test.
 //! * [`solver`] — [`LocalSearchSolver`] (implements [`Solver`]) and its
 //!   [`LocalSearchConfig`].
+//! * [`simulated_annealing`] — [`SimulatedAnnealing`] driver with
+//!   geometric cooling and a restart policy, suitable for problems where
+//!   the simpler [`LocalSearchSolver`]'s schedule is too rigid.
 
 #![doc(test(attr(deny(warnings))))]
 
 pub mod annealing;
 pub mod neighbors;
+pub mod simulated_annealing;
 pub mod solver;
 pub mod types;
 
 pub use annealing::{Delta, Schedule, accept, accept_score};
 pub use neighbors::{Move, NeighborhoodRng, Segment, apply, inverse, propose};
+pub use simulated_annealing::{SimulatedAnnealing, SimulatedAnnealingResult};
 pub use solver::{LocalSearchConfig, LocalSearchSolver, Solver};
 pub use types::{
     Action, Agent, DayScore, HexCoord, Instance, Series, Solution, Spot, evaluate_route,
