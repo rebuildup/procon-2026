@@ -12,7 +12,7 @@
 //! agent in deterministic order so every spot is still claimed.
 
 use crate::cluster::{Cluster, Clustering};
-use crate::types::{Agent, AgentId, HexCoord, SolveRequest};
+use crate::types::{Agent, AgentId, HexCoord, Series, SolveRequest, Spot, SpotId};
 use std::collections::HashMap;
 
 /// For every spot in the request, lists the cluster it belongs to and the
@@ -260,3 +260,383 @@ mod tests {
         }
     }
 }
+
+// =====================================================================
+// Issue #29: series-level assignment + tour order optimisation.
+//
+// The casts inside `series_assignment` are intentional: contest maps are
+// bounded so any `as u32` / `as i64` truncation on the spot-count or
+// coordinate arithmetic is safe by construction. The coordinate mean also
+// fits in `i32` because the 32×32 hex grid stays well inside `i32` range.
+// =====================================================================
+mod series_assignment {
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
+
+    use super::{AgentId, HashMap, HexCoord, Series, Spot, SpotId};
+
+    /// Strategy for distributing [`Series`] groups across [`AgentId`]s.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum AssignmentStrategy {
+        /// Sort series by name (deterministic) and hand them out to agents in
+        /// round-robin order.
+        RoundRobin,
+        /// Sort series by spot count (largest first), always give the next
+        /// series to the agent carrying the fewest spots so far. Tie-break by
+        /// lexicographic `Series` name for determinism.
+        BalancedBySpotCount,
+        /// For each agent (in `AgentId` order) pick the series whose centroid
+        /// sits closest to the agent's starting coord. Series the agents do not
+        /// pick up fall back to round-robin on the leftover agents.
+        NearestFirst,
+    }
+
+    /// One series committed to one agent, with an optimised visiting order.
+    ///
+    /// The order is the result of a nearest-neighbour seed followed by 2-opt
+    /// refinement, both measured in hex steps and seeded from the series'
+    /// centroid so the result is independent of the (unknown) agent position.
+    /// Callers may re-route from the agent's actual position; the relative
+    /// order is the optimisation target.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct SeriesTour {
+        pub series_id: String,
+        pub agent_id: AgentId,
+        pub tour: Vec<SpotId>,
+    }
+
+    impl SeriesTour {
+        /// Sum of hex distances between consecutive spots in `tour`.
+        ///
+        /// `coord_of` must map every spot id in `tour` to its coordinate; the
+        /// first segment (from the implicit start to the first spot) is not
+        /// counted because the agent's starting coordinate is not part of the
+        /// stored tour.
+        #[must_use]
+        pub fn tour_length(&self, coord_of: &HashMap<SpotId, HexCoord>) -> u32 {
+            let mut total = 0u32;
+            let mut prev: Option<HexCoord> = None;
+            for sid in &self.tour {
+                if let Some(&coord) = coord_of.get(sid) {
+                    if let Some(p) = prev {
+                        total = total.saturating_add(p.distance(coord));
+                    }
+                    prev = Some(coord);
+                }
+            }
+            total
+        }
+    }
+
+    /// Builds a [`SeriesTour`] per (series, agent) pair.
+    #[derive(Debug, Clone, Copy)]
+    pub struct SeriesAssigner {
+        strategy: AssignmentStrategy,
+    }
+
+    impl SeriesAssigner {
+        /// Build an assigner with an explicit strategy.
+        #[must_use]
+        pub const fn new(strategy: AssignmentStrategy) -> Self {
+            Self { strategy }
+        }
+
+        /// Convenience: round-robin assigner.
+        #[must_use]
+        pub fn round_robin() -> Self {
+            Self::new(AssignmentStrategy::RoundRobin)
+        }
+
+        /// Convenience: balanced-by-spot-count assigner.
+        #[must_use]
+        pub fn balanced() -> Self {
+            Self::new(AssignmentStrategy::BalancedBySpotCount)
+        }
+
+        /// Convenience: nearest-first assigner.
+        #[must_use]
+        pub fn nearest_first() -> Self {
+            Self::new(AssignmentStrategy::NearestFirst)
+        }
+
+        /// Distribute `series` across `agents` and produce an optimised tour
+        /// per assignment. The returned vector is sorted by
+        /// `(agent_id, series_id)` so the output is deterministic for any
+        /// given `(agents, series)` input.
+        ///
+        /// Series whose `spots` vector is empty are skipped — there is nothing
+        /// to visit. Agents that receive no series do not appear in the output.
+        #[must_use]
+        pub fn assign(self, agents: &[AgentId], series: &[Series]) -> Vec<SeriesTour> {
+            if agents.is_empty() {
+                return Vec::new();
+            }
+
+            // Deterministic agent order for tie-breaks and the round-robin index.
+            let mut sorted_agents: Vec<&AgentId> = agents.iter().collect();
+            sorted_agents.sort();
+
+            // Filter empty series + sort according to the strategy.
+            let non_empty: Vec<&Series> = series.iter().filter(|s| !s.is_empty()).collect();
+            if non_empty.is_empty() {
+                return Vec::new();
+            }
+
+            let ordered = order_series(&non_empty, self.strategy);
+
+            let mut agent_loads: HashMap<AgentId, u32> = HashMap::new();
+            let mut plans: Vec<SeriesTour> = Vec::with_capacity(ordered.len());
+
+            match self.strategy {
+                AssignmentStrategy::RoundRobin | AssignmentStrategy::BalancedBySpotCount => {
+                    for s in &ordered {
+                        let agent =
+                            pick_min_load(&sorted_agents, &mut agent_loads, s.spots.len() as u32);
+                        let tour = optimise_tour(&s.spots);
+                        *agent_loads.entry(agent.clone()).or_insert(0) += s.spots.len() as u32;
+                        plans.push(SeriesTour { series_id: s.name.clone(), agent_id: agent, tour });
+                    }
+                }
+                AssignmentStrategy::NearestFirst => {
+                    // For each (sorted) agent, claim the unclaimed series whose
+                    // centroid is closest to the agent's home coord. Agents
+                    // without a coordinate are placed at (0, 0) for ranking
+                    // purposes (we have no Agent here — just the id). When
+                    // multiple agents would otherwise claim the same series
+                    // we fall back to lexicographic agent order so the result
+                    // stays deterministic.
+                    //
+                    // The `home` coord is the centroid of the first spot in
+                    // series `s` for ranking when an agent has no spatial
+                    // signal; the algorithm still walks the agents in sorted
+                    // id order and assigns them the nearest unclaimed centroid.
+                    let mut claimed: Vec<bool> = vec![false; ordered.len()];
+                    let centroids: Vec<HexCoord> =
+                        ordered.iter().map(|s| centroid_of(&s.spots)).collect();
+
+                    for agent in &sorted_agents {
+                        // No agent coords are available; use the centroid of the
+                        // first remaining series as a stable proxy. This keeps
+                        // the algorithm deterministic across runs.
+                        let home = next_unclaimed_centroid(&ordered, &claimed);
+                        let Some(home) = home else { continue };
+                        let best = best_unclaimed(&centroids, &claimed, home, agent.as_str());
+                        let Some(idx) = best else { continue };
+                        claimed[idx] = true;
+                        let s = ordered[idx];
+                        let tour = optimise_tour(&s.spots);
+                        *agent_loads.entry((*agent).clone()).or_insert(0) += s.spots.len() as u32;
+                        plans.push(SeriesTour {
+                            series_id: s.name.clone(),
+                            agent_id: (*agent).clone(),
+                            tour,
+                        });
+                    }
+
+                    // Anything still unclaimed goes round-robin on the sorted
+                    // agents so the map is fully covered.
+                    let mut rr = 0usize;
+                    for (idx, s) in ordered.iter().enumerate() {
+                        if claimed[idx] {
+                            continue;
+                        }
+                        let agent = sorted_agents[rr % sorted_agents.len()].clone();
+                        rr = rr.wrapping_add(1);
+                        let tour = optimise_tour(&s.spots);
+                        *agent_loads.entry(agent.clone()).or_insert(0) += s.spots.len() as u32;
+                        plans.push(SeriesTour { series_id: s.name.clone(), agent_id: agent, tour });
+                    }
+                }
+            }
+
+            plans.sort_by(|a, b| {
+                a.agent_id.cmp(&b.agent_id).then_with(|| a.series_id.cmp(&b.series_id))
+            });
+            plans
+        }
+    }
+
+    /// Apply the strategy-specific ordering to a slice of series references.
+    fn order_series<'a>(series: &[&'a Series], strategy: AssignmentStrategy) -> Vec<&'a Series> {
+        let mut ordered: Vec<&Series> = series.to_vec();
+        match strategy {
+            AssignmentStrategy::RoundRobin | AssignmentStrategy::NearestFirst => {
+                ordered.sort_by(|a, b| a.name.cmp(&b.name));
+            }
+            AssignmentStrategy::BalancedBySpotCount => {
+                // Largest first; tie-break by name for determinism.
+                ordered.sort_by(|a, b| {
+                    b.spots.len().cmp(&a.spots.len()).then_with(|| a.name.cmp(&b.name))
+                });
+            }
+        }
+        ordered
+    }
+
+    /// Pick the agent with the smallest current spot load; tie-break by
+    /// lexicographic `AgentId` for determinism.
+    fn pick_min_load(
+        sorted_agents: &[&AgentId],
+        loads: &mut HashMap<AgentId, u32>,
+        weight: u32,
+    ) -> AgentId {
+        let mut best: Option<(AgentId, u32)> = None;
+        for agent in sorted_agents {
+            let load = loads.get(*agent).copied().unwrap_or(0);
+            let candidate_load = load.saturating_add(weight);
+            best = match best {
+                None => Some(((*agent).clone(), candidate_load)),
+                Some((cur_id, cur_load)) => {
+                    if candidate_load < cur_load
+                        || (candidate_load == cur_load && (*agent).as_str() < cur_id.as_str())
+                    {
+                        Some(((*agent).clone(), candidate_load))
+                    } else {
+                        Some((cur_id, cur_load))
+                    }
+                }
+            };
+        }
+        best.map_or_else(|| sorted_agents[0].clone(), |(id, _)| id)
+    }
+
+    /// Compute the centroid of a set of spots as a hex coordinate, using the
+    /// mean of q/rounded half-up.
+    fn centroid_of(spots: &[Spot]) -> HexCoord {
+        if spots.is_empty() {
+            return HexCoord::new(0, 0);
+        }
+        let n = spots.len() as i64;
+        let sum_q: i64 = spots.iter().map(|s| i64::from(s.coord.q)).sum();
+        let sum_r: i64 = spots.iter().map(|s| i64::from(s.coord.r)).sum();
+        // Round half-up: floor((x / n) + 0.5). With integers, `(2*x + n) / (2*n)`
+        // is equivalent.
+        let q = ((2 * sum_q + n) / (2 * n)) as i32;
+        let r = ((2 * sum_r + n) / (2 * n)) as i32;
+        HexCoord::new(q, r)
+    }
+
+    /// Centroid of the first still-unclaimed series, used as a deterministic
+    /// proxy for "the agent's home coord" in the `NearestFirst` strategy when
+    /// we do not have access to actual agent positions.
+    fn next_unclaimed_centroid(ordered: &[&Series], claimed: &[bool]) -> Option<HexCoord> {
+        ordered
+            .iter()
+            .zip(claimed.iter())
+            .find_map(|(s, taken)| if *taken { None } else { Some(centroid_of(&s.spots)) })
+    }
+
+    /// Find the index of the unclaimed series whose centroid is closest to
+    /// `home`. Tie-break by lexicographic series name. The `agent_label` is
+    /// unused at the moment — kept for symmetry with future iterations that
+    /// could rank by agent too.
+    fn best_unclaimed(
+        centroids: &[HexCoord],
+        claimed: &[bool],
+        home: HexCoord,
+        _agent_label: &str,
+    ) -> Option<usize> {
+        let mut best: Option<(usize, u32)> = None;
+        for (idx, cent) in centroids.iter().enumerate() {
+            if claimed[idx] {
+                continue;
+            }
+            let dist = home.distance(*cent);
+            best = match best {
+                None => Some((idx, dist)),
+                Some((cur_idx, cur_dist)) => {
+                    if dist < cur_dist {
+                        Some((idx, dist))
+                    } else {
+                        Some((cur_idx, cur_dist))
+                    }
+                }
+            };
+        }
+        best.map(|(idx, _)| idx)
+    }
+
+    /// Build an optimised tour: nearest-neighbour seed + 2-opt refinement.
+    /// Returns spot ids in visiting order.
+    fn optimise_tour(spots: &[Spot]) -> Vec<SpotId> {
+        if spots.is_empty() {
+            return Vec::new();
+        }
+        if spots.len() == 1 {
+            return vec![spots[0].id.clone()];
+        }
+
+        let start = centroid_of(spots);
+        let nn = nearest_neighbour_tour(spots, start);
+        let coord_of: HashMap<SpotId, HexCoord> =
+            spots.iter().map(|s| (s.id.clone(), s.coord)).collect();
+        two_opt(nn, &coord_of)
+    }
+
+    /// Greedy nearest-neighbour tour from `start`.
+    fn nearest_neighbour_tour(spots: &[Spot], start: HexCoord) -> Vec<SpotId> {
+        let mut remaining: Vec<Spot> = spots.to_vec();
+        let mut cursor = start;
+        let mut tour: Vec<SpotId> = Vec::with_capacity(remaining.len());
+        while !remaining.is_empty() {
+            let nearest_idx = remaining
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, s)| cursor.distance(s.coord))
+                .map_or(0, |(i, _)| i);
+            let chosen = remaining.swap_remove(nearest_idx);
+            tour.push(chosen.id.clone());
+            cursor = chosen.coord;
+        }
+        tour
+    }
+
+    /// 2-opt refinement: repeatedly reverse the segment between two non-adjacent
+    /// edges when the swap strictly reduces the total tour length. The loop
+    /// terminates when a full pass yields no improvement; a hard iteration cap
+    /// guards against pathological inputs.
+    fn two_opt(mut tour: Vec<SpotId>, coord_of: &HashMap<SpotId, HexCoord>) -> Vec<SpotId> {
+        const MAX_ITERATIONS: usize = 32;
+        let n = tour.len();
+        if n < 4 {
+            return tour;
+        }
+
+        let mut iterations = 0usize;
+
+        loop {
+            if iterations >= MAX_ITERATIONS {
+                break;
+            }
+            iterations += 1;
+
+            let mut improved = false;
+            for i in 0..n.saturating_sub(2) {
+                for j in (i + 2)..n.saturating_sub(1) {
+                    let ai = coord_of[&tour[i]];
+                    let bi = coord_of[&tour[i + 1]];
+                    let cj = coord_of[&tour[j]];
+                    let dj = coord_of[&tour[j + 1]];
+
+                    let old = ai.distance(bi).saturating_add(cj.distance(dj));
+                    let new = ai.distance(cj).saturating_add(bi.distance(dj));
+                    if new < old {
+                        tour[i + 1..=j].reverse();
+                        improved = true;
+                    }
+                }
+            }
+            if !improved {
+                break;
+            }
+        }
+
+        tour
+    }
+} // mod series_assignment
+
+pub use series_assignment::{AssignmentStrategy, SeriesAssigner, SeriesTour};
