@@ -1,0 +1,34 @@
+{
+  "name": "small-8x8",
+  "description": "8x8 warmup map: a single mountain ridge down the middle column splits plain terrain into two halves, with 3 agents on the west side and 5 spots spread across 2 brands (kake / bukkake) on the east.",
+  "category": "small",
+  "startsAt": 0,
+  "daySeconds": [60],
+  "daySteps": [16],
+  "map": {
+    "height": 8,
+    "width": 8,
+    "cells": [
+      [0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0]
+    ]
+  },
+  "spots": [
+    { "brand": 0, "pos":  5, "stocks": 2 },
+    { "brand": 0, "pos":  6, "stocks": 1 },
+    { "brand": 1, "pos": 13, "stocks": 1 },
+    { "brand": 1, "pos": 14, "stocks": 2 },
+    { "brand": 0, "pos": 21, "stocks": 1 }
+  ],
+  "agents": [1, 9, 17],
+  "fuelLimits": 24,
+  "players": 1,
+  "busyThreshold": 1,
+  "jammedThreshold": 2
+}
