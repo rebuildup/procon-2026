@@ -1,16 +1,19 @@
 //! `procon` — operator CLI.
 //!
 //! Subcommands:
-//!   - `hello`                     : print the engine's hello payload.
-//!   - `replay <path>`             : run a JSON replay file end-to-end.
-//!   - `warmup`                    : measure cold / warm / 1-day-smoke timing per solver.
-//!   - `coordinator`               : drive the per-match solver loop (in-process transport).
-//!   - `version`                   : print package + protocol versions.
-//!   - `bundle build <output.zip>` : build a contest deliverable zip.
+//!   - `hello`                            : print the engine's hello payload.
+//!   - `replay <path>`                    : run a JSON replay file end-to-end.
+//!   - `warmup`                           : measure cold / warm / 1-day-smoke timing per solver.
+//!   - `coordinator`                      : drive the per-match solver loop (in-process transport).
+//!   - `match-config load <path>`         : pretty-print a match config JSON.
+//!   - `match-config validate <path>`     : structurally validate a match config.
+//!   - `version`                          : print package + protocol versions.
+//!   - `bundle build <output.zip>`        : build a contest deliverable zip.
 
 mod bundle;
 mod fixtures;
 mod loop_runner;
+mod match_config;
 mod warmup;
 
 use std::path::PathBuf;
@@ -63,6 +66,9 @@ enum Cmd {
         #[arg(long, default_value = "player-alpha")]
         player: String,
     },
+    /// Inspect or validate a match configuration JSON file.
+    #[command(subcommand)]
+    MatchConfig(MatchConfigCmd),
     /// Print package and protocol versions.
     Version,
     /// Build, inspect, and verify contest deliverable bundles.
@@ -72,12 +78,28 @@ enum Cmd {
     },
 }
 
+/// Subcommands under `procon bundle`.
 #[derive(Debug, Subcommand)]
 enum BundleCmd {
     /// Build a contest deliverable zip at the given output path.
     Build {
         /// Destination path for the produced zip file.
         output: PathBuf,
+    },
+}
+
+/// Subcommands under `procon match-config`.
+#[derive(Debug, Subcommand)]
+enum MatchConfigCmd {
+    /// Read and pretty-print a match configuration JSON file.
+    Load {
+        /// Path to a match configuration JSON file.
+        path: PathBuf,
+    },
+    /// Validate a match configuration JSON file (basic structural checks).
+    Validate {
+        /// Path to a match configuration JSON file.
+        path: PathBuf,
     },
 }
 
@@ -140,6 +162,29 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Coordinator { days, player } => {
             run_coordinator(days, &player).await?;
         }
+        Cmd::MatchConfig(sub) => match sub {
+            MatchConfigCmd::Load { path } => {
+                let (_cfg, value) = match_config::load(&path)
+                    .with_context(|| format!("load match config {}", path.display()))?;
+                println!("{}", match_config::pretty_print(&value)?);
+            }
+            MatchConfigCmd::Validate { path } => {
+                let raw = std::fs::read(&path)
+                    .with_context(|| format!("read match config {}", path.display()))?;
+                let value: serde_json::Value = serde_json::from_slice(&raw)
+                    .with_context(|| format!("parse match config {}", path.display()))?;
+                let report = match_config::validate(&value);
+                let summary = json!({
+                    "path": match_config::display_path(&path).display().to_string(),
+                    "ok": report.ok,
+                    "errors": report.errors,
+                });
+                println!("{}", serde_json::to_string_pretty(&summary)?);
+                if !report.ok {
+                    anyhow::bail!("match config validation failed");
+                }
+            }
+        },
         Cmd::Version => {
             println!(
                 "{}",
@@ -160,11 +205,6 @@ async fn run(cli: Cli) -> Result<()> {
 }
 
 /// Drive the per-match solver loop with an in-process transport.
-///
-/// The CLI does not yet have an HTTP transport; this wires the loop runner to
-/// a deterministic in-memory transport so the operator path can be exercised
-/// locally. Once `crates/cli/src/coordinator.rs` lands, this stub will be
-/// replaced with an HTTP-backed transport.
 async fn run_coordinator(days: u32, player: &str) -> Result<()> {
     let match_id =
         MatchId::new("match-cli-1").map_err(|e| anyhow::anyhow!("build match id: {e}"))?;
@@ -190,8 +230,7 @@ async fn run_coordinator(days: u32, player: &str) -> Result<()> {
     Ok(())
 }
 
-/// Placeholder solver that emits a single no-op action per day. The real
-/// per-day solver will be plugged in once the engine-level trait lands.
+/// Placeholder solver that emits a single no-op action per day.
 struct EchoSolver {
     player: PlayerId,
 }
@@ -214,8 +253,7 @@ impl Solver for EchoSolver {
     }
 }
 
-/// In-process transport that always acks and advances the day. Real transport
-/// is wired in once the network layer lands.
+/// In-process transport that always acks and advances the day.
 struct StubTransport;
 
 impl Transport for StubTransport {
@@ -252,6 +290,29 @@ mod tests {
                 }
             },
             _ => panic!("expected Bundle"),
+        }
+    }
+
+    #[test]
+    fn parses_match_config_load() {
+        let cli = Cli::try_parse_from(["procon", "match-config", "load", "/tmp/foo.json"]).unwrap();
+        match cli.cmd {
+            Cmd::MatchConfig(MatchConfigCmd::Load { path }) => {
+                assert_eq!(path.to_str(), Some("/tmp/foo.json"));
+            }
+            _ => panic!("expected match-config load"),
+        }
+    }
+
+    #[test]
+    fn parses_match_config_validate() {
+        let cli =
+            Cli::try_parse_from(["procon", "match-config", "validate", "/tmp/foo.json"]).unwrap();
+        match cli.cmd {
+            Cmd::MatchConfig(MatchConfigCmd::Validate { path }) => {
+                assert_eq!(path.to_str(), Some("/tmp/foo.json"));
+            }
+            _ => panic!("expected match-config validate"),
         }
     }
 }
