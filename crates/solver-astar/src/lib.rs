@@ -25,9 +25,14 @@ pub mod stub;
 
 mod solver;
 
+pub mod multi_agent;
 pub use cost::{BaseFuelCost, BaseStepCost, CostModel, CostPolicy, DefaultCostModel};
 pub use hex::{CellKind, Direction, HexCoord, MapLayout, MapSize, TrafficState};
 pub use map::{HexMap, HexMapError};
+pub use multi_agent::{
+    AgentId, AgentPlan, DEFAULT_HEURISTIC, HeuristicFn, MultiAgentAStar, MultiAgentPlan,
+    MultiAgentSolver, ReservationTable,
+};
 pub use solver::{AstarSolver, Solver, SolverStats};
 pub use stub::{Action, Path, SolveContext, SolverFailure, SolverResult};
 
