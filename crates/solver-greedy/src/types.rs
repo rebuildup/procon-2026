@@ -41,7 +41,7 @@ pub struct HexCoord {
 impl HexCoord {
     /// Construct a new coordinate.
     #[must_use]
-    pub fn new(q: i32, r: i32) -> Self {
+    pub const fn new(q: i32, r: i32) -> Self {
         Self { q, r }
     }
 
@@ -58,6 +58,25 @@ impl HexCoord {
         let ds = (self.q + self.r - other.q - other.r).abs();
         // saturating cast: distance is non-negative and small for contest maps
         ((dq + dr + ds) / 2).try_into().unwrap_or(u32::MAX)
+    }
+
+    /// Six neighbour coordinates, in the canonical axial-clockwise order.
+    ///
+    /// The deltas are `(q+1,r), (q+1,r-1), (q,r-1), (q-1,r), (q-1,r+1), (q,r+1)`,
+    /// matching the pointy-top axial convention used by [`Self::distance`].
+    /// Each neighbour is exactly one cell away from `self` according to
+    /// [`Self::distance`]; the order is stable so deterministic solvers
+    /// can rely on the iteration sequence for tie-breaking.
+    #[must_use]
+    pub const fn neighbors(self) -> [HexCoord; 6] {
+        [
+            HexCoord::new(self.q + 1, self.r),
+            HexCoord::new(self.q + 1, self.r - 1),
+            HexCoord::new(self.q, self.r - 1),
+            HexCoord::new(self.q - 1, self.r),
+            HexCoord::new(self.q - 1, self.r + 1),
+            HexCoord::new(self.q, self.r + 1),
+        ]
     }
 }
 
