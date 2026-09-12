@@ -1,7 +1,7 @@
 //! `solver-series-clustered` — series-clustering + greedy agent-assignment.
 //!
 //! Implementation of Issue #28 / Phase 2 from
-//! `docs/contest/strategy.md` §5.3. The crate has three public surfaces:
+//! `docs/contest/strategy.md` §5.3. The crate has four public surfaces:
 //!
 //! - [`cluster`]: Union-Find over same-series, spatially-close spots, with
 //!   centroid + bounding-radius metadata per cluster.
@@ -9,6 +9,9 @@
 //!   ties variety-first.
 //! - [`solver`]: `Solver` trait stub + [`SeriesClusteredSolver`] that wires
 //!   the two together and emits per-agent `Action` itineraries.
+//! - [`dynamic`]: [`DynamicReplanner`] that wraps any [`Solver`] and decides,
+//!   between consecutive turns, whether the cached plan is still valid or
+//!   the inner solver should be re-invoked (Issue #30).
 //!
 //! Types under [`types`] are local stubs pending `domain` (#11) + `engine`
 //! integration (#57). The `EXPECTED INTEGRATION: domain` note in `types.rs`
@@ -18,6 +21,7 @@
 
 pub mod assignment;
 pub mod cluster;
+pub mod dynamic;
 pub mod solver;
 pub mod types;
 
@@ -26,6 +30,7 @@ pub use assignment::{
     assign_clusters,
 };
 pub use cluster::{Cluster, ClusterConfig, ClusterId, Clustering, UnionFind};
+pub use dynamic::{DynamicReplanner, InventorySnapshot, Plan, PlanState, TrafficSnapshot};
 pub use solver::{SeriesClusteredSolver, Solver};
 pub use types::{
     Action, Agent, AgentId, AgentPlan, HexCoord, Series, SolveRequest, SolveResponse, Spot, SpotId,
