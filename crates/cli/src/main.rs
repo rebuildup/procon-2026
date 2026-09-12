@@ -3,10 +3,13 @@
 //! Subcommands:
 //!   - `hello`                     : print the engine's hello payload.
 //!   - `replay <path>`             : run a JSON replay file end-to-end.
+//!   - `warmup`                    : measure cold / warm / 1-day-smoke timing per solver.
 //!   - `version`                   : print package + protocol versions.
 //!   - `bundle build <output.zip>` : build a contest deliverable zip.
 
 mod bundle;
+mod fixtures;
+mod warmup;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -33,6 +36,15 @@ enum Cmd {
     Replay {
         /// Path to a JSON file shaped as `engine::replay::Replay`.
         path: PathBuf,
+    },
+    /// Time cold/warm/1-day-smoke for every requested solver and emit a JSON report.
+    Warmup {
+        /// Comma-separated solver names (greedy, astar, loop, mcts). Defaults to all.
+        #[arg(long, value_delimiter = ',', default_value = "greedy,astar,loop,mcts")]
+        solvers: Vec<String>,
+        /// Emit only the JSON report (no human-readable summary).
+        #[arg(long)]
+        json: bool,
     },
     /// Print package and protocol versions.
     Version,
@@ -96,6 +108,17 @@ async fn run(cli: Cli) -> Result<()> {
                     "scores": state.scores,
                 })
             );
+        }
+        Cmd::Warmup { solvers, json } => {
+            let setting = fixtures::tiny_setting();
+            let names: Vec<&str> = solvers.iter().map(String::as_str).collect();
+            let report = warmup::run_warmup(&setting, &names)
+                .map_err(|e| anyhow::anyhow!("warmup failed: {e}"))?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!("{}", warmup::format_report_human(&report));
+            }
         }
         Cmd::Version => {
             println!(

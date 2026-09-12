@@ -76,6 +76,20 @@ smoke-cli:
     cargo run -q --bin procon -- hello >/dev/null
 
 # ----------------------------------------------------------------
+# Warmup (pre-match cold/warm/smoke timing) — see crates/cli/src/warmup.rs
+# ----------------------------------------------------------------
+
+# Run the warmup timing harness against every built-in solver and emit a
+# human-readable summary table. Use `--json` for CI / scripted consumers.
+warmup:
+    cargo run -q --bin procon -- warmup
+
+# Run the warmup harness and emit a machine-readable JSON report. Output is
+# suitable for piping to `jq` or archiving as a build artifact.
+warmup-json:
+    cargo run -q --bin procon -- warmup --json
+
+# ----------------------------------------------------------------
 # Protocol drift
 # ----------------------------------------------------------------
 

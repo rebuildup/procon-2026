@@ -62,6 +62,11 @@ just ci             # ローカル CI と同じ
 cargo run -q --bin procon -- hello
 cargo run -q --bin procon -- version
 
+# 4b. Pre-match warmup (cold/warm/smoke timing for every solver)
+just warmup             # human-readable summary
+just warmup-json        # machine-readable JSON for CI / archiving
+# or: cargo run -q --bin procon -- warmup [--json] [--solvers greedy,astar,loop,mcts]
+
 # 5. フロントエンド起動
 (cd packages/frontend && bun run dev)
 ```
