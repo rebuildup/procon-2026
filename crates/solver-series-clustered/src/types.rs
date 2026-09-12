@@ -12,6 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 /// Axial cube-style hex coordinate (q, r). The third cube axis is reconstructed
 /// as `s = -q - r` so we can keep the public surface 2-tuple while still using
@@ -46,27 +47,88 @@ impl fmt::Display for HexCoord {
     }
 }
 
-/// Series identifier (e.g. an udon flavour family). Equal ids mean the spots
-/// are part of the same series.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Series(pub String);
+/// Series identifier (e.g. an udon flavour family). Equal names mean the
+/// spots are part of the same series.
+///
+/// `Spot::series` typically carries just the `name` (the spots vector stays
+/// empty); that is fine because `Hash` / `Eq` only consider the name. When a
+/// `Series` is fed to [`crate::assignment::SeriesAssigner`] the caller is
+/// expected to populate `spots` so the assigner has the data it needs to
+/// build a tour.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Series {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spots: Vec<Spot>,
+}
 
 impl Series {
+    /// Build a name-only series (the typical case for `Spot::series`).
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
-        Self(name.into())
+        Self { name: name.into(), spots: Vec::new() }
+    }
+
+    /// Build a series together with its member spots — used when handing a
+    /// whole series group to the [`crate::assignment::SeriesAssigner`].
+    #[must_use]
+    pub fn with_spots(name: impl Into<String>, spots: Vec<Spot>) -> Self {
+        Self { name: name.into(), spots }
     }
 
     #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.name
+    }
+
+    /// Number of member spots. May be zero when the series is used as a
+    /// bare tag (e.g. on a single `Spot`).
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.spots.len()
+    }
+
+    /// True when the series carries no member spots.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.spots.is_empty()
+    }
+}
+
+// Hash / Eq / Ord intentionally consider the name only so a name-only
+// `Series` (used as a tag on a `Spot`) and a fully-populated one compare
+// equal. This keeps the cluster-by-series HashMap in `cluster.rs` correct
+// even after `Series` gained its `spots` field.
+
+impl PartialEq for Series {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for Series {}
+
+impl Hash for Series {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+impl Ord for Series {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.name.cmp(&other.name)
+    }
+}
+
+impl PartialOrd for Series {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
 impl fmt::Display for Series {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.name)
     }
 }
 

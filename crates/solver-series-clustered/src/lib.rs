@@ -21,7 +21,10 @@ pub mod cluster;
 pub mod solver;
 pub mod types;
 
-pub use assignment::{Assignment, AssignmentConfig, ClusterPlan, assign_clusters};
+pub use assignment::{
+    Assignment, AssignmentConfig, AssignmentStrategy, ClusterPlan, SeriesAssigner, SeriesTour,
+    assign_clusters,
+};
 pub use cluster::{Cluster, ClusterConfig, ClusterId, Clustering, UnionFind};
 pub use solver::{SeriesClusteredSolver, Solver};
 pub use types::{
