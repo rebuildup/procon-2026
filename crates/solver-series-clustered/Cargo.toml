@@ -1,0 +1,22 @@
+[package]
+name = "solver-series-clustered"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Series-clustering solver: groups spots by series + spatial proximity and assigns clusters to patrol agents."
+
+[lints]
+workspace = true
+
+[dependencies]
+# Internal types live as local stubs until the domain crate (#11) and engine (#18/#53)
+# integration tickets land. See src/types.rs for the EXPECTED INTEGRATION note.
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# Tests use only std types declared in the crate itself; nothing extra is required.
