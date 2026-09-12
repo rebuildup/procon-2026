@@ -16,7 +16,9 @@ pub mod solver;
 pub mod types;
 
 pub use node::MctsNode;
-pub use rollout::rollout;
+pub use rollout::{
+    GreedyRollout, NearestSpotHeuristic, RolloutError, RolloutOutcome, RolloutPolicy, rollout,
+};
 pub use solver::{MctsError, MctsSolver};
 pub use types::{Action, DayState, MAX_ACTIONS, PlanError, plan_one_step};
 
