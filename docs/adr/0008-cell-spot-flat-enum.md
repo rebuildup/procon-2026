@@ -1,4 +1,4 @@
-# ADR-0004: `Cell` は flat enum、`Spot` は parallel struct
+# ADR-0008: `Cell` は flat enum、`Spot` は parallel struct
 
 - Status: Accepted
 - Date: 2026-09-07
@@ -65,4 +65,4 @@ Issue #12 で導入する地形型について、スポット付き平地を
 ## Follow-ups
 
 - `crates/engine` で `Map` を導入するとき、座標 → `Cell` と座標 → `Spot` の
-  2 系統を持つ `Map` 構造体を ADR-0005 で定義する。
+  2 系統を持つ `Map` 構造体を別 ADR で定義する。

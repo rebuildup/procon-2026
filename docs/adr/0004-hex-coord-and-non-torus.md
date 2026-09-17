@@ -89,7 +89,7 @@ Issue #11 AC 通り。`MapSize::new` は validate 失敗時に `CoreError::Invar
 
 ### Mitigation
 
-- ADR-0005 以降で「`HexCoord` を生で持たず `CellId(usize)` を持つ薄ラッパ型を後付けする」案を
+- ADR-0008 以降で「`HexCoord` を生で持たず `CellId(usize)` を持つ薄ラッパ型を後付けする」案を
 
   検討する余地がある (Issue #11 では保留)。
 - `quality-gate` skill の domain review で「`Bounds::check` 経由か」を確認するチェックリストを

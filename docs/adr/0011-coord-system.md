@@ -1,12 +1,12 @@
-# ADR-0006: 座標系は (col, row) タプル + EvenRowRightOffset の flat-top hex を採用する
+# ADR-0011: 座標系は (col, row) タプル + EvenRowRightOffset の flat-top hex を採用する
 
 - Status: Accepted
 - Date: 2026-09-07
 - Deciders: rebuildup
 - Issue: #17 (Q1 連動)
-- Depends on: ADR-0005
+- Depends on: ADR-0010
 
-> 注: 当初 `0002-coord-system.md` を意図していたが、本 repo では `0002` が protocol-versioning、`0004` が sibling branch #11 (`hex-coord-and-non-torus`) で取得されるため、連番 `0006` を採用する。
+> 注: 当初 `0002-coord-system.md` を意図していたが、本 repo では `0002` が protocol-versioning、`0004` が sibling branch #11 (`hex-coord-and-non-torus`) で取得されるため、連番 `0006` を一時採用、後に ADR 番号重複解消のため `0011` にシフト。
 
 ## Context
 
@@ -105,7 +105,7 @@ pub enum MapLayout {
 
 ## Related ADRs / References
 
-- ADR-0005: domain のゲームモデル 6 entity 統合定義 (本 ADR が D-1〜D-7 の前提)
+- ADR-0010: domain のゲームモデル 6 entity 統合定義 (本 ADR が D-1〜D-7 の前提)
 - ADR-0002: protocol JSON v1 envelope との整合
 - ADR-0001: `crates/domain` を I/O なし純粋 crate とする不変条件
 - Sibling branch #11 の ADR-0004 (`hex-coord-and-non-torus`): 個別の hex 計算ヘルパ詳細
