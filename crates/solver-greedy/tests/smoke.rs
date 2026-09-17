@@ -147,8 +147,149 @@ fn empty_stock_everyone_stays() {
     }
 }
 
-/// All agents on the same cell with all spots equidistant ⇒ each agent
-/// must still emit exactly one action and the solver must not panic.
+#[test]
+fn assignments_respect_stock_and_spread_series() {
+    let ctx = SolveContext::for_test(
+        0,
+        vec![agent(0, 0, 0, 10), agent(1, 0, 0, 10), agent(2, 0, 0, 10)],
+        vec![spot(0, 1, 0, 0, 1), spot(1, -1, 0, 1, 1), spot(2, 0, 1, 2, 1)],
+    );
+    let actions = GreedySolver::new().decide(&ctx);
+    assert_eq!(
+        actions,
+        vec![
+            Action::MoveToward { agent: AgentId(0), spot: SpotId(0) },
+            Action::MoveToward { agent: AgentId(1), spot: SpotId(1) },
+            Action::MoveToward { agent: AgentId(2), spot: SpotId(2) },
+        ]
+    );
+}
+
+#[test]
+fn reservations_are_local_and_exhausted_stock_causes_wait() {
+    let ctx = SolveContext::for_test(
+        0,
+        vec![agent(0, 0, 0, 0), agent(1, 0, 0, 10), agent(2, 0, 0, 10)],
+        vec![spot(0, 1, 0, 0, 1)],
+    );
+    let original = ctx.clone();
+    let actions = GreedySolver::new().decide(&ctx);
+    assert_eq!(
+        actions,
+        vec![
+            Action::Stay { agent: AgentId(0) },
+            Action::MoveToward { agent: AgentId(1), spot: SpotId(0) },
+            Action::Stay { agent: AgentId(2) },
+        ]
+    );
+    assert_eq!(ctx, original);
+    assert_eq!(GreedySolver::new().decide(&ctx), actions);
+}
+
+#[test]
+fn assigned_series_breaks_ties_before_pool_frequency() {
+    let ctx = SolveContext::for_test(
+        0,
+        vec![agent(0, 0, 0, 10), agent(1, 0, 0, 10)],
+        vec![spot(0, 1, 0, 0, 3), spot(1, -1, 0, 1, 3), spot(2, 2, 0, 1, 3)],
+    );
+    let actions = GreedySolver::new().decide(&ctx);
+    assert_eq!(actions[0], Action::MoveToward { agent: AgentId(0), spot: SpotId(0) });
+    assert_eq!(actions[1], Action::MoveToward { agent: AgentId(1), spot: SpotId(1) });
+}
+
+fn independent_baseline(ctx: &SolveContext) -> Vec<Action> {
+    ctx.agents
+        .iter()
+        .map(|agent| {
+            if !agent.can_move() {
+                return Action::Stay { agent: agent.id };
+            }
+            ctx.spots
+                .iter()
+                .filter(|spot| spot.is_available())
+                .min_by_key(|spot| {
+                    let frequency = ctx
+                        .spots
+                        .iter()
+                        .filter(|other| other.is_available() && other.series_id == spot.series_id)
+                        .count();
+                    (agent.coord.distance(spot.coord), frequency, spot.series_id, spot.id.0)
+                })
+                .map_or(Action::Stay { agent: agent.id }, |spot| Action::MoveToward {
+                    agent: agent.id,
+                    spot: spot.id,
+                })
+        })
+        .collect()
+}
+
+fn assignment_score(ctx: &SolveContext, actions: &[Action]) -> (usize, u32) {
+    let mut remaining = ctx.spots.clone();
+    let mut series = std::collections::BTreeSet::new();
+    let mut served = 0;
+    for action in actions {
+        if let Action::MoveToward { spot, .. } = action {
+            let target = remaining.iter_mut().find(|candidate| candidate.id == *spot).unwrap();
+            if target.stock > 0 {
+                target.stock -= 1;
+                series.insert(target.series_id);
+                served += 1;
+            }
+        }
+    }
+    (series.len(), served)
+}
+
+#[test]
+fn compare_colocated_assignment_suite() {
+    let mut baseline_total = (0, 0);
+    let mut coordinated_total = (0, 0);
+    let mut cases = 0;
+    for count in 3..=8 {
+        for series_count in 1..=6 {
+            for stock in [1, 2, 8] {
+                let agents = (0..count).map(|id| agent(id, 0, 0, 10)).collect();
+                let coords = [(1, 0), (0, 1), (-1, 1), (-1, 0), (0, -1), (1, -1)];
+                let spots = (0_u16..6)
+                    .zip(coords)
+                    .map(|(id, (q, r))| spot(id, q, r, id % series_count, stock))
+                    .collect();
+                let ctx = SolveContext::for_test(0, agents, spots);
+                let baseline = assignment_score(&ctx, &independent_baseline(&ctx));
+                let actions = GreedySolver::new().decide(&ctx);
+                let coordinated = assignment_score(&ctx, &actions);
+                assert!(coordinated >= baseline);
+                let assigned =
+                    actions.iter().filter(|a| matches!(a, Action::MoveToward { .. })).count();
+                assert_eq!(usize::try_from(coordinated.1).unwrap(), assigned);
+                for target in &ctx.spots {
+                    let reservations = actions
+                        .iter()
+                        .filter(
+                            |a| matches!(a, Action::MoveToward { spot, .. } if *spot == target.id),
+                        )
+                        .count();
+                    assert!(reservations <= usize::try_from(target.stock).unwrap());
+                }
+                assert_eq!(
+                    coordinated.0,
+                    usize::from(count.min(u8::try_from(series_count).unwrap()))
+                );
+                baseline_total.0 += baseline.0;
+                baseline_total.1 += baseline.1;
+                coordinated_total.0 += coordinated.0;
+                coordinated_total.1 += coordinated.1;
+                cases += 1;
+            }
+        }
+    }
+    assert!(coordinated_total > baseline_total);
+    println!(
+        "assignment-only cases={cases} baseline={baseline_total:?} coordinated={coordinated_total:?}"
+    );
+}
+
 #[test]
 fn overlapping_agents_are_stable() {
     let ctx = SolveContext::for_test(

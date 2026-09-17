@@ -55,19 +55,18 @@ impl GreedySolver {
     /// agent has no fuel.
     fn choose_spot<'a>(
         agent: &Agent,
-        spots: &'a [Spot],
-        claimed_series: &[u16],
-    ) -> Option<&'a Spot> {
+        spots: &'a mut [Spot],
+        available_series: &[u16],
+        assigned_series: &[u16],
+    ) -> Option<&'a mut Spot> {
         if !agent.can_move() {
             return None;
         }
-        spots.iter().filter(|s| s.is_available()).min_by_key(|s| {
+        spots.iter_mut().filter(|s| s.is_available()).min_by_key(|s| {
             let dist = agent.coord.distance(s.coord);
-            let series_count = count_occurrences(claimed_series, s.series_id);
-            // variety-first tie-break: prefer *less* represented series.
-            // distance is the primary key, variety count is secondary,
-            // then series_id, then spot_id for full determinism.
-            (dist, series_count, s.series_id, s.id.0)
+            let series_count = count_occurrences(available_series, s.series_id);
+            let assigned_count = count_occurrences(assigned_series, s.series_id);
+            (dist, assigned_count, series_count, s.series_id, s.id.0)
         })
     }
 }
@@ -78,25 +77,27 @@ impl Solver for GreedySolver {
     }
 
     fn decide(&self, ctx: &SolveContext) -> Vec<Action> {
-        // Series already claimed by *this team's agents* in this day.
-        // For Phase 1 we approximate "claimed by us" with the spots still
-        // showing stock > 0 whose `series_id` is represented at least once
-        // among the spots with the *lowest* distance from any agent — that
-        // is, we count distinct series already present in the candidate
-        // pool. This intentionally avoids re-running a private shadow
-        // state and keeps the solver stateless and replay-deterministic.
-        let mut claimed_series: Vec<u16> = Vec::with_capacity(ctx.spots.len());
+        let mut available_series: Vec<u16> = Vec::with_capacity(ctx.spots.len());
         for s in &ctx.spots {
             if s.is_available() {
-                claimed_series.push(s.series_id);
+                available_series.push(s.series_id);
             }
         }
 
+        let mut remaining_spots = ctx.spots.clone();
+        let mut assigned_series = Vec::with_capacity(ctx.agents.len());
         ctx.agents
             .iter()
             .map(|agent| {
-                let chosen = Self::choose_spot(agent, &ctx.spots, &claimed_series);
+                let chosen = Self::choose_spot(
+                    agent,
+                    &mut remaining_spots,
+                    &available_series,
+                    &assigned_series,
+                );
                 if let Some(spot) = chosen {
+                    spot.stock -= 1;
+                    assigned_series.push(spot.series_id);
                     trace!(
                         agent = agent.id.0,
                         spot = spot.id.0,
