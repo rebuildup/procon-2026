@@ -6,7 +6,7 @@
 //!   - `warmup`                           : measure cold / warm / 1-day-smoke timing per solver.
 //!   - `loop <days>`                      : drive the per-match solver loop (in-process transport).
 //!   - `coordinator`                      : contest venue runtime (LAN match-server
-//!                                        auto-detect + /agent POST with retry/timeout).
+//!     auto-detect + /agent POST with retry/timeout).
 //!   - `match-config load <path>`         : pretty-print a match config JSON.
 //!   - `match-config validate <path>`     : structurally validate a match config.
 //!   - `version`                          : print package + protocol versions.

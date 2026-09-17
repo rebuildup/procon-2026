@@ -99,7 +99,7 @@ mod tests {
         fn id(&self) -> &'static str {
             "stub"
         }
-        fn solve(&self, input: &MatchInput) -> SolverOutput {
+        fn solve(&self, _input: &MatchInput) -> SolverOutput {
             SolverOutput { score: StubScoreReport::zero("stub"), plan: ActionSequence::empty() }
         }
     }
