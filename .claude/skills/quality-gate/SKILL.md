@@ -9,7 +9,7 @@ quality gateは固定bundleではない。
 
 **何をcheckするか、どのtest levelまで要求するかを、projectの実stack、framework/runtimeのcurrent official guidance、変更surface、release riskからcompileする。**
 
-このSkillは通常taskのvalidationだけでなく、初期化時にquality infrastructureそのものを設計・導入・修復する責務を持つ。
+このSkillは通常taskのvalidationでもではなく、初期化時にquality infrastructureそのものを設計・導入・修復する責務を持つ。
 
 ## 1. Initialization / recompile
 
@@ -27,6 +27,7 @@ quality gateは固定bundleではない。
 - generated-code boundary
 - browser / OS / CPU architecture targets
 - release/deploy target
+- GitHub PR topology: independent / stacked / release trunk
 
 次に実versionに対応するcurrent official documentationを調査する。
 
@@ -184,12 +185,19 @@ profileには最低限:
 - change-type -> required verification mapping
 - fast worker gate
 - ticket integration gate
+- stack reconciliation/revalidation policy
 - release gate
 - canonical validation entry points
 - required CI checks
 - coverage policy when meaningful
 - browser/device/OS/architecture matrix
-- artifact/report paths
+- CI trigger semantics (`pull_request` / `push` / schedule / dispatch / comment/review event)
+- runner policyとplatform matrixの起動条件
+- expensive/native/platform-specific gateの適用条件
+- concurrency / cancellation / timeout policy
+- artifact/report pathsとretention policy
+- repository visibility / included usage / billing modelを踏まえたCI resource policy
+- expected CI usage/cost modelまたはbudget guardrail（意味があるprojectのみ）
 - failure policy
 
 を持たせる。
@@ -253,28 +261,164 @@ frameworkが特定領域をE2E/real runtimeで検証することを推奨する�
 4. native agent capability
 5. 明確な優位があるplugin/MCP
 
-## 8. GitHub Actions
+## 7.1 Delivery-estimation integration
+
+`agent-delivery-estimation` がdelivery forecastを行う場合、quality gateは次の観測値を提供できる形にする。
+
+- validation level / required gate
+- CI started/completed duration
+- queue / retry / failure
+- E2E / manual verification wait
+- release-only validation cost
+- current-SHA revalidationによる追加round
+
+これらはforecast inputであり、estimateを短縮するためにrequired gateを削除・skip・弱体化してはならない。
+delivery forecastはquality requirementに従い、逆にquality requirementをforecastへ合わせない。
+
+## 8. GitHub Actions / CI resource efficiency
 
 GitHub Actionsを使用するprojectではlocal gateとCI gateを同じsemanticsへ揃える。
 
-初期化時にcurrent official GitHub Actions guidanceとframework/runtime公式CI exampleを確認する。
+**CI resource efficiencyもquality invariantとして扱う。品質を落としてActionsを節約するのではなく、同じverification signalを必要な境界で一度だけ実行する。**
 
-検討:
+初期化時とCI/CD変更時にcurrent official GitHub Actions guidance、billing/usage model、framework/runtime公式CI exampleを確認する。GitHub Actionsのrunner価格、included usage、rounding、public/privateの扱い等は変化し得るため、固定価格をpolicyへ埋め込まない。
 
-- first-party setup actions
-- cache
-- matrix testing
-- service containers
-- browser/device dependencies
-- artifacts / reports
-- dependency/security checks
-- concurrency/cancellation
-- least-privilege permissions
-- secrets
-- action version/pinning
-- trusted/untrusted PR behavior
+### 8.1 実測してから最適化する
 
-Actionsを増やすこと自体を目的にしない。CIだけのhidden test logicを増やさずproject-local validation entry pointを呼ぶ。
+workflow run回数だけでcostやquota消費を判断しない。
+
+最低限、次を使ってactual usageを評価する:
+
+- repository visibility
+- workflow / event / branch
+- job count
+- runner label / OS / architecture
+- job started/completed timeまたはbillable duration
+- success / failure / cancelled / skipped
+- 同一commit/SHAに対する重複run
+- artifact / cache usage when relevant
+- billing/usage画面または利用可能なusage API
+
+基本モデルは次で考える:
+
+```text
+expected CI usage ≈ trigger frequency × started jobs × billed duration × runner cost/weight
+```
+
+単なる `workflow runs = N` をusage量として報告しない。
+
+### 8.2 trigger duplicationを避ける
+
+同じvalidationを同じcommitに対して意味なく `push` と `pull_request` の両方で実行しない。
+
+通常のdefault:
+
+- ticket/feature branch: `pull_request` でintegration gate
+- `main` / release trunk / tag: `push` でpost-mergeまたはrelease-specific gate
+- manual deep verification: `workflow_dispatch`
+- periodic verificationに実際の意味がある場合のみ `schedule`
+
+`push.branches: ['**']` + `pull_request` のような構成を、同じfull CIを二重起動するdefaultにしない。
+
+両eventが必要な場合は、それぞれ異なる責務を持つことをprofileへ明示する。
+
+stacked PRでも同じ原則を適用し、immediate predecessorへのPR validationとbranch push validationを無意味に重複させない。
+
+### 8.3 fast PR gateとexpensive platform gateを分離する
+
+通常PRのfeedback loopでは、変更surfaceを十分検証できる最小のrepresentative gateを優先する。
+
+Windows/macOS/native/device/browser matrix等のexpensive platform verificationは削除せず、必要条件へ移す。
+
+代表的な起動条件:
+
+- platform/native関連pathが変更された
+- platform-specific behavior / packaging / process invocationが変更された
+- release candidate / release trunk / tag
+- explicit label / manual dispatchによるfull verification
+- required compatibility matrixを定期的に再確認する必要がある
+
+platform-specific defect riskが常に高いprojectではPRごとのmatrixを維持してよい。その場合もcostを認識した明示的decisionとしてprofileへ記録する。
+
+### 8.4 expensive jobはrunner allocation前にgateする
+
+高コストjobを起動してからstep内で「対象変更ではない」と判定して終了する設計を避ける。
+
+可能なら次を使い、runnerを必要としない段階またはjob start前に不要実行を除外する:
+
+- workflow `paths` / `paths-ignore`
+- event / branch filter
+- job-level `if`
+- lightweight preflight jobからのoutputを使ったdependent expensive jobの条件条件分岐
+
+ただしpreflight自体のminimum billing/latencyも考慮し、単純なpath filterで十分なら余計なjobを増やさない。
+
+### 8.5 comment/review-driven automationを事前filterする
+
+`issue_comment`、`pull_request_review_comment`、`pull_request_review` 等でAI assistantやautomationを起動する場合、すべてのcomment/review eventでrunnerを確保し、action step内部のtrigger phrase判定だけに依存してはいけない。
+
+可能ならjob-level条件で最低限:
+
+- explicit trigger phrase / command
+- intended event type
+- trusted actor / permission条件 when necessary
+- bot-generated noiseの除外
+
+を判定してからrunnerを起動する。
+
+### 8.6 superseded CIをcancelする
+
+新commitで価値を失うvalidationには `concurrency` と `cancel-in-progress: true` を原則設定する。
+
+concurrency identityはworkflow + PR identityまたはref等、同一feedback streamを正しく表すものにする。
+
+ただしdeploy、migration、release publish等のside effectを伴うjobは安易に途中cancelしない。idempotency/recovery policyと合わせて個別設計する。
+
+### 8.7 timeoutを明示する
+
+各jobへ実測に基づく `timeout-minutes` を設定する。
+
+通常実行時間に合理的marginを加える。GitHubの大きなdefault timeoutをfailure recovery policyの代わりにしない。
+
+hung process / deadlock / unavailable serviceで数十分〜数時間runnerを保持する状態を防ぐ。
+
+### 8.8 artifact / cacheは目的別に管理する
+
+PR verificationの一時artifactとrelease artifactを同じretention policyにしない。
+
+- CI evidence / debug artifact: 必要な期間だけ短く保持
+- release deliverable: release policyに従う
+- artifactが不要ならuploadしない
+- cacheは実測でbuild/test時間を改善する場合に使う
+
+storage削減とActions minutes削減を混同しない。現在のbottleneckをusage dataから判断する。
+
+### 8.9 CIを削るのではなく境界を再配置する
+
+禁止:
+
+- quota不足を理由にrequired verificationを無断削除する
+- native/platform testを単に消してgreenにする
+- required checkをdisableしてusage問題を隠す
+- self-hosted runnerへ移せば安全性検討不要とみなす
+
+高コストverificationが必要なら、PR every-commitからrelease gate / change-sensitive gate / manual full gateへ移せないか評価する。
+
+self-hosted runnerを使う場合はActions minutesだけでなく、untrusted code execution、credential exposure、host persistence、availability、maintenance costを含めて判断する。
+
+### 8.10 budgetはlast guardrailにする
+
+private repository等でmetered usageがある場合、必要に応じてaccount/org/repositoryのbudget/alertを設定する。
+
+budgetはworkflow設計の代替ではない。
+
+推奨運用:
+
+1. included usageとactual monthly burnを確認
+2. trigger duplication / unnecessary platform jobs / runaway jobsを先に修正
+3. optimized baselineを1 billing cycle観測
+4.通常利用 + 合理的headroomにbudgetを設定
+5. usage spike時は「回数」ではなくrunner/job単位で再計測
 
 ## 9. Worker gate
 
@@ -286,7 +430,14 @@ Worker gateはIntegration gateの代替ではない。
 
 ## 10. Ticket integration gate
 
-`<issue-number> -> release-x-y-z` のcandidateをclean environmentで、canonical integration entry pointから検証する。
+clean integration candidateで、canonical integration entry pointからticketに必要なverificationを実行する。
+
+PR topologyは固定しない:
+
+- independent ticket: `<issue-number> -> release-x-y-z`
+- stacked dependent ticket: `<issue-number> -> <immediate-predecessor-ticket-branch>`
+
+どちらでもticketは共通のtarget release trunkを持つ。
 
 最低限:
 
@@ -294,10 +445,26 @@ Worker gateはIntegration gateの代替ではない。
 - changed boundaryに必要なunit/smoke/integration/contract/E2E
 - formatter/lint/type/static/build等のapplicable checks
 - required CI checks
+- current head SHAとvalidation evidenceの一致
+- immediate PR base / target release trunkとのstaleness確認
 
 「all unit tests green」だけをintegration completionにしない。
 
-## 11. Release gate
+## 11. Stack reconciliation gate
+
+stack predecessorがreview/rebase/updateで変化した場合、affected downstream branchをdependency orderでreconcileする。
+
+必須:
+
+- previous `validated_sha` とcurrent head SHAを比較
+- SHAを変え たdownstream ticketではaffected required verificationを再実行
+- old green resultをcurrent headのpassとして流用しない
+- required CI/checksをcurrent headで再評価
+- predecessor contract/API/schema変更時はdependent contract/integration testを優先して再評価
+
+単なるbranch ref名ではなくresolved immutable SHAをvalidation identityにする。
+
+## 12. Release gate
 
 `release-x-y-z -> main` 前にcanonical release entry pointからticketより広いrelease-level verificationを行う。
 
@@ -314,16 +481,18 @@ Worker gateはIntegration gateの代替ではない。
 - upgrade/backward-compatibility
 - release-like environment smoke
 
-## 12. PR Done gate
+## 13. PR Done gate
 
 - Issue acceptance criteriaを満たす
 - required verification levelを満たす
-- required CI/checks成功
+- required CI/checksがcurrent SHAで成功
 - blocking review解消
 - known limitationを隠さない
-- target releaseとのstaleness確認
+- target release trunk / immediate predecessorとのstaleness確認
+- stack update後のaffected revalidation完了
+- PR metadata / linked Issueがcurrent delivery stateと一致
 
-## 13. False green禁止
+## 14. False green禁止
 
 禁止:
 
@@ -336,8 +505,9 @@ Worker gateはIntegration gateの代替ではない。
 - mock-only testをreal integrationと報告
 - manual check未実施を「動作確認済み」と報告
 - coverage threshold低下や不当exclude
+- predecessor変更後にold SHAのgreen resultを流用
 
-## 14. Coverageは固定万能指標にしない
+## 15. Coverageは固定万能指標にしない
 
 coverageは有用なtestable sourceでproject-specific policyとして利用する。
 
@@ -345,7 +515,7 @@ framework guidance、risk、code type、existing baselineを優先する。
 
 coverageが適切でない領域では別のdeterministic signalへ置き換える。
 
-## 15. Re-evaluation triggers
+## 16. Re-evaluation triggers
 
 次の場合はquality profileを再compileする:
 
@@ -354,8 +524,11 @@ coverageが適切でない領域では別のdeterministic signalへ置き換え�
 - architecture boundary変更
 - new app/platform target
 - CI workflow変更
-- flaky/slow gateが開発速度を阻害
+- PR/stack/release integration model変更
+- flaky/slow gateが開発速度阻害
+- Actions usage/costが想定baselineから大きく乖離
+- included usage / runner billing model / repository visibility変更
 - escaped regressionがgateの穴を示した
-- release process変更
+- release process change
 
 quality gate自体をversioned project configurationとして扱う。
