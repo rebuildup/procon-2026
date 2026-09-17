@@ -6,7 +6,7 @@
 //!   - `warmup`                           : measure cold / warm / 1-day-smoke timing per solver.
 //!   - `loop <days>`                      : drive the per-match solver loop (in-process transport).
 //!   - `coordinator`                      : contest venue runtime (LAN match-server
-//!                                          auto-detect + /agent POST with retry/timeout).
+//!                                        auto-detect + /agent POST with retry/timeout).
 //!   - `match-config load <path>`         : pretty-print a match config JSON.
 //!   - `match-config validate <path>`     : structurally validate a match config.
 //!   - `version`                          : print package + protocol versions.
@@ -199,33 +199,7 @@ async fn run(cli: Cli) -> Result<()> {
             run_loop(days, &player).await?;
         }
         Cmd::Coordinator { server, agent_url, setting_url, token, agent_id, dry_run, once } => {
-            let overrides = CliOverrides { server, agent_url, setting_url, token };
-            let cfg = CoordinatorConfig::from_env(&overrides)?;
-            println!("{}", serde_json::to_string_pretty(&cfg.describe())?);
-
-            if dry_run {
-                return Ok(());
-            }
-
-            if once {
-                let body =
-                    AgentRequest { agent_id, day: 0, turn: 0, payload: serde_json::Value::Null };
-                let resp = post_agent_with_retry(&cfg, &body)?;
-                println!("{}", serde_json::to_string_pretty(&resp)?);
-                return Ok(());
-            }
-
-            // Default behaviour: stay alive, waiting for the real solver loop
-            // that #45 will provide. Until then we just block here so the
-            // container stays in a healthy state for ops to inspect.
-            tracing::warn!(
-                "coordinator loop body not yet implemented (see #45); \
-                 idle-blocking. Use --once to send a single probe POST."
-            );
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
-            loop {
-                ticker.tick().await;
-            }
+            run_coordinator(server, agent_url, setting_url, token, agent_id, dry_run, once).await?;
         }
         Cmd::MatchConfig(sub) => match sub {
             MatchConfigCmd::Load { path } => {
@@ -267,6 +241,47 @@ async fn run(cli: Cli) -> Result<()> {
         },
     }
     Ok(())
+}
+
+/// Drive the `coordinator` subcommand: probe the venue server, optionally
+/// send a single agent POST, otherwise idle-block to keep the container
+/// healthy for ops inspection (real solver loop arrives with #45).
+#[allow(clippy::too_many_lines)]
+async fn run_coordinator(
+    server: Option<String>,
+    agent_url: Option<String>,
+    setting_url: Option<String>,
+    token: Option<String>,
+    agent_id: String,
+    dry_run: bool,
+    once: bool,
+) -> Result<()> {
+    let overrides = CliOverrides { server, agent_url, setting_url, token };
+    let cfg = CoordinatorConfig::from_env(&overrides)?;
+    println!("{}", serde_json::to_string_pretty(&cfg.describe())?);
+
+    if dry_run {
+        return Ok(());
+    }
+
+    if once {
+        let body = AgentRequest { agent_id, day: 0, turn: 0, payload: serde_json::Value::Null };
+        let resp = post_agent_with_retry(&cfg, &body)?;
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+
+    // Default behaviour: stay alive, waiting for the real solver loop
+    // that #45 will provide. Until then we just block here so the
+    // container stays in a healthy state for ops to inspect.
+    tracing::warn!(
+        "coordinator loop body not yet implemented (see #45); \
+         idle-blocking. Use --once to send a single probe POST."
+    );
+    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+    loop {
+        ticker.tick().await;
+    }
 }
 
 /// Drive the per-match solver loop with an in-process transport.

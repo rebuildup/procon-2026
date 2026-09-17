@@ -100,10 +100,7 @@ mod tests {
             "stub"
         }
         fn solve(&self, input: &MatchInput) -> SolverOutput {
-            SolverOutput {
-                score: StubScoreReport::zero("stub"),
-                plan: ActionSequence::empty(),
-            }
+            SolverOutput { score: StubScoreReport::zero("stub"), plan: ActionSequence::empty() }
         }
     }
 }

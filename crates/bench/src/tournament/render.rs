@@ -163,9 +163,9 @@ fn _ensure_used(_: &LeaderboardEntry) {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::runner::{Leaderboard, LeaderboardEntry, TournamentConfig};
     use super::super::types::ScoreReport;
+    use super::*;
     use std::time::Duration;
 
     fn entry(
