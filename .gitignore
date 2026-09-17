@@ -48,6 +48,13 @@ packages/frontend/.vite/
 .tmp/
 .reference/
 
+# ----------------------------------------
+# Git worktrees (Worktrunk / manual `git worktree`)
+# Each worktree is per-worker isolated mutable runtime state.
+# Do not commit worktree contents into the source tree.
+# ----------------------------------------
+.worktrees/
+
 # proptest local regression seed files (regenerated on next test run)
 *.proptest-regressions
 

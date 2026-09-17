@@ -1,0 +1,31 @@
+name: Release source check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  release-source-check:
+    name: PR head must be release-x-y-z branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR head matches canonical release branch pattern
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [ "${BASE}" != "main" ]; then
+            echo "Base branch is '${BASE}', not 'main'. Skipping release-source check (this check is for main-bound PRs only)."
+            exit 0
+          fi
+          if ! echo "${HEAD}" | grep -Eq '^release-[0-9]+-[0-9]+-[0-9]+$'; then
+            echo "::error title=Invalid PR head for main-bound PR::PR head ref '${HEAD}' does not match the canonical release branch pattern '^release-<major>-<minor>-<patch>$'. Only release branches may merge into main." >&2
+            exit 1
+          fi
+          echo "OK: head '${HEAD}' is a canonical release branch."
