@@ -10,6 +10,7 @@ const LINKS: readonly SidebarLink[] = [
   { href: '/', label: 'Home' },
   { href: '/replays', label: 'Replays' },
   { href: '/solvers', label: 'Solvers' },
+  { href: '/live', label: 'Live' },
 ];
 
 export const Sidebar: Component = () => (

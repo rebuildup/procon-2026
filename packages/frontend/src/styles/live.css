@@ -1,0 +1,99 @@
+/* Live page — status badge, HUD, and map area. */
+
+.live__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.live__title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.live__body {
+  margin: 0 0 1rem;
+  color: var(--app-muted);
+}
+
+.live__badge {
+  display: inline-block;
+  padding: 0.15rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--app-fg);
+  background: var(--app-surface-alt);
+  border: 1px solid var(--app-border);
+}
+
+.live__badge[data-status='waiting'] {
+  background: #f5c542;
+  color: #2a2300;
+  border-color: #d6a82b;
+}
+
+.live__badge[data-status='running'] {
+  background: #2da44e;
+  color: #ffffff;
+  border-color: #2c974b;
+}
+
+.live__badge[data-status='ended'] {
+  background: var(--app-surface-alt);
+  color: var(--app-muted);
+  border-color: var(--app-border);
+}
+
+.live__hud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.live__hud-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.85rem;
+  background: var(--app-surface-alt);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  min-width: 6rem;
+}
+
+.live__hud-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--app-muted);
+}
+
+.live__hud-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.live__hud-value--large {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.live__hud-value--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95rem;
+}
+
+.live__map {
+  position: relative;
+  width: 100%;
+  min-height: 420px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  overflow: hidden;
+}
