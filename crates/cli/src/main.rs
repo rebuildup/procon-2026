@@ -352,16 +352,27 @@ async fn cmd_coordinator(
     // restricts the surface to {"loop", "wait"}; the `match` here is
     // exhaustive and the `_` arm is `unreachable!()` defensively.
     let solver_strategy = solver.clone();
-    let solver: Box<dyn engine::solver::Solver> = match solver_strategy.as_str() {
-        "loop" => Box::new(EngineLoopAdapter::new(
-            solver_loop::InitialStrategy::GreedyNearestNeighbor,
-            32,
-        )),
-        "wait" => Box::new(WaitSolver),
+    // The loop adapter exposes a setting slot so the coordinator loop
+    // can hand the parsed engine setting (real map + agent positions)
+    // back to the solver after `protocol_setting_to_engine`. Without
+    // this injection the adapter would plan against a stand-in problem
+    // and emit moves that fall off the real map, causing the official
+    // server to reject day 0 with `revision=-1` (issue #158).
+    let engine_setting_slot = match solver_strategy.as_str() {
+        "loop" => {
+            let adapter =
+                EngineLoopAdapter::new(solver_loop::InitialStrategy::GreedyNearestNeighbor, 32);
+            let slot = adapter.setting_handle();
+            let solver: Box<dyn engine::solver::Solver> = Box::new(adapter);
+            (solver, Some(slot))
+        }
+        "wait" => (Box::new(WaitSolver) as Box<dyn engine::solver::Solver>, None),
         other => {
             unreachable!("--solver value_parser already restricts to {{loop, wait}}, got {other}")
         }
     };
+    let solver = engine_setting_slot.0;
+    let engine_setting_slot = engine_setting_slot.1;
     tracing::info!(solver = solver.name(), "coordinator loop strategy selected");
 
     let loop_cfg = CoordinatorLoopConfig {
@@ -372,6 +383,7 @@ async fn cmd_coordinator(
         // value verbatim.
         server_url: Some(base_url.clone()),
         state_output_path: state_output.clone(),
+        engine_setting_slot,
         ..Default::default()
     };
     let outcome = run_coordinator_loop(client, solver, loop_cfg)
