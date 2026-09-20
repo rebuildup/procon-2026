@@ -132,12 +132,7 @@ mod tests {
             .as_ref()
             .map(|s| s.day_steps.len())
             .or_else(|| {
-                fixture
-                    .match_config_raw
-                    .get("problem")?
-                    .get("daySteps")?
-                    .as_array()
-                    .map(Vec::len)
+                fixture.match_config_raw.get("problem")?.get("daySteps")?.as_array().map(Vec::len)
             })
             .unwrap_or(0);
         assert_eq!(day_count, 4, "the example problem declares 4 days");
