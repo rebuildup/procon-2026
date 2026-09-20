@@ -37,10 +37,12 @@
 //!
 //! [`protocol::MatchClient`]: protocol::MatchClient
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::Utc;
 use domain::{MatchId, PlayerId};
+use engine::model::MatchSetting as EngineSetting;
 use protocol::http_client::SubmitAck;
 use protocol::match_config::AgentKind;
 use serde::Serialize;
@@ -102,6 +104,16 @@ pub struct CoordinatorLoopConfig {
     /// server's setting. When `None`, `daysTotal` is read from
     /// `setting.day_steps` at Phase 1 completion.
     pub days_total_hint: Option<u32>,
+    /// Optional shared slot the loop populates with the parsed
+    /// [`EngineSetting`] after Phase 1+3 succeed. Concrete solvers that
+    /// want map-aware planning (see
+    /// [`crate::solver_adapter::EngineLoopAdapter::setting_handle`])
+    /// clone this slot before constructing the `Box<dyn Solver>` and
+    /// pass the clone back here, so the loop can hand the real map +
+    /// agents to the solver without going through `Box<dyn Solver>`'s
+    /// type-erased boundary. When `None`, no injection happens (the
+    /// solver falls back to its legacy, map-blind mode).
+    pub engine_setting_slot: Option<Arc<Mutex<Option<EngineSetting>>>>,
 }
 
 impl Default for CoordinatorLoopConfig {
@@ -115,6 +127,7 @@ impl Default for CoordinatorLoopConfig {
             state_output_path: None,
             server_url: None,
             days_total_hint: None,
+            engine_setting_slot: None,
         }
     }
 }
@@ -155,6 +168,7 @@ impl CoordinatorLoopConfig {
             state_output_path,
             server_url,
             days_total_hint: None,
+            engine_setting_slot: None,
         })
     }
 }
@@ -469,6 +483,19 @@ where
     let engine_setting = protocol_setting_to_engine(&wire_setting, team.clone())
         .map_err(CoordinatorLoopError::Conversion)?;
     let agent_ids: Vec<u8> = engine_setting.agent_ids();
+
+    // Hand the parsed engine setting (real map + agent positions) to any
+    // solver that pre-registered a setting slot (see
+    // [`crate::solver_adapter::EngineLoopAdapter::setting_handle`]).
+    // Without this injection the adapter falls back to a stand-in
+    // problem that ignores the real map, and the official server
+    // rejects the first day with `revision=-1` (issue #158).
+    if let Some(slot) = cfg.engine_setting_slot.as_ref() {
+        let mut guard = slot.lock().map_err(|_| {
+            CoordinatorLoopError::Conversion("engine setting slot mutex poisoned".to_owned())
+        })?;
+        *guard = Some(engine_setting.clone());
+    }
     let match_id = MatchId::new(format!("match-{}", cfg.team_id))
         .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid match id: {e}")))?;
     let total_days = wire_setting.day_steps.len();
@@ -524,6 +551,14 @@ where
         let decision = solver.decide(&ctx);
         let actions = decision_to_actions(&decision, &ctx)
             .map_err(|source| CoordinatorLoopError::Adapter { day, source })?;
+
+        // Operator visibility: when DEBUG logging is on, dump the
+        // exact wire payload we are about to send. Gated by the
+        // `tracing::enabled!` check so the per-step formatting cost
+        // stays out of the hot path in production.
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            tracing::debug!(day, body = ?actions, "submitting plan");
+        }
 
         let accepted = match client.submit_actions(actions).await {
             Ok(a) => a,
