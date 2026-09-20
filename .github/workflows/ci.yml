@@ -21,12 +21,11 @@ env:
 jobs:
   rust:
     name: Rust (${{ matrix.os }} / ${{ matrix.toolchain }})
-    if: ${{ !(matrix.os == 'macos-latest' && github.event_name == 'pull_request') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
         toolchain: [stable]
     steps:
       - uses: actions/checkout@v7
