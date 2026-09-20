@@ -313,6 +313,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "solver-loop",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",

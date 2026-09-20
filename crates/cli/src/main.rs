@@ -40,7 +40,7 @@ use crate::loop_runner::{
     DayAction, DayPlan, DaySignal, LoopConfig, LoopError, MatchSetting, Solver, Submission,
     SubmissionAck, Transport, run_match_loop,
 };
-use crate::solver_adapter::WaitSolver;
+use crate::solver_adapter::{EngineLoopAdapter, WaitSolver};
 
 #[derive(Debug, Parser)]
 #[command(name = "procon", about = "procon-2026 operator CLI")]
@@ -88,6 +88,16 @@ enum Cmd {
         /// Override `PROCON_TOKEN`.
         #[arg(long, env = "PROCON_TOKEN")]
         token: Option<String>,
+
+        /// Solver strategy the coordinator drives:
+        /// - `loop` (default) — `crates/solver-loop::LoopSolver`, the
+        ///   multi-loop composition strategy from
+        ///   `docs/contest/strategy.md`.
+        /// - `wait`           — `WaitSolver`, every agent waits every
+        ///   step. Useful as a debug smoke test for the wire protocol
+        ///   without invoking a real strategy.
+        #[arg(long, default_value = "loop", value_parser = ["loop", "wait"])]
+        solver: String,
 
         /// Only resolve config + print it. Do not actually start the loop.
         #[arg(long)]
@@ -189,8 +199,8 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Loop { days, player } => {
             run_loop(days, &player).await?;
         }
-        Cmd::Coordinator { server, token, dry_run } => {
-            cmd_coordinator(server, token, dry_run).await?;
+        Cmd::Coordinator { server, token, solver, dry_run } => {
+            cmd_coordinator(server, token, solver, dry_run).await?;
         }
         Cmd::MatchConfig(sub) => cmd_match_config(sub)?,
         Cmd::Version => {
@@ -251,13 +261,16 @@ fn cmd_match_config(sub: MatchConfigCmd) -> Result<()> {
 ///   driving the mockito server lands in #136.
 /// - `--dry-run` with `--server`: print a minimal resolved-config dump
 ///   (server URL + `has_token`) and exit.
-/// - default: build a `MatchClient`, hand it to the wired-up
+/// - default: build a `MatchClient`, build the `--solver` strategy
+///   (`loop` → `EngineLoopAdapter` wrapping `solver_loop::LoopSolver`,
+///   `wait` → `WaitSolver`), hand both to the wired-up
 ///   `run_coordinator_loop`, and idle-block on the per-day driver.
 ///   When the real loop completes, we idle-tick forever so the container
 ///   stays healthy for ops to inspect.
 async fn cmd_coordinator(
     server: Option<String>,
     token: Option<String>,
+    solver: String,
     dry_run: bool,
 ) -> Result<()> {
     if dry_run {
@@ -326,9 +339,23 @@ async fn cmd_coordinator(
         .build()
         .map_err(|e: HttpClientError| anyhow::anyhow!("match client: {e}"))?;
 
-    let solver: Box<dyn engine::solver::Solver> = Box::new(WaitSolver);
+    // Build the solver selected by `--solver`. The `value_parser` already
+    // restricts the surface to {"loop", "wait"}; the `match` here is
+    // exhaustive and the `_` arm is `unreachable!()` defensively.
+    let solver_strategy = solver.clone();
+    let solver: Box<dyn engine::solver::Solver> = match solver_strategy.as_str() {
+        "loop" => Box::new(EngineLoopAdapter::new(
+            solver_loop::InitialStrategy::GreedyNearestNeighbor,
+            32,
+        )),
+        "wait" => Box::new(WaitSolver),
+        other => {
+            unreachable!("--solver value_parser already restricts to {{loop, wait}}, got {other}")
+        }
+    };
+    tracing::info!(solver = solver.name(), "coordinator loop strategy selected");
 
-    let loop_cfg = CoordinatorLoopConfig::default();
+    let loop_cfg = CoordinatorLoopConfig { solver_name: solver_strategy, ..Default::default() };
     let outcome = run_coordinator_loop(client, solver, loop_cfg)
         .await
         .map_err(|e| anyhow::anyhow!("coordinator loop: {e}"))?;
