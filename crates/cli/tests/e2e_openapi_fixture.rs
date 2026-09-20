@@ -206,6 +206,12 @@ async fn e2e_openapi_fixture_completes_four_days() {
         team_id: "mvp-player".to_owned(),
         setting_poll_interval: Duration::from_millis(50),
         solver_name: "loop".to_owned(),
+        // Issue #156: pull the kind-window retry defaults from
+        // `CoordinatorLoopConfig::default()`. The mockito-based server
+        // here returns 200 immediately, so the budget is effectively
+        // unused — keeping it at the production default keeps the
+        // single source of truth in one place.
+        ..Default::default()
     };
 
     let outcome: CoordinatorOutcome =

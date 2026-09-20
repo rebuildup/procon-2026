@@ -7,18 +7,33 @@
 //!
 //! # Phases
 //!
-//! 1. **Setting poll.** `GET /setting` repeatedly until `starts_at > 0`;
-//!    on `403 AccessTimeError` we just sleep and retry (the server returns
-//!    that envelope before start).
-//! 2. **Agent submit.** `POST /agent` exactly once. The kinds vector is
-//!    chosen from [`CoordinatorLoopConfig::solver_name`]: real solvers
-//!    (`"loop"`, `"mcts"`, anything other than the debug-only `"wait"`)
-//!    alternate `KIND_0` / `KIND_1` so half the agents patrol and half
-//!    supply, which gives a richer test of the full protocol than the
-//!    MVP's all-`KIND_0` placeholder.
-//! 3. **Per-day loop.** `GET /` -> `solver.decide(&ctx)` -> adapter ->
+//! 1. **Setting probe.** `GET /setting` repeatedly until the server
+//!    responds with any `MatchSetting` (including `starts_at == 0`).
+//!    A `403 AccessTimeError` envelope is treated the same as a setting
+//!    with `starts_at == 0`: we back off and retry.
+//! 2. **Agent submit.** `POST /agent` with retry-on-`AccessTime`. The
+//!    kinds vector is chosen from [`CoordinatorLoopConfig::solver_name`]:
+//!    real solvers (`"loop"`, `"mcts"`, anything other than the
+//!    debug-only `"wait"`) alternate `KIND_0` / `KIND_1` so half the
+//!    agents patrol and half supply, which gives a richer test of the
+//!    full protocol than the MVP's all-`KIND_0` placeholder.
+//! 3. **Wire -> engine.** Convert the setting, build team + match ids.
+//! 4. **Start wait.** Re-poll `GET /setting` until `starts_at > 0`.
+//! 5. **Per-day loop.** `GET /` -> `solver.decide(&ctx)` -> adapter ->
 //!    `POST /`. If `revision < 0`, return [`CoordinatorLoopError::Rejected`]
 //!    without retrying. Otherwise sleep until `ends_at` and continue.
+//!
+//! ## Order rationale (issue #156)
+//!
+//! The official contest server returns `starts_at == 0` while the kind
+//! submission window is **open** and only sets `starts_at` to a UNIX
+//! timestamp **after** the kind deadline closes. An earlier version of
+//! this loop polled `GET /setting` until `starts_at > 0` and only then
+//! issued `POST /agent`, which by then always returned `403
+//! AccessTimeError` ("agent kind submission is closed"). The fix moves
+//! `POST /agent` ahead of the `starts_at` wait so kinds land in the
+//! open window, and adds explicit retry-on-`AccessTime` to absorb the
+//! small clock skew between the server's deadline and our poll loop.
 //!
 //! [`protocol::MatchClient`]: protocol::MatchClient
 
@@ -26,6 +41,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use domain::{MatchId, PlayerId};
+use protocol::http_client::SubmitAck;
 use protocol::match_config::AgentKind;
 use thiserror::Error;
 
@@ -52,6 +68,20 @@ pub struct CoordinatorLoopConfig {
     /// Defaults to `"loop"` so the production path matches the documented
     /// Phase 2 strategy (`docs/contest/strategy.md`).
     pub solver_name: String,
+    /// Maximum number of `POST /agent` attempts before giving up. Each
+    /// attempt that returns `403 AccessTimeError` (kind window not yet
+    /// open, or already closed) is retried up to this many times before
+    /// the loop surfaces [`CoordinatorLoopError::AgentSubmit`].
+    ///
+    /// Default `30` × `kind_submit_backoff = 500ms` = `15s` of retry
+    /// budget, which comfortably covers the contest server's default
+    /// 5s/60s kind deadlines plus poll-jitter.
+    pub kind_submit_max_attempts: u32,
+    /// Sleep between `POST /agent` retries on `403 AccessTimeError`.
+    ///
+    /// Default `500ms` keeps us under the official server's
+    /// `kind-deadline` default (5s) and the manual-test 60s budget.
+    pub kind_submit_backoff: Duration,
 }
 
 impl Default for CoordinatorLoopConfig {
@@ -60,6 +90,8 @@ impl Default for CoordinatorLoopConfig {
             team_id: "mvp-player".to_owned(),
             setting_poll_interval: Duration::from_secs(2),
             solver_name: "loop".to_owned(),
+            kind_submit_max_attempts: 30,
+            kind_submit_backoff: Duration::from_millis(500),
         }
     }
 }
@@ -87,6 +119,12 @@ impl CoordinatorLoopConfig {
             team_id,
             setting_poll_interval: Duration::from_secs(2),
             solver_name: "loop".to_owned(),
+            // Use the documented defaults: 30 attempts × 500ms = 15s of
+            // retry budget on `POST /agent`, which covers the official
+            // 5s/60s `kind-deadline` plus poll jitter. Tweakable later via
+            // PROCON_KIND_SUBMIT_* env vars if needed.
+            kind_submit_max_attempts: 30,
+            kind_submit_backoff: Duration::from_millis(500),
         })
     }
 }
@@ -141,16 +179,17 @@ pub async fn run_coordinator_loop(
     solver: Box<dyn engine::solver::Solver>,
     cfg: CoordinatorLoopConfig,
 ) -> Result<CoordinatorOutcome, CoordinatorLoopError> {
-    // Phase 1: poll /setting until start is announced.
+    // Phase 1: probe /setting until the server is responsive (any
+    // `MatchSetting`, including `starts_at == 0`). The official server
+    // returns `starts_at == 0` while the kind-submission window is
+    // OPEN, then sets `starts_at` only AFTER the kind deadline closes —
+    // so we MUST NOT gate Phase 2 on `starts_at > 0` (issue #156).
     let wire_setting = loop {
         match client.get_match_setting().await {
-            Ok(s) if s.starts_at > 0 => break s,
-            Ok(_) => {
-                tokio::time::sleep(cfg.setting_poll_interval).await;
-            }
+            Ok(s) => break s,
             Err(protocol::HttpClientError::AccessTime { .. }) => {
-                // Pre-start: server returns 403 before match is announced.
-                // Just back off and try again.
+                // Pre-start window: server returns 403 before the first
+                // setting snapshot exists. Just back off and retry.
                 tokio::time::sleep(cfg.setting_poll_interval).await;
             }
             Err(e) => return Err(CoordinatorLoopError::Setting(e)),
@@ -161,9 +200,19 @@ pub async fn run_coordinator_loop(
     // so half the agents patrol and half supply; the debug `WaitSolver`
     // keeps the MVP's all-`KIND_0` placeholder so the wire shape stays
     // degenerate and trivially debuggable.
+    //
+    // We submit DURING the kind window (right after Phase 1 succeeds)
+    // rather than waiting for `starts_at > 0`, because `starts_at` flips
+    // to a non-zero timestamp only AFTER the server closes the kind
+    // window — by which time `POST /agent` always returns 403.
+    //
+    // `submit_agent_with_retry` retries `403 AccessTimeError` for the
+    // window between "server became responsive" and "server flipped
+    // starts_at", which is exactly the open kind window.
     let n_agents = wire_setting.agents.len();
     let kinds = agent_kinds_for(n_agents, &cfg.solver_name);
-    client.submit_agent(kinds).await.map_err(CoordinatorLoopError::AgentSubmit)?;
+    submit_agent_with_retry(&client, kinds, cfg.kind_submit_max_attempts, cfg.kind_submit_backoff)
+        .await?;
 
     // Phase 3: convert wire -> engine setting, build team + match ids.
     let team = PlayerId::new(&cfg.team_id)
@@ -175,10 +224,28 @@ pub async fn run_coordinator_loop(
         .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid match id: {e}")))?;
     let total_days = wire_setting.day_steps.len();
 
+    // Phase 4: wait for `starts_at > 0`. Phase 1 may have caught the
+    // setting while `starts_at` was still 0 (kind window OPEN), so we
+    // re-poll here until the server announces the start. The rest of
+    // the setting (map / day_steps / day_seconds / agents) is static so
+    // the snapshot from Phase 1 stays valid.
+    if wire_setting.starts_at == 0 {
+        loop {
+            match client.get_match_setting().await {
+                Ok(s) if s.starts_at > 0 => break,
+                Ok(_) => tokio::time::sleep(cfg.setting_poll_interval).await,
+                Err(protocol::HttpClientError::AccessTime { .. }) => {
+                    tokio::time::sleep(cfg.setting_poll_interval).await;
+                }
+                Err(e) => return Err(CoordinatorLoopError::Setting(e)),
+            }
+        }
+    }
+
     let mut revisions: Vec<i32> = Vec::with_capacity(total_days);
     let mut days_completed = 0_usize;
 
-    // Phase 4: per-day loop.
+    // Phase 5: per-day loop.
     for day_idx in 0..total_days {
         let day = u32::try_from(day_idx).unwrap_or(0);
         let day_steps = u32::try_from(wire_setting.day_steps[day_idx])
@@ -235,6 +302,53 @@ pub async fn run_coordinator_loop(
     }
 
     Ok(CoordinatorOutcome { days_completed, revisions })
+}
+
+/// Submit the agent-kind vector to `POST /agent`, retrying on
+/// `403 AccessTimeError`.
+///
+/// `MatchClient::submit_agent` already retries transient HTTP failures
+/// (5xx, 408, 429, transport errors) internally, but it explicitly does
+/// **not** retry on `403 AccessTimeError` — that envelope is reserved
+/// for "the kind window is closed", which is conceptually permanent
+/// from the client's point of view. For issue #156 we want exactly the
+/// opposite behaviour: the loop calls `POST /agent` IMMEDIATELY after
+/// `GET /setting` becomes responsive, so the *first* attempt can race
+/// the kind-deadline on a slow boot and land in the closed window. We
+/// therefore wrap the call in an outer retry loop that sleeps
+/// `backoff` and tries again until either the call succeeds or we burn
+/// through `max_attempts`.
+///
+/// Any non-`AccessTime` error is propagated immediately — those are
+/// surface failures (auth, malformed body, transport, …) and must not
+/// be retried blindly.
+async fn submit_agent_with_retry(
+    client: &protocol::MatchClient,
+    kinds: Vec<AgentKind>,
+    max_attempts: u32,
+    backoff: Duration,
+) -> Result<SubmitAck, CoordinatorLoopError> {
+    let mut last_access_time: Option<String> = None;
+    for attempt in 0..max_attempts {
+        match client.submit_agent(kinds.clone()).await {
+            Ok(ack) => return Ok(ack),
+            Err(protocol::HttpClientError::AccessTime { message }) => {
+                // The kind window is either not yet open (server still
+                // in pre-start) or just closed (race against deadline).
+                // Either way, retrying with backoff is the documented
+                // behaviour. Cache the last message so we can surface
+                // it once the budget is exhausted.
+                tracing::debug!(attempt, message = %message, "POST /agent 403 AccessTime, retrying");
+                last_access_time = Some(message);
+                tokio::time::sleep(backoff).await;
+            }
+            Err(e) => return Err(CoordinatorLoopError::AgentSubmit(e)),
+        }
+    }
+    Err(CoordinatorLoopError::AgentSubmit(protocol::HttpClientError::AccessTime {
+        message: last_access_time
+            .unwrap_or_else(|| "kind window did not open within retry budget".to_owned()),
+    }))
 }
 
 /// Build the `POST /agent` kinds vector for a given solver name.
