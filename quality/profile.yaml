@@ -27,7 +27,7 @@ project:
     package_manager: bun
     node_version: "22"
   release_target:
-    semantic_version: "0.1.0"
+    semantic_version: "0.2.0"
     release_branch: "release-0-2-0"
     protected_branch: main
 
