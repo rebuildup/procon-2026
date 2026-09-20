@@ -1,24 +1,15 @@
-import {
-  createMemo,
-  createResource,
-  onCleanup,
-  onMount,
-  Show,
-  type Component,
-} from 'solid-js';
+import { createMemo, createResource, onCleanup, onMount, Show, type Component } from 'solid-js';
 
 import { MapViewer } from '@/components/MapViewer';
 import { WebGpuMapViewer } from '@/components/WebGpuMapViewer';
 import {
-  classifyStatus,
-  createLivePoller,
+  createLiveSnapshotPoller,
   fetchLiveMatchSetting,
-  type LiveAgentState,
   type LiveMatchSetting,
-  type LiveMatchState,
-  type LiveStatus,
+  type LiveSnapshot,
+  type LiveSnapshotStatus,
 } from '@/lib/live';
-import type { Agent, HexCell, HexMap, TerrainKind } from '@/types/map';
+import type { HexCell, HexMap, TerrainKind } from '@/types/map';
 import '@/styles/live.css';
 
 /** Map `protocol::match_config::CellType` integers to the viewer's terrain labels. */
@@ -55,21 +46,6 @@ function buildHexMap(setting: LiveMatchSetting): HexMap {
   return { width, height, cells };
 }
 
-/** Map `protocol::match_config::AgentKind` to the viewer's `AgentKind`. */
-function agentKindOf(value: number): Agent['kind'] {
-  return value === 0 ? 'patrol' : 'supply';
-}
-
-/** Convert wire-format agents into the viewer's `Agent` shape. */
-function buildAgents(state: LiveMatchState | null): ReadonlyArray<Agent> {
-  if (!state) return [];
-  return state.agents.map((a: LiveAgentState): Agent => ({
-    id: String(a.id),
-    kind: agentKindOf(a.kind),
-    coord: { col: a.pos.q, row: a.pos.r },
-  }));
-}
-
 /** Format the last-poll timestamp as `HH:MM:SS` for the status footer. */
 function formatClock(ms: number): string {
   const d = new Date(ms);
@@ -77,21 +53,30 @@ function formatClock(ms: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+/** Pretty label per `LiveSnapshotStatus`. Used by the status badge text. */
+const STATUS_LABEL: Readonly<Record<LiveSnapshotStatus, string>> = {
+  waiting: 'Waiting',
+  running: 'Running',
+  completed: 'Completed',
+  rejected: 'Rejected',
+  error: 'Error',
+};
+
+/** Status rendered before the first successful poll resolves. */
+const STATUS_PLACEHOLDER = '—';
+
 /**
- * Live page — polls `match-state.example.json` every second and renders the
- * most recent snapshot via the existing map viewer (WebGPU first, SVG
- * fallback inside `WebGpuMapViewer`).
- *
- * The "live" semantics are stubbed for now: there is no HTTP endpoint on the
- * coordinator yet, so the fixture is committed under `public/`. A follow-up
- * ticket will point `fetchLiveMatchState` at the real endpoint.
+ * Live page — polls `/match-state.json` every second and renders the most
+ * recent CLI snapshot (PR #160). The CLI writes this file atomically via
+ * `--state-output <PATH>`. The setting fixture (`match-setting.example.json`)
+ * still feeds the map viewer for now; the new snapshot doesn't carry
+ * per-agent positions so we render an empty agent set.
  */
 export const Live: Component = () => {
-  const [setting] = createResource<LiveMatchSetting | null, true>(
-    true,
-    () => fetchLiveMatchSetting(),
+  const [setting] = createResource<LiveMatchSetting | null, true>(true, () =>
+    fetchLiveMatchSetting(),
   );
-  const poller = createLivePoller();
+  const poller = createLiveSnapshotPoller();
 
   onMount(() => poller.start());
   onCleanup(() => poller.stop());
@@ -101,62 +86,96 @@ export const Live: Component = () => {
     return s ? buildHexMap(s) : null;
   });
 
-  const agents = createMemo<ReadonlyArray<Agent>>(() => buildAgents(poller.state()));
+  const snapshot = createMemo<LiveSnapshot | null>(() => poller.snapshot());
 
-  const status = createMemo<LiveStatus>(() => {
-    const s = poller.state();
-    if (!s) return poller.status();
-    const daySeconds = setting()?.daySeconds;
-    return classifyStatus(s, Date.now(), daySeconds);
+  const statusLabel = createMemo<string>(() => {
+    const s = snapshot();
+    return s ? STATUS_LABEL[s.status] : STATUS_PLACEHOLDER;
+  });
+
+  const statusAttr = createMemo<LiveSnapshotStatus | 'waiting'>(
+    () => snapshot()?.status ?? 'waiting',
+  );
+
+  const revisionsText = createMemo<string>(() => {
+    const revs = snapshot()?.revisions ?? [];
+    return `[${revs.join(', ')}]`;
+  });
+
+  const lastUpdateText = createMemo<string>(() => {
+    const s = snapshot();
+    return s ? formatClock(s.lastUpdateUnix * 1000) : STATUS_PLACEHOLDER;
+  });
+
+  const dayText = createMemo<string>(() => {
+    const s = snapshot();
+    if (!s) return STATUS_PLACEHOLDER;
+    return `${s.day ?? STATUS_PLACEHOLDER} / ${s.daysTotal}`;
   });
 
   return (
     <section class="page page--live" data-testid="page-live">
       <header class="live__header">
         <h1 class="live__title">Live Match</h1>
-        <span
-          class="live__badge"
-          data-testid="live-status-badge"
-          data-status={status()}
-        >
-          {status()}
+        <span class="live__badge" data-testid="live-status-badge" data-status={statusAttr()}>
+          {statusLabel()}
         </span>
       </header>
+
       <p class="live__body">
-        Polling <code>match-state.example.json</code> once per second. The CLI does not yet expose
-        HTTP endpoints, so the fixture is committed under <code>public/</code>; a follow-up ticket
-        will wire the coordinator into this page.
+        Polling <code>/match-state.json</code> once per second. The CLI writes this file via{' '}
+        <code>--state-output &lt;PATH&gt;</code> (PR #160). Run the CLI with:
       </p>
+      <pre class="live__command">
+        procon coordinator --solver wait --state-output packages/frontend/public/match-state.json
+      </pre>
+
       <div class="live__hud">
         <div class="live__hud-cell" data-testid="live-day">
           <span class="live__hud-label">Day</span>
-          <span class="live__hud-value live__hud-value--large">
-            {poller.state()?.day ?? '—'}
-          </span>
+          <span class="live__hud-value live__hud-value--large">{dayText()}</span>
         </div>
-        <div class="live__hud-cell" data-testid="live-agent-count">
-          <span class="live__hud-label">Agents</span>
-          <span class="live__hud-value">{poller.state()?.agents.length ?? 0}</span>
+        <div class="live__hud-cell" data-testid="live-revisions">
+          <span class="live__hud-label">Revisions</span>
+          <span class="live__hud-value live__hud-value--mono">{revisionsText()}</span>
+        </div>
+        <div class="live__hud-cell" data-testid="live-solver">
+          <span class="live__hud-label">Solver</span>
+          <span class="live__hud-value">{snapshot()?.solver ?? STATUS_PLACEHOLDER}</span>
+        </div>
+        <div class="live__hud-cell" data-testid="live-server">
+          <span class="live__hud-label">Server</span>
+          <span class="live__hud-value live__hud-value--mono">
+            {snapshot()?.server ?? STATUS_PLACEHOLDER}
+          </span>
         </div>
         <div class="live__hud-cell" data-testid="live-last-poll">
-          <span class="live__hud-label">Last poll</span>
-          <span class="live__hud-value live__hud-value--mono">
-            {poller.state() ? formatClock(Date.now()) : '—'}
-          </span>
+          <span class="live__hud-label">Last update</span>
+          <span class="live__hud-value live__hud-value--mono">{lastUpdateText()}</span>
         </div>
       </div>
+
+      <Show when={snapshot()?.error}>
+        {(err) => (
+          <div class="live__error" data-testid="live-error" role="alert">
+            {err()}
+          </div>
+        )}
+      </Show>
+
       <div class="live__map">
-        <Show when={map()} fallback={
-          <MapViewer
-            map={{ width: 4, height: 4, cells: [] }}
-            agents={agents()}
-            width={800}
-            height={420}
-          />
-        }>
-          {(m) => (
-            <WebGpuMapViewer map={m()} agents={agents()} width={800} height={420} />
-          )}
+        <Show
+          when={map()}
+          fallback={
+            <MapViewer
+              map={{ width: 4, height: 4, cells: [] }}
+              agents={[]}
+              width={800}
+              height={420}
+            />
+          }
+        >
+          {(m) => <WebGpuMapViewer map={m()} agents={[]} width={800} height={420} />}
         </Show>
       </div>
     </section>

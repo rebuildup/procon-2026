@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "server": "http://localhost:8080",
+  "solver": "wait",
+  "status": "running",
+  "day": 2,
+  "daysTotal": 4,
+  "revision": 2,
+  "revisions": [1, 2],
+  "lastUpdateUnix": 1789892000,
+  "error": null
+}
