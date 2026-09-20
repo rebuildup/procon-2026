@@ -85,6 +85,26 @@ pub struct CoordinatorLoopConfig {
     /// Default `500ms` keeps us under the official server's
     /// `kind-deadline` default (5s) and the manual-test 60s budget.
     pub kind_submit_backoff: Duration,
+    /// Retry budget for `GET /` while waiting for the server's
+    /// `-match-start-delay` to elapse (issue #164). The official
+    /// contest server can briefly return `403 AccessTimeError` from
+    /// `GET /` between the moment `starts_at` flips positive (visible
+    /// in `GET /setting`) and the moment the match actually starts
+    /// (the `-match-start-delay` is up to 5s by default).
+    ///
+    /// Default `30` × `match_state_backoff = 500ms` = `15s` of retry
+    /// budget, which comfortably covers the documented worst case
+    /// (`-match-start-delay 5s`) plus poll jitter. Tunable via
+    /// `PROCON_MATCH_STATE_*` env vars if needed.
+    pub match_state_max_attempts: u32,
+    /// Sleep between `GET /` retries on `403 AccessTimeError`. Used
+    /// only inside the post-`starts_at > 0` per-day loop; the
+    /// pre-`starts_at` poll loop in Phase 4 keeps the broader
+    /// `setting_poll_interval` so a slow start does not regress.
+    ///
+    /// Default `500ms` keeps us under the official server's
+    /// `-match-start-delay` worst case (5s).
+    pub match_state_backoff: Duration,
     /// Path to write `MatchStateSnapshot` JSON after each phase transition.
     /// If `None`, no snapshot is written. Atomic write via tmp file + rename.
     /// The frontend Live page polls this path via Vite's static-file
@@ -124,6 +144,8 @@ impl Default for CoordinatorLoopConfig {
             solver_name: "loop".to_owned(),
             kind_submit_max_attempts: 30,
             kind_submit_backoff: Duration::from_millis(500),
+            match_state_max_attempts: 30,
+            match_state_backoff: Duration::from_millis(500),
             state_output_path: None,
             server_url: None,
             days_total_hint: None,
@@ -165,6 +187,13 @@ impl CoordinatorLoopConfig {
             // PROCON_KIND_SUBMIT_* env vars if needed.
             kind_submit_max_attempts: 30,
             kind_submit_backoff: Duration::from_millis(500),
+            // 30 attempts × 500ms = 15s of retry budget on `GET /`,
+            // which covers the official `-match-start-delay` worst case
+            // (5s by default, configurable up to 5s in the contest
+            // binary) plus poll jitter. Tweakable later via
+            // PROCON_MATCH_STATE_* env vars if needed.
+            match_state_max_attempts: 30,
+            match_state_backoff: Duration::from_millis(500),
             state_output_path,
             server_url,
             days_total_hint: None,
@@ -528,7 +557,9 @@ where
             .map_err(|e| CoordinatorLoopError::Conversion(format!("day_steps[{day_idx}]={e}")))?;
         let day_seconds = i64::from(wire_setting.day_seconds[day_idx]);
 
-        let state = client.get_match_state().await.map_err(CoordinatorLoopError::State)?;
+        let state =
+            fetch_state_with_retry(&client, cfg.match_state_max_attempts, cfg.match_state_backoff)
+                .await?;
         if state.day != i32::try_from(day).unwrap_or(i32::MAX) {
             return Err(CoordinatorLoopError::Conversion(format!(
                 "server reported day {} while we expected {day}",
@@ -637,6 +668,42 @@ async fn submit_agent_with_retry(
     Err(CoordinatorLoopError::AgentSubmit(protocol::HttpClientError::AccessTime {
         message: last_access_time
             .unwrap_or_else(|| "kind window did not open within retry budget".to_owned()),
+    }))
+}
+
+/// Retry `GET /` while the server is still in the pre-start window
+/// (`-match-start-delay` may cause a brief `403 AccessTimeError` between
+/// `starts_at` flipping positive in `GET /setting` and the actual match
+/// start, see issue #164). All other errors propagate immediately.
+///
+/// `max_attempts` × `backoff` covers the 1s default and 5s worst case
+/// of `-match-start-delay` with comfortable headroom (e.g. 30 × 500ms
+/// = 15s budget).
+async fn fetch_state_with_retry(
+    client: &protocol::MatchClient,
+    max_attempts: u32,
+    backoff: Duration,
+) -> Result<protocol::match_config::MatchState, CoordinatorLoopError> {
+    let mut last_access_time: Option<String> = None;
+    for attempt in 0..max_attempts {
+        match client.get_match_state().await {
+            Ok(state) => return Ok(state),
+            Err(protocol::HttpClientError::AccessTime { message }) => {
+                // The match has been announced via `starts_at > 0` but
+                // the server's `-match-start-delay` (default 1s,
+                // configurable up to 5s) has not yet elapsed. Retry
+                // with backoff until the budget is exhausted; cache
+                // the last message so the terminal error is meaningful.
+                tracing::debug!(attempt, message = %message, "GET / 403 AccessTime, retrying");
+                last_access_time = Some(message);
+                tokio::time::sleep(backoff).await;
+            }
+            Err(e) => return Err(CoordinatorLoopError::State(e)),
+        }
+    }
+    Err(CoordinatorLoopError::State(protocol::HttpClientError::AccessTime {
+        message: last_access_time
+            .unwrap_or_else(|| "match-start-delay did not elapse within retry budget".to_owned()),
     }))
 }
 

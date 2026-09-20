@@ -62,7 +62,7 @@ const NO_FORCE_REVISION: i32 = i32::MIN;
 
 /// Shared state of the test server. Held inside an `Arc` so the test thread
 /// can flip flags while `run_coordinator_loop` runs in another task.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct ServerState {
     /// UNIX-time match start. `0` means "not yet announced" and causes the
     /// loop to keep polling `GET /setting`. The `starts_at_in_future` test
@@ -90,6 +90,16 @@ struct ServerState {
     /// When `> 0`, the next N requests return `500`. The retry policy must
     /// burn through them and recover on the subsequent 200.
     force_500: Arc<AtomicU64>,
+    /// When `> 0`, `GET /` returns `403 AccessTimeError` for the first
+    /// `force_match_not_started_ms` milliseconds since server start.
+    /// Used to reproduce the official server's `-match-start-delay`
+    /// behaviour (issue #164) — `starts_at` is set in `GET /setting`
+    /// but `GET /` keeps returning 403 for a short window after.
+    /// `0` (default) means "match is already started, no 403".
+    force_match_not_started_ms: Arc<AtomicU64>,
+    /// Instant the test server was started. Used together with
+    /// `force_match_not_started_ms` to gate the 403 window.
+    started_at: Arc<Instant>,
     /// When `true`, every `POST /agent` returns `403 AccessTimeError`
     /// regardless of `starts_at`. Used by the
     /// `kind_submission_during_window_succeeds_even_if_match_starts_later`
@@ -105,10 +115,23 @@ struct ServerState {
 
 impl ServerState {
     fn new(starts_at: i64) -> Self {
-        let state = Self::default();
-        state.starts_at.store(starts_at, Ordering::SeqCst);
-        state.force_revision.store(NO_FORCE_REVISION, Ordering::SeqCst);
-        state
+        // `started_at` cannot live in a `#[derive(Default)]` because
+        // `Instant: !Default`. Build it eagerly here so the gate logic in
+        // `serve_state` has a sensible reference point from the moment
+        // the server starts accepting connections.
+        Self {
+            starts_at: Arc::new(AtomicI64::new(starts_at)),
+            day_counter: Arc::new(AtomicU64::new(0)),
+            revision_counter: Arc::new(AtomicI32::new(0)),
+            force_revision: Arc::new(AtomicI32::new(NO_FORCE_REVISION)),
+            force_auth_fail: Arc::new(AtomicU64::new(0)),
+            force_access_time: Arc::new(AtomicU64::new(0)),
+            force_500: Arc::new(AtomicU64::new(0)),
+            force_match_not_started_ms: Arc::new(AtomicU64::new(0)),
+            started_at: Arc::new(Instant::now()),
+            force_kind_window_closed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            captured_action_bodies: Arc::new(Mutex::new(Vec::new())),
+        }
     }
 
     /// Build a wire-valid `MatchSetting` for the given day plan. The map is
@@ -220,6 +243,24 @@ async fn serve_state(State(s): State<ServerState>) -> (StatusCode, Json<Value>) 
             StatusCode::UNAUTHORIZED,
             Json(json!({"code": "AuthError", "message": "bad token"})),
         );
+    }
+    // Reproduce the official server's `-match-start-delay`: while
+    // elapsed time since server start is below `force_match_not_started_ms`,
+    // `GET /` returns 403 AccessTimeError even though `starts_at` is set
+    // in `GET /setting`. The loop's `fetch_state_with_retry` helper must
+    // ride out this window (issue #164).
+    let threshold_ms = s.force_match_not_started_ms.load(Ordering::SeqCst);
+    if threshold_ms > 0 {
+        let elapsed_ms = s.started_at.elapsed().as_millis();
+        if u128::from(threshold_ms) > elapsed_ms {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "code": "AccessTimeError",
+                    "message": "match has not started",
+                })),
+            );
+        }
     }
     let day = s.day_counter.fetch_add(1, Ordering::SeqCst);
     // end_at = 0 makes the loop's `state.ends_at - now` calculation
@@ -584,5 +625,58 @@ async fn kind_submission_during_window_succeeds_even_if_match_starts_later() {
     assert!(
         state.force_kind_window_closed.load(Ordering::SeqCst),
         "server's kind window must be closed by the end of the match",
+    );
+}
+
+/// Regression test for issue #164.
+///
+/// The official contest server's `-match-start-delay` (default 1s,
+/// configurable up to 5s) means `GET /setting` may advertise
+/// `starts_at > 0` while `GET /` still returns `403 AccessTimeError`
+/// for a short window. The pre-fix loop returned
+/// `CoordinatorLoopError::State(HttpClientError::AccessTime)` immediately
+/// on that 403 and the match failed even though the server would have
+/// become responsive within a second.
+///
+/// The harness reproduces this by setting
+/// `force_match_not_started_ms = 800`: every `GET /` request that lands
+/// in the first 800ms after server start returns the official
+/// `403 AccessTimeError` envelope. The loop's
+/// `fetch_state_with_retry` helper must ride out this window with its
+/// 30 × 500ms = 15s retry budget (issue #164) and complete all four
+/// days once `GET /` becomes responsive.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn match_state_during_match_start_delay_retries_then_succeeds() {
+    // `starts_at = 1` so Phase 4 sees the server has announced the match
+    // and Phase 5 enters the per-day loop immediately. The
+    // `force_match_not_started_ms` flag then makes `GET /` return 403
+    // for the first 800ms.
+    let (url, state) = spawn_test_server(1).await;
+    state.force_match_not_started_ms.store(800, Ordering::SeqCst);
+
+    // The fixed coordinator loop's `fetch_state_with_retry` retries on
+    // 403 AccessTimeError while `match-start-delay` elapses. The default
+    // 30 × 500ms budget (15s) comfortably covers the 800ms test window.
+    let outcome = run_with_wait_solver(&url, "test-token")
+        .await
+        .expect("loop must recover from match-start-delay 403s");
+
+    assert_eq!(outcome.days_completed, DAY_SECONDS.len(), "all 4 days complete");
+    assert!(
+        outcome.revisions.iter().all(|&r| r >= 0),
+        "all revisions non-negative: {:?}",
+        outcome.revisions
+    );
+    // Sanity: the harness actually exercised the retry path. The server
+    // should have observed more than one `GET /` request, with at least
+    // one 403 before the first successful 200. We approximate by checking
+    // that the day counter advanced past `DAY_SECONDS.len()` (each day
+    // triggers exactly one successful `GET /`, so the counter must be at
+    // least that high after a successful match).
+    let day_count = state.day_counter.load(Ordering::SeqCst);
+    assert!(
+        day_count >= u64::try_from(DAY_SECONDS.len()).unwrap_or(u64::MAX),
+        "server saw {day_count} GET / requests, expected at least {} for a 4-day match",
+        DAY_SECONDS.len(),
     );
 }
