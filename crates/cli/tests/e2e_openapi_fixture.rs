@@ -22,7 +22,7 @@ use serde_json::json;
 
 use cli::coordinator_loop::{CoordinatorLoopConfig, CoordinatorOutcome, run_coordinator_loop};
 use cli::openapi_fixture::OpenApiFixture;
-use cli::solver_adapter::WaitSolver;
+use cli::solver_adapter::EngineLoopAdapter;
 use protocol::http_client::{MatchClient, RetryPolicy};
 use protocol::match_config::{CellType, Map, MatchSetting};
 
@@ -196,10 +196,16 @@ async fn e2e_openapi_fixture_completes_four_days() {
         .request_timeout(Duration::from_secs(5))
         .build()
         .expect("match client builds");
-    let solver: Box<dyn engine::solver::Solver> = Box::new(WaitSolver);
+    // Drive the loop with the production solver
+    // (`crates/solver-loop::LoopSolver`) so the E2E proves the wiring
+    // landed — see issue #152. `GreedyNearestNeighbor` is the documented
+    // default in `solver_loop::LoopSolver`.
+    let solver: Box<dyn engine::solver::Solver> =
+        Box::new(EngineLoopAdapter::new(solver_loop::InitialStrategy::GreedyNearestNeighbor, 32));
     let cfg = CoordinatorLoopConfig {
         team_id: "mvp-player".to_owned(),
         setting_poll_interval: Duration::from_millis(50),
+        solver_name: "loop".to_owned(),
     };
 
     let outcome: CoordinatorOutcome =
@@ -207,31 +213,48 @@ async fn e2e_openapi_fixture_completes_four_days() {
 
     assert_eq!(outcome.days_completed, day_count, "all days completed");
     assert_eq!(outcome.revisions.len(), day_count, "one revision per day");
+    assert!(!outcome.revisions.is_empty(), "must have submitted at least one plan");
     assert!(
         outcome.revisions.iter().all(|&r| r >= 0),
         "all revisions non-negative: {:?}",
         outcome.revisions
     );
 
-    // ----- 4. POST / body assertion: each inner Vec<i32>'s absolute sum
-    //         equals day_steps[day]. WaitSolver always emits `[-day_steps]`
-    //         per agent, so the absolute sum is exactly `day_steps[day]`.
+    // ----- 4. POST / body assertion: each inner Vec<i32>'s **step sum**
+    //         equals `day_steps[day]`. The wire is run-length encoded:
+    //         `-N` (N > 0) = wait N steps; `0..=5` = one move step in
+    //         that direction. So the step sum is `sum(-x if x<0 else 1)`
+    //         — NOT the absolute sum, because a move direction 0..=5 is
+    //         one step, not five. `EngineLoopAdapter` emits a mix of
+    //         moves and waits (unlike `WaitSolver`, which collapses to
+    //         a single `[-N]`), so we additionally require at least one
+    //         move >= 0 to prove the planner is not just waiting.
     //
     // Drop the guard before any `.await` calls below to satisfy
     // `clippy::await_holding_lock`.
     {
         let bodies = captured_bodies.lock().expect("captured_bodies lock poisoned");
         assert_eq!(bodies.len(), day_count, "captured one POST / body per day");
+        let mut saw_move = false;
         for (day, body) in bodies.iter().enumerate() {
             assert!(!body.is_empty(), "day {day}: at least one inner list");
             for (agent_index, inner) in body.iter().enumerate() {
-                let abs_sum: i32 = inner.iter().map(|x| x.abs()).sum();
+                let step_sum: i32 = inner.iter().map(|&x| if x < 0 { -x } else { 1 }).sum();
                 assert_eq!(
-                    abs_sum, day_steps[day],
+                    step_sum, day_steps[day],
                     "day {day} agent {agent_index}: inner step sum mismatch"
                 );
+                if inner.iter().any(|&x| x >= 0) {
+                    saw_move = true;
+                }
             }
         }
+        assert!(
+            saw_move,
+            "EngineLoopAdapter must produce at least one Move action \
+             across the match; otherwise the wiring of crates/solver-loop \
+             is not actually driving the coordinator"
+        );
     }
 
     // ----- 5. Drift guard re-check: OpenAPI paths cover all 4 endpoints

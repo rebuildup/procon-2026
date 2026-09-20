@@ -10,9 +10,12 @@
 //! 1. **Setting poll.** `GET /setting` repeatedly until `starts_at > 0`;
 //!    on `403 AccessTimeError` we just sleep and retry (the server returns
 //!    that envelope before start).
-//! 2. **Agent submit.** `POST /agent` exactly once with `vec![KIND_0; n]`.
-//!    The MVP solver does not yet propose kinds; concrete solvers that want
-//!    to do so extend the trait in a later issue.
+//! 2. **Agent submit.** `POST /agent` exactly once. The kinds vector is
+//!    chosen from [`CoordinatorLoopConfig::solver_name`]: real solvers
+//!    (`"loop"`, `"mcts"`, anything other than the debug-only `"wait"`)
+//!    alternate `KIND_0` / `KIND_1` so half the agents patrol and half
+//!    supply, which gives a richer test of the full protocol than the
+//!    MVP's all-`KIND_0` placeholder.
 //! 3. **Per-day loop.** `GET /` -> `solver.decide(&ctx)` -> adapter ->
 //!    `POST /`. If `revision < 0`, return [`CoordinatorLoopError::Rejected`]
 //!    without retrying. Otherwise sleep until `ends_at` and continue.
@@ -23,6 +26,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use domain::{MatchId, PlayerId};
+use protocol::match_config::AgentKind;
 use thiserror::Error;
 
 use crate::action_adapter::{AdapterError, decision_to_actions};
@@ -39,11 +43,24 @@ pub struct CoordinatorLoopConfig {
     pub team_id: String,
     /// Sleep between `GET /setting` polls while `starts_at == 0`.
     pub setting_poll_interval: Duration,
+    /// Stable identifier of the solver the CLI wired up. Used only to
+    /// decide what `POST /agent` kinds vector to send: real solvers
+    /// (`"loop"`, `"mcts"`, anything other than `"wait"`) alternate
+    /// `KIND_0` / `KIND_1`; the debug `WaitSolver` sticks to all `KIND_0`
+    /// to keep its degenerate contract observable on the wire.
+    ///
+    /// Defaults to `"loop"` so the production path matches the documented
+    /// Phase 2 strategy (`docs/contest/strategy.md`).
+    pub solver_name: String,
 }
 
 impl Default for CoordinatorLoopConfig {
     fn default() -> Self {
-        Self { team_id: "mvp-player".to_owned(), setting_poll_interval: Duration::from_secs(2) }
+        Self {
+            team_id: "mvp-player".to_owned(),
+            setting_poll_interval: Duration::from_secs(2),
+            solver_name: "loop".to_owned(),
+        }
     }
 }
 
@@ -66,7 +83,11 @@ impl CoordinatorLoopConfig {
             |_| std::env::var("PROCON_TOKEN").map_err(|_| "PROCON_TOKEN not set".to_owned()),
         )?;
         let team_id = std::env::var("PROCON_TEAM_ID").unwrap_or_else(|_| "mvp-player".to_owned());
-        Ok(Self { team_id, setting_poll_interval: Duration::from_secs(2) })
+        Ok(Self {
+            team_id,
+            setting_poll_interval: Duration::from_secs(2),
+            solver_name: "loop".to_owned(),
+        })
     }
 }
 
@@ -136,9 +157,12 @@ pub async fn run_coordinator_loop(
         }
     };
 
-    // Phase 2: declare agent kinds (all KIND_0 for MVP).
+    // Phase 2: declare agent kinds. Real solvers alternate KIND_0 / KIND_1
+    // so half the agents patrol and half supply; the debug `WaitSolver`
+    // keeps the MVP's all-`KIND_0` placeholder so the wire shape stays
+    // degenerate and trivially debuggable.
     let n_agents = wire_setting.agents.len();
-    let kinds = vec![protocol::match_config::AgentKind::KIND_0; n_agents];
+    let kinds = agent_kinds_for(n_agents, &cfg.solver_name);
     client.submit_agent(kinds).await.map_err(CoordinatorLoopError::AgentSubmit)?;
 
     // Phase 3: convert wire -> engine setting, build team + match ids.
@@ -211,4 +235,66 @@ pub async fn run_coordinator_loop(
     }
 
     Ok(CoordinatorOutcome { days_completed, revisions })
+}
+
+/// Build the `POST /agent` kinds vector for a given solver name.
+///
+/// - `"wait"` / `"wait-mvp"` → all `KIND_0` (degenerate MVP placeholder).
+/// - anything else (including the default `"loop"`) → alternating
+///   `KIND_0` / `KIND_1` so half the agents patrol and half supply. This
+///   exercises a wider surface of the contest server than the all-`KIND_0`
+///   placeholder, catching kind-handling bugs early.
+fn agent_kinds_for(n_agents: usize, solver_name: &str) -> Vec<AgentKind> {
+    if solver_name == "wait" || solver_name == "wait-mvp" {
+        return vec![AgentKind::KIND_0; n_agents];
+    }
+    (0..n_agents).map(|i| if i % 2 == 0 { AgentKind::KIND_0 } else { AgentKind::KIND_1 }).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wait_solver_name_yields_all_kind_0() {
+        let kinds = agent_kinds_for(5, "wait");
+        assert_eq!(kinds, vec![AgentKind::KIND_0; 5]);
+        let kinds = agent_kinds_for(3, "wait-mvp");
+        assert_eq!(kinds, vec![AgentKind::KIND_0; 3]);
+    }
+
+    #[test]
+    fn loop_solver_name_alternates_kind_0_and_kind_1() {
+        let kinds = agent_kinds_for(4, "loop");
+        assert_eq!(
+            kinds,
+            vec![AgentKind::KIND_0, AgentKind::KIND_1, AgentKind::KIND_0, AgentKind::KIND_1,]
+        );
+        // Odd count: last agent is KIND_0.
+        let kinds = agent_kinds_for(5, "loop");
+        assert_eq!(
+            kinds,
+            vec![
+                AgentKind::KIND_0,
+                AgentKind::KIND_1,
+                AgentKind::KIND_0,
+                AgentKind::KIND_1,
+                AgentKind::KIND_0,
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_solver_name_treated_as_real_solver() {
+        // Anything other than "wait"/"wait-mvp" gets the alternating vector
+        // so a future solver can ship without touching this helper.
+        let kinds = agent_kinds_for(2, "mcts");
+        assert_eq!(kinds, vec![AgentKind::KIND_0, AgentKind::KIND_1]);
+    }
+
+    #[test]
+    fn zero_agents_yields_empty_kinds() {
+        let kinds = agent_kinds_for(0, "loop");
+        assert!(kinds.is_empty());
+    }
 }
