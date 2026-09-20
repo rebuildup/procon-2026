@@ -57,6 +57,12 @@ pub enum TournamentError {
         #[source]
         source: CoordinatorLoopError,
     },
+    /// The optional `auto_restart_server` hook failed (non-zero exit, or
+    /// the harness could not spawn the shell). Surfaced before any per-solver
+    /// HTTP traffic so the operator sees the root cause rather than a
+    /// confusing follow-up protocol error from the still-down server.
+    #[error("server restart failed: {0}")]
+    ServerRestartFailed(String),
     /// Building a [`protocol::MatchClient`] failed (e.g. malformed URL).
     #[error("match client build failed: {0}")]
     ClientBuild(#[from] protocol::HttpClientError),
@@ -176,6 +182,14 @@ pub struct TournamentConfig {
     /// Optional path where the harness writes a JSON leaderboard. When
     /// `None`, the harness only prints the markdown table to stdout.
     pub state_output_dir: Option<std::path::PathBuf>,
+    /// Optional shell command invoked via `sh -c` BEFORE each solver run
+    /// except the first. The official `procon-server-linux-amd64` only
+    /// supports one match per process, so multi-solver tournaments need a
+    /// restart hook (e.g. `./scripts/restart-official-server.sh 8080`).
+    /// When `None`, every solver shares the same server process — only
+    /// works when the server accepts multiple matches (e.g. the local
+    /// axum mock used in the integration tests).
+    pub auto_restart_server: Option<String>,
 }
 
 impl Default for TournamentConfig {
@@ -188,6 +202,7 @@ impl Default for TournamentConfig {
             loop_iterations: 32,
             team_id: "team-p0".to_owned(),
             state_output_dir: None,
+            auto_restart_server: None,
         }
     }
 }
@@ -262,7 +277,20 @@ pub async fn run_tournament(cfg: TournamentConfig) -> Result<TournamentReport, T
         .build()?;
 
     let mut entries = Vec::with_capacity(cfg.solvers.len());
-    for solver_name in &cfg.solvers {
+    for (idx, solver_name) in cfg.solvers.iter().enumerate() {
+        // Restart the match server BEFORE every solver except the first:
+        // the official `procon-server-linux-amd64` closes its kind window
+        // after the first match, so multi-solver tournaments need a fresh
+        // process for each solver. The restart hook is opt-in via
+        // `--auto-restart-server` / `PROCON_AUTO_RESTART_SERVER`; when
+        // unset, the harness shares the server process across solvers
+        // (useful with the local axum mock used in integration tests).
+        if idx > 0 {
+            if let Some(cmd) = cfg.auto_restart_server.as_deref() {
+                maybe_restart_server(cmd)?;
+            }
+        }
+
         let (solver, engine_setting_slot) =
             build_solver(solver_name, cfg.loop_initial_strategy, cfg.loop_iterations)?;
 
@@ -315,6 +343,34 @@ fn compute_score(outcome: &CoordinatorOutcome) -> u32 {
         .map(|&r| if r < 0 { 0_u32 } else { u32::try_from(r).unwrap_or(u32::MAX) })
         .sum();
     days.saturating_mul(100).saturating_add(revisions)
+}
+
+/// Invoke the operator-supplied server restart hook via `sh -c <cmd>` so
+/// shell pipelines like `./restart.sh && echo ok` are passed verbatim
+/// without argv splitting. A non-zero exit surfaces as
+/// [`TournamentError::ServerRestartFailed`] and aborts the tournament —
+/// silent continuation would just bury the real failure behind a
+/// confusing protocol error on the still-down server.
+///
+/// A short grace period sleeps the slot after the command returns so the
+/// freshly spawned process has time to bind its TCP port. The bundled
+/// `scripts/restart-official-server.sh` polls for readiness, but
+/// operator-supplied commands may not, and a defensive sleep keeps the
+/// harness robust against simple `pkill && ./procon-server &` scripts.
+fn maybe_restart_server(cmd: &str) -> Result<(), TournamentError> {
+    tracing::info!(cmd, "restarting match server");
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .status()
+        .map_err(|e| TournamentError::ServerRestartFailed(e.to_string()))?;
+    if !status.success() {
+        return Err(TournamentError::ServerRestartFailed(format!(
+            "command exited with status {status}"
+        )));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    Ok(())
 }
 
 /// Render `report` as a markdown table.
