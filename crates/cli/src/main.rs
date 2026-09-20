@@ -14,7 +14,6 @@
 
 mod action_adapter;
 mod bundle;
-mod coordinator;
 mod coordinator_loop;
 mod fixtures;
 mod loop_runner;
@@ -36,7 +35,6 @@ use protocol::{HttpClientError, MatchClient, RetryPolicy};
 use serde_json::json;
 use tracing_subscriber::EnvFilter;
 
-use crate::coordinator::{AgentRequest, CliOverrides, CoordinatorConfig, post_agent_with_retry};
 use crate::coordinator_loop::{CoordinatorLoopConfig, run_coordinator_loop};
 use crate::loop_runner::{
     DayAction, DayPlan, DaySignal, LoopConfig, LoopError, MatchSetting, Solver, Submission,
@@ -79,36 +77,21 @@ enum Cmd {
         player: String,
     },
     /// Run the contest coordinator. Auto-detects the match server on the LAN
-    /// (`PROCON_SERVER` or default localhost), POSTs to /agent with retry +
-    /// timeout. The actual solver loop body is wired up by #45.
+    /// (`PROCON_SERVER` or default localhost), drives the per-day match loop
+    /// via `protocol::MatchClient`. The legacy `ureq`-based probe paths were
+    /// removed in #137.
     Coordinator {
         /// Override `PROCON_SERVER` (host:port or http(s)://host:port).
         #[arg(long, env = "PROCON_SERVER")]
         server: Option<String>,
 
-        /// Override `PROCON_AGENT_URL`.
-        #[arg(long, env = "PROCON_AGENT_URL")]
-        agent_url: Option<String>,
-
-        /// Override `PROCON_SETTING_URL`.
-        #[arg(long, env = "PROCON_SETTING_URL")]
-        setting_url: Option<String>,
-
         /// Override `PROCON_TOKEN`.
         #[arg(long, env = "PROCON_TOKEN")]
         token: Option<String>,
 
-        /// agent id to advertise to the match server.
-        #[arg(long, default_value = "agent-0")]
-        agent_id: String,
-
-        /// Only resolve config + print it. Do not actually POST /agent.
+        /// Only resolve config + print it. Do not actually start the loop.
         #[arg(long)]
         dry_run: bool,
-
-        /// Send a single /agent POST then exit. Used by smoke tests.
-        #[arg(long)]
-        once: bool,
     },
     /// Inspect or validate a match configuration JSON file.
     #[command(subcommand)]
@@ -206,8 +189,8 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Loop { days, player } => {
             run_loop(days, &player).await?;
         }
-        Cmd::Coordinator { server, agent_url, setting_url, token, agent_id, dry_run, once } => {
-            cmd_coordinator(server, agent_url, setting_url, token, agent_id, dry_run, once).await?;
+        Cmd::Coordinator { server, token, dry_run } => {
+            cmd_coordinator(server, token, dry_run).await?;
         }
         Cmd::MatchConfig(sub) => cmd_match_config(sub)?,
         Cmd::Version => {
@@ -266,37 +249,17 @@ fn cmd_match_config(sub: MatchConfigCmd) -> Result<()> {
 ///   targeting `http://localhost:7878` with the MVP test token, and print
 ///   the number of days from the loaded `MatchSetting`. The full loop
 ///   driving the mockito server lands in #136.
-/// - `--dry-run` with `--server`: print the existing `CoordinatorConfig`
-///   dump and exit (legacy smoke-test behaviour).
-/// - `--once`: send a single probe POST via the legacy ureq transport
-///   (slated for removal in #D).
+/// - `--dry-run` with `--server`: print a minimal resolved-config dump
+///   (server URL + `has_token`) and exit.
 /// - default: build a `MatchClient`, hand it to the wired-up
 ///   `run_coordinator_loop`, and idle-block on the per-day driver.
 ///   When the real loop completes, we idle-tick forever so the container
 ///   stays healthy for ops to inspect.
-#[allow(clippy::too_many_arguments)]
 async fn cmd_coordinator(
     server: Option<String>,
-    agent_url: Option<String>,
-    setting_url: Option<String>,
     token: Option<String>,
-    agent_id: String,
     dry_run: bool,
-    once: bool,
 ) -> Result<()> {
-    let overrides = CliOverrides { server: server.clone(), agent_url, setting_url, token };
-    let cfg = CoordinatorConfig::from_env(&overrides)?;
-    println!("{}", serde_json::to_string_pretty(&cfg.describe())?);
-
-    // Warn for the fields slated for #D removal; keep consuming them so the
-    // clap surface is unchanged.
-    if agent_id != "agent-0" || once {
-        tracing::warn!(
-            "--agent-id and --once are deprecated and will be removed in #D; \
-             their values are ignored by the #135 coordinator loop"
-        );
-    }
-
     if dry_run {
         if server.is_none() {
             // Load the OpenAPI fixture and build a real MatchClient — but
@@ -339,29 +302,33 @@ async fn cmd_coordinator(
             let _ = client;
             return Ok(());
         }
-        // dry_run + explicit server: legacy config dump only.
-        return Ok(());
-    }
-
-    if once {
-        let body = AgentRequest { agent_id, day: 0, turn: 0, payload: serde_json::Value::Null };
-        let resp = post_agent_with_retry(&cfg, &body)?;
-        println!("{}", serde_json::to_string_pretty(&resp)?);
+        // dry_run + explicit server: minimal resolved-config dump.
+        let base_url = server.unwrap();
+        let token = token.unwrap_or_default();
+        println!(
+            "{}",
+            json!({
+                "server": base_url,
+                "has_token": !token.is_empty(),
+                "dry_run": true,
+            })
+        );
         return Ok(());
     }
 
     // Default behaviour: drive the real loop against the live server.
-    let base_url = cfg.server_origin.clone();
-    let token = cfg.token.clone().unwrap_or_default();
+    let base_url =
+        server.clone().ok_or_else(|| anyhow::anyhow!("PROCON_SERVER (or --server) must be set"))?;
+    let token = token.clone().unwrap_or_default();
     let client = MatchClient::builder(base_url, token)
         .retry_policy(RetryPolicy::default())
-        .request_timeout(cfg.timeout)
+        .request_timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|e: HttpClientError| anyhow::anyhow!("match client: {e}"))?;
 
     let solver: Box<dyn engine::solver::Solver> = Box::new(WaitSolver);
 
-    let loop_cfg = CoordinatorLoopConfig { team_id: "mvp-player".to_owned(), ..Default::default() };
+    let loop_cfg = CoordinatorLoopConfig::default();
     let outcome = run_coordinator_loop(client, solver, loop_cfg)
         .await
         .map_err(|e| anyhow::anyhow!("coordinator loop: {e}"))?;

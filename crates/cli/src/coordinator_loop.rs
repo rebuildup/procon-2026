@@ -47,6 +47,29 @@ impl Default for CoordinatorLoopConfig {
     }
 }
 
+impl CoordinatorLoopConfig {
+    /// Build a config from the coordinator runtime env vars.
+    ///
+    /// `PROCON_SERVER` and `PROCON_TOKEN` are mandatory — the loop is only
+    /// meaningful when the server URL and bearer token are present, so we
+    /// surface their absence as an `Err` rather than falling back to a
+    /// localhost default. The legacy `PROCON_AGENT_URL` / `PROCON_SETTING_URL`
+    /// overrides are intentionally NOT honoured: the loop talks to the server
+    /// exclusively through `protocol::MatchClient`, which constructs its own
+    /// endpoint paths.
+    ///
+    /// `PROCON_TEAM_ID` is optional; the MVP default of `"mvp-player"` is used
+    /// when unset.
+    #[allow(dead_code)] // Public API for external callers; not consumed in-process today.
+    pub fn from_env() -> Result<Self, String> {
+        std::env::var("PROCON_SERVER").map_err(|_| "PROCON_SERVER not set".to_owned()).and_then(
+            |_| std::env::var("PROCON_TOKEN").map_err(|_| "PROCON_TOKEN not set".to_owned()),
+        )?;
+        let team_id = std::env::var("PROCON_TEAM_ID").unwrap_or_else(|_| "mvp-player".to_owned());
+        Ok(Self { team_id, setting_poll_interval: Duration::from_secs(2) })
+    }
+}
+
 /// Aggregated result of a single match run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoordinatorOutcome {

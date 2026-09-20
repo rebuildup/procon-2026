@@ -2,16 +2,20 @@
 //!
 //! Implements the per-match orchestration body for the CLI coordinator:
 //!
-//! 1. Receive [`MatchSetting`] from the upstream (today: GET /).
+//! 1. Receive [`MatchSetting`] from the caller (production callers fetch it
+//!    out-of-band via `protocol::MatchClient::get_match_setting`; the loop
+//!    itself is HTTP-agnostic).
 //! 2. Ask a [`Solver`] for the day's [`DayPlan`].
-//! 3. POST the plan via a [`Transport`] (today: POST /) with retry + timeout.
-//! 4. Wait for the next day boundary.
+//! 3. POST the plan via a [`Transport`] (production: `protocol::MatchClient`
+//!    wired in by `coordinator_loop.rs`; tests: the mock transport below)
+//!    with retry + timeout.
+//! 4. Wait for the next day boundary via `Transport::wait_for_next_day`.
 //! 5. Stop on end signal, terminal error, or after the configured day count.
 //!
 //! The transport is intentionally a trait so the loop can be exercised against
 //! an in-process mock without spinning up a real HTTP server. The mock lives
-//! in the same file (`tests` module) and uses a `HashMap<url, Mutex<Response>>`
-//! keyed by endpoint path.
+//! in the same file (`tests` module) and uses a
+//! `HashMap<String, Mutex<Scripted>>` keyed by endpoint path (e.g. `"/agent"`).
 
 use std::future::Future;
 use std::time::Duration;
