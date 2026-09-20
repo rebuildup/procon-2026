@@ -308,6 +308,7 @@ dependencies = [
  "clap",
  "domain",
  "engine",
+ "mockito",
  "protocol",
  "regex",
  "serde",
