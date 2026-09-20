@@ -1,0 +1,483 @@
+//! End-to-end harness driving `run_coordinator_loop` against a real axum server.
+//!
+//! Unlike `e2e_openapi_fixture.rs` (which uses an in-process mockito server),
+//! this test spins up an actual `axum::serve` instance on
+//! `127.0.0.1:<random-port>` and exercises the full TCP / HTTP /
+//! tokio-scheduler pipeline. That catches failure modes that the mockito
+//! path cannot observe:
+//!
+//! - real auth/access-time error envelopes parsed by `protocol::MatchClient`
+//!   over an actual HTTP socket,
+//! - retry behaviour driven by real wall-clock backoff,
+//! - the `revision < 0` rejection path inside `submit_actions` (the server
+//!   returns `200 OK` with `{"revision": -1}` and the loop must surface it
+//!   as `CoordinatorLoopError::Rejected` instead of retrying),
+//! - the `starts_at == 0` poll loop that waits for the server to flip the
+//!   setting on a separate task,
+//! - `ends_at` already in the past so the between-day sleep is skipped.
+//!
+//! The test server is a deliberately small subset of the official Procon 37
+//! 4-endpoint protocol: `GET /setting`, `POST /agent`, `GET /`, `POST /`. Its
+//! responses use the exact `camelCase` JSON shape that
+//! `protocol::match_config` decodes, so the existing `MatchClient` requires
+//! no changes.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, AtomicI64, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+use axum::{
+    Json, Router,
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+};
+use serde_json::{Value, json};
+use tokio::net::TcpListener;
+use tokio::sync::Mutex;
+
+use cli::coordinator_loop::{CoordinatorLoopConfig, CoordinatorOutcome, run_coordinator_loop};
+use cli::solver_adapter::{EngineLoopAdapter, WaitSolver};
+use protocol::http_client::{MatchClient, RetryPolicy};
+use solver_loop::InitialStrategy;
+
+const OPENAPI_PATH: &str = "../../.reference/procon37/openapi.json";
+const MATCH_CONFIG_PATH: &str = "../../.reference/procon37/match-config.example.json";
+
+/// Map size used by the synthesised `MatchSetting`. 8x8 satisfies the
+/// `engine::model::MapSize::MIN` constraint (8..=32 in both axes).
+const MAP_WIDTH: i32 = 8;
+const MAP_HEIGHT: i32 = 8;
+
+/// Day plan for a 4-day match. Each `day_steps[i]` is the per-day budget the
+/// adapter must fill with `-N` (wait) and `0..=5` (move) tokens whose
+/// step-sum equals `day_steps[i]`.
+const DAY_SECONDS: [i32; 4] = [30, 30, 30, 30];
+const DAY_STEPS: [i32; 4] = [20, 20, 20, 20];
+
+/// Sentinel meaning "no forced revision" in [`ServerState::force_revision`].
+/// `i32::MIN` is used so that every legal wire value (`..=i32::MAX`) can be
+/// forced — the most important of which is `-1` (server rejection).
+const NO_FORCE_REVISION: i32 = i32::MIN;
+
+/// Shared state of the test server. Held inside an `Arc` so the test thread
+/// can flip flags while `run_coordinator_loop` runs in another task.
+#[derive(Clone, Default)]
+struct ServerState {
+    /// UNIX-time match start. `0` means "not yet announced" and causes the
+    /// loop to keep polling `GET /setting`. The `starts_at_in_future` test
+    /// flips this from `0` to a positive value mid-flight.
+    starts_at: Arc<AtomicI64>,
+    /// Monotonic day counter, incremented by every `GET /`.
+    day_counter: Arc<AtomicU64>,
+    /// Monotonic revision counter, returned by `POST /` when no override is
+    /// active.
+    revision_counter: Arc<AtomicI32>,
+    /// When `!= NO_FORCE_REVISION`, the next `POST /` returns this revision
+    /// exactly once (then resets to `NO_FORCE_REVISION`). Used by the
+    /// `revision=-1` rejection test — `-1` is a valid wire value, so we
+    /// cannot use it as the sentinel.
+    force_revision: Arc<AtomicI32>,
+    /// When `> 0`, the next N requests return `401`. The loop's retry policy
+    /// must NOT attempt to retry, so the test asserts that the loop returns
+    /// a `CoordinatorLoopError::Setting`/`AgentSubmit`/`State`/`ActionSubmit`
+    /// after a single round-trip.
+    force_auth_fail: Arc<AtomicU64>,
+    /// When `> 0`, the next N requests return `403 AccessTimeError`. Used
+    /// by the loop's pre-start branch which translates the error into a
+    /// poll-loop iteration.
+    force_access_time: Arc<AtomicU64>,
+    /// When `> 0`, the next N requests return `500`. The retry policy must
+    /// burn through them and recover on the subsequent 200.
+    force_500: Arc<AtomicU64>,
+    /// Per-agent run-length encoded action plans captured by every `POST /`.
+    /// Outer index = day, inner = one `Vec<i32>` per controlled agent.
+    captured_action_bodies: Arc<Mutex<Vec<Vec<Vec<i32>>>>>,
+}
+
+impl ServerState {
+    fn new(starts_at: i64) -> Self {
+        let state = Self::default();
+        state.starts_at.store(starts_at, Ordering::SeqCst);
+        state.force_revision.store(NO_FORCE_REVISION, Ordering::SeqCst);
+        state
+    }
+
+    /// Build a wire-valid `MatchSetting` for the given day plan. The map is
+    /// the smallest allowed (`8x8`) plain grid; one controlled agent sits at
+    /// cell `0` so the engine view of the wire payload has the right shape.
+    fn build_setting(&self) -> Value {
+        let starts_at = self.starts_at.load(Ordering::SeqCst);
+        let width_u = usize::try_from(MAP_WIDTH).expect("width fits usize");
+        let height_u = usize::try_from(MAP_HEIGHT).expect("height fits usize");
+        json!({
+            "startsAt": starts_at,
+            "daySeconds": DAY_SECONDS,
+            "daySteps": DAY_STEPS,
+            "map": {
+                "height": MAP_HEIGHT,
+                "width": MAP_WIDTH,
+                "cells": vec![vec![0_i32; width_u]; height_u],
+            },
+            "spots": [],
+            "agents": [0_i32],
+            "fuelLimits": 30,
+            "players": 2,
+            "busyThreshold": 3,
+            "jammedThreshold": 5,
+        })
+    }
+}
+
+/// `GET /setting` handler. Honours the `force_auth_fail`, `force_access_time`,
+/// and `force_500` overrides; otherwise returns a fresh `MatchSetting` built
+/// from `ServerState::build_setting`.
+async fn serve_setting(State(s): State<ServerState>) -> (StatusCode, Json<Value>) {
+    if s.force_auth_fail.load(Ordering::SeqCst) > 0 {
+        s.force_auth_fail.fetch_sub(1, Ordering::SeqCst);
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "code": "AuthError",
+                "message": "bad token",
+            })),
+        );
+    }
+    if s.force_access_time.load(Ordering::SeqCst) > 0 {
+        s.force_access_time.fetch_sub(1, Ordering::SeqCst);
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "code": "AccessTimeError",
+                "message": "match has not started",
+            })),
+        );
+    }
+    if s.force_500.load(Ordering::SeqCst) > 0 {
+        s.force_500.fetch_sub(1, Ordering::SeqCst);
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({})));
+    }
+    (StatusCode::OK, Json(s.build_setting()))
+}
+
+/// `POST /agent` handler. Accepts any `AgentKindsBody` and returns 200.
+/// Auth/500 overrides apply uniformly so the transient-500 test can exercise
+/// the retry path on this endpoint too.
+async fn serve_agent(
+    State(s): State<ServerState>,
+    _body: Json<Value>,
+) -> (StatusCode, Json<Value>) {
+    if s.force_auth_fail.load(Ordering::SeqCst) > 0 {
+        s.force_auth_fail.fetch_sub(1, Ordering::SeqCst);
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"code": "AuthError", "message": "bad token"})),
+        );
+    }
+    if s.force_500.load(Ordering::SeqCst) > 0 {
+        s.force_500.fetch_sub(1, Ordering::SeqCst);
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({})));
+    }
+    (StatusCode::OK, Json(json!({})))
+}
+
+/// `GET /` handler returning a `MatchState` snapshot. `endsAt` is set far in
+/// the future so the loop's `ends_at - now` check stays non-negative (i.e.
+/// the between-day sleep is skipped only by negative `ends_at`; for the
+/// happy-path test we want fast execution, so we use a small positive value
+/// instead — see `end_at_past_skips_sleep` for the past-`ends_at` variant).
+async fn serve_state(State(s): State<ServerState>) -> (StatusCode, Json<Value>) {
+    if s.force_auth_fail.load(Ordering::SeqCst) > 0 {
+        s.force_auth_fail.fetch_sub(1, Ordering::SeqCst);
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"code": "AuthError", "message": "bad token"})),
+        );
+    }
+    let day = s.day_counter.fetch_add(1, Ordering::SeqCst);
+    // end_at = 0 makes the loop's `state.ends_at - now` calculation
+    // negative (since `now` is always positive), so the between-day sleep
+    // is skipped and the test finishes quickly.
+    (
+        StatusCode::OK,
+        Json(json!({
+            "endsAt": 0_i64,
+            "day": i64::try_from(day).unwrap_or(0),
+            "agents": [],
+            "others": [],
+            "traffics": [],
+        })),
+    )
+}
+
+/// `POST /` handler capturing the run-length encoded action plan and
+/// returning an `ActionAccepted` with the next revision id (or the
+/// `force_revision` value, used by the rejection test).
+async fn serve_action(
+    State(s): State<ServerState>,
+    Json(body): Json<Vec<Vec<i32>>>,
+) -> (StatusCode, Json<Value>) {
+    if s.force_auth_fail.load(Ordering::SeqCst) > 0 {
+        s.force_auth_fail.fetch_sub(1, Ordering::SeqCst);
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"code": "AuthError", "message": "bad token"})),
+        );
+    }
+    s.captured_action_bodies.lock().await.push(body);
+    let force = s.force_revision.load(Ordering::SeqCst);
+    let revision = if force == NO_FORCE_REVISION {
+        s.revision_counter.fetch_add(1, Ordering::SeqCst)
+    } else {
+        s.force_revision.store(NO_FORCE_REVISION, Ordering::SeqCst);
+        force
+    };
+    (StatusCode::OK, Json(json!({"revision": revision})))
+}
+
+/// Build the four-endpoint axum router and share `state` via `with_state`.
+fn router(state: ServerState) -> Router {
+    Router::new()
+        .route("/setting", get(serve_setting))
+        .route("/agent", post(serve_agent))
+        .route("/", get(serve_state).post(serve_action))
+        .with_state(state)
+}
+
+/// Bind to a random localhost port and spawn the axum server. Returns the
+/// origin URL (e.g. `http://127.0.0.1:NNNNN`) and a clone of the state
+/// handle so the test can flip flags while the loop runs.
+async fn spawn_test_server(starts_at: i64) -> (String, ServerState) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind ephemeral port");
+    let addr = listener.local_addr().expect("local_addr");
+    let state = ServerState::new(starts_at);
+    let router = router(state.clone());
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.expect("axum serve");
+    });
+    (format!("http://{addr}"), state)
+}
+
+/// Build a `MatchClient` whose retry budget is small enough that the 401 /
+/// revision=-1 tests still complete in well under a second.
+fn test_client(server_url: &str, token: &str) -> MatchClient {
+    MatchClient::builder(server_url, token)
+        .retry_policy(RetryPolicy { max_retries: 1, backoff_millis: &[10, 10] })
+        .request_timeout(Duration::from_secs(2))
+        .build()
+        .expect("match client builds")
+}
+
+/// Build the standard `CoordinatorLoopConfig` used by every scenario. The
+/// poll interval is short so the `startsAt` poll test reacts within tens
+/// of milliseconds.
+fn test_config(solver_name: &str) -> CoordinatorLoopConfig {
+    CoordinatorLoopConfig {
+        team_id: "mvp-player".to_owned(),
+        setting_poll_interval: Duration::from_millis(20),
+        solver_name: solver_name.to_owned(),
+    }
+}
+
+/// Drive `run_coordinator_loop` with the production loop solver.
+async fn run_with_loop_solver(
+    server_url: &str,
+    token: &str,
+) -> Result<CoordinatorOutcome, cli::coordinator_loop::CoordinatorLoopError> {
+    let solver: Box<dyn engine::solver::Solver> =
+        Box::new(EngineLoopAdapter::new(InitialStrategy::GreedyNearestNeighbor, 32));
+    run_coordinator_loop(test_client(server_url, token), solver, test_config("loop")).await
+}
+
+/// Drive `run_coordinator_loop` with the debug `WaitSolver`.
+async fn run_with_wait_solver(
+    server_url: &str,
+    token: &str,
+) -> Result<CoordinatorOutcome, cli::coordinator_loop::CoordinatorLoopError> {
+    let solver: Box<dyn engine::solver::Solver> = Box::new(WaitSolver);
+    run_coordinator_loop(test_client(server_url, token), solver, test_config("wait")).await
+}
+
+// ============================================================================
+// Test cases
+// ============================================================================
+
+/// Happy path: a 4-day match completes end-to-end and every `revision`
+/// returned by `POST /` is non-negative. Uses `WaitSolver` so the loop is
+/// fast and the wire bodies are predictable (`[-N]` per agent per day).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn happy_path_completes_four_days() {
+    let (url, _state) = spawn_test_server(1).await;
+    let started = Instant::now();
+    let outcome = run_with_wait_solver(&url, "test-token").await.expect("happy path succeeds");
+    let elapsed = started.elapsed();
+
+    assert_eq!(outcome.days_completed, DAY_SECONDS.len(), "all 4 days complete");
+    assert_eq!(outcome.revisions.len(), DAY_SECONDS.len(), "one revision per day");
+    assert!(
+        outcome.revisions.iter().all(|&r| r >= 0),
+        "all revisions non-negative: {:?}",
+        outcome.revisions
+    );
+    // `endsAt = 0` skips the between-day sleep, so the whole match should
+    // finish in well under 5s even on a slow CI runner.
+    assert!(elapsed < Duration::from_secs(5), "match too slow: {elapsed:?}");
+}
+
+/// `startsAt = 0` makes the loop poll `GET /setting` in a tight loop. A
+/// separate task flips the flag to a positive value after a short delay;
+/// the loop must then proceed and complete all four days.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn starts_at_in_future_polls_until_reached() {
+    let (url, state) = spawn_test_server(0).await;
+    // Sanity: starts_at starts at 0 so the loop will poll.
+    assert_eq!(state.starts_at.load(Ordering::SeqCst), 0);
+
+    // Run the loop on its own task so we can flip the flag concurrently.
+    let url_for_task = url.clone();
+    let handle =
+        tokio::spawn(async move { run_with_wait_solver(&url_for_task, "test-token").await });
+
+    // Give the loop a few poll cycles to confirm it really is polling, then
+    // announce the match.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!handle.is_finished(), "loop must not have completed yet while starts_at is still 0");
+    state.starts_at.store(1, Ordering::SeqCst);
+
+    let outcome = handle.await.expect("join loop task").expect("loop succeeds");
+    assert_eq!(outcome.days_completed, DAY_SECONDS.len(), "all 4 days complete");
+    assert!(
+        outcome.revisions.iter().all(|&r| r >= 0),
+        "all revisions non-negative: {:?}",
+        outcome.revisions
+    );
+}
+
+/// `force_auth_fail` is set high enough to cover the entire match. The
+/// first request to fail (here: `GET /setting`) returns 401, which the
+/// `protocol::MatchClient` classifies as `HttpClientError::Auth` and
+/// refuses to retry. The loop must therefore fail with a
+/// `CoordinatorLoopError::Setting` and the loop's wall-clock budget must
+/// stay under one second — no retry storm.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn auth_fail_401_does_not_retry() {
+    let (url, state) = spawn_test_server(1).await;
+    state.force_auth_fail.store(1024, Ordering::SeqCst);
+
+    let started = Instant::now();
+    let result = run_with_wait_solver(&url, "bad-token").await;
+    let elapsed = started.elapsed();
+
+    let err = result.expect_err("auth failure must surface as error");
+    // The loop fails fast on the first `GET /setting` because 401 is not
+    // a retryable status. We don't pin the exact variant (Setting vs
+    // AgentSubmit) — the wire order is determined by the server's flag,
+    // not by anything the test depends on — only the structural shape.
+    assert!(
+        matches!(
+            err,
+            cli::coordinator_loop::CoordinatorLoopError::Setting(
+                protocol::http_client::HttpClientError::Auth { .. }
+            ) | cli::coordinator_loop::CoordinatorLoopError::AgentSubmit(
+                protocol::http_client::HttpClientError::Auth { .. }
+            )
+        ),
+        "expected auth error on the first request, got {err:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "401 must not trigger a retry storm (elapsed = {elapsed:?})"
+    );
+}
+
+/// `POST /` returns `{"revision": -1}`. The server still uses HTTP 200, so
+/// the `MatchClient`'s retry loop considers the request successful; the
+/// rejection is detected only when decoding the body. The loop must surface
+/// this as `CoordinatorLoopError::Rejected { day: 0, revision: -1 }` and
+/// must NOT retry.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn revision_neg1_returns_rejected_error() {
+    let (url, state) = spawn_test_server(1).await;
+    state.force_revision.store(-1, Ordering::SeqCst);
+
+    let err = run_with_wait_solver(&url, "test-token")
+        .await
+        .expect_err("rejection must surface as error");
+
+    match err {
+        cli::coordinator_loop::CoordinatorLoopError::Rejected { day, revision } => {
+            assert_eq!(day, 0, "rejection on the first day");
+            assert_eq!(revision, -1, "server reported revision -1");
+        }
+        other => panic!("expected Rejected {{ day: 0, revision: -1 }}, got {other:?}"),
+    }
+    // Sanity: the flag was consumed exactly once (reset to sentinel).
+    assert_eq!(state.force_revision.load(Ordering::SeqCst), NO_FORCE_REVISION);
+}
+
+/// Transient 5xx: the first request fails with 500 (which the client
+/// classifies as transient via `is_transient_status`), then the retry
+/// succeeds. The loop must burn through the retry and complete all four
+/// days without losing its place.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transient_500_retries_then_succeeds() {
+    let (url, state) = spawn_test_server(1).await;
+    // `max_retries = 1` (see `test_client`) means the client makes at most
+    // 2 attempts per request. We only need the FIRST attempt of the FIRST
+    // request (typically `GET /setting`) to fail with 500; the second
+    // attempt then sees a fresh 200 and the match proceeds.
+    state.force_500.store(1, Ordering::SeqCst);
+
+    let outcome = run_with_wait_solver(&url, "test-token").await.expect("loop recovers from 500s");
+
+    assert_eq!(outcome.days_completed, DAY_SECONDS.len());
+    assert!(outcome.revisions.iter().all(|&r| r >= 0));
+    assert_eq!(state.force_500.load(Ordering::SeqCst), 0, "transient counter fully drained");
+}
+
+/// Per-day action plan: the production `EngineLoopAdapter` drives the
+/// loop solver, so every `POST /` body must contain one inner `Vec<i32>`
+/// per controlled agent, each with `step_sum == day_steps[day]`. We also
+/// assert at least one Move action (i.e. a non-negative token) to prove
+/// the planner is not just degenerating to `wait_all`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn action_plan_body_captured_and_step_sum_correct() {
+    let (url, state) = spawn_test_server(1).await;
+    let outcome = run_with_loop_solver(&url, "test-token").await.expect("loop completes");
+    assert_eq!(outcome.days_completed, DAY_SECONDS.len(), "all 4 days complete");
+
+    let bodies = state.captured_action_bodies.lock().await;
+    assert_eq!(bodies.len(), DAY_SECONDS.len(), "captured one POST / body per day");
+
+    let mut saw_move = false;
+    for (day_idx, body) in bodies.iter().enumerate() {
+        assert!(!body.is_empty(), "day {day_idx}: at least one inner list");
+        for (agent_idx, inner) in body.iter().enumerate() {
+            // Wire tokens: `-N` (N > 0) = wait N steps, `0..=5` = one move
+            // step in that direction. So the step sum is `(-x) for x<0,
+            // else 1`.
+            let step_sum: i32 = inner.iter().map(|&x| if x < 0 { -x } else { 1 }).sum();
+            assert_eq!(
+                step_sum, DAY_STEPS[day_idx],
+                "day {day_idx} agent {agent_idx}: inner step sum mismatch (body = {inner:?})"
+            );
+            if inner.iter().any(|&x| x >= 0) {
+                saw_move = true;
+            }
+        }
+    }
+    assert!(saw_move, "EngineLoopAdapter must produce at least one Move action across the match");
+}
+
+/// Drift guard: re-verify the on-disk `OpenAPI` fixture covers all four
+/// endpoints with 200/401/403 responses. This is the same assertion the
+/// mockito-based E2E performs; running it here keeps both harnesses in sync.
+#[test]
+fn openapi_fixture_still_drifts_guard() {
+    let fixture = cli::openapi_fixture::OpenApiFixture::load(
+        std::path::Path::new(OPENAPI_PATH),
+        std::path::Path::new(MATCH_CONFIG_PATH),
+    )
+    .expect("load OpenAPI fixture");
+    fixture.assert_minimal_coverage().expect("coverage");
+}

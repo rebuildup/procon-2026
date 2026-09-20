@@ -35,4 +35,9 @@ regex = "1"
 [dev-dependencies]
 tempfile = "3"
 mockito = "1"
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+# Real-HTTP-server E2E harness (`crates/cli/tests/e2e_real_server.rs`).
+# Bound to a real axum server on 127.0.0.1:<random> so we exercise the
+# full `reqwest` -> `tokio` -> `axum::serve` -> router pipeline instead
+# of the in-process mockito path covered by `e2e_openapi_fixture.rs`.
+axum = "0.8"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "net"] }
