@@ -1,22 +1,27 @@
 //! `procon` — operator CLI.
 //!
 //! Subcommands:
-//!   - `hello`                            : print the engine's hello payload.
-//!   - `replay <path>`                    : run a JSON replay file end-to-end.
-//!   - `warmup`                           : measure cold / warm / 1-day-smoke timing per solver.
-//!   - `loop <days>`                      : drive the per-match solver loop (in-process transport).
-//!   - `coordinator`                      : contest venue runtime (LAN match-server
-//!                                          auto-detect + /agent POST with retry/timeout).
-//!   - `match-config load <path>`         : pretty-print a match config JSON.
-//!   - `match-config validate <path>`     : structurally validate a match config.
-//!   - `version`                          : print package + protocol versions.
-//!   - `bundle build <output.zip>`        : build a contest deliverable zip.
+//!   - `hello`                         : print the engine's hello payload.
+//!   - `replay <path>`                 : run a JSON replay file end-to-end.
+//!   - `warmup`                        : measure cold / warm / 1-day-smoke timing per solver.
+//!   - `loop <days>`                   : drive the per-match solver loop (in-process transport).
+//!   - `coordinator`                   : contest venue runtime (LAN match-server
+//!     auto-detect + /agent POST with retry/timeout).
+//!   - `match-config load <path>`      : pretty-print a match config JSON.
+//!   - `match-config validate <path>`  : structurally validate a match config.
+//!   - `version`                       : print package + protocol versions.
+//!   - `bundle build <output.zip>`     : build a contest deliverable zip.
 
+mod action_adapter;
 mod bundle;
 mod coordinator;
+mod coordinator_loop;
 mod fixtures;
 mod loop_runner;
 mod match_config;
+mod openapi_fixture;
+mod protocol_to_engine;
+mod solver_adapter;
 mod warmup;
 
 use std::path::PathBuf;
@@ -27,14 +32,17 @@ use clap::{Parser, Subcommand};
 use domain::{MatchId, PlayerId};
 use engine::replay::Replay;
 use engine::{EngineServer, EngineServerConfig};
+use protocol::{HttpClientError, MatchClient, RetryPolicy};
 use serde_json::json;
 use tracing_subscriber::EnvFilter;
 
 use crate::coordinator::{AgentRequest, CliOverrides, CoordinatorConfig, post_agent_with_retry};
+use crate::coordinator_loop::{CoordinatorLoopConfig, run_coordinator_loop};
 use crate::loop_runner::{
     DayAction, DayPlan, DaySignal, LoopConfig, LoopError, MatchSetting, Solver, Submission,
     SubmissionAck, Transport, run_match_loop,
 };
+use crate::solver_adapter::WaitSolver;
 
 #[derive(Debug, Parser)]
 #[command(name = "procon", about = "procon-2026 operator CLI")]
@@ -199,57 +207,9 @@ async fn run(cli: Cli) -> Result<()> {
             run_loop(days, &player).await?;
         }
         Cmd::Coordinator { server, agent_url, setting_url, token, agent_id, dry_run, once } => {
-            let overrides = CliOverrides { server, agent_url, setting_url, token };
-            let cfg = CoordinatorConfig::from_env(&overrides)?;
-            println!("{}", serde_json::to_string_pretty(&cfg.describe())?);
-
-            if dry_run {
-                return Ok(());
-            }
-
-            if once {
-                let body =
-                    AgentRequest { agent_id, day: 0, turn: 0, payload: serde_json::Value::Null };
-                let resp = post_agent_with_retry(&cfg, &body)?;
-                println!("{}", serde_json::to_string_pretty(&resp)?);
-                return Ok(());
-            }
-
-            // Default behaviour: stay alive, waiting for the real solver loop
-            // that #45 will provide. Until then we just block here so the
-            // container stays in a healthy state for ops to inspect.
-            tracing::warn!(
-                "coordinator loop body not yet implemented (see #45); \
-                 idle-blocking. Use --once to send a single probe POST."
-            );
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
-            loop {
-                ticker.tick().await;
-            }
+            cmd_coordinator(server, agent_url, setting_url, token, agent_id, dry_run, once).await?;
         }
-        Cmd::MatchConfig(sub) => match sub {
-            MatchConfigCmd::Load { path } => {
-                let (_cfg, value) = match_config::load(&path)
-                    .with_context(|| format!("load match config {}", path.display()))?;
-                println!("{}", match_config::pretty_print(&value)?);
-            }
-            MatchConfigCmd::Validate { path } => {
-                let raw = std::fs::read(&path)
-                    .with_context(|| format!("read match config {}", path.display()))?;
-                let value: serde_json::Value = serde_json::from_slice(&raw)
-                    .with_context(|| format!("parse match config {}", path.display()))?;
-                let report = match_config::validate(&value);
-                let summary = json!({
-                    "path": match_config::display_path(&path).display().to_string(),
-                    "ok": report.ok,
-                    "errors": report.errors,
-                });
-                println!("{}", serde_json::to_string_pretty(&summary)?);
-                if !report.ok {
-                    anyhow::bail!("match config validation failed");
-                }
-            }
-        },
+        Cmd::MatchConfig(sub) => cmd_match_config(sub)?,
         Cmd::Version => {
             println!(
                 "{}",
@@ -267,6 +227,153 @@ async fn run(cli: Cli) -> Result<()> {
         },
     }
     Ok(())
+}
+
+/// `match-config` subcommand dispatcher.
+fn cmd_match_config(sub: MatchConfigCmd) -> Result<()> {
+    match sub {
+        MatchConfigCmd::Load { path } => {
+            let (_cfg, value) = match_config::load(&path)
+                .with_context(|| format!("load match config {}", path.display()))?;
+            println!("{}", match_config::pretty_print(&value)?);
+        }
+        MatchConfigCmd::Validate { path } => {
+            let raw = std::fs::read(&path)
+                .with_context(|| format!("read match config {}", path.display()))?;
+            let value: serde_json::Value = serde_json::from_slice(&raw)
+                .with_context(|| format!("parse match config {}", path.display()))?;
+            let report = match_config::validate(&value);
+            let summary = json!({
+                "path": match_config::display_path(&path).display().to_string(),
+                "ok": report.ok,
+                "errors": report.errors,
+            });
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+            if !report.ok {
+                anyhow::bail!("match config validation failed");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `coordinator` subcommand dispatcher.
+///
+/// Behaviour matrix:
+///
+/// - `--dry-run` with no `--server`: load the `OpenAPI` + `match-config`
+///   fixture from `.reference/procon37/`, build a real `protocol::MatchClient`
+///   targeting `http://localhost:7878` with the MVP test token, and print
+///   the number of days from the loaded `MatchSetting`. The full loop
+///   driving the mockito server lands in #136.
+/// - `--dry-run` with `--server`: print the existing `CoordinatorConfig`
+///   dump and exit (legacy smoke-test behaviour).
+/// - `--once`: send a single probe POST via the legacy ureq transport
+///   (slated for removal in #D).
+/// - default: build a `MatchClient`, hand it to the wired-up
+///   `run_coordinator_loop`, and idle-block on the per-day driver.
+///   When the real loop completes, we idle-tick forever so the container
+///   stays healthy for ops to inspect.
+#[allow(clippy::too_many_arguments)]
+async fn cmd_coordinator(
+    server: Option<String>,
+    agent_url: Option<String>,
+    setting_url: Option<String>,
+    token: Option<String>,
+    agent_id: String,
+    dry_run: bool,
+    once: bool,
+) -> Result<()> {
+    let overrides = CliOverrides { server: server.clone(), agent_url, setting_url, token };
+    let cfg = CoordinatorConfig::from_env(&overrides)?;
+    println!("{}", serde_json::to_string_pretty(&cfg.describe())?);
+
+    // Warn for the fields slated for #D removal; keep consuming them so the
+    // clap surface is unchanged.
+    if agent_id != "agent-0" || once {
+        tracing::warn!(
+            "--agent-id and --once are deprecated and will be removed in #D; \
+             their values are ignored by the #135 coordinator loop"
+        );
+    }
+
+    if dry_run {
+        if server.is_none() {
+            // Load the OpenAPI fixture and build a real MatchClient — but
+            // do NOT call the loop yet; full E2E driving belongs to #C.
+            let openapi_path = std::path::Path::new(".reference/procon37/openapi.json");
+            let match_config_path =
+                std::path::Path::new(".reference/procon37/match-config.example.json");
+            let fixture =
+                crate::openapi_fixture::OpenApiFixture::load(openapi_path, match_config_path)
+                    .map_err(|e| anyhow::anyhow!("openapi fixture load: {e}"))?;
+            fixture
+                .assert_minimal_coverage()
+                .map_err(|e| anyhow::anyhow!("openapi coverage: {e}"))?;
+
+            let client = MatchClient::builder("http://localhost:7878", "mvp-test-token")
+                .retry_policy(RetryPolicy::default())
+                .request_timeout(std::time::Duration::from_secs(5))
+                .build()
+                .map_err(|e: HttpClientError| anyhow::anyhow!("match client: {e}"))?;
+            println!(
+                "{}",
+                json!({
+                    "dry_run": true,
+                    "match_config_days": fixture
+                        .match_setting
+                        .as_ref()
+                        .map(|s| s.day_seconds.len())
+                        .or_else(|| {
+                            fixture.match_config_raw
+                                .get("problem")?
+                                .get("daySeconds")?
+                                .as_array()
+                                .map(Vec::len)
+                        })
+                        .unwrap_or(0),
+                    "client_base_url": "http://localhost:7878",
+                })
+            );
+            // Touch the unused-result slot so the linter does not flag it.
+            let _ = client;
+            return Ok(());
+        }
+        // dry_run + explicit server: legacy config dump only.
+        return Ok(());
+    }
+
+    if once {
+        let body = AgentRequest { agent_id, day: 0, turn: 0, payload: serde_json::Value::Null };
+        let resp = post_agent_with_retry(&cfg, &body)?;
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+
+    // Default behaviour: drive the real loop against the live server.
+    let base_url = cfg.server_origin.clone();
+    let token = cfg.token.clone().unwrap_or_default();
+    let client = MatchClient::builder(base_url, token)
+        .retry_policy(RetryPolicy::default())
+        .request_timeout(cfg.timeout)
+        .build()
+        .map_err(|e: HttpClientError| anyhow::anyhow!("match client: {e}"))?;
+
+    let solver: Box<dyn engine::solver::Solver> = Box::new(WaitSolver);
+
+    let loop_cfg = CoordinatorLoopConfig { team_id: "mvp-player".to_owned(), ..Default::default() };
+    let outcome = run_coordinator_loop(client, solver, loop_cfg)
+        .await
+        .map_err(|e| anyhow::anyhow!("coordinator loop: {e}"))?;
+
+    tracing::warn!(
+        "coordinator loop wired in #135; full E2E driving comes in #136. \
+         outcome: {outcome:?}"
+    );
+    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+    loop {
+        ticker.tick().await;
+    }
 }
 
 /// Drive the per-match solver loop with an in-process transport.

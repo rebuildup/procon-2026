@@ -154,11 +154,7 @@ impl MatchInput {
     /// Construct a minimal match input.
     #[must_use]
     pub fn new(match_id: impl Into<String>, turn: u32) -> Self {
-        Self {
-            match_id: match_id.into(),
-            turn,
-            payload: serde_json::Value::Null,
-        }
+        Self { match_id: match_id.into(), turn, payload: serde_json::Value::Null }
     }
 }
 
