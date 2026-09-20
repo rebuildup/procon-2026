@@ -21,6 +21,7 @@ mod match_config;
 mod openapi_fixture;
 mod protocol_to_engine;
 mod solver_adapter;
+mod tournament;
 mod warmup;
 
 use std::path::PathBuf;
@@ -120,6 +121,39 @@ enum Cmd {
     Bundle {
         #[command(subcommand)]
         action: BundleCmd,
+    },
+    /// Run a tournament: drive each solver through a full match against the
+    /// server, score them, and emit a markdown leaderboard.
+    ///
+    /// Solver names must be in the same registry as `Cmd::Coordinator`'s
+    /// `--solver` (`loop`, `wait`). Matches run sequentially because the
+    /// contest server only honours one match per session. Score =
+    /// `days_completed * 100 + sum(revisions)`; higher is better.
+    Tournament {
+        /// Comma-separated solver names (e.g. `loop,wait`). Must be a
+        /// non-empty subset of the registry in
+        /// `Cmd::Coordinator::--solver`.
+        #[arg(long, value_delimiter = ',')]
+        solvers: Vec<String>,
+        /// Override `PROCON_SERVER`.
+        #[arg(long, env = "PROCON_SERVER")]
+        server: Option<String>,
+        /// Override `PROCON_TOKEN`.
+        #[arg(long, env = "PROCON_TOKEN")]
+        token: Option<String>,
+        /// Initial strategy for the `loop` solver.
+        #[arg(long, default_value = "GreedyNearestNeighbor")]
+        loop_initial_strategy: String,
+        /// Iteration cap for the `loop` solver's local search.
+        #[arg(long, default_value_t = 32)]
+        loop_iterations: u32,
+        /// Team id baked into the coordinator loop config.
+        #[arg(long, default_value = "team-p0")]
+        team_id: String,
+        /// Directory to write a JSON leaderboard sidecar. When set,
+        /// `<DIR>/leaderboard.json` is written atomically (tmp + rename).
+        #[arg(long, value_name = "DIR")]
+        state_output_dir: Option<PathBuf>,
     },
 }
 
@@ -226,6 +260,26 @@ async fn run(cli: Cli) -> Result<()> {
                 bundle::run_build(&output).await?;
             }
         },
+        Cmd::Tournament {
+            solvers,
+            server,
+            token,
+            loop_initial_strategy,
+            loop_iterations,
+            team_id,
+            state_output_dir,
+        } => {
+            cmd_tournament(
+                solvers,
+                server,
+                token,
+                loop_initial_strategy,
+                loop_iterations,
+                team_id,
+                state_output_dir,
+            )
+            .await?;
+        }
     }
     Ok(())
 }
@@ -398,6 +452,41 @@ async fn cmd_coordinator(
     loop {
         ticker.tick().await;
     }
+}
+
+/// `tournament` subcommand dispatcher.
+///
+/// Resolves the env / flag fallback for `--server` and `--token`, builds a
+/// [`TournamentConfig`], runs every solver sequentially through a real
+/// match against the server, prints the markdown leaderboard to stdout,
+/// and optionally writes `<DIR>/leaderboard.json` (atomic tmp + rename).
+async fn cmd_tournament(
+    solvers: Vec<String>,
+    server: Option<String>,
+    token: Option<String>,
+    loop_initial_strategy: String,
+    loop_iterations: u32,
+    team_id: String,
+    state_output_dir: Option<PathBuf>,
+) -> Result<()> {
+    use crate::tournament::{TournamentConfig, render_markdown, run_tournament};
+
+    let cfg = TournamentConfig {
+        server: server
+            .or_else(|| std::env::var("PROCON_SERVER").ok())
+            .unwrap_or_else(|| "http://localhost:8080".to_owned()),
+        token: token
+            .or_else(|| std::env::var("PROCON_TOKEN").ok())
+            .unwrap_or_else(|| "token-p0".to_owned()),
+        solvers,
+        loop_initial_strategy: TournamentConfig::parse_initial_strategy(&loop_initial_strategy),
+        loop_iterations,
+        team_id,
+        state_output_dir,
+    };
+    let report = run_tournament(cfg).await.map_err(|e| anyhow::anyhow!("tournament: {e}"))?;
+    print!("{}", render_markdown(&report));
+    Ok(())
 }
 
 /// Drive the per-match solver loop with an in-process transport.

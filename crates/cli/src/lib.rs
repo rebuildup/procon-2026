@@ -18,3 +18,4 @@ pub mod coordinator_loop;
 pub mod openapi_fixture;
 pub mod protocol_to_engine;
 pub mod solver_adapter;
+pub mod tournament;
