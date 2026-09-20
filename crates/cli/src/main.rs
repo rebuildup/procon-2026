@@ -102,6 +102,14 @@ enum Cmd {
         /// Only resolve config + print it. Do not actually start the loop.
         #[arg(long)]
         dry_run: bool,
+
+        /// Path to write a JSON snapshot of the per-day match state.
+        /// The frontend Live page polls this path via Vite's static-file
+        /// serving, so the file must be reachable from the Vite dev
+        /// server's filesystem root. Atomic write via tmp file + rename,
+        /// so a half-written file is never visible to the frontend.
+        #[arg(long, value_name = "PATH", env = "PROCON_STATE_OUTPUT")]
+        state_output: Option<PathBuf>,
     },
     /// Inspect or validate a match configuration JSON file.
     #[command(subcommand)]
@@ -199,8 +207,8 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Loop { days, player } => {
             run_loop(days, &player).await?;
         }
-        Cmd::Coordinator { server, token, solver, dry_run } => {
-            cmd_coordinator(server, token, solver, dry_run).await?;
+        Cmd::Coordinator { server, token, solver, dry_run, state_output } => {
+            cmd_coordinator(server, token, solver, dry_run, state_output).await?;
         }
         Cmd::MatchConfig(sub) => cmd_match_config(sub)?,
         Cmd::Version => {
@@ -272,6 +280,7 @@ async fn cmd_coordinator(
     token: Option<String>,
     solver: String,
     dry_run: bool,
+    state_output: Option<PathBuf>,
 ) -> Result<()> {
     if dry_run {
         if server.is_none() {
@@ -333,7 +342,7 @@ async fn cmd_coordinator(
     let base_url =
         server.clone().ok_or_else(|| anyhow::anyhow!("PROCON_SERVER (or --server) must be set"))?;
     let token = token.clone().unwrap_or_default();
-    let client = MatchClient::builder(base_url, token)
+    let client = MatchClient::builder(base_url.clone(), token)
         .retry_policy(RetryPolicy::default())
         .request_timeout(std::time::Duration::from_secs(5))
         .build()
@@ -355,7 +364,16 @@ async fn cmd_coordinator(
     };
     tracing::info!(solver = solver.name(), "coordinator loop strategy selected");
 
-    let loop_cfg = CoordinatorLoopConfig { solver_name: solver_strategy, ..Default::default() };
+    let loop_cfg = CoordinatorLoopConfig {
+        solver_name: solver_strategy,
+        // `MatchClient::base_url()` is not exposed publicly (we must not
+        // modify `crates/protocol`), so we forward the URL we handed to
+        // the builder above. The snapshot's `server` field mirrors this
+        // value verbatim.
+        server_url: Some(base_url.clone()),
+        state_output_path: state_output.clone(),
+        ..Default::default()
+    };
     let outcome = run_coordinator_loop(client, solver, loop_cfg)
         .await
         .map_err(|e| anyhow::anyhow!("coordinator loop: {e}"))?;
@@ -487,6 +505,28 @@ mod tests {
         let cli = Cli::try_parse_from(["procon", "coordinator", "--dry-run"]).unwrap();
         match cli.cmd {
             Cmd::Coordinator { dry_run, .. } => assert!(dry_run),
+            _ => panic!("expected Coordinator variant"),
+        }
+    }
+
+    #[test]
+    fn parses_coordinator_state_output() {
+        let cli =
+            Cli::try_parse_from(["procon", "coordinator", "--state-output", "/tmp/state.json"])
+                .unwrap();
+        match cli.cmd {
+            Cmd::Coordinator { state_output, .. } => {
+                assert_eq!(state_output, Some(PathBuf::from("/tmp/state.json")));
+            }
+            _ => panic!("expected Coordinator variant"),
+        }
+    }
+
+    #[test]
+    fn parses_coordinator_state_output_defaults_none() {
+        let cli = Cli::try_parse_from(["procon", "coordinator"]).unwrap();
+        match cli.cmd {
+            Cmd::Coordinator { state_output, .. } => assert_eq!(state_output, None),
             _ => panic!("expected Coordinator variant"),
         }
     }
