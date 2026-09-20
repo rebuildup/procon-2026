@@ -1,12 +1,12 @@
-# ADR-0007: AgentKind は Patrol / Supply の 2 種 + FuelPolicy は sealed trait 化
+# ADR-0012: AgentKind は Patrol / Supply の 2 種 + FuelPolicy は sealed trait 化
 
 - Status: Accepted
 - Date: 2026-09-07
 - Deciders: rebuildup
 - Issue: #17
-- Depends on: ADR-0005, ADR-0006
+- Depends on: ADR-0010, ADR-0011
 
-> 注: 当初 `0003-agent-kind.md` を意図していたが、本 repo では `0003` が sprint-model で既に使用されている。連番 `0007` を採用する。
+> 注: 当初 `0003-agent-kind.md` を意図していたが、本 repo では `0003` が sprint-model で既に使用されている。連番 `0007` を一時採用、後に ADR 番号重複解消のため `0012` にシフト。
 
 ## Context
 
@@ -98,7 +98,7 @@ sealed 化する理由:
 
 - 募集要項の燃料上限は「`daySteps × 1〜3` 程度」 (`docs/contest/strategy.md` §3.1)。`daySteps` の最大値は 200 程度 (strategy.md §5.1) なので、上限は ~600。`u32` で余裕。
 - `newtype Fuel(u32)` での過度な抽象化は **行わない**。理由: strategy.md §3.1〜3.3 の運用で「残量表示」「残量率」が多用されるため、表示側で `as f64 / capacity as f64` がそのまま書ける方が読みやすい。
-- 補給の表現: Supply エージェントが Patrol に燃料を渡す行為は `Action::Refuel { from: AgentId }` で表現 (ADR-0005 D-4 参照)。
+- 補給の表現: Supply エージェントが Patrol に燃料を渡す行為は `Action::Refuel { from: AgentId }` で表現 (ADR-0010 D-4 参照)。
 
 ### D-4. 不変条件は `Agent::validate(ctx)` に集約
 
@@ -135,8 +135,8 @@ sealed 化する理由:
 
 ## Related ADRs / References
 
-- ADR-0005: domain 6 entity 統合定義 (本 ADR が D-1〜D-7 の `Agent` の前提)
-- ADR-0006: 座標系 (`HexCoord`, `MapLayout`) — `Agent::pos` の型
+- ADR-0010: domain 6 entity 統合定義 (本 ADR が D-1〜D-7 の `Agent` の前提)
+- ADR-0011: 座標系 (`HexCoord`, `MapLayout`) — `Agent::pos` の型
 - ADR-0002: JSON v1 envelope での serde 互換性
 - ADR-0001: `crates/domain` の純粋性不変条件
 - `docs/contest/strategy.md` §3.1 (燃料経済の制約), §3.2 (巡回車の平地段数), §3.3 (結合パターン)

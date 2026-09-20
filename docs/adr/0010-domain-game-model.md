@@ -1,12 +1,12 @@
-# ADR-0005: domain のゲームモデル 6 entity を統合的に定義する
+# ADR-0010: domain のゲームモデル 6 entity を統合的に定義する
 
 - Status: Accepted
 - Date: 2026-09-07
 - Deciders: rebuildup
 - Issue: #17
-- Depends on: ADR-0001, ADR-0006, ADR-0007
+- Depends on: ADR-0001, ADR-0011, ADR-0012
 
-> 注: 当初 `0001-domain-game-model.md` を意図していたが、本 repo では `0001-0003` が monorepo / protocol / sprint で既に使用されている。sibling branch (#11/#12) は `0004` を取得するため、本 ADR は連番 `0005-0007` を採用する。
+> 注: 当初 `0001-domain-game-model.md` を意図していたが、本 repo では `0001-0003` が monorepo / protocol / sprint で既に使用されている。sibling branch (#11/#12) は `0004` を取得するため、本 ADR は連番 `0010-0012` を採用する (2026-09 整理: `0005-0007` を一時採用していたが ADR 番号の重複を解消するため `0010-0012` にシフト)。
 
 ## Context
 
@@ -53,10 +53,10 @@
 - `match cell { Plain(_) => ..., Spotted(_) => ... }` で網羅性がコンパイル時に保証され、戦略実装側の未処理ケースが残らない (strategy.md §5.2 のリアルタイム応答性に効く)。
 - サイズ差は ~1 byte。32×32 = 1024 cell で 1 KiB、無視できる。
 
-### D-3. `Agent` は種別差を `enum AgentKind` で表現 (詳細は ADR-0007)
+### D-3. `Agent` は種別差を `enum AgentKind` で表現 (詳細は ADR-0012)
 
 - 同一 `Agent` struct に `kind: AgentKind` を持ち、種別固有の不変条件は `Agent::validate(&self, ctx)` に閉じ込める。
-- 詳細・根拠は ADR-0007 (`0007-agent-kind.md`) を参照。
+- 詳細・根拠は ADR-0012 (`0012-agent-kind.md`) を参照。
 
 ### D-4. `Action` は closed enum + payload struct
 
@@ -107,16 +107,16 @@
 | `Cell` / `Spot` 別 struct + `Option<Spot>` | スポット未保有マスが常に存在し、`match` 網羅性保証が弱い。実装中に `if let Some(...)` の重複が起きやすい |
 | `Series` を `Spot` のメソッドで lazy 計算 | 戦略アルゴリズムの hot path で毎回 `O(spot)` のコストが乗り、リアルタイム要件 (strategy.md §5.2) に抵触 |
 | `Traffic` を `Cell` 内に格納せず外部 map | 「道路セルか否か」の判定が呼び出し側責任になり、domain の網羅性が崩れる |
-| `AgentKind` を種別毎 struct に分割 (ADR-0007 で詳細比較) | 共通フィールドの重複・`Vec<Agent>` の均質性低下・match の網羅性低下 |
+| `AgentKind` を種別毎 struct に分割 (ADR-0012 で詳細比較) | 共通フィールドの重複・`Vec<Agent>` の均質性低下・match の網羅性低下 |
 
 ## Related ADRs / References
 
 - ADR-0001: Rust core + SolidJS frontend の monorepo 構成
 - ADR-0002: protocol は JSON v1 + ProtocolVersion envelope
 - ADR-0003: sprint = 1 target semantic version
-- ADR-0006: 座標系 (HexCoord, MapLayout: EvenRowRightOffset)
-- ADR-0007: AgentKind (Patrol/Supply) + FuelPolicy (sealed trait)
-- Sibling branches が作成する ADR-0004 (`hex-coord-and-non-torus` / `cell-spot-flat-enum`): 個別 entity のローカルな詳細決定
+- ADR-0011: 座標系 (HexCoord, MapLayout: EvenRowRightOffset)
+- ADR-0012: AgentKind (Patrol/Supply) + FuelPolicy (sealed trait)
+- ADR-0004 (`hex-coord-and-non-torus`) / ADR-0008 (`cell-spot-flat-enum`): 個別 entity のローカルな詳細決定 (sibling branches が作成)
 - `docs/contest/strategy.md` §2–5 (系列 / 燃料 / 道路 / リアルタイム要件)
 - `docs/contest/team-context.md` (並走トラック方針)
 - Issue: #17 (本 ADR), #11, #12, #13
