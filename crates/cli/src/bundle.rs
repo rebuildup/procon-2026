@@ -149,6 +149,7 @@ fn collect_entries(workspace: &Path, binary_path: &Path) -> Result<Vec<Permissiv
         ("docs/contest/strategy.md", "docs/contest/strategy.md"),
         ("docs/contest/team-context.md", "docs/contest/team-context.md"),
         ("docs/contest/api.md", "docs/contest/api.md"),
+        ("docs/contest/openapi.md", "docs/contest/openapi.md"),
         (".env.example", ".env.example"),
     ];
 
