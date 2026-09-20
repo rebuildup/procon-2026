@@ -2,9 +2,9 @@
 //!
 //! Implements the per-match orchestration body for the CLI coordinator:
 //!
-//! 1. Receive [`MatchSetting`] from the upstream (today: GET /match).
+//! 1. Receive [`MatchSetting`] from the upstream (today: GET /).
 //! 2. Ask a [`Solver`] for the day's [`DayPlan`].
-//! 3. POST the plan via a [`Transport`] (today: POST /agent) with retry + timeout.
+//! 3. POST the plan via a [`Transport`] (today: POST /) with retry + timeout.
 //! 4. Wait for the next day boundary.
 //! 5. Stop on end signal, terminal error, or after the configured day count.
 //!

@@ -1,3 +1,5 @@
+// Deprecated path retained for #D; will be removed.
+#![allow(dead_code)]
 //! Contest-runtime coordinator.
 //!
 //! 本番ブースで動かすソルバの LAN 側エントリポイント。

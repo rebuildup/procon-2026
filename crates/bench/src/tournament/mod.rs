@@ -16,7 +16,5 @@ pub mod types;
 
 pub use ranking::official_cmp;
 pub use render::{render_json, render_markdown, render_markdown_with_reports};
-pub use runner::{
-    Leaderboard, LeaderboardEntry, MatchIter, TournamentConfig, TournamentRunner,
-};
+pub use runner::{Leaderboard, LeaderboardEntry, MatchIter, TournamentConfig, TournamentRunner};
 pub use types::{DailyScore, MatchSetting, ScoreReport, Solver};
