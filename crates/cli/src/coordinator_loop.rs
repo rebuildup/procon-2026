@@ -43,6 +43,7 @@ use chrono::Utc;
 use domain::{MatchId, PlayerId};
 use protocol::http_client::SubmitAck;
 use protocol::match_config::AgentKind;
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::action_adapter::{AdapterError, decision_to_actions};
@@ -82,6 +83,25 @@ pub struct CoordinatorLoopConfig {
     /// Default `500ms` keeps us under the official server's
     /// `kind-deadline` default (5s) and the manual-test 60s budget.
     pub kind_submit_backoff: Duration,
+    /// Path to write `MatchStateSnapshot` JSON after each phase transition.
+    /// If `None`, no snapshot is written. Atomic write via tmp file + rename.
+    /// The frontend Live page polls this path via Vite's static-file
+    /// serving; the CLI is intentionally agnostic about who consumes the
+    /// file downstream.
+    pub state_output_path: Option<std::path::PathBuf>,
+    /// Server base URL recorded in the snapshot's `server` field. Set by
+    /// the CLI after constructing `MatchClient`; if `None`, the snapshot
+    /// uses `"unknown"`. `MatchClient::base_url()` is not exposed publicly
+    /// (we must not modify `crates/protocol`), so callers are expected to
+    /// forward the same URL they handed to the client builder.
+    pub server_url: Option<String>,
+    /// Optional pre-known match length (in days). When the caller already
+    /// knows how many days the match will run for — e.g. the CLI loaded
+    /// the `OpenAPI` fixture in `--dry-run` mode — the snapshot's
+    /// `daysTotal` field can be populated before Phase 1 fetches the
+    /// server's setting. When `None`, `daysTotal` is read from
+    /// `setting.day_steps` at Phase 1 completion.
+    pub days_total_hint: Option<u32>,
 }
 
 impl Default for CoordinatorLoopConfig {
@@ -92,6 +112,9 @@ impl Default for CoordinatorLoopConfig {
             solver_name: "loop".to_owned(),
             kind_submit_max_attempts: 30,
             kind_submit_backoff: Duration::from_millis(500),
+            state_output_path: None,
+            server_url: None,
+            days_total_hint: None,
         }
     }
 }
@@ -108,13 +131,17 @@ impl CoordinatorLoopConfig {
     /// endpoint paths.
     ///
     /// `PROCON_TEAM_ID` is optional; the MVP default of `"mvp-player"` is used
-    /// when unset.
+    /// when unset. `PROCON_STATE_OUTPUT` (when set) populates
+    /// [`state_output_path`](Self::state_output_path).
     #[allow(dead_code)] // Public API for external callers; not consumed in-process today.
     pub fn from_env() -> Result<Self, String> {
         std::env::var("PROCON_SERVER").map_err(|_| "PROCON_SERVER not set".to_owned()).and_then(
             |_| std::env::var("PROCON_TOKEN").map_err(|_| "PROCON_TOKEN not set".to_owned()),
         )?;
         let team_id = std::env::var("PROCON_TEAM_ID").unwrap_or_else(|_| "mvp-player".to_owned());
+        let server_url = std::env::var("PROCON_SERVER").ok();
+        let state_output_path =
+            std::env::var_os("PROCON_STATE_OUTPUT").map(std::path::PathBuf::from);
         Ok(Self {
             team_id,
             setting_poll_interval: Duration::from_secs(2),
@@ -125,6 +152,9 @@ impl CoordinatorLoopConfig {
             // PROCON_KIND_SUBMIT_* env vars if needed.
             kind_submit_max_attempts: 30,
             kind_submit_backoff: Duration::from_millis(500),
+            state_output_path,
+            server_url,
+            days_total_hint: None,
         })
     }
 }
@@ -136,6 +166,130 @@ pub struct CoordinatorOutcome {
     pub days_completed: usize,
     /// Per-day revision id (as returned by `POST /`).
     pub revisions: Vec<i32>,
+}
+
+/// Top-level status of a single coordinator run, as observed by the CLI.
+///
+/// Wire-mapping for the JSON snapshot is `lowercase` (see `MatchStatus`
+/// derives). The frontend Live page treats this as the source of truth
+/// for what to render in the per-day timeline.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MatchStatus {
+    /// Pre-match: `GET /setting` responded but kinds not yet submitted.
+    Waiting,
+    /// Kinds submitted, per-day loop in progress.
+    Running,
+    /// All days accepted, the loop returned `Ok`.
+    Completed,
+    /// Server returned `revision < 0` on some day.
+    Rejected,
+    /// Transport / adapter / conversion error.
+    Error,
+}
+
+/// JSON snapshot written to `--state-output` after each phase transition.
+///
+/// The frontend Live page polls this file via the Vite dev server's
+/// static-file serving. Schema version `1` is wire-stable — bump
+/// `schema_version` on any breaking change.
+///
+/// `Option` fields use `null` (serde default) rather than being omitted
+/// so the frontend can rely on the field being present in every snapshot.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchStateSnapshot {
+    /// Schema version. Increment on any breaking change to the wire format.
+    pub schema_version: u32,
+    /// `MatchClient` base URL (e.g. `http://localhost:8080`). `null` only
+    /// in degenerate / test harnesses that omit the field.
+    pub server: String,
+    /// `--solver` value used by this run.
+    pub solver: String,
+    /// Current top-level status (see [`MatchStatus`]).
+    pub status: MatchStatus,
+    /// Current day index (0-based). `null` before day 0 starts and after
+    /// successful completion.
+    pub day: Option<u32>,
+    /// Total days in this match (`setting.day_steps.len()` or
+    /// `days_total_hint` when known up-front).
+    pub days_total: u32,
+    /// Last accepted revision. `null` before the first acceptance.
+    pub revision: Option<i32>,
+    /// Per-day revision array as it grows. Empty until the first day is
+    /// accepted.
+    pub revisions: Vec<i32>,
+    /// Unix seconds when this snapshot was written.
+    pub last_update_unix: i64,
+    /// Error message. `Some` only when `status == "error"` or
+    /// `status == "rejected"` (the rejection carries a brief summary).
+    pub error: Option<String>,
+}
+
+impl MatchStateSnapshot {
+    /// Build the canonical "match finished successfully" snapshot from a
+    /// [`CoordinatorOutcome`]. The frontend treats this as the terminal
+    /// state of the Live page timeline.
+    #[allow(dead_code)] // Public API for external callers (e.g. integration tests).
+    pub fn completed(
+        outcome: &CoordinatorOutcome,
+        server: &str,
+        solver: &str,
+        days_total: u32,
+    ) -> Self {
+        Self {
+            schema_version: 1,
+            server: server.to_owned(),
+            solver: solver.to_owned(),
+            status: MatchStatus::Completed,
+            // No "current" day after successful completion.
+            day: None,
+            days_total,
+            revision: outcome.revisions.last().copied(),
+            revisions: outcome.revisions.clone(),
+            last_update_unix: unix_now(),
+            error: None,
+        }
+    }
+}
+
+/// Wall-clock seconds since the Unix epoch. Returns `0` if the system
+/// clock is somehow before 1970 — the frontend treats `0` as "synthetic /
+/// test fixture" rather than panicking.
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0))
+}
+
+/// Best-effort write of `snap` to `cfg.state_output_path` (if set).
+///
+/// Atomic via tmp + rename: a half-written file would otherwise be visible
+/// to the frontend during the brief window between `write` and `rename`.
+/// Snapshot writing is observability, not correctness — every failure
+/// is logged via `tracing::warn!` and never propagated. The match loop
+/// continues whether or not the snapshot was successfully written.
+fn write_snapshot(cfg: &CoordinatorLoopConfig, snap: &MatchStateSnapshot) {
+    let Some(path) = cfg.state_output_path.as_ref() else {
+        return;
+    };
+    let Ok(json) = serde_json::to_vec_pretty(snap) else {
+        tracing::warn!("state snapshot: serde_json serialization failed");
+        return;
+    };
+    let tmp = path.with_extension("json.tmp");
+    let write_result = (|| -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        std::fs::write(&tmp, &json)?;
+        std::fs::rename(&tmp, path)
+    })();
+    if let Err(e) = write_result {
+        tracing::warn!(?path, error = %e, "state snapshot write failed");
+    }
 }
 
 /// Errors produced by the coordinator loop. Each variant points at one
@@ -179,6 +333,89 @@ pub async fn run_coordinator_loop(
     solver: Box<dyn engine::solver::Solver>,
     cfg: CoordinatorLoopConfig,
 ) -> Result<CoordinatorOutcome, CoordinatorLoopError> {
+    // Initial Waiting snapshot — written BEFORE Phase 1 so the frontend
+    // sees a stable file as soon as the CLI starts.
+    let server_str = cfg.server_url.clone().unwrap_or_else(|| "unknown".to_owned());
+    let mut snap = MatchStateSnapshot {
+        schema_version: 1,
+        server: server_str.clone(),
+        solver: cfg.solver_name.clone(),
+        status: MatchStatus::Waiting,
+        day: None,
+        // `days_total_hint` lets the snapshot carry a sensible total
+        // before Phase 1 reads it from the server. `0` otherwise; the
+        // field is overwritten with the real total once Phase 1 returns.
+        days_total: cfg.days_total_hint.unwrap_or(0),
+        revision: None,
+        revisions: Vec::new(),
+        last_update_unix: unix_now(),
+        error: None,
+    };
+    write_snapshot(&cfg, &snap);
+
+    // All match phases run inside the inner helper. Each successful day
+    // notifies the outer caller via `on_day_accepted` so the outer
+    // function can write a `Running` snapshot with the new revision.
+    // Errors propagate to the outer caller, which writes the terminal
+    // snapshot (Rejected / Error) before returning.
+    let on_day_accepted = |day: u32, revision: i32, s: &mut MatchStateSnapshot| {
+        s.status = MatchStatus::Running;
+        s.day = Some(day);
+        s.revision = Some(revision);
+        s.revisions.push(revision);
+        s.last_update_unix = unix_now();
+        write_snapshot(&cfg, s);
+    };
+
+    let result =
+        run_coordinator_loop_inner(client, solver, cfg.clone(), &mut snap, on_day_accepted).await;
+
+    // Final snapshot: terminal status (Completed / Rejected / Error).
+    match &result {
+        Ok(outcome) => {
+            snap.status = MatchStatus::Completed;
+            snap.day = None;
+            snap.revision = outcome.revisions.last().copied();
+            snap.revisions.clone_from(&outcome.revisions);
+            snap.last_update_unix = unix_now();
+            snap.error = None;
+            write_snapshot(&cfg, &snap);
+        }
+        Err(CoordinatorLoopError::Rejected { day, revision }) => {
+            snap.status = MatchStatus::Rejected;
+            snap.day = Some(*day);
+            snap.revision = Some(*revision);
+            snap.revisions.push(*revision);
+            snap.last_update_unix = unix_now();
+            snap.error = Some(format!("rejected day={day} revision={revision}"));
+            write_snapshot(&cfg, &snap);
+        }
+        Err(e) => {
+            snap.status = MatchStatus::Error;
+            snap.last_update_unix = unix_now();
+            snap.error = Some(e.to_string());
+            write_snapshot(&cfg, &snap);
+        }
+    }
+
+    result
+}
+
+/// Inner driver. Mirrors `run_coordinator_loop` byte-for-byte but
+/// returns the per-day `(day, revision)` pairs to a closure so the
+/// caller can materialise `Running` snapshots between phases. The outer
+/// function is responsible for the terminal snapshot.
+#[allow(clippy::too_many_lines)]
+async fn run_coordinator_loop_inner<F>(
+    client: protocol::MatchClient,
+    solver: Box<dyn engine::solver::Solver>,
+    cfg: CoordinatorLoopConfig,
+    snap: &mut MatchStateSnapshot,
+    mut on_day_accepted: F,
+) -> Result<CoordinatorOutcome, CoordinatorLoopError>
+where
+    F: FnMut(u32, i32, &mut MatchStateSnapshot),
+{
     // Phase 1: probe /setting until the server is responsive (any
     // `MatchSetting`, including `starts_at == 0`). The official server
     // returns `starts_at == 0` while the kind-submission window is
@@ -195,6 +432,11 @@ pub async fn run_coordinator_loop(
             Err(e) => return Err(CoordinatorLoopError::Setting(e)),
         }
     };
+
+    // Update the Waiting snapshot now that Phase 1 has revealed the
+    // real day count — this is also when we flip to `Running` after
+    // Phase 2 (kinds accepted) below.
+    snap.days_total = u32::try_from(wire_setting.day_steps.len()).unwrap_or(0);
 
     // Phase 2: declare agent kinds. Real solvers alternate KIND_0 / KIND_1
     // so half the agents patrol and half supply; the debug `WaitSolver`
@@ -213,6 +455,13 @@ pub async fn run_coordinator_loop(
     let kinds = agent_kinds_for(n_agents, &cfg.solver_name);
     submit_agent_with_retry(&client, kinds, cfg.kind_submit_max_attempts, cfg.kind_submit_backoff)
         .await?;
+
+    // Kinds accepted -> Running snapshot. `day` stays `None` because
+    // we have not yet entered the per-day driver.
+    snap.status = MatchStatus::Running;
+    snap.day = None;
+    snap.last_update_unix = unix_now();
+    write_snapshot(&cfg, snap);
 
     // Phase 3: convert wire -> engine setting, build team + match ids.
     let team = PlayerId::new(&cfg.team_id)
@@ -291,6 +540,11 @@ pub async fn run_coordinator_loop(
         // the revision is non-negative. Store it and continue.
         revisions.push(accepted.revision);
         days_completed += 1;
+
+        // Per-day Running snapshot. The closure mutates `snap` and
+        // calls `write_snapshot` so the frontend sees incremental
+        // progress after each accepted day.
+        on_day_accepted(day, accepted.revision, snap);
 
         if day + 1 < u32::try_from(total_days).unwrap_or(u32::MAX) {
             let now = Utc::now().timestamp();
