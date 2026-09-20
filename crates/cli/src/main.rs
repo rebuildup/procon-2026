@@ -154,6 +154,15 @@ enum Cmd {
         /// `<DIR>/leaderboard.json` is written atomically (tmp + rename).
         #[arg(long, value_name = "DIR")]
         state_output_dir: Option<PathBuf>,
+        /// Optional shell command to invoke between solvers to restart the
+        /// match server. The official `procon-server-linux-amd64` only
+        /// supports one match per process, so multi-solver tournaments
+        /// need a restart hook (e.g.
+        /// `./scripts/restart-official-server.sh 8080`). The command is
+        /// passed verbatim to `sh -c`, so shell pipelines are honoured.
+        /// When unset, every solver shares the same server process.
+        #[arg(long, value_name = "CMD", env = "PROCON_AUTO_RESTART_SERVER")]
+        auto_restart_server: Option<String>,
     },
 }
 
@@ -268,6 +277,7 @@ async fn run(cli: Cli) -> Result<()> {
             loop_iterations,
             team_id,
             state_output_dir,
+            auto_restart_server,
         } => {
             cmd_tournament(
                 solvers,
@@ -277,6 +287,7 @@ async fn run(cli: Cli) -> Result<()> {
                 loop_iterations,
                 team_id,
                 state_output_dir,
+                auto_restart_server,
             )
             .await?;
         }
@@ -460,6 +471,7 @@ async fn cmd_coordinator(
 /// [`TournamentConfig`], runs every solver sequentially through a real
 /// match against the server, prints the markdown leaderboard to stdout,
 /// and optionally writes `<DIR>/leaderboard.json` (atomic tmp + rename).
+#[allow(clippy::too_many_arguments)]
 async fn cmd_tournament(
     solvers: Vec<String>,
     server: Option<String>,
@@ -468,6 +480,7 @@ async fn cmd_tournament(
     loop_iterations: u32,
     team_id: String,
     state_output_dir: Option<PathBuf>,
+    auto_restart_server: Option<String>,
 ) -> Result<()> {
     use crate::tournament::{TournamentConfig, render_markdown, run_tournament};
 
@@ -483,6 +496,7 @@ async fn cmd_tournament(
         loop_iterations,
         team_id,
         state_output_dir,
+        auto_restart_server,
     };
     let report = run_tournament(cfg).await.map_err(|e| anyhow::anyhow!("tournament: {e}"))?;
     print!("{}", render_markdown(&report));

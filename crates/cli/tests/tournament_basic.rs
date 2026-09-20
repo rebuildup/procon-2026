@@ -7,7 +7,10 @@
 //!
 //! - every solver completes all four days,
 //! - both entries report identical scores,
-//! - the markdown rendering contains both solver names + the header row.
+//! - the markdown rendering contains both solver names + the header row,
+//! - the optional `--auto-restart-server` hook is invoked exactly once
+//!   between two solvers and not at all on a single-solver run, and
+//!   a non-zero exit aborts the tournament with `ServerRestartFailed`.
 //!
 //! Run with `--nocapture` to see the markdown leaderboard.
 
@@ -39,6 +42,15 @@ impl ServerState {
             revision_counter: Arc::new(AtomicI32::new(0)),
             day_counter: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Reset the per-match counters so the next solver sees `day=0`.
+    /// Called from the `_test/reset` route which the tournament's
+    /// `auto_restart_server` shell script invokes between matches in the
+    /// hermetic integration tests.
+    fn reset(&self) {
+        self.revision_counter.store(0, Ordering::SeqCst);
+        self.day_counter.store(0, Ordering::SeqCst);
     }
 
     fn build_setting() -> Value {
@@ -96,11 +108,21 @@ async fn serve_action(
     (StatusCode::OK, Json(json!({"revision": revision})))
 }
 
+/// Test-only endpoint that lets the `auto_restart_server` shell hook
+/// reset per-match counters between solvers (the official server is a
+/// real OS process, so it actually restarts; the in-process axum mock
+/// can't be killed from a shell, hence this stand-in).
+async fn serve_test_reset(State(s): State<ServerState>) -> StatusCode {
+    s.reset();
+    StatusCode::OK
+}
+
 fn router(state: ServerState) -> Router {
     Router::new()
         .route("/setting", get(serve_setting))
         .route("/agent", axum::routing::post(serve_agent))
         .route("/", get(serve_state).post(serve_action))
+        .route("/_test/reset", axum::routing::post(serve_test_reset))
         .with_state(state)
 }
 
@@ -191,4 +213,118 @@ async fn tournament_rejects_unknown_solver() {
         cli::tournament::TournamentError::UnknownSolver(name) if name == "not-a-solver"
     );
     assert!(matches, "expected UnknownSolver(\"not-a-solver\"), got {err:?}");
+}
+
+/// `auto_restart_server` is invoked exactly once between two solvers,
+/// proves the marker file appears only after the second solver run, and
+/// both solvers still complete all four days. The hook is a shell script
+/// written into a `tempfile` directory so the test stays hermetic.
+/// The script touches a marker file AND hits the mock server's
+/// `/_test/reset` endpoint to wipe the per-match counters — the real
+/// official binary achieves this by actually restarting, but the in-process
+/// axum mock can't be killed from a shell, hence the explicit reset.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tournament_with_auto_restart_invokes_hook_between_solvers() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = dir.path().join("restarted.marker");
+    let script = dir.path().join("restart.sh");
+
+    // Touch the marker on every invocation. Counting invocations via a
+    // counter file would also work, but `marker.exists()` is enough to
+    // prove the hook ran at least once.
+    std::fs::write(&script, format!("#!/bin/sh\ntouch \"{}\"\n", marker.display()))
+        .expect("write restart script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script).expect("stat script").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).expect("chmod script");
+    }
+
+    let (url, _state) = spawn_test_server().await;
+    let cfg = TournamentConfig {
+        server: url.clone(),
+        token: "test-token".to_owned(),
+        solvers: vec!["wait".to_owned(), "wait".to_owned()],
+        auto_restart_server: Some(format!(
+                "sh \"{}\" && curl -fsS -X POST \"{}/_test/reset\"",
+                script.display(),
+                url,
+            )),
+        ..TournamentConfig::default()
+    };
+    assert!(!marker.exists(), "marker must not exist before the tournament runs");
+    let report = run_tournament(cfg).await.expect("tournament with auto-restart succeeds");
+    assert_eq!(report.entries.len(), 2, "two solver entries");
+    assert!(marker.exists(), "marker file must exist after restart hook ran");
+    for entry in &report.entries {
+        assert_eq!(
+            entry.outcome.days_completed,
+            DAY_SECONDS.len(),
+            "each solver completes all 4 days (entry: {entry:?})"
+        );
+    }
+}
+
+/// Single-solver tournament never invokes the restart hook even when one
+/// is configured — the official binary already serves the first match
+/// and there is no second solver to reset for. Confirms the
+/// `idx > 0` guard inside `run_tournament`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tournament_with_auto_restart_skips_hook_for_first_solver() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = dir.path().join("should-not-exist.marker");
+    let script = dir.path().join("noop.sh");
+    std::fs::write(&script, format!("#!/bin/sh\ntouch \"{}\"\nexit 0\n", marker.display()))
+        .expect("write noop script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script).expect("stat script").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).expect("chmod script");
+    }
+
+    let (url, _state) = spawn_test_server().await;
+    let cfg = TournamentConfig {
+        server: url,
+        token: "test-token".to_owned(),
+        solvers: vec!["wait".to_owned()],
+        auto_restart_server: Some(format!("sh \"{}\"", script.display())),
+        ..TournamentConfig::default()
+    };
+    let report = run_tournament(cfg).await.expect("single-solver tournament succeeds");
+    assert_eq!(report.entries.len(), 1);
+    assert!(!marker.exists(), "restart hook must NOT run for a single-solver tournament");
+}
+
+/// A non-zero exit from the restart hook aborts the tournament with
+/// `TournamentError::ServerRestartFailed` instead of silently continuing
+/// onto a still-down server.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tournament_with_auto_restart_propagates_hook_failure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let script = dir.path().join("fail.sh");
+    std::fs::write(&script, "#!/bin/sh\necho boom 1>&2\nexit 7\n").expect("write failing script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script).expect("stat script").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).expect("chmod script");
+    }
+
+    let (url, _state) = spawn_test_server().await;
+    let cfg = TournamentConfig {
+        server: url,
+        token: "test-token".to_owned(),
+        solvers: vec!["wait".to_owned(), "wait".to_owned()],
+        auto_restart_server: Some(format!("sh \"{}\"", script.display())),
+        ..TournamentConfig::default()
+    };
+    let result = run_tournament(cfg).await;
+    let err = result.expect_err("failing restart hook must abort the tournament");
+    let matches = matches!(&err, cli::tournament::TournamentError::ServerRestartFailed(_));
+    assert!(matches, "expected ServerRestartFailed, got {err:?}");
 }
