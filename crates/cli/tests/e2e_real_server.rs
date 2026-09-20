@@ -90,6 +90,14 @@ struct ServerState {
     /// When `> 0`, the next N requests return `500`. The retry policy must
     /// burn through them and recover on the subsequent 200.
     force_500: Arc<AtomicU64>,
+    /// When `true`, every `POST /agent` returns `403 AccessTimeError`
+    /// regardless of `starts_at`. Used by the
+    /// `kind_submission_during_window_succeeds_even_if_match_starts_later`
+    /// regression test (issue #156) to simulate the official server's
+    /// post-deadline behaviour on demand. When `false`, the kind-window
+    /// is treated as always OPEN so the other scenarios can run with
+    /// `starts_at = 1` without tripping this check.
+    force_kind_window_closed: Arc<std::sync::atomic::AtomicBool>,
     /// Per-agent run-length encoded action plans captured by every `POST /`.
     /// Outer index = day, inner = one `Vec<i32>` per controlled agent.
     captured_action_bodies: Arc<Mutex<Vec<Vec<Vec<i32>>>>>,
@@ -163,6 +171,12 @@ async fn serve_setting(State(s): State<ServerState>) -> (StatusCode, Json<Value>
 /// `POST /agent` handler. Accepts any `AgentKindsBody` and returns 200.
 /// Auth/500 overrides apply uniformly so the transient-500 test can exercise
 /// the retry path on this endpoint too.
+///
+/// The official server's kind-submission window is modelled here via the
+/// `force_kind_window_closed` opt-in flag (used by
+/// `kind_submission_during_window_succeeds_even_if_match_starts_later`,
+/// issue #156). By default the window is treated as OPEN so the other
+/// scenarios can run with `starts_at = 1` without tripping this check.
 async fn serve_agent(
     State(s): State<ServerState>,
     _body: Json<Value>,
@@ -177,6 +191,19 @@ async fn serve_agent(
     if s.force_500.load(Ordering::SeqCst) > 0 {
         s.force_500.fetch_sub(1, Ordering::SeqCst);
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({})));
+    }
+    if s.force_kind_window_closed.load(Ordering::SeqCst) {
+        // Kind window closed (server has announced the start). Only
+        // reachable when the regression test opts in via the flag;
+        // otherwise the kind window is treated as always-open so the
+        // happy-path tests can run with `starts_at = 1`.
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "code": "AccessTimeError",
+                "message": "agent kind submission is closed",
+            })),
+        );
     }
     (StatusCode::OK, Json(json!({})))
 }
@@ -276,6 +303,10 @@ fn test_config(solver_name: &str) -> CoordinatorLoopConfig {
         team_id: "mvp-player".to_owned(),
         setting_poll_interval: Duration::from_millis(20),
         solver_name: solver_name.to_owned(),
+        // Issue #156: keep the kind-window retry budget at the production
+        // default so the bug-regression test exercises the same code path
+        // as a real coordinator run.
+        ..Default::default()
     }
 }
 
@@ -480,4 +511,78 @@ fn openapi_fixture_still_drifts_guard() {
     )
     .expect("load OpenAPI fixture");
     fixture.assert_minimal_coverage().expect("coverage");
+}
+
+/// Regression test for issue #156.
+///
+/// The official contest server returns `startsAt=0` from `GET /setting`
+/// while the kind-submission window is **open**, and only sets
+/// `startsAt=<unix>` **after** the kind deadline closes. The previous
+/// coordinator loop polled `GET /setting` until `startsAt > 0` and only
+/// then issued `POST /agent` — by which point the server always returned
+/// `403 AccessTimeError` ("agent kind submission is closed").
+///
+/// The fixed loop submits `POST /agent` IMMEDIATELY after `GET /setting`
+/// succeeds (while `startsAt == 0`), then waits for `startsAt > 0` to
+/// enter the per-day driver.
+///
+/// This test reproduces the official server's kind-window timing:
+/// - `starts_at` starts at `0` (kind window OPEN, `POST /agent` → 200)
+/// - after `200ms`, a background task closes the window by setting
+///   `force_kind_window_closed = true` and `starts_at = 1`
+///   (`POST /agent` → 403 from that point on)
+///
+/// The CLI must land its `POST /agent` within the open window. With the
+/// pre-fix ordering it would only call `POST /agent` once `starts_at`
+/// flipped positive, by which point the kind window had already closed
+/// and the server would reject the call with `403`.
+///
+/// The wait between the server's kind-deadline and the CLI's first
+/// `POST /agent` is generous on purpose (200ms vs. ~1ms p50 in this
+/// harness) so the test reliably distinguishes the broken ordering from
+/// the fixed one without being flaky on slow CI runners.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn kind_submission_during_window_succeeds_even_if_match_starts_later() {
+    let (url, state) = spawn_test_server(0).await;
+    // Sanity: server started with starts_at=0 and the kind window OPEN,
+    // so POST /agent must return 200.
+    assert_eq!(state.starts_at.load(Ordering::SeqCst), 0);
+    assert!(!state.force_kind_window_closed.load(Ordering::SeqCst), "kind window must start open");
+
+    // Schedule the kind-deadline: after 200ms, close the window and
+    // announce the start. From that point on, POST /agent returns 403.
+    let state_for_flip = state.clone();
+    let flip_handle = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        state_for_flip.force_kind_window_closed.store(true, Ordering::SeqCst);
+        state_for_flip.starts_at.store(1, Ordering::SeqCst);
+    });
+
+    // The fixed coordinator loop issues POST /agent during the open window.
+    let outcome = run_with_wait_solver(&url, "test-token")
+        .await
+        .expect("kind must be submitted during open window, not after deadline");
+
+    // Match should have made progress. endsAt=0 in the harness, so the
+    // between-day sleep is skipped and the full 4-day match finishes in
+    // well under 5s.
+    assert_eq!(outcome.days_completed, DAY_SECONDS.len(), "all 4 days complete");
+    assert!(
+        outcome.revisions.iter().all(|&r| r >= 0),
+        "all revisions non-negative: {:?}",
+        outcome.revisions
+    );
+
+    // The deadline flip must have actually fired; otherwise the test is
+    // not exercising the kind-window boundary.
+    flip_handle.await.expect("join deadline-flip task");
+    assert_eq!(
+        state.starts_at.load(Ordering::SeqCst),
+        1,
+        "server's kind-deadline must have fired by the end of the match",
+    );
+    assert!(
+        state.force_kind_window_closed.load(Ordering::SeqCst),
+        "server's kind window must be closed by the end of the match",
+    );
 }
