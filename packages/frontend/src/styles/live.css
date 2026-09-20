@@ -42,6 +42,19 @@
   border-color: #2c974b;
 }
 
+.live__badge[data-status='completed'] {
+  background: #1f6feb;
+  color: #ffffff;
+  border-color: #1a5fcc;
+}
+
+.live__badge[data-status='rejected'],
+.live__badge[data-status='error'] {
+  background: #d1243f;
+  color: #ffffff;
+  border-color: #b11a31;
+}
+
 .live__badge[data-status='ended'] {
   background: var(--app-surface-alt);
   color: var(--app-muted);
@@ -86,6 +99,29 @@
 .live__hud-value--mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.95rem;
+}
+
+.live__command {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--app-surface-alt);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--app-fg);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.live__error {
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.85rem;
+  background: #fdecea;
+  color: #7f1d1d;
+  border: 1px solid #f5c2c0;
+  border-radius: var(--app-radius);
+  font-size: 0.9rem;
 }
 
 .live__map {

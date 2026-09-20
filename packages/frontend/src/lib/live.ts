@@ -1,16 +1,19 @@
 /**
- * Live mode wire types + poller.
+ * Live mode wire types + pollers.
  *
- * The Live page polls `match-state.example.json` once per second and renders
- * the snapshot via the existing map viewer. The CLI's coordinator does not
- * yet expose HTTP endpoints, so this MVP reads from a static fixture that
- * Vite serves out of `public/`. When the coordinator adds an HTTP listener
- * (separate ticket), only `fetchLiveMatchState` needs to point at the real
- * endpoint.
+ * Two wire formats coexist:
  *
- * Fixture shape mirrors `crates/protocol::match_config::MatchState` /
- * `MatchSetting` minimally: only the fields the Live page actually consumes
- * are typed; everything else is `unknown[]` so the runtime stays loose.
+ * 1. Legacy `LiveMatchState` / `LiveMatchSetting` — the original coordinator
+ *    snapshot shape (per-turn `endsAt`, `day`, `agents`). Kept around for
+ *    other pages that may still import these types.
+ * 2. New `LiveSnapshot` — the CLI's `MatchStateSnapshot` (PR #160), written
+ *    atomically by `--state-output` and polled by the Live page. This is
+ *    the canonical format going forward.
+ *
+ * The CLI does not yet expose HTTP endpoints, so both readers fetch from
+ * static fixtures Vite serves out of `public/`. The snapshot URL is
+ * `/match-state.json` so the CLI can write directly into `public/` while
+ * the developer is running `bun run dev`.
  */
 
 import { createSignal, type Accessor } from 'solid-js';
@@ -56,17 +59,98 @@ export type LiveStatus = 'waiting' | 'running' | 'ended';
 export const MATCH_STATE_URL = '/match-state.example.json';
 export const MATCH_SETTING_URL = '/match-setting.example.json';
 
+/** CLI `--state-output` snapshot, served from `packages/frontend/public/match-state.json`. */
+export const LIVE_SNAPSHOT_URL = '/match-state.json';
+
 /** Default polling cadence (1 second per spec). */
 export const DEFAULT_POLL_MS = 1000;
 
 /**
- * Type-guard for the wire payload. `unknown[]` fields are accepted
+ * CLI's `MatchStateSnapshot` (PR #160). camelCase, schemaVersion=1.
+ * Written atomically by `procon coordinator --state-output PATH` after each
+ * phase transition.
+ */
+export type LiveSnapshotStatus = 'waiting' | 'running' | 'completed' | 'rejected' | 'error';
+
+export interface LiveSnapshot {
+  readonly schemaVersion: 1;
+  readonly server: string;
+  /** `--solver` value, e.g. `loop` / `wait`. */
+  readonly solver: string;
+  readonly status: LiveSnapshotStatus;
+  /** Current day index (0-based). `null` until the first day has started. */
+  readonly day: number | null;
+  /** Total day count from `setting.daySteps.len()`. */
+  readonly daysTotal: number;
+  /** Last accepted revision; `null` before the first acceptance. */
+  readonly revision: number | null;
+  /** Per-day revision array (one entry per accepted day). */
+  readonly revisions: ReadonlyArray<number>;
+  /** Unix seconds at which the snapshot was written. */
+  readonly lastUpdateUnix: number;
+  /** Populated only when `status` is `rejected` or `error`. */
+  readonly error: string | null;
+}
+
+const SNAPSHOT_STATUSES: ReadonlyArray<LiveSnapshotStatus> = [
+  'waiting',
+  'running',
+  'completed',
+  'rejected',
+  'error',
+];
+
+/**
+ * Type-guard for the CLI snapshot. Strict enough to reject schema drift
+ * (e.g. `schemaVersion: 2`) so the page can fall back to "no data".
+ */
+export function isLiveSnapshot(value: unknown): value is LiveSnapshot {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  if (v['schemaVersion'] !== 1) return false;
+  if (typeof v['server'] !== 'string') return false;
+  if (typeof v['solver'] !== 'string') return false;
+  const status = v['status'];
+  if (typeof status !== 'string') return false;
+  if (!SNAPSHOT_STATUSES.includes(status as LiveSnapshotStatus)) return false;
+  if (v['day'] !== null && typeof v['day'] !== 'number') return false;
+  if (typeof v['daysTotal'] !== 'number') return false;
+  if (v['revision'] !== null && typeof v['revision'] !== 'number') return false;
+  if (!Array.isArray(v['revisions'])) return false;
+  if (typeof v['lastUpdateUnix'] !== 'number') return false;
+  if (v['error'] !== null && typeof v['error'] !== 'string') return false;
+  return true;
+}
+
+/**
+ * Fetch a single CLI snapshot. Returns `null` on transport failure or
+ * shape mismatch so the caller can keep the previous value rendered
+ * instead of flashing an error overlay every second.
+ */
+export async function fetchLiveSnapshot(signal?: AbortSignal): Promise<LiveSnapshot | null> {
+  try {
+    const cacheBuster = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const url = `${LIVE_SNAPSHOT_URL}?t=${cacheBuster}`;
+    const res = signal ? await fetch(url, { signal }) : await fetch(url);
+    if (!res.ok) return null;
+    const body: unknown = await res.json();
+    return isLiveSnapshot(body) ? body : null;
+  } catch {
+    // AbortError and network errors both land here; treat both as "no update".
+    return null;
+  }
+}
+
+/**
+ * Type-guard for the legacy wire payload. `unknown[]` fields are accepted
  * unchecked; the page only consumes `endsAt`, `day`, and `agents`.
  */
 function isLiveMatchState(value: unknown): value is LiveMatchState {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
-  return typeof v['endsAt'] === 'number' && typeof v['day'] === 'number' && Array.isArray(v['agents']);
+  return (
+    typeof v['endsAt'] === 'number' && typeof v['day'] === 'number' && Array.isArray(v['agents'])
+  );
 }
 
 function isLiveMatchSetting(value: unknown): value is LiveMatchSetting {
@@ -87,9 +171,8 @@ function isLiveMatchSetting(value: unknown): value is LiveMatchSetting {
 }
 
 /**
- * Fetch a single snapshot of the match state. Returns `null` on transport
- * failure or shape mismatch so the caller can keep the previous value
- * rendered instead of flashing an error overlay every second.
+ * Fetch a single snapshot of the legacy match state. Returns `null` on
+ * transport failure or shape mismatch.
  */
 export async function fetchLiveMatchState(signal?: AbortSignal): Promise<LiveMatchState | null> {
   try {
@@ -100,7 +183,6 @@ export async function fetchLiveMatchState(signal?: AbortSignal): Promise<LiveMat
     const body: unknown = await res.json();
     return isLiveMatchState(body) ? body : null;
   } catch {
-    // AbortError and network errors both land here; treat both as "no update".
     return null;
   }
 }
@@ -109,9 +191,13 @@ export async function fetchLiveMatchState(signal?: AbortSignal): Promise<LiveMat
  * The setting is static for the duration of a match, so callers fetch it
  * once on mount and feed it into the map adapter.
  */
-export async function fetchLiveMatchSetting(signal?: AbortSignal): Promise<LiveMatchSetting | null> {
+export async function fetchLiveMatchSetting(
+  signal?: AbortSignal,
+): Promise<LiveMatchSetting | null> {
   try {
-    const res = signal ? await fetch(MATCH_SETTING_URL, { signal }) : await fetch(MATCH_SETTING_URL);
+    const res = signal
+      ? await fetch(MATCH_SETTING_URL, { signal })
+      : await fetch(MATCH_SETTING_URL);
     if (!res.ok) return null;
     const body: unknown = await res.json();
     return isLiveMatchSetting(body) ? body : null;
@@ -180,6 +266,58 @@ export function createLivePoller(intervalMs: number = DEFAULT_POLL_MS): LivePoll
   return {
     state,
     status,
+    start(): void {
+      if (timer !== null) return;
+      controller = new AbortController();
+      const signal = controller.signal;
+      // Fire the first poll immediately so the UI doesn't sit empty for a
+      // full interval after mount.
+      void tick(signal);
+      timer = setInterval(() => {
+        if (!controller) return;
+        void tick(controller.signal);
+      }, intervalMs);
+    },
+    stop(): void {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+      if (controller) {
+        controller.abort();
+        controller = null;
+      }
+    },
+  };
+}
+
+export interface LiveSnapshotPoller {
+  /** Reactive accessor for the most recent successful snapshot. `null` until the first poll resolves. */
+  readonly snapshot: Accessor<LiveSnapshot | null>;
+  /** Start polling. Safe to call more than once; subsequent calls are no-ops. */
+  start(): void;
+  /** Stop polling and abort any in-flight fetch. */
+  stop(): void;
+}
+
+/**
+ * Construct a polling loop around `fetchLiveSnapshot`. The first poll runs
+ * synchronously on `start()`; subsequent polls fire on `intervalMs`.
+ */
+export function createLiveSnapshotPoller(intervalMs: number = DEFAULT_POLL_MS): LiveSnapshotPoller {
+  const [snapshot, setSnapshot] = createSignal<LiveSnapshot | null>(null);
+
+  let controller: AbortController | null = null;
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  async function tick(signal: AbortSignal): Promise<void> {
+    const next = await fetchLiveSnapshot(signal);
+    if (signal.aborted) return;
+    if (next) setSnapshot(next);
+  }
+
+  return {
+    snapshot,
     start(): void {
       if (timer !== null) return;
       controller = new AbortController();

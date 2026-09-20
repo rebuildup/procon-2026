@@ -4,18 +4,20 @@ import { render } from 'solid-js/web';
 import { jsx as hyperscriptJsx } from 'solid-js/h/jsx-runtime';
 
 import { Live } from '@/pages/Live';
-import { createLivePoller, type LiveMatchState } from '@/lib/live';
+import { createLiveSnapshotPoller, type LiveSnapshot } from '@/lib/live';
 
-/** Tiny fixture used by the render tests; matches the committed JSON shape. */
-const FIXTURE_STATE: LiveMatchState = {
-  endsAt: Date.now() + 5_000,
-  day: 1,
-  agents: [
-    { id: 0, kind: 0, pos: { q: 0, r: 0 }, stock: 10 },
-    { id: 1, kind: 1, pos: { q: 1, r: 0 }, stock: 8 },
-  ],
-  others: [],
-  traffics: [],
+/** Tiny fixture used by the render tests; mirrors `public/match-state.json`. */
+const FIXTURE_SNAPSHOT: LiveSnapshot = {
+  schemaVersion: 1,
+  server: 'http://localhost:8080',
+  solver: 'wait',
+  status: 'running',
+  day: 2,
+  daysTotal: 4,
+  revision: 2,
+  revisions: [1, 2],
+  lastUpdateUnix: 1_789_892_000,
+  error: null,
 };
 
 /** Minimal setting fixture; the page only inspects `daySeconds`. */
@@ -28,13 +30,16 @@ const FIXTURE_SETTING = {
   spots: [],
 };
 
-/** Install a `fetch` mock that returns the two fixtures. Returns a reset hook. */
-function installFetchMock(state: LiveMatchState, setting: unknown): () => void {
+/** Install a `fetch` mock that returns the snapshot + setting fixtures. */
+function installFetchMock(snapshot: LiveSnapshot | null, setting: unknown): () => void {
   const originalFetch = globalThis.fetch;
   const fakeFetch = mock(async (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url.includes('match-state.example.json')) {
-      return new Response(JSON.stringify(state), { status: 200 });
+    if (url.includes('match-state.json')) {
+      if (snapshot === null) {
+        return new Response('not found', { status: 404 });
+      }
+      return new Response(JSON.stringify(snapshot), { status: 200 });
     }
     if (url.includes('match-setting.example.json')) {
       return new Response(JSON.stringify(setting), { status: 200 });
@@ -80,59 +85,84 @@ describe('Live page', () => {
   });
 
   test('renders the page with a status badge visible', async () => {
-    const restore = installFetchMock(FIXTURE_STATE, FIXTURE_SETTING);
+    const restore = installFetchMock(FIXTURE_SNAPSHOT, FIXTURE_SETTING);
     try {
       const handle = renderLive();
       root = handle.root;
       expect(root.querySelector('[data-testid="page-live"]')).not.toBeNull();
       const badge = root.querySelector<HTMLElement>('[data-testid="live-status-badge"]');
       expect(badge).not.toBeNull();
-      // The badge text is the lower-case status string ('waiting' before the
-      // first poll resolves; 'running' once `endsAt` is in the future).
-      const text = (badge?.textContent ?? '').trim();
-      expect(['waiting', 'running', 'ended']).toContain(text);
     } finally {
       restore();
     }
   });
 
   test('reflects the polled snapshot in the HUD after the first fetch resolves', async () => {
-    const restore = installFetchMock(FIXTURE_STATE, FIXTURE_SETTING);
+    const restore = installFetchMock(FIXTURE_SNAPSHOT, FIXTURE_SETTING);
     try {
       const handle = renderLive();
       root = handle.root;
       // Let the synchronous-on-mount fetch complete + signals flush.
       await flushMicrotasks();
       const day = root.querySelector<HTMLElement>('[data-testid="live-day"]');
-      const agents = root.querySelector<HTMLElement>('[data-testid="live-agent-count"]');
+      const revisions = root.querySelector<HTMLElement>('[data-testid="live-revisions"]');
+      const solver = root.querySelector<HTMLElement>('[data-testid="live-solver"]');
+      const server = root.querySelector<HTMLElement>('[data-testid="live-server"]');
       const badge = root.querySelector<HTMLElement>('[data-testid="live-status-badge"]');
-      // Day is rendered as the bare number from the fixture.
-      expect((day?.textContent ?? '')).toContain('1');
-      // Agent count matches the fixture's `agents` length.
-      expect((agents?.textContent ?? '')).toContain('2');
-      // Status badge should read `running` because the fixture's endsAt is in
-      // the future and within the configured 10 s window.
+      expect(day?.textContent ?? '').toContain('2');
+      expect(day?.textContent ?? '').toContain('4');
+      expect(revisions?.textContent ?? '').toContain('1');
+      expect(revisions?.textContent ?? '').toContain('2');
+      expect(solver?.textContent ?? '').toContain('wait');
+      expect(server?.textContent ?? '').toContain('http://localhost:8080');
       expect(badge?.getAttribute('data-status')).toBe('running');
     } finally {
       restore();
     }
   });
 
-  test('createLivePoller stops issuing fetches after stop()', async () => {
-    const restore = installFetchMock(FIXTURE_STATE, FIXTURE_SETTING);
+  test('renders the error banner when the snapshot has an error message', async () => {
+    const restore = installFetchMock(
+      { ...FIXTURE_SNAPSHOT, status: 'error', error: 'boom' },
+      FIXTURE_SETTING,
+    );
+    try {
+      const handle = renderLive();
+      root = handle.root;
+      await flushMicrotasks();
+      const error = root.querySelector<HTMLElement>('[data-testid="live-error"]');
+      expect(error?.textContent ?? '').toContain('boom');
+    } finally {
+      restore();
+    }
+  });
+
+  test('does not crash when /match-state.json returns 404', async () => {
+    const restore = installFetchMock(null, FIXTURE_SETTING);
+    try {
+      const handle = renderLive();
+      root = handle.root;
+      await flushMicrotasks();
+      expect(root.querySelector('[data-testid="page-live"]')).not.toBeNull();
+      const error = root.querySelector<HTMLElement>('[data-testid="live-error"]');
+      expect(error).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  test('createLiveSnapshotPoller stops issuing fetches after stop()', async () => {
+    const originalFetch = globalThis.fetch;
+
     try {
       let callCount = 0;
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = mock(async (input: RequestInfo | URL): Promise<Response> => {
-        const url = typeof input === 'string' ? input : input.toString();
+      const wrapped = mock(async (_input: RequestInfo | URL): Promise<Response> => {
         callCount += 1;
-        if (url.includes('match-state.example.json')) {
-          return new Response(JSON.stringify(FIXTURE_STATE), { status: 200 });
-        }
-        return new Response('{}', { status: 200 });
-      }) as unknown as typeof fetch;
+        return new Response(JSON.stringify(FIXTURE_SNAPSHOT), { status: 200 });
+      });
+      globalThis.fetch = wrapped as unknown as typeof fetch;
 
-      const poller = createLivePoller(50);
+      const poller = createLiveSnapshotPoller(50);
       poller.start();
       // First poll runs immediately on start(); wait a few intervals.
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -141,9 +171,8 @@ describe('Live page', () => {
       poller.stop();
       await new Promise((resolve) => setTimeout(resolve, 200));
       expect(callCount).toBe(callsBeforeStop);
-      globalThis.fetch = originalFetch;
     } finally {
-      restore();
+      globalThis.fetch = originalFetch;
     }
   });
 });
