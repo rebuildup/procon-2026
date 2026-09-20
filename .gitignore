@@ -46,7 +46,8 @@ packages/frontend/.vite/
 # Temporary artefacts / reference repos
 # ----------------------------------------
 .tmp/
-.reference/
+.reference/*
+!.reference/procon37/
 
 # proptest local regression seed files (regenerated on next test run)
 *.proptest-regressions
