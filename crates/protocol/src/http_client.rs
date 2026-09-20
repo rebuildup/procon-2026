@@ -17,7 +17,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::match_config::{AccessTimeError, AgentKind, AgentKindsBody, AuthError, MatchState};
+use crate::match_config::{
+    AccessTimeError, ActionAccepted, ActionPlanBody, AgentKind, AgentKindsBody, AuthError,
+    MatchSetting, MatchState,
+};
 
 /// Default timeout for a single request attempt.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -179,6 +182,81 @@ impl MatchClient {
         let url = self.endpoint("/")?;
         let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
         Self::decode_match_state(response).await
+    }
+
+    /// Fetch the static match configuration from `GET /setting`.
+    ///
+    /// This endpoint is only available before the match begins; once the
+    /// match is in progress the server returns `403` with an
+    /// [`AccessTimeError`](crate::match_config::AccessTimeError) body.
+    ///
+    /// # Errors
+    ///
+    /// See [`HttpClientError`].
+    pub async fn get_match_setting(&self) -> Result<MatchSetting, HttpClientError> {
+        let url = self.endpoint("/setting")?;
+        let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
+        Self::decode_setting_response(response).await
+    }
+
+    /// Submit the day's action plan for all agents to `POST /`.
+    ///
+    /// The official wire format returns `200` with `{ "revision": <i32> }`
+    /// on both acceptance (`revision >= 0`) and rejection
+    /// (`revision < 0`). To distinguish transport-level errors from a
+    /// server-side rejection, the negative-revision case is surfaced as
+    /// [`HttpClientError::Http`] with `status = 200` and a `rejected: ...`
+    /// message, and is **not** retried (it slips past the retry loop
+    /// because `is_success()` is true; the rejection is detected only
+    /// after decoding the body).
+    ///
+    /// # Errors
+    ///
+    /// See [`HttpClientError`].
+    pub async fn submit_actions(
+        &self,
+        plan: ActionPlanBody,
+    ) -> Result<ActionAccepted, HttpClientError> {
+        let url = self.endpoint("/")?;
+        let body_bytes = serde_json::to_vec(&plan)?;
+        let response =
+            self.execute_with_retry(reqwest::Method::POST, &url, Some(body_bytes)).await?;
+        Self::decode_action_accepted(response).await
+    }
+
+    /// Decode a `MatchSetting` from a successful response.
+    async fn decode_setting_response(
+        response: reqwest::Response,
+    ) -> Result<MatchSetting, HttpClientError> {
+        let status = response.status();
+        if !status.is_success() {
+            return Err(classify_error(status, response).await);
+        }
+        Ok(response.json::<MatchSetting>().await?)
+    }
+
+    /// Decode an `ActionAccepted` from a `POST /` response.
+    ///
+    /// The official spec returns `200` even on rejection (`revision < 0`).
+    /// Such rejections are surfaced as
+    /// [`HttpClientError::Http`] with `status = 200` and a `rejected: ...`
+    /// message so that callers can distinguish them from transport errors
+    /// without retrying.
+    async fn decode_action_accepted(
+        response: reqwest::Response,
+    ) -> Result<ActionAccepted, HttpClientError> {
+        let status = response.status();
+        if !status.is_success() {
+            return Err(classify_error(status, response).await);
+        }
+        let accepted: ActionAccepted = response.json().await?;
+        if accepted.revision < 0 {
+            return Err(HttpClientError::Http {
+                status: status.as_u16(),
+                message: format!("rejected: revision={}", accepted.revision),
+            });
+        }
+        Ok(accepted)
     }
 
     /// Decode a `MatchState` from a successful response.
@@ -422,5 +500,165 @@ mod tests {
             .await
             .expect_err("timeout must surface as error");
         assert!(matches!(err, HttpClientError::Transport(_)), "got {err:?}");
+    }
+
+    /// Minimal `MatchSetting` fixture used by the `/setting` tests.
+    fn sample_setting() -> MatchSetting {
+        MatchSetting {
+            starts_at: 1_700_000_000,
+            day_seconds: vec![60],
+            day_steps: vec![10],
+            map: crate::match_config::Map {
+                height: 8,
+                width: 8,
+                cells: vec![vec![crate::match_config::CellType::TYPE_0; 8]; 8],
+            },
+            spots: vec![crate::match_config::Spot { brand: 0, pos: 0, stocks: 3 }],
+            agents: vec![0],
+            fuel_limits: 30,
+            players: 2,
+            busy_threshold: 3,
+            jammed_threshold: 5,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_match_setting_success_path() {
+        let mut server = Server::new_async().await;
+        let body = serde_json::to_string(&sample_setting()).expect("serialise");
+        let mock = server
+            .mock("GET", "/setting")
+            .match_header("Procon-Token", "test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(&body)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let setting = client.get_match_setting().await.expect("setting succeeds");
+        assert_eq!(setting, sample_setting());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_match_setting_does_not_retry_on_401() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/setting")
+            .with_status(401)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"code":"AuthError","message":"bad token"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let err = client.get_match_setting().await.expect_err("auth must fail");
+        assert!(matches!(err, HttpClientError::Auth { .. }), "got {err:?}");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_match_setting_does_not_retry_on_403() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/setting")
+            .with_status(403)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"code":"AccessTimeError","message":"試合がまだ開始されていません"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let err = client.get_match_setting().await.expect_err("window error must fail");
+        assert!(matches!(err, HttpClientError::AccessTime { .. }), "got {err:?}");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_match_setting_retries_transient_then_succeeds() {
+        let mut server = Server::new_async().await;
+        let m503 = server.mock("GET", "/setting").with_status(503).create_async().await;
+        let m502 = server.mock("GET", "/setting").with_status(502).create_async().await;
+        let body = serde_json::to_string(&sample_setting()).expect("serialise");
+        let m200 = server
+            .mock("GET", "/setting")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(&body)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let setting = client.get_match_setting().await.expect("transient retries then succeed");
+        assert_eq!(setting, sample_setting());
+        m503.assert_async().await;
+        m502.assert_async().await;
+        m200.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn submit_actions_returns_action_accepted_on_positive_revision() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"revision":42}"#)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let accepted =
+            client.submit_actions(vec![vec![1, 2, 3], vec![0, 0, 0]]).await.expect("plan accepted");
+        assert_eq!(accepted, ActionAccepted { revision: 42 });
+        mock.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn submit_actions_does_not_retry_on_negative_revision() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"revision":-1}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let err = client
+            .submit_actions(vec![vec![1, 2, 3]])
+            .await
+            .expect_err("negative revision must be rejected");
+        match err {
+            HttpClientError::Http { status, message } => {
+                assert_eq!(status, 200);
+                assert_eq!(message, "rejected: revision=-1");
+            }
+            other => panic!("expected HttpClientError::Http, got {other:?}"),
+        }
+        mock.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn submit_actions_sends_procon_token_header() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/")
+            .match_header("Procon-Token", "test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"revision":7}"#)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let accepted = client.submit_actions(vec![vec![0, 0, 0]]).await.expect("plan accepted");
+        assert_eq!(accepted, ActionAccepted { revision: 7 });
+        mock.assert_async().await;
     }
 }
