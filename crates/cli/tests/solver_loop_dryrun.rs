@@ -208,11 +208,7 @@ fn assert_all_moves_valid(
         .my_agent_ids
         .iter()
         .map(|id| {
-            setting
-                .agents
-                .iter()
-                .find(|a| a.id == *id)
-                .map_or(HexCoord::new(0, 0), |a| a.pos)
+            setting.agents.iter().find(|a| a.id == *id).map_or(HexCoord::new(0, 0), |a| a.pos)
         })
         .collect();
 

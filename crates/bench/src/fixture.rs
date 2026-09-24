@@ -279,6 +279,30 @@ impl MatchFixture {
                 });
             }
         }
+
+        // Every agent must start on passable terrain. The engine's
+        // `Terrain::traversable` treats `Pond` as impassable, so a fixture
+        // that plants agents on water cannot be evaluated at all — the match
+        // setting is rejected and the case is dead. Catch it at load time
+        // instead of letting a whole corpus column fail at evaluation time
+        // (this is how the `road-heavy` fixture regressed: every one of its
+        // five agents sat on a pond).
+        // `validate_cells_shape` has already checked width/height are sane
+        // and positive by the time we get here.
+        let Some(w) = usize::try_from(self.setting.map.width).ok().filter(|v| *v > 0) else {
+            return Ok(());
+        };
+        for (i, p) in self.setting.agents.iter().enumerate() {
+            let Ok(idx) = usize::try_from(*p) else { continue };
+            let cell =
+                self.setting.map.cells.get(idx / w).and_then(|row| row.get(idx % w)).copied();
+            if cell == Some(CellType::TYPE_2) {
+                return Err(FixtureError::Invalid {
+                    name: self.name.clone(),
+                    reason: format!("agent #{i} starts on impassable terrain Pond ({p})"),
+                });
+            }
+        }
         Ok(())
     }
 
@@ -491,6 +515,66 @@ mod tests {
         let err = loader.parse(raw.to_string().as_bytes()).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("starts on spot"), "unexpected error: {msg}");
+    }
+
+    /// An agent planted on water cannot move, so the case is dead on arrival.
+    /// This is the exact regression the `road-heavy` fixture shipped with —
+    /// all five agents sat on ponds and every evaluation of that fixture
+    /// failed as `invalid`. Catch it at load time instead.
+    #[test]
+    fn reject_agent_on_impassable_terrain() {
+        let mut cells = vec![vec![0_i32; 8]; 8];
+        cells[2][3] = 2; // Pond
+        let raw = serde_json::json!({
+            "name": "ponded",
+            "category": "small",
+            "startsAt": 0,
+            "daySeconds": [60],
+            "daySteps": [10],
+            "map": { "height": 8, "width": 8, "cells": cells },
+            "spots": [
+                {"brand": 0, "pos": 0, "stocks": 1},
+                {"brand": 1, "pos": 1, "stocks": 1},
+                {"brand": 2, "pos": 2, "stocks": 1}
+            ],
+            "agents": [19, 9, 10], // 19 = row 2, col 3 -> pond
+            "fuelLimits": 10,
+            "players": 1,
+            "busyThreshold": 1,
+            "jammedThreshold": 2
+        });
+        let loader = MatchFixtureLoader::new();
+        let err = loader.parse(raw.to_string().as_bytes()).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("impassable terrain Pond"), "unexpected error: {msg}");
+    }
+
+    /// Passing terrain: same fixture but with the agent on plain ground.
+    #[test]
+    fn accept_agent_on_passable_terrain() {
+        let mut cells = vec![vec![0_i32; 8]; 8];
+        cells[2][3] = 2; // Pond, but no agent stands on it
+        cells[4][4] = 1; // Mountain is traversable
+        let raw = serde_json::json!({
+            "name": "ok-terrain",
+            "category": "small",
+            "startsAt": 0,
+            "daySeconds": [60],
+            "daySteps": [10],
+            "map": { "height": 8, "width": 8, "cells": cells },
+            "spots": [
+                {"brand": 0, "pos": 0, "stocks": 1},
+                {"brand": 1, "pos": 1, "stocks": 1},
+                {"brand": 2, "pos": 2, "stocks": 1}
+            ],
+            "agents": [9, 10, 36], // plain, plain, mountain
+            "fuelLimits": 10,
+            "players": 1,
+            "busyThreshold": 1,
+            "jammedThreshold": 2
+        });
+        let loader = MatchFixtureLoader::new();
+        loader.parse(raw.to_string().as_bytes()).expect("passable terrain is accepted");
     }
 
     #[test]

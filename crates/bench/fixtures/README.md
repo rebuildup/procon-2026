@@ -1,7 +1,18 @@
 # Known-map fixtures (Issue #59)
 
-This directory bundles JSON fixtures for the `bench` crate's solver-evaluation
-runner. Each fixture matches the official Procon 37 `MatchSetting` shape
+This directory bundles the **fixed corpus** for the canonical offline
+evaluation — see [`docs/evaluation.md`](../../../docs/evaluation.md). Every
+fixture here becomes one case (`case_id = fixture:<file stem>`) that any
+candidate can be run against:
+
+```bash
+just eval                                    # all fixtures, default candidates
+just eval-list                               # what candidates exist
+cargo run -q -p bench --bin procon-eval -- \
+  --cases small-8x8,medium-16x16 --candidates 'loop:iterations=32,wait' --baseline wait
+```
+
+Each fixture matches the official Procon 37 `MatchSetting` shape
 (`crates/protocol/src/match_config.rs`) wrapped in a small metadata header
 (`name`, `description`, `category`) so the runner can pick fixtures by
 characteristic without re-deriving labels.
@@ -99,7 +110,35 @@ The fixture must:
 - Have `cells: [height][width]` — every row the right length.
 - Have agent positions and spot positions inside `[0, width*height)`.
 - Have no agent starting on a spot (start cells must be clear).
+- Have no agent starting on impassable terrain (`Pond`) — an agent planted
+  on water can never move, which kills the case outright. This is enforced by
+  `MatchFixture::validate_positions` at load time; see the regression notes
+  below.
 - Pass the `series_many` / `series_few` category-specific assertions.
+
+All of the above run whenever a fixture is loaded into a case, so a broken
+fixture fails at *load* rather than silently producing `invalid` records for
+an entire corpus column.
+
+## Known content caveats
+
+**`maps/road-heavy.json` — terrain content does not match its category.**
+The file is tagged `road_heavy` and the catalog below says it is "dominated
+by a road network", but the actual cells are `Plain 198 / Pond 54 / Road 4`.
+It therefore does **not** exercise road-cost-aware pathing the way it claims,
+and the matching README row ("road-aware pathing (solver-astar)") is not
+being served.
+
+This is a *corpus content* defect, not a loader or evaluation-path defect: the
+fixture validates and evaluates fine. Re-authoring the terrain would change
+what every solver is tested on, so it is deliberately left for a fixture
+ticket rather than silently rewritten here. Treat `road-heavy` as a
+general-purpose map until it is fixed.
+
+Previously all five of its agents also sat on `Pond` cells, which made the
+case unusable (`invalid` for every candidate). The loader now rejects agents
+on impassable terrain, so that class of defect cannot reach an evaluation run
+again.
 
 ## Sources
 

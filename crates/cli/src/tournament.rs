@@ -1,20 +1,34 @@
-//! Tournament harness: N solvers × 1 match → leaderboard.
+//! **Wire / protocol smoke harness** — N solvers × 1 real-server match.
 //!
-//! Drives each solver through a full match via
+//! This drives each solver through a full match against the **official
+//! server** via
 //! [`run_coordinator_loop`](crate::coordinator_loop::run_coordinator_loop)
-//! and reports the per-solver [`CoordinatorOutcome`](crate::coordinator_loop::CoordinatorOutcome)
-//! as a simple score (`days_completed * 100 + sum(revisions)`). Matches run
-//! **sequentially** because the official contest server only allows one match
-//! at a time per `MatchClient` connection; parallel eval is intentionally out
-//! of scope for this iteration.
+//! and reports how much of the protocol each solver got through. It is an
+//! end-to-end smoke test of the server / protocol / coordinator stack.
 //!
-//! # Loop engineering workflow
+//! # This is NOT the performance evaluator
 //!
-//! Successive iterations can use this harness for the user's "loop
-//! engineering" workflow: develop solver variants in parallel branches, run
-//! the tournament, compare scores, pick the winner. The scoring formula is
-//! intentionally trivial — the goal is to wire the harness to the real match
-//! path, not to build a sophisticated ranking system.
+//! The number this produces is [`protocol_progress`] —
+//! `days_completed * 100 + sum(revisions)`. It measures **how far the
+//! protocol handshake and match loop got**, not how well the solver played.
+//! A solver that completes every day with one revision each scores the same
+//! as one that barely scrapes through; nothing here looks at what the agents
+//! actually collected.
+//!
+//! The canonical performance evaluator — the one that ranks solvers on the
+//! official competitive score tuple (variety, daily variety sum, total balls,
+//! response time) — is offline and lives in the `bench` crate. See
+//! `docs/evaluation.md`. To compare solver quality, use that, not this.
+//!
+//! # What this is good for
+//!
+//! - proving the wire protocol still works against the real server
+//! - catching regressions in the coordinator / answer-submission loop
+//! - smoke-testing a solver's integration (does it answer at all, does the
+//!   server accept its answers) without needing a corpus
+//!
+//! Matches run **sequentially** because the official contest server only
+//! allows one match at a time per `MatchClient` connection.
 //!
 //! # Solver registry
 //!
@@ -82,18 +96,23 @@ pub struct TournamentEntry {
     pub outcome: CoordinatorOutcome,
     /// Wall-clock time the per-solver match took, in milliseconds.
     pub elapsed_ms: u64,
-    /// `days_completed * 100 + sum(revisions)`. Higher is better.
-    pub score: u32,
+    /// **Protocol progress**, not a competitive score.
+    ///
+    /// `days_completed * 100 + sum(revisions)`. Higher means the solver got
+    /// further through the match's protocol, which is a smoke-test signal —
+    /// see the module docs. It is deliberately *not* named `score` so it can
+    /// never be mistaken for the official competitive score tuple.
+    pub protocol_progress: u32,
 }
 
 /// Aggregate leaderboard for a single tournament run.
 ///
-/// Entries are kept sorted by [`TournamentEntry::score`] descending. The
+/// Entries are kept sorted by [`TournamentEntry::protocol_progress`] descending. The
 /// JSON sidecar uses the flat [`ReportView`] helper for the same reason
 /// as [`OutcomeView`]: `CoordinatorOutcome` is not `Serialize`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TournamentReport {
-    /// Per-solver entries, sorted by [`TournamentEntry::score`] descending.
+    /// Per-solver entries, sorted by [`TournamentEntry::protocol_progress`] descending.
     pub entries: Vec<TournamentEntry>,
     /// Server URL the harness drove every solver against.
     pub server: String,
@@ -118,11 +137,12 @@ impl From<&CoordinatorOutcome> for OutcomeView {
     }
 }
 
-/// Serialisable view of a [`TournamentEntry`] (solver + score + outcome view).
+/// Serialisable view of a [`TournamentEntry`] (solver + protocol progress + outcome).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct EntryView {
     pub solver: String,
-    pub score: u32,
+    /// See [`TournamentEntry::protocol_progress`].
+    pub protocol_progress: u32,
     pub elapsed_ms: u64,
     pub outcome: OutcomeView,
 }
@@ -131,7 +151,7 @@ impl From<&TournamentEntry> for EntryView {
     fn from(e: &TournamentEntry) -> Self {
         Self {
             solver: e.solver.clone(),
-            score: e.score,
+            protocol_progress: e.protocol_progress,
             elapsed_ms: e.elapsed_ms,
             outcome: OutcomeView::from(&e.outcome),
         }
@@ -257,7 +277,7 @@ fn build_solver(
 }
 
 /// Drive `cfg.solvers` through one full match each, in order, and return
-/// a [`TournamentReport`] sorted by score descending. Matches run
+/// a [`TournamentReport`] sorted by protocol progress descending. Matches run
 /// sequentially — the contest server only honours one match per session,
 /// and parallel eval would break it.
 ///
@@ -311,13 +331,20 @@ pub async fn run_tournament(cfg: TournamentConfig) -> Result<TournamentReport, T
             source,
         })?;
 
-        let score = compute_score(&outcome);
-        entries.push(TournamentEntry { solver: solver_name.clone(), outcome, elapsed_ms, score });
+        let protocol_progress = compute_protocol_progress(&outcome);
+        entries.push(TournamentEntry {
+            solver: solver_name.clone(),
+            outcome,
+            elapsed_ms,
+            protocol_progress,
+        });
     }
 
-    // Stable sort by score desc, then by solver name asc as a deterministic
-    // tie-break so two identical scores produce the same ordering across runs.
-    entries.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.solver.cmp(&b.solver)));
+    // Stable sort by protocol progress desc, then by solver name asc as a
+    // deterministic tie-break so two identical values order identically across runs.
+    entries.sort_by(|a, b| {
+        b.protocol_progress.cmp(&a.protocol_progress).then_with(|| a.solver.cmp(&b.solver))
+    });
 
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     let report = TournamentReport { entries, server: cfg.server, elapsed_ms, schema_version: 1 };
@@ -331,11 +358,14 @@ pub async fn run_tournament(cfg: TournamentConfig) -> Result<TournamentReport, T
     Ok(report)
 }
 
-/// `days_completed * 100 + sum(revisions)`. Higher is better. Negative
-/// revisions (which the loop never actually returns — `Rejected` aborts
-/// the match) are clamped to zero so a malformed future payload can't
-/// produce a negative score.
-fn compute_score(outcome: &CoordinatorOutcome) -> u32 {
+/// `days_completed * 100 + sum(revisions)` — **protocol progress**, higher
+/// means the solver got further through the match. This is a smoke-test
+/// signal, not a competitive score; see the module docs.
+///
+/// Negative revisions (which the loop never actually returns — `Rejected`
+/// aborts the match) are clamped to zero so a malformed future payload can't
+/// produce a negative value.
+fn compute_protocol_progress(outcome: &CoordinatorOutcome) -> u32 {
     let days = u32::try_from(outcome.days_completed).unwrap_or(u32::MAX);
     let revisions: u32 = outcome
         .revisions
@@ -379,14 +409,19 @@ pub fn render_markdown(report: &TournamentReport) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "# Tournament leaderboard (server={})", report.server);
     out.push('\n');
-    out.push_str("| Rank | Solver | Days | Revisions | Score | Wall ms |\n");
+    out.push_str("| Rank | Solver | Days | Revisions | Protocol progress | Wall ms |\n");
     out.push_str("|------|--------|------|-----------|-------|---------|\n");
     for (i, e) in report.entries.iter().enumerate() {
         let rank = u32::try_from(i + 1).unwrap_or(u32::MAX);
         let _ = writeln!(
             out,
             "| {} | {} | {} | {:?} | {} | {} |",
-            rank, e.solver, e.outcome.days_completed, e.outcome.revisions, e.score, e.elapsed_ms,
+            rank,
+            e.solver,
+            e.outcome.days_completed,
+            e.outcome.revisions,
+            e.protocol_progress,
+            e.elapsed_ms,
         );
     }
     let _ = writeln!(out, "\nTotal elapsed: {} ms\n", report.elapsed_ms);
@@ -414,15 +449,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn compute_score_uses_days_times_100_plus_sum_revisions() {
+    fn protocol_progress_is_days_times_100_plus_sum_revisions() {
         let outcome = CoordinatorOutcome { days_completed: 4, revisions: vec![1, 2, 3, 4] };
-        assert_eq!(compute_score(&outcome), 4 * 100 + 10);
+        assert_eq!(compute_protocol_progress(&outcome), 4 * 100 + 10);
     }
 
     #[test]
-    fn compute_score_clamps_negative_revisions_to_zero() {
+    fn protocol_progress_clamps_negative_revisions_to_zero() {
         let outcome = CoordinatorOutcome { days_completed: 2, revisions: vec![-1, 5] };
-        assert_eq!(compute_score(&outcome), 2 * 100 + 5);
+        assert_eq!(compute_protocol_progress(&outcome), 2 * 100 + 5);
     }
 
     #[test]
@@ -452,13 +487,13 @@ mod tests {
                     solver: "wait".to_owned(),
                     outcome: CoordinatorOutcome { days_completed: 4, revisions: vec![1, 2, 3, 4] },
                     elapsed_ms: 100,
-                    score: 410,
+                    protocol_progress: 410,
                 },
                 TournamentEntry {
                     solver: "loop".to_owned(),
                     outcome: CoordinatorOutcome { days_completed: 4, revisions: vec![1, 2, 3, 4] },
                     elapsed_ms: 200,
-                    score: 410,
+                    protocol_progress: 410,
                 },
             ],
             server: "http://localhost:8080".to_owned(),
@@ -467,7 +502,7 @@ mod tests {
         };
         let md = render_markdown(&report);
         assert!(md.contains("# Tournament leaderboard"));
-        assert!(md.contains("| Rank | Solver | Days | Revisions | Score | Wall ms |"));
+        assert!(md.contains("| Rank | Solver | Days | Revisions | Protocol progress | Wall ms |"));
         assert!(md.contains("wait"));
         assert!(md.contains("loop"));
         // Rank column: 1 and 2 must both appear (dense ranks).

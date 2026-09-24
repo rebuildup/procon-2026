@@ -12,9 +12,22 @@
 //! decides — there is no compromise. Lexicographic `Ordering` captures this
 //! exactly.
 //!
-//! EXPECTED INTEGRATION: domain — once #57 lands, this becomes a thin shim over
-//! `domain::ScoreReport::judge()`. Until then it is the source of truth for
-//! "is solution A better than solution B?" inside the solver.
+//! # This is an internal objective, not an evaluation score
+//!
+//! `judge()` decides which tour *the algorithm* keeps while it hill-climbs.
+//! It is the source of truth for "is candidate tour A better than tour B?"
+//! **inside this crate**, and it may diverge from the official score without
+//! that being an evaluation bug.
+//!
+//! Ranking real solver candidates never goes through here: the canonical
+//! evaluator reads `engine::MatchSim`'s final state and compares with
+//! `domain::compare_scores`. See `docs/evaluation.md`.
+//!
+//! (The original plan was to make this a shim over `domain::OfficialScore`
+//! once issue #57 landed. It landed, but this crate still uses its own local
+//! `types::*` stubs rather than `domain` types, so re-targeting `judge` would
+//! mean adding a dependency for no behavioural gain. The two deliberately
+//! stay separate: one optimises a tour, the other judges a run.)
 
 use std::cmp::Ordering;
 
@@ -157,7 +170,9 @@ impl PartialOrd for ScoreRanking {
 /// - `balls`            = 1 ball per visited spot (1-day-1-spot-1-ball rule)
 /// - `final_response_sec` = number of steps taken (proxy for response time)
 ///
-/// EXPECTED INTEGRATION: domain — `domain::engine::simulate_day()` once #57 lands.
+/// Internal day simulation used to score a candidate tour. Not the contest
+/// simulator — the canonical one lives in `engine::MatchSim` and is what the
+/// evaluator drives (see `docs/evaluation.md`).
 #[must_use]
 pub fn simulate_day(day: u32, plan: &[u32], spots: &[Spot], _agent_start: HexCoord) -> DailyScore {
     let mut distinct_series = std::collections::BTreeSet::new();

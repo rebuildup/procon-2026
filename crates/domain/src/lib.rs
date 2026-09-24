@@ -224,6 +224,16 @@ pub use coordinate::{Bounds, HexCoord, MapLayout, MapSize};
 pub use game_model::{GameModel, GameModelError};
 pub use id::{MatchId, PlayerId, TurnId};
 pub use state::{GameState, Outcome, Score, Turn};
+
+/// Official 4-tier competitive score from 募集要項「順位決定」.
+///
+/// Named [`OfficialScore`] rather than `Score` on purpose: [`Score`]
+/// (re-exported above from [`state`]) is the unrelated turn-level points
+/// newtype, and the two must never be confused. This is the **only** score
+/// type used for solver comparison — see [`compare_scores`] for the
+/// canonical lexicographic ordering (variety → daily variety sum → total
+/// balls → response time, last one ascending).
+pub use outcome::{Outcome as MatchOutcome, Score as OfficialScore, compare_scores, judge};
 pub use traffic::{Thresholds, TrafficCell, TrafficMap};
 
 /// Library-wide error type. Pure-domain errors only; I/O errors belong to other crates.

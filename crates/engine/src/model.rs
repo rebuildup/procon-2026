@@ -1,16 +1,20 @@
-//! Self-contained game model used by the local match simulator.
+//! Game model used by the local match simulator: [`MatchSetting`],
+//! [`MatchState`], [`RunResult`], the per-step [`AgentActions`] plan, and
+//! [`Solver`].
 //!
-//! EXPECTED INTEGRATION: types in this module are temporary. The authoritative
-//! home for them is `crates/domain` once issues #11 / #12 / #13 (hex / cell /
-//! agent) and #53 (action / direction) ship. The simulator stays useful while
-//! the migration is pending because its public surface is `MatchSim`, not
-//! these types — once `domain` lands, the `MatchSim` API keeps the same shape
-//! and only the type aliases swap.
+//! # Why two solver contracts exist (and why that is intentional)
 //!
-//! Likewise [`Solver`] below is a minimal local stand-in for the trait
-//! introduced by issue #57 (`engine::Solver`). Once #57 merges, this local
-//! trait is replaced by a `pub use engine::solver::Solver` and the helper
-//! [`Action::wait_all`] / [`AgentActions`] constructors move with it.
+//! | | [`Solver`] (this module) | [`crate::solver::Solver`] |
+//! |---|---|---|
+//! | Context | rich [`MatchState`] (map, agents, stock, traffic) | thin [`protocol::MatchSnapshot`] (match id, turn, scores) |
+//! | Output | one day of [`AgentActions`] | one day of [`crate::solver::SolverDecision`] |
+//! | Used by | [`crate::sim::MatchSim`] — offline evaluation | the coordinator loop over the live wire |
+//!
+//! The live wire does not publish the map or agent positions, so
+//! [`crate::solver::Solver`]'s context cannot carry them; the offline
+//! simulator has them all. They are two views for two transports, not two
+//! competing designs. The offline evaluation path deliberately drives
+//! [`Solver`] below, because that is what [`crate::sim::MatchSim`] consumes.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -592,9 +596,14 @@ pub struct MatchState {
     /// Set of series ever acquired across all days. Drives the
     /// "variety" tie-breaker (募集要項「順位決定」).
     pub series_taken: BTreeSet<u32>,
-    /// Per-day first-acquisition time (step index). Used for the
-    /// "early finish" tie-breaker (募集要項「順位決定」).
+    /// Per-series first-acquisition time `(day, step)`. Diagnostic evidence
+    /// only — it is *not* a ranking tier (tier 4 is response time).
     pub series_first_taken_at: BTreeMap<u32, (u32, u32)>,
+    /// Series acquired on each day, keyed by day. Drives
+    /// `daily_variety_sum` = Σ_days |series acquired that day| (募集要項
+    /// 「順位決定」tier 2, 「各日の種類数の累積」). A series re-acquired on a
+    /// later day counts again for that later day.
+    pub series_acquired_by_day: BTreeMap<u32, BTreeSet<u32>>,
 }
 
 impl MatchState {
@@ -621,6 +630,7 @@ impl MatchState {
             spot_picks_today: HashMap::new(),
             series_taken: BTreeSet::new(),
             series_first_taken_at: BTreeMap::new(),
+            series_acquired_by_day: BTreeMap::new(),
             setting: MatchSetting { map, ..setting.clone() },
         })
     }
@@ -648,6 +658,19 @@ impl MatchState {
     pub fn is_finished(&self) -> bool {
         self.day >= self.num_days()
     }
+
+    /// Distinct series acquired on each day, indexed by day, length
+    /// `num_days`. Days with no acquisition contribute `0`.
+    ///
+    /// This is the per-day input to the official tier-2 metric
+    /// (`daily_variety_sum` = the sum of this vector). See
+    /// [`Self::series_acquired_by_day`].
+    #[must_use]
+    pub fn daily_varieties(&self) -> Vec<u32> {
+        (0..self.num_days())
+            .map(|d| self.series_acquired_by_day.get(&d).map_or(0, |series| series.len() as u32))
+            .collect()
+    }
 }
 
 /// Summary returned by [`super::MatchSim::run`].
@@ -660,20 +683,29 @@ pub struct RunResult {
     pub daily_variety_sum: u32,
     /// Total balls acquired across the whole match.
     pub total_balls: u32,
-    /// `(day, step)` of the last acquisition — earlier is better per
-    /// 募集要項「順位決定」.
+    /// `(day, step)` of the *latest first-acquisition* — i.e. the last
+    /// timestamp at which a previously-unseen series was first taken.
+    ///
+    /// Diagnostic evidence only. It is **not** a ranking tier: 募集要項
+    /// 「順位決定」tier 4 is the cumulative per-day response time, which
+    /// [`domain::Score::total_response_time_ms`] carries and the evaluator
+    /// measures outside the simulator (the simulator has no clock).
     pub last_acquisition_at: Option<(u32, u32)>,
 }
 
 // ---------------------------------------------------------------------------
-// Solver trait — local stand-in for issue #57's `engine::Solver`.
+// Solver trait — the contract `MatchSim` consumes.
 // ---------------------------------------------------------------------------
 
-/// Local solver contract.
+/// Solver contract for the offline simulation.
 ///
-/// EXPECTED INTEGRATION: replaced by `engine::solver::Solver` (issue #57).
-/// Once that lands, callers implement that trait directly and this module
-/// becomes a thin re-export.
+/// `decide` returns one day's worth of [`AgentActions`] and **nothing else**:
+/// no score, no ranking. Scoring is [`crate::sim::RunResult`]'s job, derived
+/// from the final [`MatchState`], which is what keeps the evaluation path
+/// one-directional (see `docs/evaluation.md`).
+///
+/// Distinct from [`crate::solver::Solver`] (the wire-facing contract) — see
+/// the module docs for the comparison.
 pub trait Solver: Send + Sync {
     /// Stable, human-readable identifier. Used in logs and metadata.
     fn name(&self) -> &'static str;

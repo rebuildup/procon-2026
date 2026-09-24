@@ -153,13 +153,17 @@ impl MatchSim {
 
     /// Drive a full match from `setting` using `solver` for every day.
     ///
-    /// Returns the final state and a scoring summary aligned with
-    /// 募集要項「順位決定」:
+    /// Returns the final state and the three *deterministic* competitive
+    /// tallies of 募集要項「順位決定」:
     ///
     /// 1. `variety` (distinct series ever acquired) — primary.
-    /// 2. `daily_variety_sum` — secondary.
+    /// 2. `daily_variety_sum` (Σ per-day distinct series) — secondary.
     /// 3. `total_balls` — tertiary.
-    /// 4. `last_acquisition_at` (earlier is better) — quaternary.
+    ///
+    /// Tier 4 — cumulative per-day response time — is **not** produced here:
+    /// the simulator has no clock by design (see the determinism section
+    /// above). The evaluation layer measures solver latency and combines it
+    /// with these three into [`domain::Score`].
     ///
     /// `solver` may be a `Box<dyn Solver>` (typical) or any concrete type.
     pub fn run<S: Solver + ?Sized>(
@@ -238,16 +242,15 @@ impl MatchSim {
 }
 
 /// Compute the three integer scores from the final state.
+///
+/// `daily_variety_sum` is 募集要項「順位決定」tier 2 — 「各日の種類数の累積」:
+/// the number of distinct series acquired *that day*, summed over all days.
+/// A series re-acquired on a later day contributes again for that later day,
+/// so this is **not** the count of first-acquisition days.
 fn score_state(state: &MatchState) -> (u32, u32, u32) {
     let variety = state.series_taken.len() as u32;
     let total_balls: u32 = state.agents.iter().map(|a| a.total_inventory()).sum();
-    // Daily variety sum is computed from `series_first_taken_at`: distinct
-    // series taken per day, summed.
-    let mut per_day: HashMap<u32, u32> = HashMap::new();
-    for (day, _step) in state.series_first_taken_at.values() {
-        *per_day.entry(*day).or_insert(0) += 1;
-    }
-    let daily_variety_sum = per_day.values().sum::<u32>();
+    let daily_variety_sum: u32 = state.daily_varieties().iter().sum();
     (variety, daily_variety_sum, total_balls)
 }
 
@@ -442,6 +445,56 @@ mod tests {
         // We expect at least the two distinct series to be picked.
         assert!(result.variety >= 2, "variety = {}", result.variety);
         assert!(result.total_balls >= 2);
+    }
+
+    /// 募集要項「順位決定」tier 2 is 「各日の種類数の累積」: the distinct
+    /// series acquired *that day*, summed over all days. A series that is
+    /// re-acquired on a later day contributes again for that later day —
+    /// so `daily_variety_sum` must exceed `variety` once a match spans more
+    /// than one day of collection. Regresses the older implementation that
+    /// counted each series only on the day of its *first* acquisition.
+    #[test]
+    fn daily_variety_sum_counts_reseries_each_day() {
+        let map = one_spot_map();
+        // One spot (series 1, stock 1, refilled each day). One patrol starts
+        // next to it at (1, 0) — spec forbids starting on a spot — and steps
+        // Left every step. Step 0 of each day lands on the spot and picks up;
+        // the following step's Left is out of bounds and degrades to Wait, so
+        // the agent stays put and re-picks after each day's spawn refill.
+        let setting = setting_with(map, vec![Agent::patrol(0, HexCoord::new(1, 0), 8, 3)], 2, 3);
+        struct AlwaysLeft;
+        impl Solver for AlwaysLeft {
+            fn name(&self) -> &'static str {
+                "always-left"
+            }
+            fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+                let mut actions = Vec::new();
+                for _ in 0..ctx.day_steps {
+                    for id in &ctx.agent_ids {
+                        actions.push(Action::step(*id, Direction::Left));
+                    }
+                }
+                AgentActions::new(actions)
+            }
+        }
+        let sim = MatchSim::default();
+        let result = sim.run(setting, &AlwaysLeft).unwrap();
+        // One distinct series ever -> variety == 1.
+        assert_eq!(result.variety, 1);
+        // But it is collected on more than one day, so the cumulative
+        // per-day variety must be strictly greater than `variety`.
+        assert!(
+            result.daily_variety_sum > result.variety,
+            "daily_variety_sum = {} must exceed variety = {} when a series \
+             is re-acquired on later days",
+            result.daily_variety_sum,
+            result.variety
+        );
+        // Per-day breakdown agrees with the aggregate.
+        assert_eq!(
+            result.daily_variety_sum,
+            result.final_state.daily_varieties().iter().sum::<u32>()
+        );
     }
 
     #[test]

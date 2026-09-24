@@ -20,11 +20,16 @@
 //! own; a solution that visits fewer spots but more distinct series ranks
 //! higher.
 //!
-//! ## Integration
-//! EXPECTED INTEGRATION: domain — once #57 lands, [`ScoreReport::judge`] is
-//! replaced by `domain::ScoreReport::judge()` and the day simulation in
-//! [`crate::score`] is delegated to the engine. The algorithm and trait
-//! shape do not change.
+//!
+//! ## Score report is NOT an evaluation score
+//!
+//! `SolveOutcome::score` / [`ScoreReport::judge`] are the solver's **internal
+//! objective** — the thing 2-opt / 3-opt hill-climb against. They decide which
+//! tour the algorithm keeps, and they are allowed to be a rough proxy.
+//!
+//! They are never used to rank candidates. The canonical evaluator reads
+//! `engine::MatchSim`'s final state instead, so a solver cannot score itself
+//! (see `docs/evaluation.md`).
 
 use std::fmt;
 
@@ -37,6 +42,11 @@ use crate::two_opt::{best_two_opt_move, edge_cost};
 use crate::types::{Agent, Spot};
 
 /// Initial-solution strategy for the loop solver.
+///
+/// Each variant only decides the *ordering* the refinement starts from; the
+/// 2-opt / 3-opt improvement loop is shared. That keeps a whole axis of
+/// candidate parameters (`loop:initial=<variant>:iterations=<n>`) cheap to
+/// enumerate without inventing new algorithms.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InitialStrategy {
     /// Visit spots in input order, then close the loop.
@@ -45,14 +55,25 @@ pub enum InitialStrategy {
     /// to the nearest unvisited spot. O(n^2).
     #[default]
     GreedyNearestNeighbor,
+    /// Sort spots by row, then column (row-major sweep).
+    SweepRow,
+    /// Sort spots by column, then row (column-major sweep).
+    SweepCol,
+    /// Deterministic shuffle seeded by `seed`.
+    ///
+    /// The shuffle is a fixed xorshift64* sequence, so the same `seed` on the
+    /// same spot list always yields the same tour — required for the
+    /// reproducible-evaluation guarantee.
+    Random { seed: u64 },
 }
 
-/// Solver trait stub.
+/// Touring-problem contract, internal to this crate.
 ///
-/// EXPECTED INTEGRATION: domain — once #57 lands, this trait moves to
-/// `domain::solver::Solver` (or similar) and `LoopSolver` implements that
-/// canonical trait. For now it lives here so the solver-loop crate can be
-/// iterated on without domain integration.
+/// `solve` maps `(spots, agents, days) -> daily spot-visit orders`. It is
+/// deliberately *not* a canonical engine trait: the adapter in
+/// `bench::adapters::loop_solver` turns these visit orders into concrete
+/// `engine::model::AgentActions`, and `crates/cli`'s `EngineLoopAdapter`
+/// does the same for the live wire. Keep it algorithm-shaped.
 pub trait Solver {
     /// Solve and return the daily plans, one per day, plus a score report.
     fn solve(&self, problem: &SolveProblem) -> Result<SolveOutcome, SolverError>;
@@ -153,6 +174,9 @@ impl LoopSolver {
         match self.initial {
             InitialStrategy::Identity => spot_ids,
             InitialStrategy::GreedyNearestNeighbor => greedy_nearest_neighbor(&problem.spots),
+            InitialStrategy::SweepRow => sweep_row(&problem.spots),
+            InitialStrategy::SweepCol => sweep_col(&problem.spots),
+            InitialStrategy::Random { seed } => seeded_shuffle(&problem.spots, seed),
         }
     }
 
@@ -294,6 +318,53 @@ pub fn greedy_nearest_neighbor(spots: &[Spot]) -> Vec<u32> {
     tour
 }
 
+/// Row-major sweep: order spots by row, then column.
+///
+/// Stable and total — ties in `(row, col)` cannot occur because spot
+/// coordinates are unique on a map — so the ordering is fully determined by
+/// the spot list.
+pub fn sweep_row(spots: &[Spot]) -> Vec<u32> {
+    let mut ordered: Vec<&Spot> = spots.iter().collect();
+    ordered.sort_by_key(|s| (s.coord.r, s.coord.q));
+    ordered.iter().map(|s| s.id).collect()
+}
+
+/// Column-major sweep: order spots by column, then row.
+pub fn sweep_col(spots: &[Spot]) -> Vec<u32> {
+    let mut ordered: Vec<&Spot> = spots.iter().collect();
+    ordered.sort_by_key(|s| (s.coord.q, s.coord.r));
+    ordered.iter().map(|s| s.id).collect()
+}
+
+/// Deterministic Fisher–Yates shuffle of the spot order, seeded by `seed`.
+///
+/// Uses a fixed xorshift64* sequence rather than an external RNG crate so the
+/// mapping `seed -> tour` is stable across compiler and dependency versions —
+/// which is what makes `loop:initial=random:seed=N` reproducible in a durable
+/// evaluation record.
+pub fn seeded_shuffle(spots: &[Spot], seed: u64) -> Vec<u32> {
+    let mut ids: Vec<u32> = spots.iter().map(|s| s.id).collect();
+    if ids.len() < 2 {
+        return ids;
+    }
+    let mut state = seed.wrapping_add(0x9E37_79B9_7F4A_7C15).max(1);
+    for i in (1..ids.len()).rev() {
+        state = xorshift64star(state);
+        let span = u64::try_from(i).unwrap_or(u64::MAX).saturating_add(1);
+        let j = usize::try_from(state % span).unwrap_or(0);
+        ids.swap(i, j);
+    }
+    ids
+}
+
+/// One xorshift64* step. Non-zero for any non-zero input.
+fn xorshift64star(mut x: u64) -> u64 {
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+}
+
 /// Apply the first strictly-improving 2-opt move found. Returns true if a
 /// swap was applied.
 fn apply_first_improving_two_opt(tour: &mut [u32], problem: &SolveProblem) -> bool {
@@ -418,6 +489,79 @@ mod tests {
         sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(sorted.len(), spots.len());
+    }
+
+    /// Every initial strategy must yield a permutation of the spot ids —
+    /// the refinement loop relies on that invariant.
+    #[test]
+    fn every_initial_strategy_yields_a_permutation() {
+        let spots = vec![
+            spot(0, 0, 0, "a"),
+            spot(1, 2, 0, "b"),
+            spot(2, 4, 1, "a"),
+            spot(3, 1, 2, "b"),
+            spot(4, 3, 3, "c"),
+        ];
+        for initial in [
+            InitialStrategy::Identity,
+            InitialStrategy::GreedyNearestNeighbor,
+            InitialStrategy::SweepRow,
+            InitialStrategy::SweepCol,
+            InitialStrategy::Random { seed: 7 },
+        ] {
+            let solver = LoopSolver::new(initial, 1);
+            let tour = solver.initial_tour(&SolveProblem::new(spots.clone(), vec![], 1));
+            let mut sorted = tour.clone();
+            sorted.sort_unstable();
+            assert_eq!(sorted, vec![0, 1, 2, 3, 4], "strategy {initial:?} is not a permutation");
+        }
+    }
+
+    /// `loop:initial=random:seed=N` must be reproducible: the same seed on
+    /// the same spot list always yields the same tour, and different seeds
+    /// usually differ. This is what lets a durable evaluation record point at
+    /// a candidate id and be re-run later.
+    #[test]
+    fn seeded_shuffle_is_reproducible_per_seed() {
+        let spots = vec![
+            spot(0, 0, 0, "a"),
+            spot(1, 2, 0, "b"),
+            spot(2, 4, 1, "a"),
+            spot(3, 1, 2, "b"),
+            spot(4, 3, 3, "c"),
+            spot(5, 5, 5, "c"),
+            spot(6, 2, 4, "d"),
+        ];
+        let a = seeded_shuffle(&spots, 42);
+        let b = seeded_shuffle(&spots, 42);
+        assert_eq!(a, b, "same seed must reproduce the same tour");
+        // A different seed must (almost certainly) differ; with 7 spots the
+        // chance of a collision is 1/7! which is negligible for a test that
+        // only runs here.
+        let c = seeded_shuffle(&spots, 43);
+        assert_ne!(a, c, "different seeds should give different tours");
+        // And both are permutations.
+        for tour in [&a, &c] {
+            let mut sorted = tour.clone();
+            sorted.sort_unstable();
+            assert_eq!(sorted, (0..7).collect::<Vec<u32>>());
+        }
+    }
+
+    /// Sweep orderings are stable under input reordering — they depend only
+    /// on coordinates, so re-serialising a map cannot change the tour.
+    #[test]
+    fn sweep_orderings_are_input_order_independent() {
+        let spots =
+            vec![spot(0, 0, 1, "a"), spot(1, 2, 0, "b"), spot(2, 1, 1, "c"), spot(3, 3, 0, "d")];
+        let mut shuffled = spots.clone();
+        shuffled.swap(0, 3);
+        shuffled.swap(1, 2);
+        assert_eq!(sweep_row(&spots), sweep_row(&shuffled));
+        assert_eq!(sweep_col(&spots), sweep_col(&shuffled));
+        // Row sweep orders by (row, col); column sweep by (col, row).
+        assert_eq!(sweep_row(&spots), vec![1, 3, 0, 2]);
+        assert_eq!(sweep_col(&spots), vec![0, 2, 1, 3]);
     }
 
     #[test]
