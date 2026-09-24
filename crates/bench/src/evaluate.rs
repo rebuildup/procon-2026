@@ -121,6 +121,12 @@ pub struct RunRecord {
     pub generation_parameters: Option<serde_json::Value>,
     /// Commit the evaluation ran at.
     pub source_commit_sha: String,
+    /// The team this candidate played as (`CaseSpec`'s `MatchSetting::team`).
+    ///
+    /// Recorded so a batch is attributable: under process isolation the team
+    /// travels as a command-line argument, and this field is what proves it
+    /// arrived instead of silently falling back to the default.
+    pub team: String,
 
     // ---- official score tuple (lexicographic ranking order) ----
     /// Tier 1 — distinct series ever acquired. Higher is better.
@@ -170,6 +176,17 @@ pub struct RunRecord {
     pub illegal_action_count: u32,
     /// The subset of [`Self::illegal_action_count`] caused by fuel exhaustion.
     pub fuel_short_count: u32,
+    /// Days (zero-based) whose measured answer time exceeded that day's
+    /// official budget — the per-day `daySeconds` window (Q&A Q3).
+    ///
+    /// Non-empty means the official server would not have accepted that
+    /// day's answer, while `MatchSim` took it at face value. The scores above
+    /// would therefore be optimistic, so the run is marked `Invalid` and
+    /// excluded from ranking.
+    ///
+    /// This is *not* [`EvalConfig::harness_deadline`], which merely kills a
+    /// worker that has stopped making progress.
+    pub day_budget_exceeded_days: Vec<u32>,
     /// Per-day answer latency in microseconds, one entry per simulated day.
     pub daily_response_us: Vec<u64>,
     /// Distinct series acquired on each day, one entry per simulated day.
@@ -234,6 +251,7 @@ impl RunRecord {
             seed: case.seed,
             generation_parameters: case.generation_parameters.clone(),
             source_commit_sha: source_commit_sha.into(),
+            team: String::new(),
             variety: 0,
             daily_variety_sum: 0,
             total_balls: 0,
@@ -246,6 +264,7 @@ impl RunRecord {
             last_acquisition_at: None,
             illegal_action_count: 0,
             fuel_short_count: 0,
+            day_budget_exceeded_days: Vec::new(),
             daily_response_us: Vec::new(),
             daily_varieties: Vec::new(),
         }
@@ -259,8 +278,15 @@ pub struct EvalConfig {
     pub source_commit_sha: String,
     /// Team the candidate plays as.
     pub team: PlayerId,
-    /// Wall deadline for a single `(candidate, case)` run.
-    pub run_timeout: Duration,
+    /// Harness deadline for a single `(candidate, case)` run.
+    ///
+    /// This is a **safety net that kills a runaway worker**, not the official
+    /// per-day answer window. The official budget is `daySeconds`, judged per
+    /// day against `daily_response_us` (see `RunRecord::day_budget_exceeded_days`).
+    /// One total deadline cannot stand in for N daily budgets: raising it
+    /// would let a day that blew its own window look like a success, and
+    /// lowering it would kill runs that were never actually late.
+    pub harness_deadline: Duration,
     /// How a run is executed when the deadline expires.
     pub isolation: Isolation,
 }
@@ -272,11 +298,11 @@ impl EvalConfig {
     /// Defaults to [`Isolation::Thread`]. Prefer [`Self::with_process_isolation`]
     /// for batches: only a child process can be killed when it overruns.
     #[must_use]
-    pub fn new(team: PlayerId, run_timeout: Duration) -> Self {
+    pub fn new(team: PlayerId, harness_deadline: Duration) -> Self {
         Self {
             source_commit_sha: source_commit_sha(),
             team,
-            run_timeout,
+            harness_deadline,
             isolation: Isolation::Thread,
         }
     }
@@ -291,7 +317,7 @@ impl EvalConfig {
 }
 
 /// How a single `(candidate, case)` run is executed — specifically, what
-/// happens when it overruns [`EvalConfig::run_timeout`].
+/// happens when it overruns [`EvalConfig::harness_deadline`].
 #[derive(Debug, Clone)]
 pub enum Isolation {
     /// Run on an in-process worker thread.
@@ -348,17 +374,39 @@ impl Evaluator {
     /// timeouts and malformed plans all come back as a [`RunRecord`] with the
     /// appropriate [`RunStatus`].
     pub fn evaluate_one(&self, candidate: &Candidate, case: &CaseSpec) -> RunRecord {
-        match &self.config.isolation {
+        let record = match &self.config.isolation {
             // Child process: killed on timeout, so nothing keeps computing
             // after the record is written.
             Isolation::Process { worker_exe } => self.run_in_process(worker_exe, candidate, case),
             // Same-process thread: a timeout is *reported* but not enforced.
             Isolation::Thread => self.run_on_thread(candidate, case),
-        }
+        };
+        self.stamp_identity(record, candidate, case)
+    }
+
+    /// Normalise the identity fields of a record produced by either
+    /// isolation mode.
+    ///
+    /// Doing this in exactly one place is what makes a worker-side failure
+    /// record — or a run that failed before the case was even readable — come
+    /// back with the parent's real ids rather than whatever the child guessed.
+    fn stamp_identity(
+        &self,
+        mut record: RunRecord,
+        candidate: &Candidate,
+        case: &CaseSpec,
+    ) -> RunRecord {
+        candidate.id().clone_into(&mut record.candidate_id);
+        record.case_id.clone_from(&case.case_id);
+        record.seed = case.seed;
+        record.generation_parameters.clone_from(&case.generation_parameters);
+        record.source_commit_sha.clone_from(&self.config.source_commit_sha);
+        self.config.team.as_str().clone_into(&mut record.team);
+        record
     }
 
     /// Run one pair in a child `procon-eval --worker` process and kill it if
-    /// it overruns [`EvalConfig::run_timeout`].
+    /// it overruns [`EvalConfig::harness_deadline`].
     ///
     /// This is the mode that holds the "no compute remains after a timeout"
     /// guarantee: the child is terminated and reaped, releasing its CPU and
@@ -400,12 +448,12 @@ impl Evaluator {
             Err(e) => return failed(RunStatus::Invalid, e, 0),
         };
 
-        match read_child(child, self.config.run_timeout) {
+        match read_child(child, self.config.harness_deadline) {
             WorkerOutcome::TimedOut => failed(
                 RunStatus::Timeout,
                 format!(
-                    "exceeded run_timeout of {}ms; worker process was killed",
-                    self.config.run_timeout.as_millis()
+                    "exceeded harness_deadline of {}ms; worker process was killed",
+                    self.config.harness_deadline.as_millis()
                 ),
                 elapsed_us(started),
             ),
@@ -424,15 +472,9 @@ impl Evaluator {
                     Ok(mut record) => {
                         // The worker measures its own wall clock; keep the
                         // parent's view so every record in a batch is timed
-                        // the same way. Identity is re-stamped from the parent
-                        // too, so a worker-side failure record still carries
-                        // the real ids.
+                        // the same way. Identity is normalised afterwards by
+                        // `stamp_identity`.
                         record.elapsed_us = elapsed_us(started);
-                        record.candidate_id.clone_from(&candidate_id);
-                        record.case_id.clone_from(&case.case_id);
-                        record.seed = case.seed;
-                        record.generation_parameters.clone_from(&case.generation_parameters);
-                        record.source_commit_sha.clone_from(&self.config.source_commit_sha);
                         record
                     }
                     Err(e) => failed(
@@ -452,7 +494,8 @@ impl Evaluator {
         candidate_id: &str,
         case_json: String,
     ) -> Result<std::process::Child, String> {
-        let timeout_ms = u64::try_from(self.config.run_timeout.as_millis()).unwrap_or(u64::MAX);
+        let deadline_ms =
+            u64::try_from(self.config.harness_deadline.as_millis()).unwrap_or(u64::MAX);
         std::process::Command::new(worker_exe)
             .arg("--worker")
             .arg("--candidate-id")
@@ -463,8 +506,8 @@ impl Evaluator {
             .arg(self.config.team.as_str())
             .arg("--source-commit-sha")
             .arg(&self.config.source_commit_sha)
-            .arg("--run-timeout-ms")
-            .arg(timeout_ms.to_string())
+            .arg("--harness-timeout-ms")
+            .arg(deadline_ms.to_string())
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
@@ -570,13 +613,16 @@ impl Evaluator {
 
         let elapsed_us = |t: Instant| micros_u64(t.elapsed().as_micros());
 
-        match rx.recv_timeout(self.config.run_timeout) {
+        match rx.recv_timeout(self.config.harness_deadline) {
             Err(mpsc::RecvTimeoutError::Timeout) => RunRecord::unscored(
                 candidate_id,
                 case,
                 sha,
                 RunStatus::Timeout,
-                Some(format!("exceeded run_timeout of {}ms", self.config.run_timeout.as_millis())),
+                Some(format!(
+                    "exceeded harness_deadline of {}ms",
+                    self.config.harness_deadline.as_millis()
+                )),
                 elapsed_us(started),
             ),
             Err(mpsc::RecvTimeoutError::Disconnected) => RunRecord::unscored(
@@ -645,6 +691,29 @@ impl Evaluator {
                 run.illegal_action_count, run.fuel_short_count
             ));
         }
+        // Official per-day answer window: day i's answer must fit inside
+        // `daySeconds[i]`. `MatchSim` has no clock, so it accepted the plan
+        // regardless — if it arrived late the scores above are optimistic and
+        // the run must not be ranked. This is separate from
+        // `harness_deadline`, which only bounds how long a worker may hang.
+        let day_budget_exceeded_days = match case.day_budget_us() {
+            Ok(budgets) => days_over_budget(&timings.daily_response_us, &budgets),
+            Err(err) => {
+                reasons.push(format!("case has an unusable per-day budget: {err}"));
+                Vec::new()
+            }
+        };
+        if !day_budget_exceeded_days.is_empty() {
+            let days = day_budget_exceeded_days
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            reasons.push(format!(
+                "exceeded the official per-day answer window (daySeconds) on day(s) {days}; \
+                 the server would have discarded those answers"
+            ));
+        }
         let status = if reasons.is_empty() { RunStatus::Success } else { RunStatus::Invalid };
 
         RunRecord {
@@ -653,6 +722,7 @@ impl Evaluator {
             seed: case.seed,
             generation_parameters: case.generation_parameters.clone(),
             source_commit_sha: sha,
+            team: self.config.team.as_str().to_owned(),
             variety: run.variety,
             daily_variety_sum: run.daily_variety_sum,
             total_balls: run.total_balls,
@@ -672,6 +742,7 @@ impl Evaluator {
             last_acquisition_at: run.last_acquisition_at,
             illegal_action_count: run.illegal_action_count,
             fuel_short_count: run.fuel_short_count,
+            day_budget_exceeded_days,
             daily_response_us: timings.daily_response_us,
             daily_varieties,
         }
@@ -734,6 +805,24 @@ impl Solver for TimingSolver {
         }
         plan
     }
+}
+
+/// Days (zero-based) whose measured answer time exceeded that day's budget.
+///
+/// This is the official per-day validity rule (Q&A Q3): an answer that
+/// arrives after `daySeconds[i]` is not accepted, so any day listed here
+/// makes the run unrankable. Budgets and measurements are both in
+/// microseconds; a missing entry on either side means that day has nothing to
+/// judge it against and is skipped rather than guessed.
+#[must_use]
+pub fn days_over_budget(daily_response_us: &[u64], budget_us: &[u64]) -> Vec<u32> {
+    daily_response_us
+        .iter()
+        .zip(budget_us)
+        .enumerate()
+        .filter(|(_, (took, budget))| u128::from(**took) > u128::from(**budget))
+        .map(|(i, _)| u32::try_from(i).unwrap_or(u32::MAX))
+        .collect()
 }
 
 /// How a worker child ended.
@@ -799,6 +888,23 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn days_over_budget_flags_only_the_late_days() {
+        assert_eq!(days_over_budget(&[100, 1_000_001], &[1_000_000, 1_000_000]), vec![1]);
+        assert_eq!(days_over_budget(&[999_999], &[1_000_000]), Vec::<u32>::new());
+        assert_eq!(days_over_budget(&[1_000_000], &[1_000_000]), Vec::<u32>::new(), "equal fits");
+        assert_eq!(days_over_budget(&[10, 20, 30], &[5, 25, 5]), vec![0, 2]);
+    }
+
+    #[test]
+    fn days_over_budget_skips_days_it_cannot_judge() {
+        // Shorter measurement list: the unpaired day is not guessed at.
+        assert_eq!(days_over_budget(&[10, 20], &[1, 1, 1]), vec![0, 1]);
+        // Shorter budget list: the unmeasured day is not guessed at.
+        assert_eq!(days_over_budget(&[10, 20, 30], &[1]), vec![0]);
+        assert_eq!(days_over_budget(&[], &[1, 2]), Vec::<u32>::new());
+    }
     use crate::candidate::CandidateRegistry;
     use crate::case::Corpus;
 

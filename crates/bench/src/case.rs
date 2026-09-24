@@ -173,15 +173,58 @@ impl CaseSpec {
         engine::from_wire::sim_config_from_wire(&self.setting).map_err(CaseError::Invalid)
     }
 
-    /// Per-day answer budgets in seconds (`daySeconds`), as declared.
+    /// Per-day answer budgets in **microseconds**, one per day, as declared
+    /// by the wire `daySeconds`.
     ///
-    /// Retained on the case rather than the engine setting: the simulator has
-    /// no clock, so it cannot enforce a wall-clock budget. The evaluator
-    /// records response time instead, and this is what that time is compared
-    /// against when judging whether a plan fits its budget.
+    /// This is the official per-day answer window (Q&A Q3) and it is what the
+    /// evaluator judges runs against: `daily_response_us[i]` must fit inside
+    /// `day_budget_us()[i]`. It is deliberately *not* the same thing as
+    /// [`crate::evaluate::EvalConfig::harness_deadline`], which only exists
+    /// to kill a worker that has stopped making progress.
+    ///
+    /// # Errors
+    /// Returns [`CaseError::Invalid`] when the vector's length disagrees with
+    /// `daySteps` or a budget is not positive — `engine::from_wire` rejects
+    /// the same incoherence when converting, so this is a second line of
+    /// defence for callers that only read the case.
+    pub fn day_budget_us(&self) -> Result<Vec<u64>, CaseError> {
+        if self.setting.day_seconds.len() != self.setting.day_steps.len() {
+            return Err(CaseError::Invalid(format!(
+                "daySeconds has {} entries but daySteps has {}",
+                self.setting.day_seconds.len(),
+                self.setting.day_steps.len()
+            )));
+        }
+        self.setting
+            .day_steps
+            .iter()
+            .zip(&self.setting.day_seconds)
+            .enumerate()
+            .map(|(i, (_, secs))| {
+                if *secs <= 0 {
+                    return Err(CaseError::Invalid(format!(
+                        "daySeconds[{i}] must be > 0, got {secs}"
+                    )));
+                }
+                u64::try_from(*secs)
+                    .map(|s| s.saturating_mul(1_000_000))
+                    .map_err(|_| CaseError::Invalid(format!("daySeconds[{i}] out of range")))
+            })
+            .collect()
+    }
+
+    /// Per-day answer budgets in seconds, as declared.
+    ///
+    /// Prefer [`Self::day_budget_us`], which is what the evaluator actually
+    /// judges against and which validates coherence.
     #[must_use]
     pub fn day_seconds(&self) -> Vec<u32> {
-        self.setting.day_seconds.iter().filter_map(|v| u32::try_from(*v).ok()).collect()
+        self.setting
+            .day_seconds
+            .iter()
+            .filter(|v| **v > 0)
+            .filter_map(|v| u32::try_from(*v).ok())
+            .collect()
     }
 
     /// Per-day step counts (`daySteps`), as declared.

@@ -55,8 +55,13 @@ fn agg(runs: Vec<RunRecord>, baseline: Option<&str>) -> AggregateReport {
 /// Config for this suite. `isolation` defaults to a killed child process —
 /// the same thing a real batch uses — because a timeout must *stop* the run,
 /// not just stop waiting for it.
-fn config(run_timeout: Duration, isolation: Isolation) -> EvalConfig {
-    EvalConfig { source_commit_sha: "test-commit".to_owned(), team: team(), run_timeout, isolation }
+fn config(harness_deadline: Duration, isolation: Isolation) -> EvalConfig {
+    EvalConfig {
+        source_commit_sha: "test-commit".to_owned(),
+        team: team(),
+        harness_deadline,
+        isolation,
+    }
 }
 
 fn evaluator() -> Evaluator {
@@ -65,8 +70,8 @@ fn evaluator() -> Evaluator {
     )
 }
 
-fn evaluator_with_timeout(isolation: Isolation, run_timeout: Duration) -> Evaluator {
-    Evaluator::new(config(run_timeout, isolation))
+fn evaluator_with_timeout(isolation: Isolation, harness_deadline: Duration) -> Evaluator {
+    Evaluator::new(config(harness_deadline, isolation))
 }
 
 /// Three fixtures with genuinely different characteristics: a small warmup
@@ -439,6 +444,74 @@ fn process_isolation_kills_the_worker_on_timeout() {
 }
 
 #[test]
+fn process_isolation_round_trips_a_non_default_team() {
+    // The parent sends `--team`; the worker used to read a separate
+    // `--worker-team` that nothing passed, so a non-default team silently
+    // became `player-a` under process isolation.
+    let registry = CandidateRegistry::builtin();
+    let candidate = registry.build("wait").unwrap();
+    let case = CaseSpec::from_bundled_fixture("small-8x8").unwrap();
+    let evaluator = Evaluator::new(
+        EvalConfig {
+            source_commit_sha: "test-commit".to_owned(),
+            team: PlayerId::new("team-roundtrip").expect("valid team"),
+            harness_deadline: Duration::from_secs(60),
+            isolation: Isolation::Thread,
+        }
+        .with_process_isolation(worker_exe()),
+    );
+
+    let record = evaluator.evaluate_one(&candidate, &case);
+
+    assert_eq!(record.team, "team-roundtrip", "the child must use the parent's team");
+    assert_eq!(record.status, RunStatus::Success);
+}
+
+#[test]
+fn exceeding_the_per_day_answer_window_makes_a_run_unrankable() {
+    // Official per-day validity (Q&A Q3): an answer arriving after
+    // `daySeconds[i]` is not accepted. MatchSim has no clock and took the
+    // plan at face value, so without this check the scores would be
+    // optimistic and the run would rank.
+    // `broken` is registered only in this binary, so thread isolation again.
+    let registry = registry_with_failures();
+    let candidate = registry.build("broken:mode=sleep").unwrap();
+
+    let mut case = CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+    // One second of budget, one second and ten milliseconds of work.
+    case.setting.day_seconds = vec![1];
+    assert_eq!(case.day_budget_us().unwrap(), vec![1_000_000]);
+
+    // Thread isolation: this candidate exists only in this binary. The
+    // harness deadline is generous — the run is *late*, not *hung*.
+    let evaluator = evaluator_with_timeout(Isolation::Thread, Duration::from_secs(10));
+    let record = evaluator.evaluate_one(&candidate, &case);
+
+    assert_eq!(record.status, RunStatus::Invalid, "detail: {:?}", record.status_detail);
+    assert!(!record.is_scored(), "a late answer must not be rankable");
+    assert_eq!(record.day_budget_exceeded_days, vec![0]);
+    let detail = record.status_detail.as_deref().unwrap_or_default();
+    assert!(detail.contains("daySeconds"), "detail must name the window: {detail}");
+    // Measured latency really was over the one-second budget.
+    assert!(record.daily_response_us[0] > 1_000_000);
+}
+
+#[test]
+fn a_run_that_fits_its_daily_window_is_not_flagged() {
+    // The everyday case: every bundled fixture gives 60 s a day and real
+    // solvers answer in milliseconds.
+    let registry = CandidateRegistry::builtin();
+    let candidate = registry.build("loop:iterations=2:initial=greedy").unwrap();
+    let case = CaseSpec::from_bundled_fixture("small-8x8").unwrap();
+
+    let record = evaluator().evaluate_one(&candidate, &case);
+
+    assert!(record.day_budget_exceeded_days.is_empty(), "60s window, not late");
+    assert_eq!(record.status, RunStatus::Success);
+    assert!(record.is_scored());
+}
+
+#[test]
 fn aggregation_refuses_to_mix_commits() {
     // Evidence from two commits must not be ranked together: one commit's
     // scores would otherwise be attributed to the other, and the report would
@@ -472,6 +545,7 @@ fn record_fixture(candidate_id: &str) -> RunRecord {
         seed: None,
         generation_parameters: None,
         source_commit_sha: "aaaa111".to_owned(),
+        team: "player-a".to_owned(),
         variety: 1,
         daily_variety_sum: 1,
         total_balls: 1,
@@ -484,6 +558,7 @@ fn record_fixture(candidate_id: &str) -> RunRecord {
         last_acquisition_at: None,
         illegal_action_count: 0,
         fuel_short_count: 0,
+        day_budget_exceeded_days: Vec::new(),
         daily_response_us: vec![100],
         daily_varieties: vec![1],
     }
@@ -505,7 +580,7 @@ impl CandidateFactory for BrokenFactory {
         &[ParamSpec { key: "mode", required: true, doc: "panic | hang | malformed" }]
     }
     fn describe(&self) -> &'static str {
-        "Test-only candidate that fails on purpose. mode=panic|hang|malformed"
+        "Test-only candidate that fails on purpose. mode=panic|hang|malformed|sleep"
     }
     fn build(&self, spec: &CandidateSpec) -> Result<Box<dyn Solver>, CandidateError> {
         Ok(Box::new(ModeSolver { mode: mode_of(spec)? }))
@@ -517,6 +592,7 @@ fn mode_of(spec: &CandidateSpec) -> Result<&'static str, CandidateError> {
         Some("panic") => Ok("panic"),
         Some("hang") => Ok("hang"),
         Some("malformed") => Ok("malformed"),
+        Some("sleep") => Ok("sleep"),
         other => Err(CandidateError::InvalidParameter {
             key: "mode".to_owned(),
             value: other.unwrap_or_default().to_owned(),
@@ -539,6 +615,12 @@ impl Solver for ModeSolver {
             "hang" => {
                 // Exceeds the 400ms deadline used by the isolation test.
                 std::thread::sleep(Duration::from_secs(10));
+                AgentActions::wait_all(&ctx.agent_ids, ctx.day_steps)
+            }
+            // Deliberately answers later than the case's per-day window so
+            // the budget judgement can be observed end to end.
+            "sleep" => {
+                std::thread::sleep(Duration::from_millis(1_100));
                 AgentActions::wait_all(&ctx.agent_ids, ctx.day_steps)
             }
             // Wrong length and wrong agent order: fails `is_well_shaped`.

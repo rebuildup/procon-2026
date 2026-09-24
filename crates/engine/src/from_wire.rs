@@ -45,8 +45,11 @@
 //!
 //! `daySeconds` is **not** carried into the engine setting: the simulator has
 //! no clock by design (that is what makes it reproducible), so there is
-//! nothing to measure it against. It stays on the wire setting, where the
-//! evaluator can read it off the case for budget evidence.
+//! nothing to measure it against. It is validated for coherence (same length
+//! as `daySteps`, every entry positive) and then judged *by the evaluator*,
+//! which compares each day's measured answer time against that day's budget.
+//! That is the official per-day answer window; it is a different thing from
+//! the harness deadline that kills a runaway worker.
 //!
 //! # Fuel
 //!
@@ -165,6 +168,23 @@ pub fn protocol_setting_to_engine(p: &WireSetting, team: TeamId) -> Result<Engin
         .enumerate()
         .map(|(i, v)| u32::try_from(*v).map_err(|_| format!("day_steps[{i}] out of u32 range")))
         .collect::<Result<_, _>>()?;
+    // `daySeconds` is one budget per day, exactly like `daySteps`. A vector
+    // of the wrong length or carrying a non-positive value describes a match
+    // the simulator cannot model, so reject it here rather than let the
+    // evaluator silently judge a day against no budget.
+    if p.day_seconds.len() != p.day_steps.len() {
+        return Err(format!(
+            "daySeconds has {} entries but daySteps has {}",
+            p.day_seconds.len(),
+            p.day_steps.len()
+        ));
+    }
+    for (i, secs) in p.day_seconds.iter().enumerate() {
+        if *secs <= 0 {
+            return Err(format!("daySeconds[{i}] must be > 0, got {secs}"));
+        }
+    }
+
     let day_steps0 = day_steps_by_day.first().copied().ok_or("day_steps is empty")?;
     if day_steps_by_day.contains(&0) {
         return Err("every day must allow at least one step".to_owned());

@@ -66,9 +66,12 @@ struct Args {
     #[arg(long, default_value = "player-a")]
     team: String,
 
-    /// Wall deadline per (candidate, case) run, in milliseconds.
-    #[arg(long, default_value_t = 60_000)]
-    timeout_ms: u64,
+    /// Harness deadline per run, in milliseconds: how long the parent will
+    /// wait before killing a worker. A safety net for a worker that has
+    /// stopped making progress — **not** the official per-day answer window
+    /// (`daySeconds`), which the evaluator judges separately per day.
+    #[arg(long = "harness-timeout-ms", alias = "timeout-ms", default_value_t = 60_000)]
+    harness_timeout_ms: u64,
 
     /// Directory for `runs.jsonl` + `aggregate.json`.
     #[arg(long, default_value = "target/eval")]
@@ -98,17 +101,9 @@ struct Args {
     #[arg(long, requires_all = ["worker", "candidate_id"], default_value = "")]
     case_json: String,
 
-    /// Worker mode: team the candidate plays as.
-    #[arg(long, requires = "worker", default_value = "player-a")]
-    worker_team: String,
-
     /// Worker mode: commit SHA to stamp on the record.
     #[arg(long = "source-commit-sha", requires = "worker", default_value = "unknown")]
     source_commit_sha: String,
-
-    /// Worker mode: wall deadline for this single run, in milliseconds.
-    #[arg(long = "run-timeout-ms", requires = "worker", default_value_t = 60_000)]
-    run_timeout_ms: u64,
 }
 
 #[derive(Debug)]
@@ -170,7 +165,7 @@ fn run() -> Exit {
         candidate_ids,
         args.baseline.clone(),
         args.team.clone(),
-        Duration::from_millis(args.timeout_ms),
+        Duration::from_millis(args.harness_timeout_ms),
     )
     .with_source_commit_sha(source_commit_sha)
     .with_output_dir(args.output_dir.clone());
@@ -267,14 +262,17 @@ fn worker_record(args: &Args) -> Result<RunRecord, String> {
         .map_err(|e| format!("bad candidate {:?}: {e}", args.candidate_id))?;
     let case: CaseSpec =
         serde_json::from_str(&args.case_json).map_err(|e| format!("bad --case-json: {e}"))?;
-    let team = PlayerId::new(args.worker_team.as_str()).map_err(|e| format!("bad team: {e}"))?;
+    // Same `--team` flag the parent passes. It was previously read from a
+    // separate `--worker-team` that nothing sent, so any non-default team
+    // silently fell back to `player-a` under process isolation.
+    let team = PlayerId::new(args.team.as_str()).map_err(|e| format!("bad team: {e}"))?;
 
     // This process already is the isolation boundary; a nested child would
     // only add latency.
     let config = EvalConfig {
         source_commit_sha: args.source_commit_sha.clone(),
         team,
-        run_timeout: Duration::from_millis(args.run_timeout_ms),
+        harness_deadline: Duration::from_millis(args.harness_timeout_ms),
         isolation: Isolation::Thread,
     };
     Ok(Evaluator::new(config).evaluate_one(&candidate, &case))

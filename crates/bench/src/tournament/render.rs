@@ -208,6 +208,7 @@ mod tests {
             seed: None,
             generation_parameters: None,
             source_commit_sha: "abc123".to_owned(),
+            team: "player-a".to_owned(),
             variety: v,
             daily_variety_sum: v * 2,
             total_balls: v * 3,
@@ -224,6 +225,7 @@ mod tests {
             last_acquisition_at: None,
             illegal_action_count: 0,
             fuel_short_count: 0,
+            day_budget_exceeded_days: Vec::new(),
             daily_response_us: vec![1_000],
             daily_varieties: vec![v],
         }

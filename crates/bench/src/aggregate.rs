@@ -407,6 +407,7 @@ mod tests {
             seed: None,
             generation_parameters: None,
             source_commit_sha: "deadbeef".to_owned(),
+            team: "player-a".to_owned(),
             variety: v,
             daily_variety_sum: d,
             total_balls: t,
@@ -419,6 +420,7 @@ mod tests {
             last_acquisition_at: None,
             illegal_action_count: 0,
             fuel_short_count: 0,
+            day_budget_exceeded_days: Vec::new(),
             daily_response_us: vec![rt],
             daily_varieties: vec![d],
         }

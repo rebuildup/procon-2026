@@ -36,8 +36,8 @@ solver の内部ヒューリスティック（例: `solver-loop` の `ScoreRepor
 | wire の値 | 扱い |
 |---|---|
 | `fuelLimits` | 巡回車の燃料上限。**そのまま。** 以前は `daySteps[0] * 3` を推定していたため `small-8x8` (24) を 48 で評価していた |
-| `daySteps` (per-day) | `MatchSetting::day_steps_by_day` に保持され、`day_steps_for(day)` で各日ぶんが使われる。day0 の値へ潰さない |
-| `daySeconds` (per-day) | engine setting には入れない（シミュレータに clock が無いため）。case 側に残り、`CaseSpec::day_seconds()` で応答時間と突き合わせられる |
+| `daySteps` (per-day) | `MatchSetting::day_steps_by_day` に保持され、**`MatchSim::run_inner` が day loop 内で各日の値を読む**ので `daySteps=[16,24]` なら day1 は本当に24 step 実行する |
+| `daySeconds` (per-day) | **公式 validity として判定**。各日の回答時間 `daily_response_us[i]` が `day_budget_us()[i]` を超えていればその日は未受理と見なして `invalid` / `scored=false`。長さが `daySteps` と食い違う・非正なら from_wire が拒否 |
 | `busyThreshold` / `jammedThreshold` | `CaseSpec::sim_config()` → `SimConfig`。**`SimConfig::default()` (2/5) を使わない** — fixture は 1/2 なので別ゲームになる |
 
 agent の種類（巡回/補給）は wire に無いため依然 index 交替の既定。種類の決定と燃料上限は別問題です。
@@ -197,6 +197,7 @@ generator は `CaseSpec::generated(case_id, seed, params, setting)` を通るだ
   "elapsed_us": 8421,            // 証拠のみ。順位には使わない
   "scored": true,
 
+  "team": "player-a",            // この run がプレイした team
   "status": "success",           // success | invalid | timeout | panic
   "timeout": false,
   "status_detail": null,
@@ -204,6 +205,7 @@ generator は `CaseSpec::generated(case_id, seed, params, setting)` を通るだ
 
   "illegal_action_count": 0,     // 非法 action が 1 つでもあれば invalid / scored=false
   "fuel_short_count": 0,         // うち燃料不足由来
+  "day_budget_exceeded_days": [], // daySeconds 超過日（0-based）。空でなければ invalid
   "daily_response_us": [830, 402, 385],
   "daily_varieties": [1, 2, 1]
 }
@@ -231,6 +233,21 @@ generator は `CaseSpec::generated(case_id, seed, params, setting)` を通るだ
 
 これらが 1 つでもあれば `status = invalid` / `scored = false` にして順位対象から外します。
 数値自体は `variety` 等に残るので、何を間違えたか追えます。
+
+### isolation
+
+### harness deadline vs official day window
+
+これは**別物**です。1つの全体 deadline で N 個の daily budget を代替できません —
+全体を伸ばせば1日で暴走した solver が `success` になり、縮めれば遅くない run まで kill されます。
+
+| 概念 | フィールド | 用途 |
+|---|---|---|
+| harness deadline | `EvalConfig::harness_deadline` / `--harness-timeout-ms` (旧 `--timeout-ms` alias) | 動かなくなった worker を kill する保険。順位には使わない |
+| 公式 day window | `CaseSpec::day_budget_us()` → `RunRecord::day_budget_exceeded_days` | 各日の `daySeconds`。超過した日があると `invalid` / 順位対象外 |
+
+`run_record.team` は candidate がプレイした team を記録します（process isolation 経由の
+引き渡しミスを検出できるようにしたものです）。
 
 ### isolation
 

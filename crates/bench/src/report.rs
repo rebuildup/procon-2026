@@ -165,6 +165,7 @@ mod tests {
             seed: Some(7),
             generation_parameters: Some(serde_json::json!({"k": 1})),
             source_commit_sha: "cafebabe".to_owned(),
+            team: "player-a".to_owned(),
             variety: 3,
             daily_variety_sum: 6,
             total_balls: 9,
@@ -177,6 +178,7 @@ mod tests {
             last_acquisition_at: Some((1, 2)),
             illegal_action_count: 0,
             fuel_short_count: 0,
+            day_budget_exceeded_days: Vec::new(),
             daily_response_us: vec![600, 634],
             daily_varieties: vec![2, 3],
         }

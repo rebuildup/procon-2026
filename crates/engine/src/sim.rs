@@ -234,7 +234,6 @@ impl MatchSim {
         // agent_count actions per step, day_steps blocks). We call
         // [`Self::step`] for each block.
         let total_days = state.num_days();
-        let day_steps = state.day_steps();
         for _ in 0..total_days {
             if state.is_finished() {
                 break;
@@ -244,9 +243,14 @@ impl MatchSim {
             // Slice the per-day plan into per-step blocks and feed each to
             // [`Self::step`]. An under-/over-sized plan is treated as
             // "all-wait" so a misbehaving solver cannot crash the match.
+            //
+            // Read the step count *inside* the day loop: `daySteps` is a
+            // per-day vector, so day 1 may allow a different number of steps
+            // from day 0. Hoisting this read above the loop was a real bug —
+            // `daySteps = [16, 24]` ran day 1 for only 16 steps.
             let agent_count = ctx.agent_ids.len();
             let agent_ids_owned = ctx.agent_ids.clone();
-            let per_step = day_steps as usize;
+            let per_step = ctx.day_steps as usize;
             for s in 0..per_step {
                 if state.is_finished() {
                     break;
@@ -520,6 +524,105 @@ mod tests {
             result.daily_variety_sum,
             result.final_state.daily_varieties().iter().sum::<u32>()
         );
+    }
+
+    /// Plain 8x8 map with no spots, so nothing can interfere with the step
+    /// counting.
+    fn empty_plain_map() -> MapGrid {
+        let size = MapSize::new(8, 8).unwrap();
+        let cells = (0..8)
+            .flat_map(|row| {
+                (0..8).map(move |col| crate::model::Cell {
+                    coord: HexCoord::new(col, row),
+                    terrain: Terrain::Plain,
+                    spot: None,
+                })
+            })
+            .collect();
+        MapGrid::new(size, cells).unwrap()
+    }
+
+    /// Regression test for a real bug: `MatchSim::run_inner` read
+    /// `state.day_steps()` **once, outside** the day loop, so every day ran
+    /// for day 0's step count. With `daySteps = [16, 24]` day 1 executed
+    /// only 16 of its 24 steps, and the solver's plan was truncated with it.
+    ///
+    /// The assertion is on observed agent movement rather than on the
+    /// context: day 1 deliberately places its moves at step indices 16..=21,
+    /// which only exist if that day really runs 24 steps.
+    #[test]
+    fn run_honours_per_day_step_counts() {
+        let setting = MatchSetting {
+            match_id: MatchId::new("per-day-steps").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map: empty_plain_map(),
+            agents: vec![
+                Agent::patrol_with_fuel(0, HexCoord::new(0, 0), 100),
+                Agent::supply(1, HexCoord::new(7, 7)),
+                Agent::supply(2, HexCoord::new(7, 6)),
+            ],
+            day_steps: 16,
+            num_days: 2,
+            day_steps_by_day: vec![16, 24],
+        };
+
+        let recorder = RecordDaySteps { seen: std::sync::Mutex::new(Vec::new()) };
+
+        let sim = MatchSim::default();
+        let run = sim.run(setting, &recorder).unwrap();
+
+        // The solver was told the per-day budget for each day it planned.
+        assert_eq!(
+            *recorder.seen.lock().unwrap(),
+            vec![16, 24],
+            "day 0 plans 16 steps, day 1 plans 24"
+        );
+
+        // Day 1 ran all 24 steps: six Right moves were scheduled at indices
+        // 16..=21 and all of them happened. Had day 1 been cut to 16 steps,
+        // the agent would never have moved off its start cell.
+        let agent = run.final_state.agents.iter().find(|a| a.id == 0).unwrap();
+        assert_eq!(agent.pos, HexCoord::new(6, 0), "day 1 must run its full 24 steps");
+        assert_eq!(agent.fuel, 100 - 6, "exactly six moves were applied");
+
+        assert!(run.final_state.is_finished());
+        assert_eq!(run.final_state.day, 2);
+        assert_eq!(
+            run.illegal_action_count, 0,
+            "every scheduled move was legal, so this test is about step counts alone"
+        );
+    }
+
+    /// Records the `day_steps` each day was planned with, and emits a plan
+    /// whose meaningful actions sit *after* step 16.
+    struct RecordDaySteps {
+        seen: std::sync::Mutex<Vec<u32>>,
+    }
+
+    impl Solver for RecordDaySteps {
+        fn name(&self) -> &'static str {
+            "record-day-steps"
+        }
+
+        fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+            self.seen.lock().unwrap().push(ctx.day_steps);
+            let mut actions =
+                Vec::with_capacity(ctx.agent_ids.len().saturating_mul(ctx.day_steps as usize));
+            for step in 0..ctx.day_steps {
+                for id in &ctx.agent_ids {
+                    // Day 1 only: wait for the first 16 steps, then walk
+                    // agent 0 right for steps 16..=21. The other two agents
+                    // wait throughout so they never walk off the map.
+                    let walk = ctx.day == 1 && *id == 0 && (16..=21).contains(&step);
+                    actions.push(if walk {
+                        Action::step(*id, Direction::Right)
+                    } else {
+                        Action::wait(*id)
+                    });
+                }
+            }
+            AgentActions::new(actions)
+        }
     }
 
     #[test]

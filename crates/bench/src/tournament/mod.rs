@@ -49,9 +49,11 @@ pub struct TournamentConfig {
     /// Commit SHA stamped onto every record. Defaults to
     /// [`crate::evaluate::source_commit_sha`] (`PROCON_SOURCE_COMMIT_SHA`).
     pub source_commit_sha: String,
-    /// Wall deadline for a single `(candidate, case)` run.
+    /// Harness deadline for a single `(candidate, case)` run — a safety net
+    /// that kills a runaway worker, **not** the official per-day `daySeconds`
+    /// window (that is judged per day against `daily_response_us`).
     #[serde(with = "duration_ms")]
-    pub run_timeout: Duration,
+    pub harness_deadline: Duration,
     /// Optional directory to write `runs.jsonl` + `aggregate.json` into.
     pub output_dir: Option<PathBuf>,
     /// Explicit `procon-eval` executable for process isolation.
@@ -69,14 +71,14 @@ impl TournamentConfig {
         candidate_ids: Vec<String>,
         baseline_candidate_id: Option<String>,
         team: impl Into<String>,
-        run_timeout: Duration,
+        harness_deadline: Duration,
     ) -> Self {
         Self {
             candidate_ids,
             baseline_candidate_id,
             team: team.into(),
             source_commit_sha: crate::evaluate::source_commit_sha(),
-            run_timeout,
+            harness_deadline,
             output_dir: None,
             worker_exe: None,
         }
@@ -234,7 +236,7 @@ impl TournamentRunner {
         let mut eval_config = EvalConfig {
             source_commit_sha: self.config.source_commit_sha.clone(),
             team,
-            run_timeout: self.config.run_timeout,
+            harness_deadline: self.config.harness_deadline,
             isolation: Isolation::Thread,
         };
         if let Some(exe) = self.config.worker_exe.clone().or_else(worker_executable) {
