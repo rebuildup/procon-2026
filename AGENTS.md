@@ -129,3 +129,9 @@ Do not re-read the full `project-init` prompt for routine tasks — load only th
 - ADRs: `docs/adr/`
 - Troubleshooting: `docs/troubleshooting.md`
 - Roles / responsibilities: `docs/roles/`
+
+## Constitution / operating profile
+
+- 最上位 contract: [`constitution/CONSTITUTION.md`](constitution/CONSTITUTION.md)
+- current Operating Model: [`organization/profiles/release-driven-solo.md`](organization/profiles/release-driven-solo.md)
+- 既存の project-specific ADR / architecture / release contract は、Constitution と両立する限り generic upstream Practice より具体的な authority として維持する。
