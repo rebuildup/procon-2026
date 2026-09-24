@@ -28,6 +28,20 @@ candidate が返せるのは `engine::model::AgentActions`（行動）だけで�
 solver の内部ヒューリスティック（例: `solver-loop` の `ScoreReport::judge`）は
 探索のための評価関数であって、採点とは無関係です — evaluator はそれを読みません。
 
+## 公式条件をそのまま流す
+
+評価器は case が宣言した値を**すべて**そのまま engine に渡します。値を推測・固定すると、
+「この case を評価した」ことになりません。
+
+| wire の値 | 扱い |
+|---|---|
+| `fuelLimits` | 巡回車の燃料上限。**そのまま。** 以前は `daySteps[0] * 3` を推定していたため `small-8x8` (24) を 48 で評価していた |
+| `daySteps` (per-day) | `MatchSetting::day_steps_by_day` に保持され、`day_steps_for(day)` で各日ぶんが使われる。day0 の値へ潰さない |
+| `daySeconds` (per-day) | engine setting には入れない（シミュレータに clock が無いため）。case 側に残り、`CaseSpec::day_seconds()` で応答時間と突き合わせられる |
+| `busyThreshold` / `jammedThreshold` | `CaseSpec::sim_config()` → `SimConfig`。**`SimConfig::default()` (2/5) を使わない** — fixture は 1/2 なので別ゲームになる |
+
+agent の種類（巡回/補給）は wire に無いため依然 index 交替の既定。種類の決定と燃料上限は別問題です。
+
 ## スコアと順位
 
 スコア型は `domain::OfficialScore`、比較は `domain::compare_scores` です。
@@ -119,6 +133,16 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
 両者がスコアを出した case のみ比較し、それ以外は `not compared` に落入ります
 （数値でごまかさないためです）。
 
+### provenance
+
+`AggregateReport::build` は **異なる `source_commit_sha` が混ざると拒否します**
+（`AggregateError::MixedCommits`）。最後に読んだ 1 件の SHA で黙って上書きすれば、
+別 commit の数値を同一 evidence として順位に混ぜられてしまいます。
+`report.source_commit_shas` は**リスト**なので schema 上も複数 commit を表現できます。
+
+`procon-eval` は「rankable な run が 1 件でも無い」場合に **exit 1** を返します
+（records は先に書かれるので evidence と failure signal が両立します)。
+
 `target/eval/report.md` を開くか、`target/eval/aggregate.json` を機械処理してください:
 
 ```bash
@@ -134,7 +158,8 @@ jq -s 'group_by(.case_id) | length' target/eval/runs.jsonl   # case 数
 
 ```rust
 let runs = bench::report::read_runs(Path::new("target/eval/runs.jsonl"))?;
-let report = bench::AggregateReport::build(runs, Some("wait"));
+// 混ざった commit はここで AggregateError::MixedCommits になる
+let report = bench::AggregateReport::build(runs, Some("wait"))?;
 ```
 
 ## case の schema
@@ -176,6 +201,9 @@ generator は `CaseSpec::generated(case_id, seed, params, setting)` を通るだ
   "timeout": false,
   "status_detail": null,
   "last_acquisition_at": [1, 7],
+
+  "illegal_action_count": 0,     // 非法 action が 1 つでもあれば invalid / scored=false
+  "fuel_short_count": 0,         // うち燃料不足由来
   "daily_response_us": [830, 402, 385],
   "daily_varieties": [1, 2, 1]
 }
@@ -183,21 +211,45 @@ generator は `CaseSpec::generated(case_id, seed, params, setting)` を通るだ
 
 ### status の意味
 
-| status | 実行 | スコア |
-|---|---|---|
-| `success` | 完走、全日が契約を満たした | **あり** |
-| `invalid` | 完走したが契約違反（→ 期待より低い実績）／ engine が case を棄却 | **あり** |
-| `timeout` | wall deadline 超過 | なし |
-| `panic` | candidate が panic | なし |
+| status | 実行 | 数値 | 順位対象 (`scored`) |
+|---|---|---|---|
+| `success` | 完走、全日が契約を満たした | あり | **はい** |
+| `invalid` | 契約違反 / 非法 action / case 棄却 | 記録する | **いいえ** |
+| `timeout` | wall deadline 超過 | なし | いいえ |
+| `panic` | candidate が panic | なし | いいえ |
 
-`scored` が真正の判定です。`status` だけでは `invalid` の有効スコア有無を判別できないため、
-集計は必ず `RunRecord::is_scored()` を使います。
+`scored` が真正の判定で、**順位・W/D/L は必ず `is_scored()` で絞る**必要があります。
+
+### `invalid` は順位から外す
+
+`MatchSim` は不正な action を `Wait` へ **downgrade して試合を完走させる**。完走は
+「公式に受理される」こととは別物です（Q&A Q6 は無効 action を含む回答を丸ごと棄却する）。
+そこで engine は次の計数を返します:
+
+- `illegal_action_count` — 範囲外・通行不能・燃料不足で downgade された action 数
+- `fuel_short_count` — うち燃料不足由来
+
+これらが 1 つでもあれば `status = invalid` / `scored = false` にして順位対象から外します。
+数値自体は `variety` 等に残るので、何を間違えたか追えます。
+
+### isolation
+
+| モード | timeout 時 | 用途 |
+|---|---|---|
+| `Isolation::Process` | **worker プロセスを kill して reaping**。計算資源は残らない | batch の既定。`procon-eval` は自動検出 |
+| `Isolation::Thread` | record を返すが**スレッドは止まらない** | 同一プロセス内の test-only candidate 限定 |
+
+process isolation は worker バイナリに**その algorithm がコンパイル済みであることが前提**です。
+テスト専用の candidate は worker に存在しないので、そのテストは thread isolation になります。
+
+worker は成否によらず **stdout に `RunRecord` を 1 行**出す（出力が無い＝kill された）。
 
 ### failure isolation
 
-各 (candidate, case) は独立した worker thread と wall deadline の下で走ります。
-1 つの candidate が panic しても、 hangs しても、行動契約を破っても、
-その run の記録になるだけでバッチ全体は失いません。
+各 (candidate, case) は独立した実行単位と wall deadline の下で走ります。
+1 つの candidate が panic しても、hang しても、行動契約を破っても、
+その run の記録になるだけでバッチ全体は失いません。timeout は上記の通り worker を
+kill するので、後続 run の CPU/timing を汚染しません。
 
 ## 集計結果
 

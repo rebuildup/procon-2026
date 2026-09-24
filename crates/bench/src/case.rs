@@ -157,6 +157,69 @@ impl CaseSpec {
         })
     }
 
+    /// The [`engine::SimConfig`] this case specifies — its own
+    /// `busyThreshold` / `jammedThreshold`.
+    ///
+    /// Traffic thresholds are part of the match, not a simulator default: the
+    /// bundled fixtures all declare `1/2` while
+    /// [`engine::SimConfig::default`] is `2/5`. Evaluating a case with the
+    /// default promotes and jams road cells on different counts, so movement
+    /// costs — and therefore scores — describe a different game.
+    ///
+    /// # Errors
+    /// Returns the Q&A Q13 range validation error when the case's thresholds
+    /// are out of range.
+    pub fn sim_config(&self) -> Result<engine::SimConfig, CaseError> {
+        engine::from_wire::sim_config_from_wire(&self.setting).map_err(CaseError::Invalid)
+    }
+
+    /// Per-day answer budgets in seconds (`daySeconds`), as declared.
+    ///
+    /// Retained on the case rather than the engine setting: the simulator has
+    /// no clock, so it cannot enforce a wall-clock budget. The evaluator
+    /// records response time instead, and this is what that time is compared
+    /// against when judging whether a plan fits its budget.
+    #[must_use]
+    pub fn day_seconds(&self) -> Vec<u32> {
+        self.setting.day_seconds.iter().filter_map(|v| u32::try_from(*v).ok()).collect()
+    }
+
+    /// Per-day step counts (`daySteps`), as declared.
+    #[must_use]
+    pub fn day_steps(&self) -> Vec<u32> {
+        self.setting.day_steps.iter().filter_map(|v| u32::try_from(*v).ok()).collect()
+    }
+
+    /// A stand-in case for a run whose case body could not be read (a worker
+    /// handed an unreadable `--case-json`). It carries no body, so it can
+    /// never be evaluated — only used to give a failure record somewhere to
+    /// put its `case_id`.
+    #[must_use]
+    pub fn unreadable(case_id: &str) -> Self {
+        Self {
+            case_id: case_id.to_owned(),
+            seed: None,
+            generation_parameters: None,
+            source: CaseSource::Generated,
+            setting: protocol::match_config::MatchSetting {
+                starts_at: 0,
+                day_seconds: Vec::new(),
+                day_steps: Vec::new(),
+                map: protocol::match_config::Map {
+                    height: 8,
+                    width: 8,
+                    cells: vec![vec![protocol::match_config::CellType::TYPE_0; 8]; 8],
+                },
+                spots: Vec::new(),
+                agents: Vec::new(),
+                fuel_limits: 1,
+                players: 1,
+                busy_threshold: 1,
+                jammed_threshold: 2,
+            },
+        }
+    }
+
     /// Convert the case body into the engine setting [`engine::MatchSim`]
     /// consumes. Goes through [`engine::from_wire`], the same conversion the
     /// live-server path uses.
@@ -262,6 +325,10 @@ impl Corpus {
 mod tests {
     use super::*;
 
+    fn team() -> PlayerId {
+        PlayerId::new("player-a").unwrap()
+    }
+
     #[test]
     fn bundled_fixtures_become_cases_with_stable_ids() {
         let corpus = Corpus::bundled().expect("bundled corpus loads");
@@ -322,6 +389,43 @@ mod tests {
         let engine = case.to_engine_setting(&team).expect("converts");
         assert_eq!(engine.team, team);
         assert!(engine.num_days >= 1);
+    }
+
+    #[test]
+    fn sim_config_carries_the_cases_own_traffic_thresholds() {
+        let case = CaseSpec::from_bundled_fixture("small-8x8").unwrap();
+        let sim = case.sim_config().unwrap();
+        // The fixture declares 1/2; the simulator default is 2/5.
+        assert_eq!(sim.traffic_thresholds.busy_threshold, 1);
+        assert_eq!(sim.traffic_thresholds.jammed_threshold, 2);
+        assert_ne!(
+            sim.traffic_thresholds,
+            engine::SimConfig::default().traffic_thresholds,
+            "case thresholds must differ from the default, or this test proves nothing"
+        );
+    }
+
+    #[test]
+    fn fuel_limits_reach_the_engine_setting() {
+        let case = CaseSpec::from_bundled_fixture("small-8x8").unwrap();
+        assert_eq!(case.setting.fuel_limits, 24);
+        let engine = case.to_engine_setting(&team()).unwrap();
+        // Patrol agents (even indices) must carry the declared 24 fuel —
+        // not `daySteps[0] * 3 == 48`.
+        for agent in &engine.agents {
+            if matches!(agent.kind, engine::model::AgentKind::Patrol) {
+                assert_eq!(agent.fuel_cap, 24, "patrol must use fuelLimits");
+            }
+        }
+    }
+
+    #[test]
+    fn per_day_steps_are_preserved() {
+        let case = CaseSpec::from_bundled_fixture("small-8x8").unwrap();
+        let engine = case.to_engine_setting(&team()).unwrap();
+        assert_eq!(case.day_steps(), vec![16]);
+        assert_eq!(engine.day_steps_by_day, vec![16]);
+        assert_eq!(engine.day_steps_for(0), 16);
     }
 
     #[test]

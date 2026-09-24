@@ -159,6 +159,17 @@ pub struct RunRecord {
     /// `(day, step)` of the latest *first*-acquisition. Diagnostic only —
     /// not a ranking tier.
     pub last_acquisition_at: Option<(u32, u32)>,
+    /// Actions the simulator had to downgrade because they were not legal
+    /// (out of bounds, impassable terrain, or out of fuel).
+    ///
+    /// The official rules reject an answer containing an invalid action
+    /// (Q&A Q6), so a run with a non-zero count is recorded as
+    /// [`RunStatus::Invalid`] and is **not** ranked — `MatchSim` degrades such
+    /// an action to `Wait` so the match completes, but completing is not the
+    /// same as being legal.
+    pub illegal_action_count: u32,
+    /// The subset of [`Self::illegal_action_count`] caused by fuel exhaustion.
+    pub fuel_short_count: u32,
     /// Per-day answer latency in microseconds, one entry per simulated day.
     pub daily_response_us: Vec<u64>,
     /// Distinct series acquired on each day, one entry per simulated day.
@@ -170,6 +181,25 @@ pub struct RunRecord {
 }
 
 impl RunRecord {
+    /// A record for a run that never had a usable case (the worker could not
+    /// parse it, so the real case id is unavailable).
+    #[must_use]
+    pub fn failed(
+        candidate_id: impl Into<String>,
+        case_id: &str,
+        source_commit_sha: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self::unscored(
+            candidate_id,
+            &CaseSpec::unreadable(case_id),
+            source_commit_sha,
+            RunStatus::Invalid,
+            Some(detail.into()),
+            0,
+        )
+    }
+
     /// True when [`Self::scored`] is set.
     #[must_use]
     pub const fn is_scored(&self) -> bool {
@@ -214,6 +244,8 @@ impl RunRecord {
             scored: false,
             status_detail,
             last_acquisition_at: None,
+            illegal_action_count: 0,
+            fuel_short_count: 0,
             daily_response_us: Vec::new(),
             daily_varieties: Vec::new(),
         }
@@ -229,22 +261,56 @@ pub struct EvalConfig {
     pub team: PlayerId,
     /// Wall deadline for a single `(candidate, case)` run.
     pub run_timeout: Duration,
-    /// Simulator configuration.
-    pub sim: SimConfig,
+    /// How a run is executed when the deadline expires.
+    pub isolation: Isolation,
 }
 
 impl EvalConfig {
     /// Build a config, resolving the commit SHA from the environment when the
     /// caller does not pass one.
+    ///
+    /// Defaults to [`Isolation::Thread`]. Prefer [`Self::with_process_isolation`]
+    /// for batches: only a child process can be killed when it overruns.
     #[must_use]
     pub fn new(team: PlayerId, run_timeout: Duration) -> Self {
         Self {
             source_commit_sha: source_commit_sha(),
             team,
             run_timeout,
-            sim: SimConfig::default(),
+            isolation: Isolation::Thread,
         }
     }
+
+    /// Same as [`Self::new`], but each run executes in a child `procon-eval`
+    /// process that is **killed** when it overruns the deadline.
+    #[must_use]
+    pub fn with_process_isolation(mut self, worker_exe: impl Into<std::path::PathBuf>) -> Self {
+        self.isolation = Isolation::Process { worker_exe: worker_exe.into() };
+        self
+    }
+}
+
+/// How a single `(candidate, case)` run is executed — specifically, what
+/// happens when it overruns [`EvalConfig::run_timeout`].
+#[derive(Debug, Clone)]
+pub enum Isolation {
+    /// Run on an in-process worker thread.
+    ///
+    /// A timeout is *reported*, but Rust threads cannot be forcibly
+    /// cancelled: the solver keeps burning CPU after the record is written.
+    /// Acceptable for a trusted, hand-picked candidate; not acceptable for a
+    /// sweep, where one hung candidate would corrupt the timing of every run
+    /// behind it.
+    Thread,
+    /// Run in a child process and **kill it** on timeout.
+    ///
+    /// This is what provides the guarantee that nothing keeps computing after
+    /// a timeout: the child is terminated and reaped, so CPU and memory are
+    /// released before the next run starts.
+    Process {
+        /// The `procon-eval` executable, which has a `--worker` mode.
+        worker_exe: std::path::PathBuf,
+    },
 }
 
 /// Resolve the source commit SHA.
@@ -282,6 +348,132 @@ impl Evaluator {
     /// timeouts and malformed plans all come back as a [`RunRecord`] with the
     /// appropriate [`RunStatus`].
     pub fn evaluate_one(&self, candidate: &Candidate, case: &CaseSpec) -> RunRecord {
+        match &self.config.isolation {
+            // Child process: killed on timeout, so nothing keeps computing
+            // after the record is written.
+            Isolation::Process { worker_exe } => self.run_in_process(worker_exe, candidate, case),
+            // Same-process thread: a timeout is *reported* but not enforced.
+            Isolation::Thread => self.run_on_thread(candidate, case),
+        }
+    }
+
+    /// Run one pair in a child `procon-eval --worker` process and kill it if
+    /// it overruns [`EvalConfig::run_timeout`].
+    ///
+    /// This is the mode that holds the "no compute remains after a timeout"
+    /// guarantee: the child is terminated and reaped, releasing its CPU and
+    /// memory before the next run starts. Without it a single hung candidate
+    /// would keep burning a core for as long as the batch lasts, and its
+    /// noise would corrupt the timing of every run behind it.
+    fn run_in_process(
+        &self,
+        worker_exe: &std::path::Path,
+        candidate: &Candidate,
+        case: &CaseSpec,
+    ) -> RunRecord {
+        let candidate_id = candidate.id();
+        let started = Instant::now();
+        let elapsed_us = |t: Instant| micros_u64(t.elapsed().as_micros());
+        let failed = |status: RunStatus, detail: String, elapsed_us: u64| {
+            RunRecord::unscored(
+                candidate_id.clone(),
+                case,
+                self.config.source_commit_sha.clone(),
+                status,
+                Some(detail),
+                elapsed_us,
+            )
+        };
+
+        let case_json = match serde_json::to_string(case) {
+            Ok(v) => v,
+            Err(e) => {
+                return failed(
+                    RunStatus::Invalid,
+                    format!("case could not be serialised for the worker: {e}"),
+                    0,
+                );
+            }
+        };
+        let child = match self.spawn_worker(worker_exe, &candidate_id, case_json) {
+            Ok(c) => c,
+            Err(e) => return failed(RunStatus::Invalid, e, 0),
+        };
+
+        match read_child(child, self.config.run_timeout) {
+            WorkerOutcome::TimedOut => failed(
+                RunStatus::Timeout,
+                format!(
+                    "exceeded run_timeout of {}ms; worker process was killed",
+                    self.config.run_timeout.as_millis()
+                ),
+                elapsed_us(started),
+            ),
+            WorkerOutcome::Failed(detail) => failed(RunStatus::Panic, detail, elapsed_us(started)),
+            WorkerOutcome::Done(stdout) => {
+                let line = stdout.lines().next_back().unwrap_or_default().to_string();
+                if line.is_empty() {
+                    return failed(
+                        RunStatus::Panic,
+                        "evaluation worker produced no output (it likely panicked before reporting)"
+                            .to_owned(),
+                        elapsed_us(started),
+                    );
+                }
+                match serde_json::from_str::<RunRecord>(&line) {
+                    Ok(mut record) => {
+                        // The worker measures its own wall clock; keep the
+                        // parent's view so every record in a batch is timed
+                        // the same way. Identity is re-stamped from the parent
+                        // too, so a worker-side failure record still carries
+                        // the real ids.
+                        record.elapsed_us = elapsed_us(started);
+                        record.candidate_id.clone_from(&candidate_id);
+                        record.case_id.clone_from(&case.case_id);
+                        record.seed = case.seed;
+                        record.generation_parameters.clone_from(&case.generation_parameters);
+                        record.source_commit_sha.clone_from(&self.config.source_commit_sha);
+                        record
+                    }
+                    Err(e) => failed(
+                        RunStatus::Panic,
+                        format!("evaluation worker returned malformed output: {e}"),
+                        elapsed_us(started),
+                    ),
+                }
+            }
+        }
+    }
+
+    /// Build the `procon-eval --worker` child process.
+    fn spawn_worker(
+        &self,
+        worker_exe: &std::path::Path,
+        candidate_id: &str,
+        case_json: String,
+    ) -> Result<std::process::Child, String> {
+        let timeout_ms = u64::try_from(self.config.run_timeout.as_millis()).unwrap_or(u64::MAX);
+        std::process::Command::new(worker_exe)
+            .arg("--worker")
+            .arg("--candidate-id")
+            .arg(candidate_id)
+            .arg("--case-json")
+            .arg(case_json)
+            .arg("--team")
+            .arg(self.config.team.as_str())
+            .arg("--source-commit-sha")
+            .arg(&self.config.source_commit_sha)
+            .arg("--run-timeout-ms")
+            .arg(timeout_ms.to_string())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| format!("could not start evaluation worker {}: {e}", worker_exe.display()))
+    }
+
+    /// Run one pair on an in-process worker thread.
+    fn run_on_thread(&self, candidate: &Candidate, case: &CaseSpec) -> RunRecord {
         let candidate_id = candidate.id();
         let sha = self.config.source_commit_sha.clone();
 
@@ -315,7 +507,24 @@ impl Evaluator {
             }
         };
 
-        self.run_isolated(candidate_id, case, solver, setting)
+        // Traffic thresholds are a property of the *case*. Taking them from
+        // `SimConfig::default()` instead would evaluate the case under a
+        // different promotion/jamming schedule than it declares.
+        let sim_config = match case.sim_config() {
+            Ok(c) => c,
+            Err(err) => {
+                return RunRecord::unscored(
+                    candidate_id,
+                    case,
+                    sha,
+                    RunStatus::Invalid,
+                    Some(err.to_string()),
+                    0,
+                );
+            }
+        };
+
+        self.run_isolated(candidate_id, case, solver, setting, sim_config)
     }
 
     /// Evaluate the full cross product of candidates × cases.
@@ -340,9 +549,10 @@ impl Evaluator {
         case: &CaseSpec,
         solver: Box<dyn Solver>,
         setting: MatchSetting,
+        sim_config: SimConfig,
     ) -> RunRecord {
         let sha = self.config.source_commit_sha.clone();
-        let sim = MatchSim::new(self.config.sim);
+        let sim = MatchSim::new(sim_config);
         let started = Instant::now();
 
         let (tx, rx) = mpsc::channel();
@@ -418,7 +628,24 @@ impl Evaluator {
 
         let daily_varieties = run.final_state.daily_varieties();
         let response_time_us: u64 = timings.daily_response_us.iter().sum();
-        let status = if timings.malformed_plan { RunStatus::Invalid } else { RunStatus::Success };
+
+        // A run is only a *clean* success if the plan was well-shaped AND
+        // every action the solver asked for was legal. `MatchSim` downgrades
+        // illegal actions to `Wait` so the match still completes, but under
+        // the official rules an answer containing an invalid action is
+        // rejected outright — so the run is `Invalid`, recorded with its
+        // observed numbers but excluded from ranking.
+        let mut reasons: Vec<String> = Vec::new();
+        if timings.malformed_plan {
+            reasons.push("returned a malformed day plan on at least one day".to_owned());
+        }
+        if run.illegal_action_count > 0 {
+            reasons.push(format!(
+                "emitted {} non-legal action(s) ({} from fuel exhaustion);                  the official rules reject such an answer",
+                run.illegal_action_count, run.fuel_short_count
+            ));
+        }
+        let status = if reasons.is_empty() { RunStatus::Success } else { RunStatus::Invalid };
 
         RunRecord {
             candidate_id,
@@ -433,13 +660,18 @@ impl Evaluator {
             elapsed_us,
             timeout: false,
             status,
-            scored: true,
-            status_detail: if timings.malformed_plan {
-                Some("candidate returned a malformed day plan on at least one day".to_owned())
-            } else {
+            // `Invalid` is *observed but not rankable*: the numbers above are
+            // real, but a submission the server would refuse must not win a
+            // case. `AggregateReport` filters on this flag.
+            scored: status == RunStatus::Success,
+            status_detail: if reasons.is_empty() {
                 status_detail
+            } else {
+                Some(reasons.join("; "))
             },
             last_acquisition_at: run.last_acquisition_at,
+            illegal_action_count: run.illegal_action_count,
+            fuel_short_count: run.fuel_short_count,
             daily_response_us: timings.daily_response_us,
             daily_varieties,
         }
@@ -502,6 +734,50 @@ impl Solver for TimingSolver {
         }
         plan
     }
+}
+
+/// How a worker child ended.
+enum WorkerOutcome {
+    /// It printed something.
+    Done(String),
+    /// It overran the deadline and was killed.
+    TimedOut,
+    /// The reader thread went away before any output arrived.
+    Failed(String),
+}
+
+/// Wait for a worker child, killing it if it overruns `timeout`.
+///
+/// Killing happens on **every** path — including the success path, where the
+/// child may not have exited yet after closing stdout — so a process is never
+/// left behind.
+fn read_child(mut child: std::process::Child, timeout: Duration) -> WorkerOutcome {
+    // Drain stdout on a helper thread so a child that never closes the pipe
+    // cannot wedge us; the child is killed below regardless.
+    let (tx, rx) = mpsc::channel();
+    let mut stdout = child.stdout.take();
+    thread::spawn(move || {
+        use std::io::Read;
+        let mut buf = String::new();
+        if let Some(pipe) = stdout.as_mut() {
+            let _ = pipe.read_to_string(&mut buf);
+        }
+        let _ = tx.send(buf);
+    });
+
+    let outcome = match rx.recv_timeout(timeout) {
+        Ok(buf) => WorkerOutcome::Done(buf),
+        Err(mpsc::RecvTimeoutError::Timeout) => WorkerOutcome::TimedOut,
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            WorkerOutcome::Failed("evaluation worker exited without a result".to_owned())
+        }
+    };
+
+    // Whether we won the race or not, the child is finished with: terminate
+    // and reap it so no orphan survives.
+    let _ = child.kill();
+    let _ = child.wait();
+    outcome
 }
 
 /// Saturating `u128 -> u64` for microsecond measurements.

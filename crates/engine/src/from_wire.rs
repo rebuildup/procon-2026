@@ -39,17 +39,64 @@
 //!
 //! # Day parameters
 //!
-//! The wire publishes per-day `daySteps` / `daySeconds`, while
-//! [`crate::model::MatchSetting`] collapses them to a single `day_steps` plus
-//! `num_days`. This converter picks `day_steps[0]` for the engine. Fixtures
-//! that give every day the same step count are therefore represented exactly;
-//! a wire setting with per-day variance is flattened, which the caller should
-//! keep in mind when interpreting results.
+//! The wire publishes per-day `daySteps`; it is carried through verbatim as
+//! [`crate::model::MatchSetting::day_steps_by_day`], so day N really does get
+//! `daySteps[N]` steps rather than a copy of day 0's value.
+//!
+//! `daySeconds` is **not** carried into the engine setting: the simulator has
+//! no clock by design (that is what makes it reproducible), so there is
+//! nothing to measure it against. It stays on the wire setting, where the
+//! evaluator can read it off the case for budget evidence.
+//!
+//! # Fuel
+//!
+//! `fuelLimits` is the patrol fuel cap, taken verbatim. Earlier this function
+//! hard-coded `daySteps[0] * 3`, which simulated a *different* match than the
+//! one described (e.g. `small-8x8` is `daySteps=16, fuelLimits=24`, so agents
+//! were evaluated with 48 fuel instead of 24).
+//!
+//! Agent *kinds* still alternate patrol/supply, because the wire exposes only
+//! starting cells — kind selection is a separate question from fuel.
+//!
+//! # Traffic thresholds
+//!
+//! `busyThreshold` / `jammedThreshold` are case properties, not defaults.
+//! Use [`sim_config_from_wire`] to build the [`crate::SimConfig`] for a case;
+//! [`protocol_setting_to_engine`] only builds the match setting.
 
 use crate::model::MatchSetting as EngineSetting;
 use crate::model::{Agent, Cell, HexCoord, MapGrid, MapSize, Spot, Terrain, TrafficState};
+use crate::rules::TrafficThresholds;
 use crate::solver::TeamId;
+use crate::{MatchSim, SimConfig};
 use protocol::match_config::{CellType, MatchSetting as WireSetting};
+
+/// Build the [`SimConfig`] a case actually specifies.
+///
+/// Traffic thresholds are part of the match definition: the bundled fixtures
+/// declare `busyThreshold=1, jammedThreshold=2`, while
+/// [`TrafficThresholds::default`] is `2/5`. Running a case with the default
+/// plays a *different* game — road cells promote and jam on other counts, so
+/// movement costs diverge and scores are not comparable.
+///
+/// # Errors
+/// Returns the threshold validation error from Q&A Q13's ranges.
+pub fn sim_config_from_wire(p: &WireSetting) -> Result<SimConfig, String> {
+    let busy =
+        u32::try_from(p.busy_threshold).map_err(|_| "busyThreshold out of range".to_owned())?;
+    let jammed =
+        u32::try_from(p.jammed_threshold).map_err(|_| "jammedThreshold out of range".to_owned())?;
+    let traffic_thresholds = TrafficThresholds::new(busy, jammed)?;
+    Ok(SimConfig { traffic_thresholds })
+}
+
+/// Convenience: the [`MatchSim`] configured for this wire setting.
+///
+/// # Errors
+/// [`sim_config_from_wire`]'s validation error.
+pub fn match_sim_for_wire(p: &WireSetting) -> Result<MatchSim, String> {
+    Ok(MatchSim::new(sim_config_from_wire(p)?))
+}
 
 /// Convert a wire [`WireSetting`] into an [`EngineSetting`] ready for
 /// [`crate::MatchSim`].
@@ -106,12 +153,27 @@ pub fn protocol_setting_to_engine(p: &WireSetting, team: TeamId) -> Result<Engin
         cell.spot = Some(spot);
     }
 
-    // Agents: even index -> patrol, odd index -> supply. Day-steps feed the
-    // patrol fuel cap; supply has none.
-    let day_steps0 = match p.day_steps.first() {
-        Some(v) => u32::try_from(*v).map_err(|_| "day_steps[0] out of u32 range")?,
-        None => return Err("day_steps is empty".to_owned()),
-    };
+    // Agents: even index -> patrol, odd index -> supply.
+    //
+    // Fuel comes straight from the wire's `fuelLimits` (the maximum load a
+    // patrol carries). It is NOT derived from day steps — that produced a
+    // different fuel budget than the setting declares.
+    // Per-day steps, carried through verbatim: day N gets `daySteps[N]`.
+    let day_steps_by_day: Vec<u32> = p
+        .day_steps
+        .iter()
+        .enumerate()
+        .map(|(i, v)| u32::try_from(*v).map_err(|_| format!("day_steps[{i}] out of u32 range")))
+        .collect::<Result<_, _>>()?;
+    let day_steps0 = day_steps_by_day.first().copied().ok_or("day_steps is empty")?;
+    if day_steps_by_day.contains(&0) {
+        return Err("every day must allow at least one step".to_owned());
+    }
+    let fuel_cap = u32::try_from(p.fuel_limits)
+        .map_err(|_| format!("fuelLimits {} out of u32 range", p.fuel_limits))?;
+    if fuel_cap == 0 {
+        return Err("fuelLimits must be >= 1".to_owned());
+    }
     let mut agents = Vec::with_capacity(p.agents.len());
     for (idx, wire_pos) in p.agents.iter().enumerate() {
         let pos_idx = usize::try_from(*wire_pos)
@@ -124,7 +186,7 @@ pub fn protocol_setting_to_engine(p: &WireSetting, team: TeamId) -> Result<Engin
         );
         let id = u8::try_from(idx).map_err(|_| format!("agent index {idx} out of u8 range"))?;
         let agent = if idx % 2 == 0 {
-            Agent::patrol(id, coord, day_steps0, 3)
+            Agent::patrol_with_fuel(id, coord, fuel_cap)
         } else {
             Agent::supply(id, coord)
         };
@@ -141,6 +203,7 @@ pub fn protocol_setting_to_engine(p: &WireSetting, team: TeamId) -> Result<Engin
         agents,
         day_steps: day_steps0,
         num_days,
+        day_steps_by_day,
     })
 }
 

@@ -549,6 +549,7 @@ mod tests {
             ],
             day_steps: 5,
             num_days: 1,
+            day_steps_by_day: Vec::new(),
         };
         let mut state = MatchState::new(setting).unwrap();
         let mut events = Vec::new();
@@ -597,6 +598,7 @@ mod tests {
             ],
             day_steps: 5,
             num_days: 2,
+            day_steps_by_day: Vec::new(),
         };
         let mut state = MatchState::new(setting).unwrap();
         state.traffic_yesterday.insert(HexCoord::new(0, 0), 3); // yesterday was Busy

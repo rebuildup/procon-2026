@@ -143,6 +143,7 @@ fn scenario_two_agents_collect_two_series_across_three_days() {
         ]),
         day_steps: 10,
         num_days: 3,
+        day_steps_by_day: Vec::new(),
     };
     let sim = MatchSim::default();
     let solver = DirectedSolver::new("two-agents", &[(0, Direction::Left), (1, Direction::Right)]);
@@ -180,6 +181,7 @@ fn scenario_run_is_deterministic_across_repeated_invocation() {
         agents: pad_to_min_team(vec![Agent::patrol(0, HexCoord::new(3, 3), 100, 3)]),
         day_steps: 8,
         num_days: 2,
+        day_steps_by_day: Vec::new(),
     };
     let solver = WalkSolver::new("walk-upper-left", Direction::UpperLeft);
     let sim = MatchSim::default();
@@ -244,6 +246,7 @@ fn scenario_phase_order_observable_through_final_state() {
         ]),
         day_steps: 8,
         num_days: 1,
+        day_steps_by_day: Vec::new(),
     };
 
     let sim = MatchSim::new(SimConfig::default());

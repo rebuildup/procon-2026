@@ -26,7 +26,18 @@ pub fn render_markdown(report: &AggregateReport) -> String {
 fn write_header(out: &mut String, report: &AggregateReport) {
     let _ = writeln!(out, "# Evaluation report");
     let _ = writeln!(out);
-    let _ = writeln!(out, "- commit: `{}`", report.source_commit_sha);
+    if report.source_commit_shas.len() == 1 {
+        let _ = writeln!(out, "- commit: `{}`", report.source_commit_shas[0]);
+    } else {
+        // Not silently collapsed: a batch spanning commits must be obvious,
+        // because the numbers underneath are not comparable across them.
+        let _ = writeln!(
+            out,
+            "- **commits: {} ({})** — these runs are not comparable as one evidence set",
+            report.source_commit_shas.len(),
+            report.source_commit_shas.join(", ")
+        );
+    }
     match &report.baseline_candidate_id {
         Some(b) => {
             let _ = writeln!(out, "- baseline: `{b}` (win / draw / lose is measured against it)");
@@ -211,6 +222,8 @@ mod tests {
                 Some("something went wrong | with a pipe".to_owned())
             },
             last_acquisition_at: None,
+            illegal_action_count: 0,
+            fuel_short_count: 0,
             daily_response_us: vec![1_000],
             daily_varieties: vec![v],
         }
@@ -236,6 +249,7 @@ mod tests {
             ],
             Some("greedy"),
         )
+        .expect("homogeneous synthetic records")
     }
 
     #[test]

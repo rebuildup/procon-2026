@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use bench::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 use bench::case::{CaseSpec, Corpus};
-use bench::evaluate::{EvalConfig, Evaluator, RunRecord, RunStatus};
+use bench::evaluate::{EvalConfig, Evaluator, Isolation, RunRecord, RunStatus};
 use bench::tournament::{TournamentConfig, TournamentRunner};
 use bench::{AggregateReport, CandidateRegistry};
 use domain::PlayerId;
@@ -41,13 +41,32 @@ fn team() -> PlayerId {
     PlayerId::new("player-a").expect("valid team id")
 }
 
+/// The `procon-eval` binary, for [`Isolation::Process`]. Cargo builds package
+/// binaries before running that package's integration tests.
+fn worker_exe() -> &'static str {
+    env!("CARGO_BIN_EXE_procon-eval")
+}
+
+/// Every record in this suite carries the same commit, so this cannot fail.
+fn agg(runs: Vec<RunRecord>, baseline: Option<&str>) -> AggregateReport {
+    AggregateReport::build(runs, baseline).expect("all records share one commit")
+}
+
+/// Config for this suite. `isolation` defaults to a killed child process —
+/// the same thing a real batch uses — because a timeout must *stop* the run,
+/// not just stop waiting for it.
+fn config(run_timeout: Duration, isolation: Isolation) -> EvalConfig {
+    EvalConfig { source_commit_sha: "test-commit".to_owned(), team: team(), run_timeout, isolation }
+}
+
 fn evaluator() -> Evaluator {
-    Evaluator::new(EvalConfig {
-        source_commit_sha: "test-commit".to_owned(),
-        team: team(),
-        run_timeout: Duration::from_secs(60),
-        sim: SimConfig::default(),
-    })
+    Evaluator::new(
+        config(Duration::from_secs(60), Isolation::Thread).with_process_isolation(worker_exe()),
+    )
+}
+
+fn evaluator_with_timeout(isolation: Isolation, run_timeout: Duration) -> Evaluator {
+    Evaluator::new(config(run_timeout, isolation))
 }
 
 /// Three fixtures with genuinely different characteristics: a small warmup
@@ -140,7 +159,7 @@ fn batch_writes_machine_readable_results_that_reaggregate() {
     }
 
     // Aggregation is regenerable from the records alone.
-    let regenerated = AggregateReport::build(reread, Some(TWO_VARIANTS[0]));
+    let regenerated = agg(reread, Some(TWO_VARIANTS[0]));
     assert_eq!(regenerated.cases, outcome.report.cases);
     assert_eq!(regenerated.candidates, outcome.report.candidates);
     for (a, b) in regenerated.per_case.iter().zip(&outcome.report.per_case) {
@@ -263,8 +282,8 @@ fn competitive_score_is_reproducible_across_repeated_runs() {
     // Ranking derived from two independent batches is identical, on the
     // deterministic projection. The full entries differ because tier 4
     // (`response_time_us`) is measured; that is expected and documented.
-    let r1 = AggregateReport::build(first, Some(TWO_VARIANTS[0]));
-    let r2 = AggregateReport::build(second, Some(TWO_VARIANTS[0]));
+    let r1 = agg(first, Some(TWO_VARIANTS[0]));
+    let r2 = agg(second, Some(TWO_VARIANTS[0]));
     for (a, b) in r1.per_case.iter().zip(&r2.per_case) {
         assert_eq!(
             a.deterministic_projection(),
@@ -308,13 +327,11 @@ fn panic_timeout_and_invalid_are_isolated_per_run() {
     let registry = registry_with_failures();
     let corpus = Corpus::bundled_subset(&["small-8x8"]).expect("corpus loads");
 
-    // A short deadline so the hanging candidate is caught as a timeout.
-    let evaluator = Evaluator::new(EvalConfig {
-        source_commit_sha: "test-commit".to_owned(),
-        team: team(),
-        run_timeout: Duration::from_millis(400),
-        sim: SimConfig::default(),
-    });
+    // These three candidates are registered only inside this test binary, so
+    // they cannot be built by the `procon-eval` worker — thread isolation is
+    // the only way to exercise them. Real batches use process isolation, and
+    // `process_isolation_kills_the_worker_on_timeout` below proves that path.
+    let evaluator = evaluator_with_timeout(Isolation::Thread, Duration::from_millis(400));
 
     let ids = [
         "wait",
@@ -349,14 +366,23 @@ fn panic_timeout_and_invalid_are_isolated_per_run() {
     assert_eq!((panic_run.variety, panic_run.total_balls), (0, 0));
     assert!(!panic_run.is_scored());
 
-    // The malformed run still has a score (MatchSim degrades it to waits) but
-    // is flagged so aggregation can count it.
+    // The malformed run still produced numbers (MatchSim degrades the plan to
+    // waits rather than aborting), but a submission the server would refuse
+    // must not be rankable — so it is recorded with `scored = false`.
     let malformed = by_id("broken:mode=malformed");
-    assert!(malformed.is_scored());
+    assert_eq!(malformed.status, RunStatus::Invalid);
+    assert!(!malformed.is_scored(), "an unsound submission must not be rankable");
+    assert!(
+        malformed.status_detail.as_deref().unwrap_or_default().contains("malformed day plan"),
+        "detail must name the contract violation: {:?}",
+        malformed.status_detail
+    );
+    // The numbers are still kept as evidence — `MatchSim` degraded the plan
+    // to waits and finished the match — they just do not win anything.
     assert!(malformed.status_detail.is_some());
 
     // Aggregation counts failures without dropping the batch.
-    let report = AggregateReport::build(records, Some("wait"));
+    let report = agg(records, Some("wait"));
     let broken = report.candidate("broken:mode=panic").expect("summary");
     assert_eq!(broken.panics, 1);
     assert_eq!(broken.scored, 0);
@@ -365,6 +391,102 @@ fn panic_timeout_and_invalid_are_isolated_per_run() {
     // And the healthy candidate is untouched.
     let healthy = report.candidate("loop:iterations=1:initial=greedy").unwrap();
     assert_eq!(healthy.timeouts + healthy.invalids + healthy.panics, 0);
+}
+
+#[test]
+fn process_isolation_kills_the_worker_on_timeout() {
+    // Uses a case no other test touches, so the process check below cannot
+    // race against a concurrent run.
+    let registry = CandidateRegistry::builtin();
+    // Measured: this pair takes ~6.6 ms to evaluate, plus ~1 ms to spawn the
+    // worker. A 3 ms deadline therefore lands squarely *inside* the
+    // computation — not before the child starts, and not after it finishes.
+    let candidate = registry.build("loop:iterations=128:initial=greedy").unwrap();
+    let case = CaseSpec::from_bundled_fixture("large-32x32").unwrap();
+
+    let evaluator = Evaluator::new(
+        config(Duration::from_millis(3), Isolation::Thread).with_process_isolation(worker_exe()),
+    );
+
+    let record = evaluator.evaluate_one(&candidate, &case);
+
+    assert_eq!(record.status, RunStatus::Timeout, "detail: {:?}", record.status_detail);
+    assert!(record.timeout);
+    assert!(!record.is_scored());
+    assert!(
+        record.status_detail.as_deref().unwrap_or_default().contains("worker process was killed"),
+        "the record must say the child was terminated: {:?}",
+        record.status_detail
+    );
+
+    // The guarantee itself: no worker for this run is left behind.
+    //
+    // The pattern is built at runtime from the real executable path, so it
+    // matches `<abs>/procon-eval --worker ...` and nothing else — a shell or
+    // an editor with `--worker` somewhere in its own command line cannot
+    // produce a false positive.
+    let pattern = format!("{} --worker", worker_exe());
+    let output = match std::process::Command::new("pgrep").args(["-f", &pattern]).output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+        // pgrep exits 1 with no output when nothing matched; anything else
+        // means pgrep itself is unavailable, in which case the assertions
+        // above are still the primary evidence.
+        Ok(_) => String::new(),
+        Err(_) => return,
+    };
+    let stray: Vec<String> = output.lines().map(ToOwned::to_owned).collect();
+    assert!(stray.is_empty(), "a killed worker must not still be running (pids {stray:?})");
+}
+
+#[test]
+fn aggregation_refuses_to_mix_commits() {
+    // Evidence from two commits must not be ranked together: one commit's
+    // scores would otherwise be attributed to the other, and the report would
+    // name a single SHA it never checked.
+    let mut a = record_fixture("loop:iterations=1:initial=greedy");
+    a.source_commit_sha = "aaaa111".to_owned();
+    let mut b = record_fixture("greedy");
+    b.source_commit_sha = "bbbb222".to_owned();
+
+    match AggregateReport::build(vec![a.clone(), b.clone()], None) {
+        Err(e) => {
+            let msg = e.to_string();
+            assert!(msg.contains("aaaa111"), "error must name the commits: {msg}");
+            assert!(msg.contains("bbbb222"), "error must name the commits: {msg}");
+        }
+        Ok(_) => panic!("mixing commits must be refused"),
+    }
+
+    // A homogeneous set still aggregates, and reports exactly one commit.
+    b.source_commit_sha = "aaaa111".to_owned();
+    let ok = agg(vec![a, b], None);
+    assert_eq!(ok.single_commit(), Some("aaaa111"));
+    assert_eq!(ok.source_commit_shas, vec!["aaaa111".to_owned()]);
+}
+
+/// A minimal successful record against the smallest fixture.
+fn record_fixture(candidate_id: &str) -> RunRecord {
+    RunRecord {
+        candidate_id: candidate_id.to_owned(),
+        case_id: "fixture:small-8x8".to_owned(),
+        seed: None,
+        generation_parameters: None,
+        source_commit_sha: "aaaa111".to_owned(),
+        variety: 1,
+        daily_variety_sum: 1,
+        total_balls: 1,
+        response_time_us: 100,
+        elapsed_us: 200,
+        timeout: false,
+        status: RunStatus::Success,
+        scored: true,
+        status_detail: None,
+        last_acquisition_at: None,
+        illegal_action_count: 0,
+        fuel_short_count: 0,
+        daily_response_us: vec![100],
+        daily_varieties: vec![1],
+    }
 }
 
 // ---------------------------------------------------------------------------

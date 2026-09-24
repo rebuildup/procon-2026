@@ -120,6 +120,22 @@ impl MatchSim {
             let _ = id; // suppress unused
         }
 
+        // Record semantic validation failures. `MoveOutcome::Wait` downgraded
+        // these to a no-op so the match completes, but the official answer
+        // rules reject the whole answer on an invalid action (Q&A Q6) — so
+        // the evaluator must still see them.
+        for event in &events {
+            match event {
+                StepEvent::IllegalMove { .. } => {
+                    state.illegal_action_count = state.illegal_action_count.saturating_add(1);
+                }
+                StepEvent::FuelShort { .. } => {
+                    state.fuel_short_count = state.fuel_short_count.saturating_add(1);
+                }
+                _ => {}
+            }
+        }
+
         // 4. Acquire — agents on stocked spots pick up.
         let agents_for_acquire = state.agents.clone();
         for agent in &agents_for_acquire {
@@ -174,12 +190,16 @@ impl MatchSim {
         let mut state = MatchState::new(setting)?;
         let last_acq = self.run_inner(&mut state, solver)?;
         let (variety, daily_variety_sum, total_balls) = score_state(&state);
+        let illegal_action_count = state.illegal_action_count;
+        let fuel_short_count = state.fuel_short_count;
         Ok(RunResult {
             final_state: state,
             variety,
             daily_variety_sum,
             total_balls,
             last_acquisition_at: last_acq,
+            illegal_action_count,
+            fuel_short_count,
         })
     }
 
@@ -192,12 +212,16 @@ impl MatchSim {
     ) -> Result<RunResult, String> {
         let last_acq = self.run_inner(state, solver)?;
         let (variety, daily_variety_sum, total_balls) = score_state(state);
+        let illegal_action_count = state.illegal_action_count;
+        let fuel_short_count = state.fuel_short_count;
         Ok(RunResult {
             final_state: state.clone(),
             variety,
             daily_variety_sum,
             total_balls,
             last_acquisition_at: last_acq,
+            illegal_action_count,
+            fuel_short_count,
         })
     }
 
@@ -347,6 +371,7 @@ mod tests {
             agents,
             day_steps,
             num_days,
+            day_steps_by_day: Vec::new(),
         }
     }
 

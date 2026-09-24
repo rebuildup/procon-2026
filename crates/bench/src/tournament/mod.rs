@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use crate::aggregate::AggregateReport;
 use crate::candidate::{Candidate, CandidateError, CandidateRegistry};
 use crate::case::{CaseError, CaseSpec, Corpus};
-use crate::evaluate::{EvalConfig, Evaluator, RunRecord};
+use crate::evaluate::{EvalConfig, Evaluator, Isolation, RunRecord};
 use crate::report::{ReportError, ReportPaths};
 
 /// Configuration for one batch.
@@ -54,6 +54,12 @@ pub struct TournamentConfig {
     pub run_timeout: Duration,
     /// Optional directory to write `runs.jsonl` + `aggregate.json` into.
     pub output_dir: Option<PathBuf>,
+    /// Explicit `procon-eval` executable for process isolation.
+    ///
+    /// When unset, [`TournamentRunner`] auto-detects it from
+    /// `PROCON_EVAL_WORKER` or the running executable. Setting it makes a
+    /// batch deterministic about *how* a timeout is isolated.
+    pub worker_exe: Option<PathBuf>,
 }
 
 impl TournamentConfig {
@@ -72,7 +78,15 @@ impl TournamentConfig {
             source_commit_sha: crate::evaluate::source_commit_sha(),
             run_timeout,
             output_dir: None,
+            worker_exe: None,
         }
+    }
+
+    /// Pin the executable used for process isolation (see [`Isolation`]).
+    #[must_use]
+    pub fn with_worker_exe(mut self, exe: impl Into<PathBuf>) -> Self {
+        self.worker_exe = Some(exe.into());
+        self
     }
 
     /// Stamp an explicit commit SHA (useful in tests and pinned CI runs).
@@ -115,6 +129,8 @@ pub enum TournamentError {
     Case(#[from] CaseError),
     #[error("report error: {0}")]
     Report(#[from] ReportError),
+    #[error("aggregation refused: {0}")]
+    Aggregate(#[from] crate::aggregate::AggregateError),
     #[error("no candidates supplied")]
     NoCandidates,
     #[error("no cases supplied")]
@@ -211,16 +227,27 @@ impl TournamentRunner {
         let candidates = self.resolve_candidates(registry)?;
         let team = PlayerId::new(self.config.team.as_str())
             .map_err(|e| TournamentError::Case(CaseError::Invalid(e)))?;
-        let eval_config = EvalConfig {
+        // Traffic thresholds come from each case (see `CaseSpec::sim_config`),
+        // never from `SimConfig::default()`. Isolation prefers a killed child
+        // process so an overrunning candidate stops computing before the next
+        // run starts.
+        let mut eval_config = EvalConfig {
             source_commit_sha: self.config.source_commit_sha.clone(),
             team,
             run_timeout: self.config.run_timeout,
-            sim: engine::SimConfig::default(),
+            isolation: Isolation::Thread,
         };
+        if let Some(exe) = self.config.worker_exe.clone().or_else(worker_executable) {
+            eval_config = eval_config.with_process_isolation(exe);
+        }
 
         let records = Evaluator::new(eval_config).evaluate_all(&candidates, cases);
+        // A batch stamps every record with one commit, so this cannot fail
+        // today — the check exists so it *stays* impossible rather than
+        // silently producing a report that spans commits.
         let report =
-            AggregateReport::build(records.clone(), self.config.baseline_candidate_id.as_deref());
+            AggregateReport::build(records.clone(), self.config.baseline_candidate_id.as_deref())
+                .map_err(TournamentError::Aggregate)?;
 
         let paths = match &self.config.output_dir {
             Some(dir) => {
@@ -233,6 +260,26 @@ impl TournamentRunner {
 
         Ok(TournamentOutcome { records, report, paths })
     }
+}
+
+/// Locate the `procon-eval` executable for [`Isolation::Process`].
+///
+/// Returns `None` when there is no explicit override and the running
+/// executable is not `procon-eval` (a library caller, a test harness), in
+/// which case the batch falls back to [`Isolation::Thread`].
+fn worker_executable() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("PROCON_EVAL_WORKER") {
+        let p = PathBuf::from(p);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let exe = std::env::current_exe().ok()?;
+    let name = exe.file_name()?.to_string_lossy();
+    if name.starts_with("procon-eval") {
+        return Some(exe);
+    }
+    None
 }
 
 /// Convenience: the bundled fixture corpus with a chosen subset of names.

@@ -154,6 +154,7 @@ fn build_engine_setting_from_engine(
         agents: agents_vec,
         day_steps,
         num_days: 4,
+        day_steps_by_day: Vec::new(),
     }
 }
 

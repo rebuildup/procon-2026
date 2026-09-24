@@ -24,10 +24,13 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use bench::CaseSpec;
 use bench::candidate::{CandidateError, CandidateRegistry};
 use bench::case::Corpus;
+use bench::evaluate::RunRecord;
 use bench::tournament::{TournamentConfig, TournamentError, TournamentRunner};
 use clap::Parser;
+use domain::PlayerId;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -78,6 +81,34 @@ struct Args {
     /// Suppress the Markdown report on stdout (artifacts are still written).
     #[arg(long, default_value_t = false)]
     quiet: bool,
+
+    // ---- worker mode (internal) -----------------------------------------
+    /// Evaluate exactly one (candidate, case) and print its `RunRecord` as
+    /// JSON on stdout. This is the process [`bench::evaluate::Isolation`]
+    /// spawns so an overrunning run can be killed. Not meant to be invoked
+    /// by hand.
+    #[arg(long)]
+    worker: bool,
+
+    /// Worker mode: the candidate id to build.
+    #[arg(long, requires_all = ["worker", "case_json"], default_value = "")]
+    candidate_id: String,
+
+    /// Worker mode: the case serialised as JSON.
+    #[arg(long, requires_all = ["worker", "candidate_id"], default_value = "")]
+    case_json: String,
+
+    /// Worker mode: team the candidate plays as.
+    #[arg(long, requires = "worker", default_value = "player-a")]
+    worker_team: String,
+
+    /// Worker mode: commit SHA to stamp on the record.
+    #[arg(long = "source-commit-sha", requires = "worker", default_value = "unknown")]
+    source_commit_sha: String,
+
+    /// Worker mode: wall deadline for this single run, in milliseconds.
+    #[arg(long = "run-timeout-ms", requires = "worker", default_value_t = 60_000)]
+    run_timeout_ms: u64,
 }
 
 #[derive(Debug)]
@@ -98,6 +129,9 @@ fn main() -> std::process::ExitCode {
 
 fn run() -> Exit {
     let args = Args::parse();
+    if args.worker {
+        return run_worker(&args);
+    }
     let registry = CandidateRegistry::builtin();
 
     if args.list_candidates {
@@ -177,9 +211,73 @@ fn run() -> Exit {
     // records are still written and readable.
     let failures = outcome.records.iter().filter(|r| !r.is_scored()).count();
     if failures > 0 {
-        eprintln!("{failures} run(s) did not produce a score; see the failure table");
+        // The records are written before we return, so CI gets both the
+        // evidence and the failure signal.
+        return Exit::Fail(format!(
+            "{failures} of {} run(s) did not produce a rankable score; see the failure table",
+            outcome.records.len()
+        ));
     }
     Exit::Ok
+}
+
+/// Worker mode: evaluate one `(candidate, case)` and print its `RunRecord`.
+///
+/// Deliberately forced onto in-thread execution: this process already *is*
+/// the isolation boundary, and a nested child would only add latency. If the
+/// parent kills us mid-run, that is exactly the timeout behaviour it asked
+/// for.
+fn run_worker(args: &Args) -> Exit {
+    // The worker ALWAYS writes exactly one `RunRecord` JSON line to stdout,
+    // even when it cannot evaluate anything. A silent non-zero exit would be
+    // indistinguishable from a crash, and the parent would have to guess at
+    // the cause. The only way to produce no output is to be killed.
+    let record = match worker_record(args) {
+        Ok(r) => r,
+        // The real case id is re-stamped by the parent from its own `CaseSpec`,
+        // so the placeholder here only needs to be a valid value.
+        Err(detail) => RunRecord::failed(
+            args.candidate_id.clone(),
+            "<unreadable>",
+            args.source_commit_sha.clone(),
+            detail,
+        ),
+    };
+
+    match serde_json::to_string(&record) {
+        Ok(json) => {
+            println!("{json}");
+            Exit::Ok
+        }
+        Err(e) => Exit::Fail(format!("could not encode the record: {e}")),
+    }
+}
+
+/// Build and evaluate one run for worker mode.
+fn worker_record(args: &Args) -> Result<RunRecord, String> {
+    use bench::evaluate::{EvalConfig, Evaluator, Isolation};
+
+    if args.candidate_id.is_empty() || args.case_json.is_empty() {
+        return Err("--worker requires --candidate-id and --case-json".to_owned());
+    }
+
+    let registry = CandidateRegistry::builtin();
+    let candidate = registry
+        .build(&args.candidate_id)
+        .map_err(|e| format!("bad candidate {:?}: {e}", args.candidate_id))?;
+    let case: CaseSpec =
+        serde_json::from_str(&args.case_json).map_err(|e| format!("bad --case-json: {e}"))?;
+    let team = PlayerId::new(args.worker_team.as_str()).map_err(|e| format!("bad team: {e}"))?;
+
+    // This process already is the isolation boundary; a nested child would
+    // only add latency.
+    let config = EvalConfig {
+        source_commit_sha: args.source_commit_sha.clone(),
+        team,
+        run_timeout: Duration::from_millis(args.run_timeout_ms),
+        isolation: Isolation::Thread,
+    };
+    Ok(Evaluator::new(config).evaluate_one(&candidate, &case))
 }
 
 fn print_catalog(registry: &CandidateRegistry) {

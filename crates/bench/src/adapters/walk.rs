@@ -153,6 +153,7 @@ mod tests {
             agents,
             day_steps: 4,
             num_days: 1,
+            day_steps_by_day: Vec::new(),
         })
         .unwrap()
     }

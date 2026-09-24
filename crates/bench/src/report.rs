@@ -175,6 +175,8 @@ mod tests {
             scored: true,
             status_detail: None,
             last_acquisition_at: Some((1, 2)),
+            illegal_action_count: 0,
+            fuel_short_count: 0,
             daily_response_us: vec![600, 634],
             daily_varieties: vec![2, 3],
         }
@@ -186,7 +188,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let paths = ReportPaths::in_dir(&dir);
         let records = vec![record("a"), record("b")];
-        paths.write(&records, &AggregateReport::build(records.clone(), Some("a"))).unwrap();
+        paths
+            .write(&records, &AggregateReport::build(records.clone(), Some("a")).unwrap())
+            .unwrap();
 
         let back = read_runs(&paths.runs).unwrap();
         assert_eq!(back, records);

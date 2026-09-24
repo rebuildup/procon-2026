@@ -161,10 +161,31 @@ pub struct CandidateSummary {
     pub score_summary: ScoreTupleSummary,
 }
 
+/// Why an aggregation was refused.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AggregateError {
+    /// The records come from more than one commit, so a single ranking would
+    /// silently mix evidence from different sources.
+    #[error("records span {} commits ({}); refusing to rank across them", .found.len(), .found.join(", "))]
+    MixedCommits {
+        /// Every distinct commit, in first-seen order.
+        found: Vec<String>,
+    },
+    /// No records to aggregate.
+    #[error("no runs to aggregate")]
+    Empty,
+}
+
 /// Complete aggregation of one batch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AggregateReport {
-    pub source_commit_sha: String,
+    /// Every distinct `source_commit_sha` among the runs, in first-seen
+    /// order.
+    ///
+    /// Deliberately a *list*: collapsing it to the last record seen would let
+    /// a mixed `runs.jsonl` masquerade as evidence from one commit. A single
+    /// element is the normal case; see [`AggregateReport::single_commit`].
+    pub source_commit_shas: Vec<String>,
     /// Candidate used as the win / draw / lose anchor, when one was chosen.
     pub baseline_candidate_id: Option<String>,
     /// Candidate ids, in evaluation order.
@@ -180,24 +201,40 @@ pub struct AggregateReport {
 }
 
 impl AggregateReport {
-    /// Aggregate a batch of records.
+    /// Aggregate a batch of records, **refusing to mix commits**.
     ///
     /// `baseline_candidate_id` selects the candidate that win / draw / lose is
     /// measured against. It must appear in the records; passing `None` leaves
     /// every comparison as [`Outcome::NotCompared`].
-    #[must_use]
-    pub fn build(runs: Vec<RunRecord>, baseline_candidate_id: Option<&str>) -> Self {
+    ///
+    /// # Errors
+    /// [`AggregateError::MixedCommits`] when the records span more than one
+    /// commit, and [`AggregateError::Empty`] when there are none. Ranking two
+    /// commits' evidence together would attribute one commit's scores to the
+    /// other, so this is an error rather than a warning.
+    pub fn build(
+        runs: Vec<RunRecord>,
+        baseline_candidate_id: Option<&str>,
+    ) -> Result<Self, AggregateError> {
+        if runs.is_empty() {
+            return Err(AggregateError::Empty);
+        }
         let mut candidate_order: Vec<String> = Vec::new();
         let mut case_order: Vec<String> = Vec::new();
-        let mut source_commit_sha = String::new();
+        let mut source_commit_shas: Vec<String> = Vec::new();
         for r in &runs {
-            source_commit_sha.clone_from(&r.source_commit_sha);
+            if !source_commit_shas.contains(&r.source_commit_sha) {
+                source_commit_shas.push(r.source_commit_sha.clone());
+            }
             if !candidate_order.contains(&r.candidate_id) {
                 candidate_order.push(r.candidate_id.clone());
             }
             if !case_order.contains(&r.case_id) {
                 case_order.push(r.case_id.clone());
             }
+        }
+        if source_commit_shas.len() > 1 {
+            return Err(AggregateError::MixedCommits { found: source_commit_shas });
         }
 
         let per_case = case_order.iter().map(|case_id| rank_case(case_id, &runs)).collect();
@@ -207,14 +244,23 @@ impl AggregateReport {
             .map(|id| summarise_candidate(id, &runs, baseline_candidate_id))
             .collect();
 
-        Self {
-            source_commit_sha,
+        Ok(Self {
+            source_commit_shas,
             baseline_candidate_id: baseline_candidate_id.map(ToOwned::to_owned),
             candidates: candidate_order,
             cases: case_order,
             per_case,
             per_candidate,
             runs,
+        })
+    }
+
+    /// The single commit all runs came from, when they all agree.
+    #[must_use]
+    pub fn single_commit(&self) -> Option<&str> {
+        match self.source_commit_shas.as_slice() {
+            [one] => Some(one),
+            _ => None,
         }
     }
 
@@ -348,6 +394,12 @@ pub fn status_histogram(runs: &[RunRecord]) -> BTreeMap<RunStatus, u32> {
 mod tests {
     use super::*;
 
+    /// Test convenience: every synthetic record shares a commit, so this
+    /// cannot legitimately fail here.
+    fn build(runs: Vec<RunRecord>, baseline: Option<&str>) -> AggregateReport {
+        AggregateReport::build(runs, baseline).expect("homogeneous synthetic records")
+    }
+
     fn record(candidate: &str, case: &str, v: u32, d: u32, t: u32, rt: u64) -> RunRecord {
         RunRecord {
             candidate_id: candidate.to_owned(),
@@ -365,6 +417,8 @@ mod tests {
             scored: true,
             status_detail: None,
             last_acquisition_at: None,
+            illegal_action_count: 0,
+            fuel_short_count: 0,
             daily_response_us: vec![rt],
             daily_varieties: vec![d],
         }
@@ -380,7 +434,7 @@ mod tests {
             record("strong", "case-a", 2, 1, 1, 9_999),
             record("mid", "case-a", 2, 1, 1, 5_000),
         ];
-        let agg = AggregateReport::build(runs, None);
+        let agg = build(runs, None);
         let ranking = agg.case("case-a").unwrap();
         let order: Vec<_> = ranking.entries.iter().map(|e| e.candidate_id.as_str()).collect();
         assert_eq!(order, vec!["mid", "strong", "weak"]);
@@ -395,7 +449,7 @@ mod tests {
             record("beta", "case-a", 2, 1, 1, 5_000),
             record("gamma", "case-a", 1, 1, 1, 5_000),
         ];
-        let agg = AggregateReport::build(runs, None);
+        let agg = build(runs, None);
         let ranking = agg.case("case-a").unwrap();
         // alpha/beta tie on all four tiers -> both rank 1; gamma takes 3.
         assert_eq!(ranking.entries[0].rank, 1);
@@ -413,7 +467,7 @@ mod tests {
             record("base", "case-c", 5, 5, 5, 0),
             record("better", "case-c", 4, 5, 5, 0),
         ];
-        let agg = AggregateReport::build(runs, Some("base"));
+        let agg = build(runs, Some("base"));
         let better = agg.candidate("better").unwrap();
         assert_eq!((better.wins, better.draws, better.losses), (1, 1, 1));
     }
@@ -428,7 +482,7 @@ mod tests {
         panic_run.status = RunStatus::Panic;
         panic_run.scored = false;
         let runs = vec![timeout, panic_run];
-        let agg = AggregateReport::build(runs, Some("base"));
+        let agg = build(runs, Some("base"));
         let risky = agg.candidate("risky").unwrap();
         assert_eq!(risky.panics, 1);
         assert_eq!(risky.scored, 0);
@@ -441,7 +495,7 @@ mod tests {
     #[test]
     fn score_tuple_summary_reports_each_tier() {
         let runs = vec![record("a", "c1", 1, 2, 3, 100), record("a", "c2", 5, 6, 7, 300)];
-        let agg = AggregateReport::build(runs, None);
+        let agg = build(runs, None);
         let s = &agg.candidate("a").unwrap().score_summary;
         assert_eq!((s.variety.min, s.variety.max), (1, 5));
         assert_eq!((s.total_balls.min, s.total_balls.max), (3, 7));
@@ -459,8 +513,8 @@ mod tests {
                 record("y", "c2", 1, 2, 2, 20),
             ]
         };
-        let a = AggregateReport::build(make(), Some("y"));
-        let b = AggregateReport::build(make(), Some("y"));
+        let a = build(make(), Some("y"));
+        let b = build(make(), Some("y"));
         assert_eq!(a.per_case, b.per_case);
         assert_eq!(a.per_candidate, b.per_candidate);
     }
