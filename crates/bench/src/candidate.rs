@@ -735,7 +735,9 @@ mod tests {
         let loop_entry =
             cat.algorithms.iter().find(|a| a.algorithm == "loop").expect("loop in catalog");
         let keys: Vec<_> = loop_entry.params.iter().map(|p| p.key.as_str()).collect();
-        assert_eq!(keys, vec!["iterations", "initial", "seed"]);
+        // `lookahead` (#193) is appended after `seed`, so every id that
+        // existed before it keeps its byte-exact canonical form.
+        assert_eq!(keys, vec!["iterations", "initial", "seed", "lookahead"]);
         let json = serde_json::to_string_pretty(&cat).unwrap();
         assert!(json.contains("sweep-row"));
     }
