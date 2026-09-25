@@ -42,7 +42,7 @@
 //! planner cannot yet reason about traffic interactions between our own
 //! agents.
 //!
-//! # Coordinate conversion — the load-bearing risk
+//! # Coordinate conversion — the load-bearing risk (shared with `walk=astar`)
 //!
 //! `engine::model::Direction::step` and `solver_astar::hex::Direction::step`
 //! both *document* the contest's even-r layout (Q&A Q1) but implement
@@ -55,13 +55,17 @@
 //! ```
 //!
 //! The two neighbour graphs are exact column mirror images of each other, so
-//! this adapter plans on a **column-mirrored copy** of the map
+//! the planner works on a **column-mirrored copy** of the map
 //! (`(col, row) → (width - 1 - col, row)`) and mirrors coordinates and step
 //! directions at the boundary. Mirroring is an involution on `[0, width)`, so
 //! bounds, terrain and fuel costs are preserved, and A* stays optimal on the
 //! engine's grid (a reflection is an isometry of the hex lattice).
 //!
-//! The correspondence is pinned exhaustively by
+//! That machinery — the mirror table, the map conversion, the leg planner and
+//! the engine-side replay check — lives in [`super::astar_walk`] and is
+//! shared verbatim with the `walk=astar` day walk (Issue #215), so there is
+//! exactly one implementation of the conversion in this crate. The
+//! correspondence is pinned exhaustively by
 //! `mirrored_astar_steps_match_engine_steps`, and every planned path is
 //! re-played against the engine's own move rules (bounds / traversability /
 //! [`engine::rules::fuel_cost`]) before it is emitted — a conversion
@@ -69,16 +73,11 @@
 //! actions.
 
 use engine::model::{
-    Action, ActionKind, Agent, AgentActions, Direction, HexCoord, MapGrid, Solver, SolverContext,
-    Terrain, TrafficState,
+    Action, ActionKind, Agent, AgentActions, HexCoord, MapGrid, Solver, SolverContext,
 };
-use engine::rules::fuel_cost as engine_fuel_cost;
-use solver_astar::{
-    Action as AstarAction, AstarSolver, CellKind, CostPolicy, Direction as AstarDirection,
-    HexCoord as AstarCoord, HexMap, SolveContext, Solver as AstarSolve,
-    TrafficState as AstarTraffic,
-};
+use solver_astar::CostPolicy;
 
+use super::astar_walk::{plan_leg_path, to_astar_map};
 use super::greedy_solver::GreedyCandidate;
 use super::walk::step_towards;
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
@@ -145,158 +144,6 @@ fn parse_policy(spec: &CandidateSpec) -> Result<PolicyKind, CandidateError> {
     }
 }
 
-/// Column mirror between the engine's grid and the planning grid.
-///
-/// `(col, row) → (width - 1 - col, row)`. An involution: applying it twice
-/// is the identity, and it maps `[0, width) × [0, height)` onto itself. See
-/// the module docs for why the two crates' hex geometries need it.
-const fn mirror_coord(coord: HexCoord, width: i32) -> HexCoord {
-    HexCoord::new(width - 1 - coord.col, coord.row)
-}
-
-/// Engine direction for one mirrored A* step.
-///
-/// Left-right mirrored name table (`East ↔ West`,
-/// `NorthEast ↔ UpperLeft`, `NorthWest ↔ UpperRight`,
-/// `SouthEast ↔ LowerLeft`, `SouthWest ↔ LowerRight`) so that stepping with
-/// the returned direction on the engine grid lands on the mirrored image of
-/// the A* step's destination. Pinned exhaustively by
-/// `mirrored_astar_steps_match_engine_steps`.
-const fn to_engine_dir(dir: AstarDirection) -> Direction {
-    match dir {
-        AstarDirection::East => Direction::Left,
-        AstarDirection::West => Direction::Right,
-        AstarDirection::NorthEast => Direction::UpperLeft,
-        AstarDirection::NorthWest => Direction::UpperRight,
-        AstarDirection::SouthEast => Direction::LowerLeft,
-        AstarDirection::SouthWest => Direction::LowerRight,
-    }
-}
-
-/// Map an engine terrain onto the A* crate's cell kind.
-const fn to_cell_kind(terrain: Terrain) -> CellKind {
-    match terrain {
-        Terrain::Plain => CellKind::Plain,
-        Terrain::Mountain => CellKind::Mountain,
-        Terrain::Pond => CellKind::Pond,
-        Terrain::Road(state) => CellKind::Road { traffic: to_traffic(state) },
-    }
-}
-
-const fn to_traffic(state: TrafficState) -> AstarTraffic {
-    match state {
-        TrafficState::Smooth => AstarTraffic::Smooth,
-        TrafficState::Busy => AstarTraffic::Busy,
-        TrafficState::Jammed => AstarTraffic::Jammed,
-    }
-}
-
-/// Convert the live engine map into the A* crate's map on the mirrored
-/// grid: A* cell `(col, row)` holds the terrain of engine cell
-/// `(width - 1 - col, row)`.
-///
-/// Returns `None` only if the sizes somehow violate the A* crate's
-/// `8..=32` contract (the engine validates the same range, so this cannot
-/// happen for a constructed [`MapGrid`]).
-fn to_astar_map(map: &MapGrid) -> Option<HexMap> {
-    let width = u32::from(map.size.width);
-    let height = u32::from(map.size.height);
-    let width_usize = usize::try_from(width).ok()?;
-    let cell_count = width_usize.checked_mul(usize::try_from(height).ok()?)?;
-    let mut cells = vec![CellKind::Plain; cell_count];
-    for cell in map.cells() {
-        let mirrored = mirror_coord(cell.coord, i32::from(map.size.width));
-        let col = usize::try_from(mirrored.col).ok()?;
-        let row = usize::try_from(mirrored.row).ok()?;
-        *cells.get_mut(row.checked_mul(width_usize)?.checked_add(col)?)? =
-            to_cell_kind(cell.terrain);
-    }
-    HexMap::new(width, height, cells).ok()
-}
-
-/// Plan one agent's day with A*, mirroring into the planning grid and back,
-/// and return the day's actions only if they replay cleanly under the
-/// engine's own move rules.
-///
-/// `None` means "no usable path" and the caller falls back to greedy's
-/// walk — the failure modes are A* finding no path (step budget / fuel /
-/// ponds) and the replay check rejecting the conversion.
-fn plan_day_path(
-    astar_map: &HexMap,
-    engine_map: &MapGrid,
-    width: i32,
-    agent: &Agent,
-    goal: HexCoord,
-    day_steps: u32,
-    policy: PolicyKind,
-) -> Option<Vec<ActionKind>> {
-    let start = mirror_coord(agent.pos, width);
-    let target = mirror_coord(goal, width);
-    let solve_ctx = SolveContext::new(
-        astar_map.clone(),
-        AstarCoord::new(start.col, start.row),
-        AstarCoord::new(target.col, target.row),
-        agent.fuel,
-        day_steps,
-    )?;
-    let solver = AstarSolver::with_policy(policy.to_cost_policy(agent));
-    let path = solver.solve(&solve_ctx).path?;
-
-    let day_steps = usize::try_from(day_steps).unwrap_or(0);
-    let mut plan: Vec<ActionKind> = path
-        .steps
-        .iter()
-        .map(|step| match step {
-            AstarAction::Move(dir) => ActionKind::Move(to_engine_dir(*dir)),
-            AstarAction::Wait => ActionKind::Wait,
-        })
-        .collect();
-    // Defensive: A* only emits paths whose weighted cost fits `day_steps`
-    // (and every step weighs ≥ 1), but never trust that on the way out.
-    plan.truncate(day_steps);
-    plan.resize(day_steps, ActionKind::Wait);
-
-    if !plan_is_executable(agent, &plan, engine_map) {
-        tracing::debug!(
-            agent = agent.id,
-            goal = ?goal,
-            "astar planned path failed the engine replay check; falling back to greedy walk"
-        );
-        return None;
-    }
-    Some(plan)
-}
-
-/// Replay a planned action list against the engine's move rules: every move
-/// must stay in bounds, land on traversable terrain, and be affordable at
-/// the fuel level the agent will actually have at that point.
-///
-/// This is the tripwire for the coordinate-conversion risk: it uses
-/// [`engine::model::Direction::step`] and [`engine::rules::fuel_cost`],
-/// i.e. the same functions [`engine::MatchSim`] resolves moves with.
-fn plan_is_executable(agent: &Agent, plan: &[ActionKind], map: &MapGrid) -> bool {
-    let mut pos = agent.pos;
-    let mut fuel = agent.fuel;
-    for kind in plan {
-        let ActionKind::Move(dir) = *kind else {
-            continue;
-        };
-        let next = dir.step(pos);
-        let Some(cell) = map.get(next) else {
-            return false;
-        };
-        if !cell.terrain.traversable() {
-            return false;
-        }
-        let Some(remaining) = fuel.checked_sub(engine_fuel_cost(cell.terrain)) else {
-            return false;
-        };
-        fuel = remaining;
-        pos = next;
-    }
-    true
-}
-
 /// Greedy fallback for one agent: the same per-step `step_towards` walk
 /// [`super::walk::plan_walk`] performs, so a failed A* plan degrades to
 /// exactly `greedy`'s behaviour for that agent.
@@ -345,7 +192,6 @@ impl Solver for AstarCandidate {
         // comparison against `greedy` isolates routing quality.
         let targets = GreedyCandidate::new().targets(ctx);
         let map = &ctx.state.setting.map;
-        let width = i32::from(map.size.width);
         let day_steps = usize::try_from(ctx.day_steps).unwrap_or(0);
         let astar_map = to_astar_map(map);
 
@@ -354,9 +200,21 @@ impl Solver for AstarCandidate {
             let agent = ctx.state.agents.iter().find(|a| a.id == *id);
             let goal = targets.get(i).and_then(|list| list.first().copied());
             let planned = match (agent, goal, astar_map.as_ref()) {
-                (Some(agent), Some(goal), Some(astar_map)) => {
-                    plan_day_path(astar_map, map, width, agent, goal, ctx.day_steps, self.policy)
-                }
+                (Some(agent), Some(goal), Some(astar_map)) => plan_leg_path(
+                    astar_map,
+                    map,
+                    agent.pos,
+                    agent.fuel,
+                    goal,
+                    ctx.day_steps,
+                    self.policy.to_cost_policy(agent),
+                )
+                .map(|mut plan| {
+                    // One day of actions: `plan_leg_path` never returns more
+                    // than `day_steps`, so this pads the tail with waits.
+                    plan.resize(day_steps, ActionKind::Wait);
+                    plan
+                }),
                 _ => None,
             };
             per_agent.push(planned.unwrap_or_else(|| walk_actions(map, agent, goal, day_steps)));
@@ -410,10 +268,15 @@ impl CandidateFactory for AstarFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adapters::astar_walk::{mirror_coord, to_cell_kind, to_engine_dir};
     use crate::candidate::CandidateRegistry;
     use domain::{MatchId, PlayerId};
     use engine::MatchSim;
-    use engine::model::{Agent, Cell, MapSize, MatchSetting, MatchState, Spot};
+    use engine::model::{
+        Agent, Cell, MapSize, MatchSetting, MatchState, Spot, Terrain, TrafficState,
+    };
+    use engine::rules::fuel_cost as engine_fuel_cost;
+    use solver_astar::{CellKind, Direction as AstarDirection, HexCoord as AstarCoord};
 
     /// An 8x8 map with one patrol-worthy spot and a solid mountain strip
     /// across the direct route: greedy's `step_towards` walks straight

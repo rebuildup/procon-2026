@@ -19,6 +19,11 @@
 //! or-opt (segment relocation ≤ 3) on top of it. The parameter is appended
 //! last in [`PARAMS`] so existing canonical ids keep their shape.
 //!
+//! `walk=greedy` (the default) is today's [`super::walk::plan_walk`], byte
+//! for byte; `walk=astar` walks the **same** target list in list order with
+//! A*-planned legs (Issue #215) — see [`super::astar_walk`]. It is likewise
+//! appended last in [`PARAMS`], after `operators`.
+//!
 //! Every `initial=` value here has exactly one live-CLI counterpart
 //! (`procon tournament|coordinator --loop-initial-strategy <label>`); the
 //! correspondence table lives in `crates/cli/src/initial_strategy.rs`.
@@ -40,13 +45,13 @@
 //! positions. It is also what keeps `initial=` / `iterations=` meaningful —
 //! the refinement runs on the day's actual problem.
 
-use engine::model::{AgentActions, HexCoord, Solver, SolverContext};
+use engine::model::{ActionKind, AgentActions, HexCoord, Solver, SolverContext};
 use solver_loop::{
     Agent as LoopAgent, HexCoord as LoopCoord, InitialStrategy, LoopSolver, OperatorSet,
     Series as LoopSeries, SolveProblem, Solver as _, Spot as LoopSpot,
 };
 
-use super::walk::{plan_walk, step_towards};
+use super::walk::{WalkMode, parse_walk, plan_walk_with, step_towards};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
 /// Parameter schema, in canonical id order.
@@ -76,6 +81,12 @@ pub const PARAMS: &[ParamSpec] = &[
         required: false,
         doc: "refinement operator set: classic (default; pre-#191 move set) | extended (7-move 3-opt + or-opt)",
     },
+    ParamSpec {
+        key: "walk",
+        required: false,
+        doc: "day walk over the solved target list: greedy (default; today's plan_walk) | \
+              astar (visit the list in order with A* legs, Issue #215)",
+    },
 ];
 
 /// A [`LoopSolver`] configured from a candidate spec, driving one day at a
@@ -84,6 +95,8 @@ pub struct LoopCandidate {
     inner: LoopSolver,
     /// The candidate id, echoed into solver naming for logs.
     id: String,
+    /// How the solved target lists are walked ([`super::walk::WalkMode`]).
+    walk: WalkMode,
 }
 
 impl LoopCandidate {
@@ -92,9 +105,11 @@ impl LoopCandidate {
         let iterations = spec.param_u32("iterations")?.unwrap_or(50);
         let initial = parse_initial(spec)?;
         let operators = parse_operators(spec)?;
+        let walk = parse_walk(spec)?;
         Ok(Self {
             inner: LoopSolver::with_operators(initial, iterations, operators),
             id: spec.id(),
+            walk,
         })
     }
 
@@ -105,6 +120,12 @@ impl LoopCandidate {
     /// must not perturb a single byte of the pre-existing behaviour. Only
     /// `operators=extended` may be re-anchored, and only when its default
     /// anchor would reach no spot at all; see [`rescue_anchor`].
+    ///
+    /// The probe behind that decision is evaluated with **this candidate's
+    /// walk mode** ([`WalkMode`]), so `walk=astar` is only re-anchored when
+    /// the A* walk itself would collect nothing — the rescue keeps matching
+    /// the contract "0 iff this walk reaches no spot" no matter which walk
+    /// the candidate selected, and a working assignment is never rewritten.
     fn targets_for(
         &self,
         ctx: &SolverContext<'_>,
@@ -112,11 +133,11 @@ impl LoopCandidate {
     ) -> Vec<Vec<HexCoord>> {
         let per_agent = agent_targets(ctx, outcome);
         if self.inner.operators != OperatorSet::Extended
-            || agents_reaching_a_spot(ctx, &per_agent) > 0
+            || agents_reaching_a_spot(ctx, &per_agent, self.walk) > 0
         {
             return per_agent;
         }
-        rescue_anchor(ctx, outcome, &per_agent)
+        rescue_anchor(ctx, outcome, &per_agent, self.walk)
     }
 }
 
@@ -132,7 +153,7 @@ impl Solver for LoopCandidate {
         match self.inner.solve(&problem) {
             Ok(outcome) => {
                 let per_agent = self.targets_for(ctx, &outcome);
-                plan_walk(ctx, &per_agent)
+                plan_walk_with(ctx, &per_agent, self.walk)
             }
             Err(err) => {
                 tracing::debug!(candidate = %self.id, error = %err, "loop solve failed; waiting");
@@ -233,42 +254,80 @@ fn coord_for_spot_id(spot_id: u32) -> Option<HexCoord> {
 // ---------------------------------------------------------------------------
 
 /// How many controlled agents would stand on a spot cell at least once if
-/// [`plan_walk`] walked `targets` for this day.
+/// `walk` walked `targets` for this day.
 ///
-/// This replays `plan_walk`'s own position bookkeeping *exactly*: same live
-/// start positions, same `step % targets.len()` target cycling, same
-/// [`step_towards`]. Consequently the count is `0` **if and only if** no
-/// agent can collect anything from this target assignment on this day —
-/// `engine::MatchSim` only acquires when an agent ends a step on a spot.
+/// The probe replays **the walk the candidate selected**: for
+/// [`WalkMode::Greedy`] that is [`super::walk::plan_walk`]'s own position
+/// bookkeeping *exactly* — same live start positions, same
+/// `step % targets.len()` target cycling, same [`step_towards`] — and for
+/// [`WalkMode::Astar`] it is the actions
+/// [`super::astar_walk::plan_walk_astar`] actually produces. Consequently
+/// the count is `0` **if and only if** no agent can collect anything from
+/// this target assignment on this day *with this walk* — `engine::MatchSim`
+/// only acquires when an agent ends a step on a spot.
 ///
 /// It is a read-only probe: it never mutates the state and it is never used
 /// to pick a *better* assignment when the default one already works (see
 /// [`rescue_anchor`]).
-fn agents_reaching_a_spot(ctx: &SolverContext<'_>, targets: &[Vec<HexCoord>]) -> usize {
+fn agents_reaching_a_spot(
+    ctx: &SolverContext<'_>,
+    targets: &[Vec<HexCoord>],
+    walk: WalkMode,
+) -> usize {
     let map = &ctx.state.setting.map;
     let day_steps = ctx.day_steps as usize;
-    ctx.agent_ids
-        .iter()
-        .enumerate()
-        .filter(|(i, agent_id)| {
-            let Some(list) = targets.get(*i).filter(|l| !l.is_empty()) else {
-                return false;
-            };
-            let Some(start) = ctx.state.agents.iter().find(|a| a.id == **agent_id) else {
-                return false;
-            };
-            let mut pos = start.pos;
-            for step in 0..day_steps {
-                if let Some(dir) = step_towards(pos, list[step % list.len()], map) {
-                    pos = dir.step(pos);
+    match walk {
+        WalkMode::Greedy => ctx
+            .agent_ids
+            .iter()
+            .enumerate()
+            .filter(|(i, agent_id)| {
+                let Some(list) = targets.get(*i).filter(|l| !l.is_empty()) else {
+                    return false;
+                };
+                let Some(start) = ctx.state.agents.iter().find(|a| a.id == **agent_id) else {
+                    return false;
+                };
+                let mut pos = start.pos;
+                for step in 0..day_steps {
+                    if let Some(dir) = step_towards(pos, list[step % list.len()], map) {
+                        pos = dir.step(pos);
+                    }
+                    if map.get(pos).is_some_and(|c| c.spot.is_some()) {
+                        return true;
+                    }
                 }
-                if map.get(pos).is_some_and(|c| c.spot.is_some()) {
-                    return true;
-                }
-            }
-            false
-        })
-        .count()
+                false
+            })
+            .count(),
+        WalkMode::Astar => {
+            // Trace the very plan the candidate would emit, step-major.
+            let plan = super::astar_walk::plan_walk_astar(ctx, targets);
+            let agent_count = ctx.agent_ids.len();
+            ctx.agent_ids
+                .iter()
+                .enumerate()
+                .filter(|(i, agent_id)| {
+                    let Some(start) = ctx.state.agents.iter().find(|a| a.id == **agent_id) else {
+                        return false;
+                    };
+                    let mut pos = start.pos;
+                    for step in 0..day_steps {
+                        let Some(action) = plan.actions.get(step * agent_count + *i) else {
+                            break;
+                        };
+                        if let ActionKind::Move(dir) = action.kind {
+                            pos = dir.step(pos);
+                        }
+                        if map.get(pos).is_some_and(|c| c.spot.is_some()) {
+                            return true;
+                        }
+                    }
+                    false
+                })
+                .count()
+        }
+    }
 }
 
 /// Recover the refined closed tour from a `days = 1` solve outcome.
@@ -347,6 +406,7 @@ fn rescue_anchor(
     ctx: &SolverContext<'_>,
     outcome: &solver_loop::SolveOutcome,
     default: &[Vec<HexCoord>],
+    walk: WalkMode,
 ) -> Vec<Vec<HexCoord>> {
     let n_agents = ctx.agent_ids.len();
     let Some(tour) = tour_from_outcome(outcome, n_agents) else {
@@ -354,7 +414,7 @@ fn rescue_anchor(
     };
 
     let mut best = default.to_vec();
-    let mut best_hits = agents_reaching_a_spot(ctx, &best);
+    let mut best_hits = agents_reaching_a_spot(ctx, &best, walk);
     if best_hits == n_agents {
         return best;
     }
@@ -372,7 +432,7 @@ fn rescue_anchor(
                 anchor.rotate_left(1);
             }
             let candidate = targets_for_tour(ctx, &anchor, n_agents);
-            let hits = agents_reaching_a_spot(ctx, &candidate);
+            let hits = agents_reaching_a_spot(ctx, &candidate, walk);
             if hits > best_hits {
                 best_hits = hits;
                 best = candidate;
@@ -452,12 +512,14 @@ impl CandidateFactory for LoopFactory {
 
     fn describe(&self) -> &'static str {
         "Iterative-improvement loop tour (2-opt / 3-opt) over the day's spots, \
-         then walk the visit order. Supports initial=, iterations= and operators= sweeps."
+         then walk the visit order. Supports initial=, iterations=, operators= \
+         and walk= sweeps."
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {
         parse_initial(spec)?;
         parse_operators(spec)?;
+        parse_walk(spec)?;
         Ok(())
     }
 
@@ -583,15 +645,18 @@ mod tests {
             let outcome = solver.solve(&problem).expect("solve");
             let tour =
                 tour_from_outcome(&outcome, problem.agents.len()).expect("clean round-robin");
-            let reached = agents_reaching_a_spot(&ctx, &agent_targets(&ctx, &outcome));
+            let reached =
+                agents_reaching_a_spot(&ctx, &agent_targets(&ctx, &outcome), WalkMode::Greedy);
             println!("{ops:?}: reachable_agents={reached}/{} tour={tour:?}", problem.agents.len());
             outcomes.push((tour, outcome));
         }
 
         let (classic_tour, classic_outcome) = &outcomes[0];
         let (extended_tour, extended_outcome) = &outcomes[1];
-        let classic_hits = agents_reaching_a_spot(&ctx, &agent_targets(&ctx, classic_outcome));
-        let extended_hits = agents_reaching_a_spot(&ctx, &agent_targets(&ctx, extended_outcome));
+        let classic_hits =
+            agents_reaching_a_spot(&ctx, &agent_targets(&ctx, classic_outcome), WalkMode::Greedy);
+        let extended_hits =
+            agents_reaching_a_spot(&ctx, &agent_targets(&ctx, extended_outcome), WalkMode::Greedy);
 
         // The two operator sets must actually disagree about the array —
         // otherwise there would be no defect to rescue.
@@ -617,7 +682,7 @@ mod tests {
         // …and the rescue must re-anchor it to something walkable.
         let rescued = extended_candidate().targets_for(&ctx, extended_outcome);
         assert!(
-            agents_reaching_a_spot(&ctx, &rescued) >= 1,
+            agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy) >= 1,
             "the Issue #207 rescue must re-anchor extended to a walkable target set"
         );
     }
@@ -655,7 +720,7 @@ mod tests {
         );
         let mut outcome = solver.solve(&problem).expect("solve");
         let default = agent_targets(&ctx, &outcome);
-        if agents_reaching_a_spot(&ctx, &default) > 0 {
+        if agents_reaching_a_spot(&ctx, &default, WalkMode::Greedy) > 0 {
             assert_eq!(
                 candidate.targets_for(&ctx, &outcome),
                 default,
@@ -707,5 +772,125 @@ mod tests {
             let c = HexCoord::new(col, row);
             assert_eq!(coord_for_spot_id(spot_id_for_coord(c)), Some(c));
         }
+    }
+
+    /// Issue #215 — `walk` is a schema-gated parameter appended **last**, so
+    /// every pre-existing id keeps its bytes. Both legal values build
+    /// (including inside full canonical ids), any other value is
+    /// `InvalidParameter`, and an unknown key still loses to the schema
+    /// before value validation.
+    #[test]
+    fn walk_param_is_schema_validated() {
+        let reg = CandidateRegistry::builtin();
+        for id in [
+            "loop:walk=greedy",
+            "loop:walk=astar",
+            "loop:iterations=32:initial=greedy:walk=astar",
+            "loop:iterations=32:initial=greedy:operators=extended:walk=astar",
+            "loop:initial=sweep-row:walk=greedy",
+        ] {
+            let candidate = reg.build(id).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(candidate.id(), id, "canonical order must round-trip: {id}");
+            assert!(candidate.build_solver().is_ok(), "{id} must build a solver");
+        }
+        for id in [
+            "loop:walk=nope",
+            "loop:walk=Astar",
+            "loop:walk=",
+            "loop:iterations=32:initial=greedy:walk=step",
+        ] {
+            assert!(
+                matches!(
+                    reg.build(id),
+                    Err(CandidateError::InvalidParameter { .. }
+                        | CandidateError::MissingParamValue(_))
+                ),
+                "{id} must be rejected"
+            );
+        }
+        assert!(matches!(
+            reg.build("loop:walkmode=astar"),
+            Err(CandidateError::UnknownParameter { .. })
+        ));
+    }
+
+    /// Issue #215 AC — default equivalence: writing `walk=greedy` explicitly
+    /// changes not one action of an existing candidate id on a fixed live
+    /// input, for both the plain and the rescue-carrying `extended` id.
+    #[test]
+    fn walk_greedy_decide_is_byte_identical_to_the_omitted_default() {
+        let ctx = road_heavy_v2_context();
+        for (base, explicit) in [
+            ("loop:iterations=32:initial=greedy", "loop:iterations=32:initial=greedy:walk=greedy"),
+            (EXTENDED_ID, "loop:iterations=32:initial=greedy:operators=extended:walk=greedy"),
+        ] {
+            assert_eq!(
+                loop_candidate(base).decide(&ctx),
+                loop_candidate(explicit).decide(&ctx),
+                "{explicit} must be byte-for-byte {base}"
+            );
+        }
+    }
+
+    /// Issue #215 — the Issue #207 anchor that `plan_walk` never reaches on
+    /// `fixture:road-heavy-v2` **is** reached by `walk=astar` on the very
+    /// same assignment, so `walk=astar` must not fire the rescue: the
+    /// assignment stays identical and only the walk moves. `walk=greedy`
+    /// keeps rescuing exactly as it did before #215.
+    #[test]
+    fn walk_astar_reaches_the_207_anchor_and_keeps_the_assignment() {
+        let ctx = road_heavy_v2_context();
+        let problem = problem_from_state(&ctx);
+        let solver = LoopSolver::with_operators(
+            InitialStrategy::GreedyNearestNeighbor,
+            32,
+            OperatorSet::Extended,
+        );
+        let outcome = solver.solve(&problem).expect("solve");
+        let targets = agent_targets(&ctx, &outcome);
+
+        // Control (Issue #207): the greedy walk model reports zero reachable
+        // agents — the rescue's documented trigger.
+        assert_eq!(
+            agents_reaching_a_spot(&ctx, &targets, WalkMode::Greedy),
+            0,
+            "the Issue #207 repro must still be a zero under plan_walk"
+        );
+        // The fix: the ordered A* walk on the *same* assignment collects.
+        assert!(
+            agents_reaching_a_spot(&ctx, &targets, WalkMode::Astar) >= 1,
+            "walk=astar must reach where plan_walk oscillates"
+        );
+
+        // Therefore the astar candidate keeps the default anchor untouched …
+        let astar =
+            loop_candidate("loop:iterations=32:initial=greedy:operators=extended:walk=astar");
+        assert_eq!(
+            astar.targets_for(&ctx, &outcome),
+            targets,
+            "walk=astar must not re-anchor an assignment its own walk can use"
+        );
+        // … while the greedy candidate still re-anchors, byte for byte as
+        // before #215.
+        let rescued = extended_candidate().targets_for(&ctx, &outcome);
+        assert_ne!(rescued, targets, "the greedy rescue must still fire here");
+        assert!(
+            agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy) >= 1,
+            "and the rescued anchor must still be walkable"
+        );
+    }
+
+    /// `walk=astar` rides the same `decide` path: a well-shaped day whose
+    /// actions are genuinely the ordered A* walk, not the greedy one.
+    #[test]
+    fn walk_astar_decide_is_well_shaped_and_changes_the_walk() {
+        let ctx = road_heavy_v2_context();
+        let plan = loop_candidate("loop:iterations=32:initial=greedy:walk=astar").decide(&ctx);
+        assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
+        assert_ne!(
+            plan,
+            loop_candidate("loop:iterations=32:initial=greedy").decide(&ctx),
+            "walk=astar must actually change the emitted walk"
+        );
     }
 }

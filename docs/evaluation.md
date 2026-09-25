@@ -103,8 +103,8 @@ just eval-list
 登録済み:
 
 ```text
-loop                                  iterations / initial / seed / operators
-multiloop                             grid / kmeans / seed / refine
+loop                                  iterations / initial / seed / operators / walk
+multiloop                             grid / kmeans / seed / refine / walk
 greedy
 nearest
 astar                                 policy
@@ -138,6 +138,16 @@ astar:policy=step
 セグメント移動）を追加します。パラメータは id の末尾に追記するため
 既存 canonical ID の形は変わりません。
 
+`walk` の候補（`loop` / `multiloop` 共通、Issue #215）: `greedy`（既定）/ `astar`。
+solver が day-start に決めた **target list の歩き方** を選びます。
+`greedy` は従来の `plan_walk` そのままで（step index で target を切り替える
+`step % len` 貪欲歩行）、`walk` を省略した既存 ID はすべてこれに一致します。
+`astar` は同じ target list を **リスト順に 1 target ずつ A\* で辿り**、
+到着で次 target、全到着 or day 終了で待機します（`#207` / `#213` の振動を
+構造的に排除）。片 leg の A\* が予算・到達不能で失敗した場合は
+`step_towards` 単独歩行へ degrade し、それも進まなければ待機します。
+パラメータは id の末尾に追記され、既存 canonical ID の形は変わりません。
+
 `multiloop` は `solver-loop::MultiLoopComposer` を evaluator に接続した
 領域分割候補（Issue #190）。**`grid` と `kmeans` のどちらか一方だけ**を指定します。
 
@@ -147,6 +157,7 @@ astar:policy=step
 | `kmeans` | `k`（例 `kmeans=4`、`k=4` ではない） | 1..=64。`grid` と `kmeans` は排他 |
 | `seed` | u64 | `kmeans` が在る時 **必須**、`grid` の時 **拒否**（`loop` の `initial=random` と同じ規則） |
 | `refine` | `true` / `false` | region 毎の 2-opt refinement。省略時の既定は composer 自身の既定どおり `true` |
+| `walk` | `greedy` / `astar` | target list の歩き方（`loop` と同一、Issue #215）。省略時の既定は `greedy`（従来の `plan_walk`） |
 
 offline の `initial=` と live CLI の `--loop-initial-strategy` の対応は
 [`docs/development.md`](development.md)（Issue #170 の節）と

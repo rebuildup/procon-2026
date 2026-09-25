@@ -28,15 +28,18 @@
 //!
 //! Identical to [`super::loop_solver`]: re-solve the touring problem once per
 //! day from the live [`engine::model::MatchState`], map the resulting spot-id
-//! plans to coordinates, and walk them with [`super::walk::plan_walk`]. The
+//! plans to coordinates, and walk them with the selected `walk` mode —
+//! `greedy` (the default) is [`super::walk::plan_walk`] byte for byte,
+//! `astar` is [`super::astar_walk::plan_walk_astar`] (Issue #215). The
 //! adapter reuses the loop adapter's `problem_from_state` / `agent_targets`
-//! helpers so the two candidates differ only in tour construction.
+//! helpers so the two candidates differ only in tour construction (and, with
+//! `walk=`, in how the resulting lists are walked).
 
 use engine::model::{AgentActions, Solver, SolverContext};
 use solver_loop::{ClusteringStrategy, MultiLoopComposer, Solver as _};
 
 use super::loop_solver::{agent_targets, problem_from_state};
-use super::walk::plan_walk;
+use super::walk::{WalkMode, parse_walk, plan_walk_with};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
 /// Parameter schema, in canonical id order.
@@ -63,6 +66,12 @@ pub const PARAMS: &[ParamSpec] = &[
         key: "refine",
         required: false,
         doc: "per-region 2-opt refinement: true | false (default true)",
+    },
+    ParamSpec {
+        key: "walk",
+        required: false,
+        doc: "day walk over the solved target lists: greedy (default; today's plan_walk) | \
+              astar (visit each list in order with A* legs, Issue #215)",
     },
 ];
 
@@ -93,6 +102,9 @@ pub struct MultiLoopCandidate {
     inner: MultiLoopComposer,
     /// The candidate id, echoed into solver naming for logs.
     id: String,
+    /// How the solved per-agent target lists are walked
+    /// ([`super::walk::WalkMode`]).
+    walk: WalkMode,
 }
 
 impl MultiLoopCandidate {
@@ -101,12 +113,13 @@ impl MultiLoopCandidate {
         super::reject_unknown_params(spec, PARAMS)?;
         let (num_regions, clustering) = clustering_from_spec(spec)?;
         let refine = parse_refine(spec)?;
+        let walk = parse_walk(spec)?;
         let inner = if refine {
             MultiLoopComposer::new(num_regions, clustering)
         } else {
             MultiLoopComposer::without_refinement(num_regions, clustering)
         };
-        Ok(Self { inner, id: spec.id() })
+        Ok(Self { inner, id: spec.id(), walk })
     }
 }
 
@@ -122,7 +135,7 @@ impl Solver for MultiLoopCandidate {
         match self.inner.solve(&problem) {
             Ok(outcome) => {
                 let per_agent = agent_targets(ctx, &outcome);
-                plan_walk(ctx, &per_agent)
+                plan_walk_with(ctx, &per_agent, self.walk)
             }
             Err(err) => {
                 tracing::debug!(candidate = %self.id, error = %err, "multiloop solve failed; waiting");
@@ -301,12 +314,14 @@ impl CandidateFactory for MultiLoopFactory {
 
     fn describe(&self) -> &'static str {
         "Region-clustering tour: partition spots (grid or k-means), build one tour per \
-         region, hand regions to agents round-robin. A different mechanism from `loop`."
+         region, hand regions to agents round-robin. A different mechanism from `loop`. \
+         Supports refine= and walk= sweeps."
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {
         clustering_from_spec(spec)?;
         parse_refine(spec)?;
+        parse_walk(spec)?;
         Ok(())
     }
 
@@ -346,7 +361,8 @@ mod tests {
         let entry =
             cat.algorithms.iter().find(|a| a.algorithm == "multiloop").expect("multiloop listed");
         let keys: Vec<&str> = entry.params.iter().map(|p| p.key.as_str()).collect();
-        assert_eq!(keys, ["grid", "kmeans", "seed", "refine"]);
+        // `walk` is appended last (Issue #215) so pre-existing ids keep shape.
+        assert_eq!(keys, ["grid", "kmeans", "seed", "refine", "walk"]);
     }
 
     #[test]
@@ -551,6 +567,96 @@ mod tests {
         // iterations are capped, so the run is reproducible.
         let again = composer.solve(&problem_from_state(&ctx)).expect("solve");
         assert_eq!(first.plans, again.plans, "kmeans partition must be deterministic");
+    }
+
+    /// Issue #215 — `walk` is schema-gated and appended last on `multiloop`
+    /// too: both legal values build inside canonical ids, any other value is
+    /// `InvalidParameter`, and an unknown key still loses to the schema.
+    #[test]
+    fn walk_param_is_schema_validated() {
+        let reg = CandidateRegistry::builtin();
+        for id in [
+            "multiloop:grid=2x2:walk=greedy",
+            "multiloop:grid=2x2:walk=astar",
+            "multiloop:kmeans=4:seed=42:walk=astar",
+            "multiloop:grid=2x2:refine=false:walk=astar",
+        ] {
+            let candidate = reg.build(id).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(candidate.id(), id, "canonical order must round-trip: {id}");
+            assert!(candidate.build_solver().is_ok(), "{id} must build a solver");
+        }
+        for id in [
+            "multiloop:grid=2x2:walk=nope",
+            "multiloop:grid=2x2:walk=Astar",
+            "multiloop:grid=2x2:walk=",
+            "multiloop:kmeans=4:seed=42:walk=step",
+        ] {
+            assert!(
+                matches!(
+                    reg.build(id),
+                    Err(CandidateError::InvalidParameter { .. }
+                        | CandidateError::MissingParamValue(_))
+                ),
+                "{id} must be rejected"
+            );
+        }
+        assert!(matches!(
+            reg.build("multiloop:grid=2x2:walkmode=astar"),
+            Err(CandidateError::UnknownParameter { .. })
+        ));
+    }
+
+    /// Issue #215 AC — default equivalence: `walk=greedy` spelled out is
+    /// byte-identical to the omitted parameter on a fixed live input, for
+    /// both clustering strategies.
+    #[test]
+    fn walk_greedy_decide_is_byte_identical_to_the_omitted_default() {
+        let reg = CandidateRegistry::builtin();
+        let state = two_cluster_state();
+        let ctx = SolverContext::from_state(&state);
+        for (base, explicit) in [
+            ("multiloop:grid=1x2", "multiloop:grid=1x2:walk=greedy"),
+            ("multiloop:kmeans=4:seed=42", "multiloop:kmeans=4:seed=42:walk=greedy"),
+        ] {
+            let build = |id: &str| {
+                reg.build(id)
+                    .unwrap_or_else(|e| panic!("{id}: {e}"))
+                    .build_solver()
+                    .unwrap_or_else(|e| panic!("{id}: {e}"))
+            };
+            assert_eq!(
+                build(base).decide(&ctx),
+                build(explicit).decide(&ctx),
+                "{explicit} must be byte-for-byte {base}"
+            );
+        }
+    }
+
+    /// `walk=astar` rides `multiloop`'s own `decide` path: a well-shaped day
+    /// whose agents actually act (it is not a silent all-wait), so the A*
+    /// walk is wired into the candidate rather than bypassing it.
+    #[test]
+    fn walk_astar_decide_is_well_shaped_and_actually_walks() {
+        let reg = CandidateRegistry::builtin();
+        let state = two_cluster_state();
+        let ctx = SolverContext::from_state(&state);
+        let solver = reg
+            .build("multiloop:grid=1x2:walk=astar")
+            .expect("candidate builds")
+            .build_solver()
+            .expect("solver builds");
+        let plan = solver.decide(&ctx);
+        assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
+        assert_eq!(
+            plan.actions.len(),
+            ctx.agent_ids.len() * ctx.day_steps as usize,
+            "one action per agent per step"
+        );
+        assert_ne!(
+            plan,
+            engine::model::AgentActions::wait_all(&ctx.agent_ids, ctx.day_steps),
+            "walk=astar must emit real movement, not waits"
+        );
     }
 
     #[test]

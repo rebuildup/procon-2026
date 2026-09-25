@@ -14,6 +14,7 @@
 //! new crate.
 
 pub mod astar_solver;
+pub mod astar_walk;
 pub mod context;
 pub mod greedy_solver;
 pub mod loop_solver;
