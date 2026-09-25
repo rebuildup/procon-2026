@@ -5,15 +5,21 @@
 //!
 //! ```text
 //! loop                                  (defaults: iterations=50, initial=greedy,
-//!                                        lookahead=none)
+//!                                        operators=classic, lookahead=none)
 //! loop:iterations=32:initial=greedy
 //! loop:iterations=128:initial=greedy
 //! loop:iterations=64:initial=random:seed=42
 //! loop:initial=sweep-row
 //! loop:initial=sweep-col
+//! loop:iterations=32:initial=greedy:operators=extended
 //! loop:initial=reverse
 //! loop:iterations=32:initial=greedy:lookahead=crossday
 //! ```
+//!
+//! `operators=classic` (the default) is the pre-#191 move set, byte for
+//! byte; `operators=extended` adds all seven classical 3-opt moves plus
+//! or-opt (segment relocation ≤ 3) on top of it. The parameter is appended
+//! last in [`PARAMS`] so existing canonical ids keep their shape.
 //!
 //! Every `initial=` value here has exactly one live-CLI counterpart
 //! (`procon tournament|coordinator --loop-initial-strategy <label>`); the
@@ -64,14 +70,19 @@
 
 use engine::model::{AgentActions, HexCoord, Solver, SolverContext};
 use solver_loop::{
-    Agent as LoopAgent, HexCoord as LoopCoord, InitialStrategy, LoopSolver, Series as LoopSeries,
-    SolveProblem, Solver as _, Spot as LoopSpot,
+    Agent as LoopAgent, HexCoord as LoopCoord, InitialStrategy, LoopSolver, OperatorSet,
+    Series as LoopSeries, SolveProblem, Solver as _, Spot as LoopSpot,
 };
 
-use super::walk::plan_walk;
+use super::walk::{plan_walk, step_towards};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
 /// Parameter schema, in canonical id order.
+///
+/// `operators` is appended after `seed` (Issue #191) so that every
+/// pre-existing canonical id — `loop:iterations=32:initial=greedy`,
+/// `loop:iterations=64:initial=random:seed=42`, … — keeps both its bytes
+/// and its meaning (omitted `operators` selects `classic`).
 pub const PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "iterations",
@@ -87,6 +98,11 @@ pub const PARAMS: &[ParamSpec] = &[
         key: "seed",
         required: false,
         doc: "RNG seed for initial=random (u64); required when initial=random",
+    },
+    ParamSpec {
+        key: "operators",
+        required: false,
+        doc: "refinement operator set: classic (default; pre-#191 move set) | extended (7-move 3-opt + or-opt)",
     },
     ParamSpec {
         key: "lookahead",
@@ -166,23 +182,52 @@ impl LoopCandidate {
     fn from_spec(spec: &CandidateSpec) -> Result<Self, CandidateError> {
         let iterations = spec.param_u32("iterations")?.unwrap_or(50);
         let initial = parse_initial(spec)?;
+        let operators = parse_operators(spec)?;
         let lookahead = parse_lookahead(spec)?;
-        Ok(Self { inner: LoopSolver::new(initial, iterations), id: spec.id(), lookahead })
+        Ok(Self {
+            inner: LoopSolver::with_operators(initial, iterations, operators),
+            id: spec.id(),
+            lookahead,
+        })
     }
 
     /// Solve once from the live state and return **today's** per-agent
     /// target lists — the exact path [`Solver::decide`] walks.
     ///
-    /// Exposed to the module's tests so they can assert which leg of a
-    /// multi-day outcome the adapter follows (Issue #193's AC), without
-    /// duplicating the `decide` plumbing.
+    /// Composes both gates: `lookahead` picks the planning horizon
+    /// (`problem_from_days`) and `operators=extended` may re-anchor a
+    /// zero-reach outcome via [`Self::targets_for`]. Exposed to the
+    /// module's tests so they can assert which leg of a multi-day outcome
+    /// the adapter follows (Issue #193's AC), without duplicating the
+    /// `decide` plumbing.
     fn day_targets(
         &self,
         ctx: &SolverContext<'_>,
     ) -> Result<Vec<Vec<HexCoord>>, solver_loop::SolverError> {
         let problem = problem_from_days(ctx, self.lookahead.plan_days(ctx));
         let outcome = self.inner.solve(&problem)?;
-        Ok(agent_targets_on_day(ctx, &outcome, CURRENT_DAY_LEG))
+        Ok(self.targets_for(ctx, &outcome))
+    }
+
+    /// The per-agent target lists this candidate will walk.
+    ///
+    /// `operators=classic` (and therefore every default candidate id) takes
+    /// the direct path and returns [`agent_targets`] unchanged — Issue #207
+    /// must not perturb a single byte of the pre-existing behaviour. Only
+    /// `operators=extended` may be re-anchored, and only when its default
+    /// anchor would reach no spot at all; see [`rescue_anchor`].
+    fn targets_for(
+        &self,
+        ctx: &SolverContext<'_>,
+        outcome: &solver_loop::SolveOutcome,
+    ) -> Vec<Vec<HexCoord>> {
+        let per_agent = agent_targets(ctx, outcome);
+        if self.inner.operators != OperatorSet::Extended
+            || agents_reaching_a_spot(ctx, &per_agent) > 0
+        {
+            return per_agent;
+        }
+        rescue_anchor(ctx, outcome, &per_agent)
     }
 }
 
@@ -316,6 +361,163 @@ fn coord_for_spot_id(spot_id: u32) -> Option<HexCoord> {
     Some(HexCoord::new(col, row))
 }
 
+// ---------------------------------------------------------------------------
+// Issue #207 — reachability probe + anchor rescue (`operators=extended` only)
+// ---------------------------------------------------------------------------
+
+/// How many controlled agents would stand on a spot cell at least once if
+/// [`plan_walk`] walked `targets` for this day.
+///
+/// This replays `plan_walk`'s own position bookkeeping *exactly*: same live
+/// start positions, same `step % targets.len()` target cycling, same
+/// [`step_towards`]. Consequently the count is `0` **if and only if** no
+/// agent can collect anything from this target assignment on this day —
+/// `engine::MatchSim` only acquires when an agent ends a step on a spot.
+///
+/// It is a read-only probe: it never mutates the state and it is never used
+/// to pick a *better* assignment when the default one already works (see
+/// [`rescue_anchor`]).
+fn agents_reaching_a_spot(ctx: &SolverContext<'_>, targets: &[Vec<HexCoord>]) -> usize {
+    let map = &ctx.state.setting.map;
+    let day_steps = ctx.day_steps as usize;
+    ctx.agent_ids
+        .iter()
+        .enumerate()
+        .filter(|(i, agent_id)| {
+            let Some(list) = targets.get(*i).filter(|l| !l.is_empty()) else {
+                return false;
+            };
+            let Some(start) = ctx.state.agents.iter().find(|a| a.id == **agent_id) else {
+                return false;
+            };
+            let mut pos = start.pos;
+            for step in 0..day_steps {
+                if let Some(dir) = step_towards(pos, list[step % list.len()], map) {
+                    pos = dir.step(pos);
+                }
+                if map.get(pos).is_some_and(|c| c.spot.is_some()) {
+                    return true;
+                }
+            }
+            false
+        })
+        .count()
+}
+
+/// Recover the refined closed tour from a `days = 1` solve outcome.
+///
+/// [`solver_loop`] hands back the tour already round-robined across agents
+/// (`plans[0][a] = tour[a], tour[a + n], …`). Interleaving the per-agent
+/// lists row-major undoes that exactly. Returns `None` when the shape is not
+/// a clean round-robin, so a caller can never silently re-anchor a plan it
+/// does not understand.
+fn tour_from_outcome(outcome: &solver_loop::SolveOutcome, n_agents: usize) -> Option<Vec<u32>> {
+    let day = outcome.plans.first()?;
+    if n_agents == 0 || day.len() != n_agents {
+        return None;
+    }
+    let max = day.iter().map(Vec::len).max()?;
+    let min = day.iter().map(Vec::len).min()?;
+    if max.saturating_sub(min) > 1 {
+        return None;
+    }
+    let mut tour: Vec<u32> = Vec::with_capacity(day.iter().map(Vec::len).sum());
+    for row in 0..max {
+        for list in day {
+            tour.extend(list.get(row));
+        }
+    }
+    (!tour.is_empty()).then_some(tour)
+}
+
+/// Per-agent target lists for `tour` under `distribute_plan`'s index
+/// round-robin (agent `a` gets `tour[a], tour[a + n], …`).
+fn targets_for_tour(ctx: &SolverContext<'_>, tour: &[u32], n_agents: usize) -> Vec<Vec<HexCoord>> {
+    let map = &ctx.state.setting.map;
+    (0..n_agents)
+        .map(|a| {
+            let ids: Vec<u32> = tour.iter().skip(a).step_by(n_agents).copied().collect();
+            coords_for(&ids, map)
+        })
+        .collect()
+}
+
+/// Issue #207 — re-anchor the closed tour when the default anchor would
+/// collect **nothing**.
+///
+/// # Why this exists
+///
+/// `distribute_plan` hands out the tour by *array index* (`spot i` goes to
+/// `agent i % n`), and `plan_walk` switches target on every *step*
+/// (`step % len`). Both are index-driven, but collection is geometry-driven:
+/// an agent that alternates between two targets only ever stands on a spot
+/// when its `(start, target-pair)` happens to work out. Rotating or
+/// reversing the same closed tour leaves its edge set — and therefore the
+/// refinement objective — untouched, yet reassigns every agent's target
+/// pair. `operators=extended`'s extra 3-opt moves rebuild the array in a
+/// different orientation/anchor than `classic`'s, and on `road-heavy-v2`
+/// that default anchor puts all five agents into a stall, so not one of them
+/// ever reaches a spot (Issue #207).
+///
+/// # What this does
+///
+/// Only when the default anchor would reach *zero* spots, scan the `2n`
+/// equivalent anchors (`n` rotations of the tour, plus `n` rotations of its
+/// reversal), simulate each with [`agents_reaching_a_spot`] and keep the
+/// first strictly better one (ties keep the incumbent, so the scan is a pure
+/// rescue and never rewrites an assignment that already works).
+///
+/// # Why `operators=classic` is safe
+///
+/// [`LoopCandidate::targets_for`] never calls this for `classic` (or for any
+/// default candidate), so their target lists — and therefore their actions,
+/// byte for byte — are unchanged. For `extended` the probe fires only when
+/// the default assignment stands on no spot at all that day, i.e. when that
+/// day already scores `0`; the scan starts from the default anchor and only
+/// ever replaces it with a strictly more reachable one, so it can never
+/// rewrite a day that was already collecting.
+fn rescue_anchor(
+    ctx: &SolverContext<'_>,
+    outcome: &solver_loop::SolveOutcome,
+    default: &[Vec<HexCoord>],
+) -> Vec<Vec<HexCoord>> {
+    let n_agents = ctx.agent_ids.len();
+    let Some(tour) = tour_from_outcome(outcome, n_agents) else {
+        return default.to_vec();
+    };
+
+    let mut best = default.to_vec();
+    let mut best_hits = agents_reaching_a_spot(ctx, &best);
+    if best_hits == n_agents {
+        return best;
+    }
+
+    let mut anchor = tour.clone();
+    for reversed in [false, true] {
+        if reversed {
+            anchor = tour.iter().rev().copied().collect();
+        }
+        for r in 0..anchor.len() {
+            if !reversed && r == 0 {
+                continue; // == the default anchor already measured above
+            }
+            if r > 0 {
+                anchor.rotate_left(1);
+            }
+            let candidate = targets_for_tour(ctx, &anchor, n_agents);
+            let hits = agents_reaching_a_spot(ctx, &candidate);
+            if hits > best_hits {
+                best_hits = hits;
+                best = candidate;
+                if best_hits == n_agents {
+                    return best;
+                }
+            }
+        }
+    }
+    best
+}
+
 /// Parse the `initial` parameter into an [`InitialStrategy`].
 fn parse_initial(spec: &CandidateSpec) -> Result<InitialStrategy, CandidateError> {
     let bad = |reason: &str| CandidateError::InvalidParameter {
@@ -346,6 +548,26 @@ fn parse_initial(spec: &CandidateSpec) -> Result<InitialStrategy, CandidateError
         Some(_) => {
             Err(bad("expected greedy | identity | reverse | sweep-row | sweep-col | random"))
         }
+    }
+}
+
+/// Parse the `operators` parameter into an [`OperatorSet`].
+///
+/// Omitted means `classic`: the pre-#191 move set, so existing ids keep
+/// their exact behaviour (Issue #191).
+///
+/// # Errors
+/// [`CandidateError::InvalidParameter`] for any value other than
+/// `classic` / `extended`.
+fn parse_operators(spec: &CandidateSpec) -> Result<OperatorSet, CandidateError> {
+    match spec.param("operators") {
+        Some("extended") => Ok(OperatorSet::Extended),
+        Some("classic") | None => Ok(OperatorSet::Classic),
+        Some(other) => Err(CandidateError::InvalidParameter {
+            key: "operators".to_owned(),
+            value: other.to_owned(),
+            reason: "expected classic | extended".to_owned(),
+        }),
     }
 }
 
@@ -385,13 +607,15 @@ impl CandidateFactory for LoopFactory {
 
     fn describe(&self) -> &'static str {
         "Iterative-improvement loop tour (2-opt / 3-opt) over the day's spots, \
-         then walk the visit order. Supports initial=, iterations= and \
+         then walk the visit order. Supports initial=, iterations=, operators= and \
          lookahead= sweeps (lookahead=crossday plans the match's remaining days)."
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {
         parse_initial(spec)?;
-        parse_lookahead(spec).map(|_| ())
+        parse_operators(spec)?;
+        parse_lookahead(spec)?;
+        Ok(())
     }
 
     fn build(&self, spec: &CandidateSpec) -> Result<Box<dyn Solver>, CandidateError> {
@@ -447,6 +671,191 @@ mod tests {
             reg.build("loop:initial=nope"),
             Err(CandidateError::InvalidParameter { .. })
         ));
+    }
+
+    /// Issue #191: `operators` is a schema-gated parameter. Both legal
+    /// values build (including inside full canonical ids, with `operators`
+    /// written last); anything else is rejected as
+    /// `CandidateError::InvalidParameter` at registry-build time.
+    #[test]
+    fn operators_param_is_schema_validated() {
+        let reg = CandidateRegistry::builtin();
+        for id in [
+            "loop:operators=classic",
+            "loop:operators=extended",
+            "loop:iterations=32:initial=greedy:operators=classic",
+            "loop:iterations=32:initial=greedy:operators=extended",
+            "loop:initial=sweep-row:operators=extended",
+            "loop:iterations=64:initial=random:seed=42:operators=extended",
+        ] {
+            assert!(reg.build(id).is_ok(), "{id} must be a valid candidate");
+        }
+        for id in [
+            "loop:operators=bogus",
+            "loop:operators=Classic",
+            "loop:operators=",
+            "loop:iterations=32:initial=greedy:operators=none",
+        ] {
+            assert!(
+                matches!(
+                    reg.build(id),
+                    Err(CandidateError::InvalidParameter { .. }
+                        | CandidateError::MissingParamValue(_))
+                ),
+                "{id} must be rejected"
+            );
+        }
+        // Unknown keys still lose to the schema before value validation.
+        assert!(matches!(
+            reg.build("loop:operator=extended"),
+            Err(CandidateError::UnknownParameter { .. })
+        ));
+    }
+
+    /// Issue #207 — minimal repro: same `SolveProblem`, two different tours,
+    /// only one of which the walk can actually use.
+    ///
+    /// `problem_from_state` builds the exact problem the adapter solves for
+    /// `fixture:road-heavy-v2` (10 spots, 5 agents, `days = 1`, 40 steps).
+    /// The two operator sets refine it into two different *array* orders of
+    /// a closed tour; `distribute_plan` hands those out by array index
+    /// (`spot i` → `agent i % 5`), so each agent gets a different pair of
+    /// targets. `plan_walk` then switches target on every step, so an agent
+    /// only ever stands on a spot when its `(start, target pair)` works out
+    /// geometrically:
+    ///
+    /// * `classic` — two agents reach a spot, so the day scores;
+    /// * `extended` — **not one** agent reaches one, so the day would score
+    ///   `(0, 0, 0)` if [`LoopCandidate::targets_for`] did not re-anchor it.
+    #[test]
+    fn issue207_minimal_repro_extended_default_anchor_reaches_no_spot() {
+        let ctx = road_heavy_v2_context();
+        let problem = problem_from_state(&ctx);
+        assert_eq!(problem.days, 1, "the adapter re-solves one day at a time");
+
+        let mut outcomes = Vec::new();
+        for ops in [OperatorSet::Classic, OperatorSet::Extended] {
+            let solver =
+                LoopSolver::with_operators(InitialStrategy::GreedyNearestNeighbor, 32, ops);
+            let outcome = solver.solve(&problem).expect("solve");
+            let tour =
+                tour_from_outcome(&outcome, problem.agents.len()).expect("clean round-robin");
+            let reached = agents_reaching_a_spot(&ctx, &agent_targets(&ctx, &outcome));
+            println!("{ops:?}: reachable_agents={reached}/{} tour={tour:?}", problem.agents.len());
+            outcomes.push((tour, outcome));
+        }
+
+        let (classic_tour, classic_outcome) = &outcomes[0];
+        let (extended_tour, extended_outcome) = &outcomes[1];
+        let classic_hits = agents_reaching_a_spot(&ctx, &agent_targets(&ctx, classic_outcome));
+        let extended_hits = agents_reaching_a_spot(&ctx, &agent_targets(&ctx, extended_outcome));
+
+        // The two operator sets must actually disagree about the array —
+        // otherwise there would be no defect to rescue.
+        assert_ne!(
+            classic_tour, extended_tour,
+            "extended must refine to a different tour array than classic for \
+             the Issue #207 repro to exist"
+        );
+        // Control: the probe and the walk model are sound — classic's default
+        // anchor is walkable on the very same problem.
+        assert!(
+            classic_hits >= 1,
+            "classic's default anchor must reach a spot on road-heavy-v2 \
+             (probe control), got {classic_hits}"
+        );
+        // The defect: extended's default anchor reaches nothing.
+        assert_eq!(
+            extended_hits, 0,
+            "Issue #207: extended's default anchor is the zero-scoring one; \
+             got {extended_hits} reachable agents"
+        );
+
+        // …and the rescue must re-anchor it to something walkable.
+        let rescued = extended_candidate().targets_for(&ctx, extended_outcome);
+        assert!(
+            agents_reaching_a_spot(&ctx, &rescued) >= 1,
+            "the Issue #207 rescue must re-anchor extended to a walkable target set"
+        );
+    }
+
+    /// The rescue is *scoped*: `operators=classic` (and therefore every
+    /// default `loop:…` id) never has its target list touched, so its
+    /// actions stay byte-for-byte what they were before Issue #207.
+    #[test]
+    fn issue207_rescue_is_scoped_to_extended() {
+        let ctx = road_heavy_v2_context();
+        let problem = problem_from_state(&ctx);
+
+        for id in ["loop:iterations=32:initial=greedy", CLASSIC_ID] {
+            let candidate = loop_candidate(id);
+            let solver = LoopSolver::with_operators(
+                InitialStrategy::GreedyNearestNeighbor,
+                32,
+                candidate.inner.operators,
+            );
+            let outcome = solver.solve(&problem).expect("solve");
+            assert_eq!(
+                candidate.targets_for(&ctx, &outcome),
+                agent_targets(&ctx, &outcome),
+                "candidate {id} must keep its plain target list byte for byte"
+            );
+        }
+
+        // Extended keeps its default anchor whenever that anchor already
+        // reaches a spot — the rescue is a rescue, not a re-optimisation.
+        let candidate = loop_candidate(EXTENDED_ID);
+        let solver = LoopSolver::with_operators(
+            InitialStrategy::GreedyNearestNeighbor,
+            32,
+            candidate.inner.operators,
+        );
+        let mut outcome = solver.solve(&problem).expect("solve");
+        let default = agent_targets(&ctx, &outcome);
+        if agents_reaching_a_spot(&ctx, &default) > 0 {
+            assert_eq!(
+                candidate.targets_for(&ctx, &outcome),
+                default,
+                "extended must keep a working default anchor"
+            );
+        }
+        // A plan shape the adapter cannot decode round-robins falls through
+        // untouched instead of being re-anchored on a guess.
+        outcome.plans = vec![vec![Vec::new(); problem.agents.len()]];
+        assert_eq!(
+            candidate.targets_for(&ctx, &outcome),
+            agent_targets(&ctx, &outcome),
+            "an unrecognisable plan shape must fall through untouched"
+        );
+    }
+
+    const CLASSIC_ID: &str = "loop:iterations=32:initial=greedy:operators=classic";
+    const EXTENDED_ID: &str = "loop:iterations=32:initial=greedy:operators=extended";
+
+    /// Live `fixture:road-heavy-v2` context as the adapter sees it.
+    ///
+    /// The `MatchState` is leaked so the borrowed context can outlive this
+    /// helper; a unit-test process exits right after, so the trade is safe
+    /// and it keeps the signature simple.
+    fn road_heavy_v2_context() -> SolverContext<'static> {
+        use crate::case::CaseSpec;
+        use engine::model::MatchState;
+
+        let case = CaseSpec::from_bundled_fixture("road-heavy-v2").expect("bundled fixture loads");
+        let team = domain::PlayerId::new("player-a").expect("valid team id");
+        let setting = case.to_engine_setting(&team).expect("case converts");
+        let state: &'static MatchState =
+            Box::leak(Box::new(MatchState::new(setting).expect("validated setting")));
+        SolverContext::from_state(state)
+    }
+
+    fn loop_candidate(id: &str) -> LoopCandidate {
+        LoopCandidate::from_spec(&CandidateSpec::parse(id).expect("spec parses"))
+            .expect("candidate builds")
+    }
+
+    fn extended_candidate() -> LoopCandidate {
+        loop_candidate(EXTENDED_ID)
     }
 
     #[test]
@@ -521,12 +930,13 @@ mod tests {
         assert_eq!(round_tripped, candidate.id());
         assert_eq!(candidate.build_solver().expect("builds").name(), "loop");
 
-        // Canonical order is the factory schema, `lookahead` appended last so
-        // every pre-existing id stays byte-stable.
+        // Canonical order is the factory schema: landed `operators` (#191)
+        // first, then `lookahead` (#193) appended last, so every pre-existing
+        // id stays byte-stable.
         let cat = reg.catalog();
         let entry = cat.algorithms.iter().find(|a| a.algorithm == "loop").expect("loop listed");
         let keys: Vec<&str> = entry.params.iter().map(|p| p.key.as_str()).collect();
-        assert_eq!(keys, ["iterations", "initial", "seed", "lookahead"]);
+        assert_eq!(keys, ["iterations", "initial", "seed", "operators", "lookahead"]);
     }
 
     // ------------------------------------------------------------------

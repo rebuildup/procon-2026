@@ -105,10 +105,11 @@ just eval-list
 登録済み:
 
 ```text
-loop                                  iterations / initial / seed / lookahead
+loop                                  iterations / initial / seed / operators / lookahead
 multiloop                             grid / kmeans / seed / refine
 greedy
 nearest
+astar                                 policy
 wait                                  （baseline — 全段0）
 ```
 
@@ -120,17 +121,25 @@ loop:iterations=128:initial=greedy
 loop:iterations=64:initial=random:seed=42
 loop:initial=sweep-row
 loop:initial=sweep-col
+loop:iterations=32:initial=greedy:operators=extended
 loop:iterations=32:initial=greedy:lookahead=crossday
 multiloop:grid=2x2
 multiloop:kmeans=4:seed=42
 greedy
 nearest
+astar:policy=step
 ```
 
 `initial` の候補: `greedy`（既定）/ `identity` / `reverse` / `sweep-row` / `sweep-col` / `random`。
 `reverse` は入力順の完全な反転（`identity` の逆）で、座標にも seed にも依存しない決定的ツアーです。
 `initial=random` の時は `seed` が必須で、同じ seed は常に同じツアーを返します
 （xorshift64* を使い、外部 RNG crate に依存しません）。
+
+`operators` の候補: `classic`（既定）/ `extended`（#191）。
+`classic` は #191 より前の移動集合そのままで、`operators` を省略した既存 ID の
+挙動は変わりません。`extended` は古典 7 手の 3-opt と or-opt（長さ ≤3 の
+セグメント移動）を追加します。パラメータは id の末尾に追記するため
+既存 canonical ID の形は変わりません。
 
 `lookahead` の候補: `none`（既定）/ `crossday`（Issue #193）。
 adapter は毎日 live state から再解決するという day contract を保ったまま、
@@ -159,6 +168,11 @@ multi-day の leg 分割は `solver-loop::distribute_plan` の round-robin
 offline の `initial=` と live CLI の `--loop-initial-strategy` の対応は
 [`docs/development.md`](development.md)（Issue #170 の節）と
 `crates/cli/src/initial_strategy.rs` が SoT。
+
+`astar` の `policy` の候補: `step`（既定）/ `conservative` / `strict` —
+`solver-astar` の `CostPolicy` に対応。`step` は地形/交通量の重み付き step cost
+を最小化（燃料は hard constraint）、`conservative` は残燃料が減るほど step cost
+を大きくする、`strict` は残燃料が 1 以下の移動を拒否する。
 
 **1 candidate = 1 crate ではありません。** 新しいアルゴリズムは
 `bench::CandidateFactory` を実装して `CandidateRegistry` に登録するだけです。
