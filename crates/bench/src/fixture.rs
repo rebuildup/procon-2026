@@ -8,6 +8,9 @@
 //!
 //! Acceptance criteria (Issue #59) call for a small / medium / large set
 //! plus road-heavy, mountain-heavy, series-many, and series-few shapes.
+//! Issue #187 added `road-heavy-v2` (a genuine road network with a
+//! multi-day traffic-threshold scenario) and moved the `road_heavy`
+//! category's road-density floor into [`MatchFixture::validate_category`].
 //! All fixtures live in [`FIXTURES_DIR`] / [`bundled_fixtures`] and are
 //! validated by [`MatchFixture::validate`].
 
@@ -308,6 +311,18 @@ impl MatchFixture {
 
     fn validate_category(&self) -> FixtureResult<()> {
         const MIN_BRANDS: usize = 3;
+        // Road share floor for `road_heavy` fixtures (Issue #187).
+        //
+        // The pre-#187 `road-heavy` claimed the category with Road 4/256 =
+        // 1.6%, so it exercised no road routing at all and produced
+        // misleading road-aware evidence. 15% is the same threshold the
+        // loader-adjacent smoke test asserts
+        // (`tests/fixtures_smoke.rs::road_heavy_fixtures_have_above_average_road_share`);
+        // on the 16x16 reference maps that is >= 39 road cells — an order of
+        // magnitude more than the defective content, so a token sprinkling of
+        // roads can never pass, while the genuine network in
+        // `road-heavy-v2` (80/256 = 31%) clears it with margin.
+        const MIN_ROAD_SHARE_PCT: i64 = 15;
         match (self.category, self.series_count()) {
             (FixtureCategory::SeriesMany, n) if n < MIN_BRANDS => Err(FixtureError::Invalid {
                 name: self.name.clone(),
@@ -317,6 +332,22 @@ impl MatchFixture {
                 name: self.name.clone(),
                 reason: format!("series_few fixture has {n} brands (> 1)"),
             }),
+            (FixtureCategory::RoadHeavy, _) => {
+                let total = self.cell_count();
+                let road =
+                    i64::try_from(self.cell_type_count(CellType::TYPE_3)).unwrap_or(i64::MAX); // TYPE_3 = Road
+                if total > 0 && road * 100 < total * MIN_ROAD_SHARE_PCT {
+                    return Err(FixtureError::Invalid {
+                        name: self.name.clone(),
+                        reason: format!(
+                            "road_heavy fixture has {road}/{total} road cells \
+                             ({}%), below the {MIN_ROAD_SHARE_PCT}% floor",
+                            road * 100 / total
+                        ),
+                    });
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -350,6 +381,7 @@ impl MatchFixtureLoader {
             "medium-16x16",
             "large-32x32",
             "road-heavy",
+            "road-heavy-v2",
             "mountain-heavy",
             "series-many",
             "series-few",
@@ -575,6 +607,67 @@ mod tests {
         });
         let loader = MatchFixtureLoader::new();
         loader.parse(raw.to_string().as_bytes()).expect("passable terrain is accepted");
+    }
+
+    /// Issue #187: a `road_heavy` tag must be backed by road cells. The
+    /// pre-#187 `road-heavy` shipped Road 4/256 = 1.6% and still passed
+    /// validation, so the category made claims the terrain did not keep.
+    #[test]
+    fn reject_road_heavy_with_token_road_share() {
+        // 8x8 all-plain: 0/64 road cells.
+        let raw = serde_json::json!({
+            "name": "no_roads",
+            "category": "road_heavy",
+            "startsAt": 0,
+            "daySeconds": [60],
+            "daySteps": [10],
+            "map": { "height": 8, "width": 8, "cells": vec![vec![0; 8]; 8] },
+            "spots": [
+                {"brand": 0, "pos": 5, "stocks": 1},
+                {"brand": 1, "pos": 6, "stocks": 1},
+                {"brand": 2, "pos": 7, "stocks": 1}
+            ],
+            "agents": [1, 2, 3],
+            "fuelLimits": 10,
+            "players": 1,
+            "busyThreshold": 1,
+            "jammedThreshold": 2
+        });
+        let err = MatchFixtureLoader::new().parse(raw.to_string().as_bytes()).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("road_heavy fixture has 0/64 road cells"), "unexpected: {msg}");
+        assert!(msg.contains("15% floor"), "unexpected: {msg}");
+    }
+
+    /// The same tag with a real network (road row + road column = 15/64 =
+    /// 23%) loads cleanly.
+    #[test]
+    fn accept_road_heavy_with_genuine_network() {
+        let mut cells = vec![vec![0_i32; 8]; 8];
+        cells[3].fill(3); // road avenue
+        for row in &mut cells {
+            row[3] = 3; // road spur (crossing cell counted once)
+        }
+        let raw = serde_json::json!({
+            "name": "real_roads",
+            "category": "road_heavy",
+            "startsAt": 0,
+            "daySeconds": [60],
+            "daySteps": [10],
+            "map": { "height": 8, "width": 8, "cells": cells },
+            "spots": [
+                {"brand": 0, "pos": 0, "stocks": 1},
+                {"brand": 1, "pos": 1, "stocks": 1},
+                {"brand": 2, "pos": 2, "stocks": 1}
+            ],
+            "agents": [8, 9, 10],
+            "fuelLimits": 10,
+            "players": 1,
+            "busyThreshold": 1,
+            "jammedThreshold": 2
+        });
+        let fx = MatchFixtureLoader::new().parse(raw.to_string().as_bytes()).expect("accepts");
+        assert_eq!(fx.cell_type_count(CellType::TYPE_3), 15);
     }
 
     #[test]

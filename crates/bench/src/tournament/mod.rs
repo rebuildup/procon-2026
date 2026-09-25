@@ -33,7 +33,7 @@ use domain::PlayerId;
 use serde::{Deserialize, Serialize};
 
 use crate::aggregate::AggregateReport;
-use crate::candidate::{Candidate, CandidateError, CandidateRegistry};
+use crate::candidate::{Candidate, CandidateError, CandidateRegistry, CandidateSpec};
 use crate::case::{CaseError, CaseSpec, Corpus};
 use crate::evaluate::{EvalConfig, Evaluator, HarnessDeadline, Isolation, RunRecord};
 use crate::report::{ReportError, ReportPaths};
@@ -192,9 +192,19 @@ impl TournamentRunner {
 
     /// Resolve the configured candidate ids against a registry.
     ///
+    /// Ids come back canonical (parameters in schema order) and duplicate
+    /// configurations — two order-permutations of one setting — are rejected
+    /// by [`CandidateRegistry::build_all`] rather than evaluated twice.
+    ///
+    /// The baseline is compared **canonically** too: it is resolved through
+    /// the same registry, so a non-CLI caller that wrote the baseline in a
+    /// different parameter order still matches the batch, while a baseline
+    /// that is genuinely absent still fails.
+    ///
     /// # Errors
     /// [`TournamentError::NoCandidates`], [`TournamentError::UnknownBaseline`],
-    /// or [`TournamentError::Candidate`] for an unknown algorithm / parameter.
+    /// or [`TournamentError::Candidate`] for an unknown algorithm / parameter
+    /// or a duplicated configuration.
     pub fn resolve_candidates(
         &self,
         registry: &CandidateRegistry,
@@ -204,7 +214,14 @@ impl TournamentRunner {
         }
         let candidates = registry.build_all(&self.config.candidate_ids)?;
         if let Some(baseline) = &self.config.baseline_candidate_id {
-            if !self.config.candidate_ids.iter().any(|id| id == baseline) {
+            // Resolve the baseline through the same registry as the batch, so
+            // the membership check compares canonical ids on both sides: a
+            // caller that spelled the baseline in another parameter order
+            // still matches, while an id that does not resolve surfaces its
+            // real problem (unknown algorithm / bad parameter) instead of a
+            // misleading "not in the candidate list".
+            let canonical = registry.resolve(CandidateSpec::parse(baseline)?)?.id();
+            if !candidates.iter().any(|c| c.id() == canonical) {
                 return Err(TournamentError::UnknownBaseline(baseline.clone()));
             }
         }
@@ -344,4 +361,54 @@ pub fn full_fixture_corpus() -> Result<Corpus, TournamentError> {
 #[must_use]
 pub fn report_paths(dir: impl AsRef<Path>) -> ReportPaths {
     ReportPaths::in_dir(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(candidate_ids: &[&str], baseline: Option<&str>) -> TournamentConfig {
+        TournamentConfig::new(
+            candidate_ids.iter().map(ToString::to_string).collect(),
+            baseline.map(ToOwned::to_owned),
+            "player-a",
+            None,
+        )
+    }
+
+    /// The baseline membership check must compare canonical ids on both
+    /// sides, so a caller that spelled the baseline in another parameter
+    /// order still anchors the batch correctly.
+    #[test]
+    fn baseline_membership_is_compared_canonically() {
+        let registry = CandidateRegistry::builtin();
+        let runner = TournamentRunner::new(config(
+            &["loop:iterations=32:initial=greedy"],
+            Some("loop:initial=greedy:iterations=32"),
+        ));
+        let candidates = runner.resolve_candidates(&registry).expect("one configuration");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id(), "loop:iterations=32:initial=greedy");
+
+        // A baseline that is genuinely absent still fails.
+        let missing =
+            TournamentRunner::new(config(&["wait"], Some("greedy"))).resolve_candidates(&registry);
+        assert!(
+            matches!(missing, Err(TournamentError::UnknownBaseline(_))),
+            "unexpected: {missing:?}"
+        );
+    }
+
+    /// Two order-permutations of one configuration are one candidate — the
+    /// batch must refuse to evaluate it twice.
+    #[test]
+    fn a_shuffled_duplicate_configuration_is_rejected() {
+        let registry = CandidateRegistry::builtin();
+        let runner = TournamentRunner::new(config(
+            &["loop:iterations=32:initial=greedy", "loop:initial=greedy:iterations=32"],
+            Some("wait"),
+        ));
+        let err = runner.resolve_candidates(&registry).expect_err("duplicate configuration");
+        assert!(matches!(err, TournamentError::Candidate(_)), "unexpected: {err}");
+    }
 }

@@ -46,7 +46,8 @@ use crate::types::{Agent, Spot};
 ///
 /// Each variant only decides the *ordering* the refinement starts from; the
 /// 2-opt / 3-opt improvement loop is shared. That keeps a whole axis of
-/// candidate parameters (`loop:initial=<variant>:iterations=<n>`) cheap to
+/// candidate parameters (`loop:iterations=<n>:initial=<variant>`, the
+/// canonical schema order) cheap to
 /// enumerate without inventing new algorithms.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InitialStrategy {

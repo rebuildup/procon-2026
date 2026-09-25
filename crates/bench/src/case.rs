@@ -18,10 +18,10 @@
 //!   `crates/bench/fixtures/maps/`. These are the reproducible corpus
 //!   baseline. They have no seed: they are their own source of truth.
 //! - [`CaseSource::Generated`] — built by a generator from a `seed` and a
-//!   `generation_parameters` blob. The generator itself is **out of scope**
-//!   for this module (and for issue #178); what matters here is that the
-//!   schema can carry and persist `seed` / `generation_parameters` so a
-//!   generated corpus can be added later without redesigning the evaluator.
+//!   `generation_parameters` blob. This module only carries and persists that
+//!   provenance; the generator itself lives in [`crate::generator`] (Issue
+//!   #185), which fills `seed` / `generation_parameters` / `case_id` without
+//!   any evaluator redesign.
 //!
 //! The case body is the *official wire* [`protocol::match_config::MatchSetting`]
 //! — the same shape as a bundled fixture file and as `GET /setting` on the
