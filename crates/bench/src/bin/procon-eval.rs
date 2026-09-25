@@ -430,16 +430,28 @@ mod tests {
     /// The derived deadline must be `sum(daySeconds) + margin`, so the margin
     /// is observable end to end rather than only at the flag boundary.
     #[test]
-    fn the_configured_margin_is_used_when_resolving_the_deadline() {
+    fn a_margin_flag_selects_a_case_window_with_that_margin() {
+        use bench::evaluate::HarnessDeadline;
         use std::time::Duration;
 
         let config = build_config(&parse(&["--harness-margin-ms", "1234"]), "s".to_owned())
             .expect("flags are valid");
         let runner = bench::tournament::TournamentRunner::new(config);
-        let case = bench::CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
 
+        // The policy itself: the flag must choose the variant, not just the
+        // number, or an explicit timeout would keep silently winning.
+        assert_eq!(
+            runner.harness_deadline(),
+            HarnessDeadline::CaseWindow { margin: Duration::from_millis(1234) },
+            "--harness-margin-ms was parsed and then dropped"
+        );
+
+        // And it is the margin actually used when resolving against a case.
         // `small-8x8` declares daySeconds = [60].
-        let deadline = runner.resolved_harness_deadline(&case);
-        assert_eq!(deadline, Duration::from_secs(60) + Duration::from_millis(1234));
+        let case = bench::CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+        assert_eq!(
+            runner.resolved_harness_deadline(&case),
+            Duration::from_secs(60) + Duration::from_millis(1234)
+        );
     }
 }

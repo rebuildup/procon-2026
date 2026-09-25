@@ -228,8 +228,14 @@ impl TournamentRunner {
     /// The deadline policy this batch runs under.
     ///
     /// An explicit `harness_timeout_ms` becomes [`HarnessDeadline::Fixed`];
-    /// otherwise the deadline is derived per case from its official window.
-    fn harness_deadline(&self) -> HarnessDeadline {
+    /// otherwise the deadline is derived per case from its official window
+    /// using [`Self::harness_margin_ms`].
+    ///
+    /// Public because the policy is what `--harness-margin-ms` selects, and a
+    /// flag that cannot be observed after parsing is a flag that silently
+    /// does nothing.
+    #[must_use]
+    pub fn harness_deadline(&self) -> HarnessDeadline {
         match self.config.harness_timeout_ms {
             Some(ms) => HarnessDeadline::Fixed(Duration::from_millis(ms)),
             None => HarnessDeadline::CaseWindow {
