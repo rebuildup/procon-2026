@@ -85,6 +85,7 @@ just eval-list
 
 ```text
 loop                                  iterations / initial / seed
+multiloop                             grid / kmeans / seed / refine
 greedy
 wait                                  （baseline — 全段0）
 ```
@@ -97,12 +98,24 @@ loop:iterations=128:initial=greedy
 loop:iterations=64:initial=random:seed=42
 loop:initial=sweep-row
 loop:initial=sweep-col
+multiloop:grid=2x2
+multiloop:kmeans=4:seed=42
 greedy
 ```
 
 `initial` の候補: `greedy`（既定）/ `identity` / `sweep-row` / `sweep-col` / `random`。
 `initial=random` の時は `seed` が必須で、同じ seed は常に同じツアーを返します
 （xorshift64* を使い、外部 RNG crate に依存しません）。
+
+`multiloop` は `solver-loop::MultiLoopComposer` を evaluator に接続した
+領域分割候補（Issue #190）。**`grid` と `kmeans` のどちらか一方だけ**を指定します。
+
+| key | 値 | 規則 |
+|---|---|---|
+| `grid` | `<rows>x<cols>`（例 `2x2`） | 各辺 1..=32（`MapSize::MAX`）、`rows*cols <= 64`。`grid` と `kmeans` は排他 |
+| `kmeans` | `k`（例 `kmeans=4`、`k=4` ではない） | 1..=64。`grid` と `kmeans` は排他 |
+| `seed` | u64 | `kmeans` が在る時 **必須**、`grid` の時 **拒否**（`loop` の `initial=random` と同じ規則） |
+| `refine` | `true` / `false` | region 毎の 2-opt refinement。省略時の既定は composer 自身の既定どおり `true` |
 
 **1 candidate = 1 crate ではありません。** 新しいアルゴリズムは
 `bench::CandidateFactory` を実装して `CandidateRegistry` に登録するだけです。
