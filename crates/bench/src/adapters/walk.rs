@@ -12,8 +12,20 @@
 //! one place. The engine remains the final authority on what a move does:
 //! [`engine::MatchSim`] still downgrades anything illegal to a `Wait`, so an
 //! imperfect plan degrades instead of aborting the match.
+//!
+//! # Walk modes (`walk=`)
+//!
+//! [`plan_walk`] is the `greedy` mode — the only one that existed before
+//! Issue #215. The `astar` mode walks the **same** target list but in list
+//! order with A*-planned legs; it lives in [`super::astar_walk`] because it
+//! carries Issue #194's coordinate-conversion machinery. Candidates select
+//! one or the other through [`plan_walk_with`] after parsing their `walk`
+//! parameter with [`parse_walk`], so the assignment half of a tour candidate
+//! is untouched by the choice.
 
 use engine::model::{Action, AgentActions, Direction, HexCoord, MapGrid, SolverContext};
+
+use crate::candidate::{CandidateError, CandidateSpec};
 
 /// Axial hex distance between two cells, matching the pointy-top convention
 /// used across the solver crates: `(|dq| + |dq + dr| + |dr|) / 2`.
@@ -106,6 +118,59 @@ pub fn plan_walk(ctx: &SolverContext<'_>, targets: &[Vec<HexCoord>]) -> AgentAct
         }
     }
     AgentActions::new(actions)
+}
+
+/// How a candidate walks the per-agent target list it was given — the value
+/// of the `walk=` parameter shared by the tour-shaped candidates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WalkMode {
+    /// `greedy` (the default): [`plan_walk`] byte for byte — target chosen by
+    /// `step % targets.len()`, one terrain-blind [`step_towards`] step.
+    #[default]
+    Greedy,
+    /// `astar`: visit the list **in order**, one A* leg per target, then
+    /// wait — Issue #215's anti-oscillation walk (see [`super::astar_walk`]).
+    Astar,
+}
+
+/// Parse the `walk` parameter into a [`WalkMode`].
+///
+/// Omitted means [`WalkMode::Greedy`]: every pre-existing candidate id keeps
+/// its exact behaviour, and `walk=greedy` is the explicit spelling of the
+/// same default (Issue #215 appends the parameter last so existing canonical
+/// ids keep their shape).
+///
+/// # Errors
+/// [`CandidateError::InvalidParameter`] for any value other than
+/// `greedy` / `astar`.
+pub(crate) fn parse_walk(spec: &CandidateSpec) -> Result<WalkMode, CandidateError> {
+    match spec.param("walk") {
+        None | Some("greedy") => Ok(WalkMode::Greedy),
+        Some("astar") => Ok(WalkMode::Astar),
+        Some(other) => Err(CandidateError::InvalidParameter {
+            key: "walk".to_owned(),
+            value: other.to_owned(),
+            reason: "expected greedy | astar".to_owned(),
+        }),
+    }
+}
+
+/// Build one day's plan with the selected walk mode.
+///
+/// `WalkMode::Greedy` is exactly [`plan_walk`] (the dispatcher adds nothing
+/// to it — pinned by `plan_walk_with_greedy_is_exactly_plan_walk`);
+/// `WalkMode::Astar` is [`super::astar_walk::plan_walk_astar`]. Either way
+/// the result is a well-shaped step-major plan.
+#[must_use]
+pub fn plan_walk_with(
+    ctx: &SolverContext<'_>,
+    targets: &[Vec<HexCoord>],
+    mode: WalkMode,
+) -> AgentActions {
+    match mode {
+        WalkMode::Greedy => plan_walk(ctx, targets),
+        WalkMode::Astar => super::astar_walk::plan_walk_astar(ctx, targets),
+    }
 }
 
 #[cfg(test)]
@@ -207,5 +272,40 @@ mod tests {
                 && matches!(agent0[3], engine::model::ActionKind::Wait),
             "once arrived the agent holds position, got {agent0:?}"
         );
+    }
+
+    /// Issue #215 — `walk` is a schema-gated value: omitted and `greedy`
+    /// select today's [`plan_walk`], `astar` selects the ordered-tour walk,
+    /// anything else is an `InvalidParameter` at parse / build time.
+    #[test]
+    fn walk_param_parses_greedy_and_astar_and_rejects_anything_else() {
+        let parse = |id: &str| parse_walk(&CandidateSpec::parse(id).expect("id parses"));
+        assert_eq!(parse("loop"), Ok(WalkMode::Greedy));
+        assert_eq!(parse("loop:walk=greedy"), Ok(WalkMode::Greedy));
+        assert_eq!(parse("loop:walk=astar"), Ok(WalkMode::Astar));
+        assert_eq!(parse("multiloop:kmeans=4:seed=42:walk=astar"), Ok(WalkMode::Astar));
+        assert_eq!(parse("loop"), Ok(WalkMode::default()), "the default mode is greedy");
+        for id in ["loop:walk=Astar", "loop:walk=Greedy", "loop:walk=smart", "loop:walk=1"] {
+            assert!(
+                matches!(parse(id), Err(CandidateError::InvalidParameter { key, .. }) if key == "walk"),
+                "{id} must be rejected as an invalid walk value"
+            );
+        }
+    }
+
+    /// Issue #215 AC — default equivalence: selecting `greedy` explicitly is
+    /// *exactly* [`plan_walk`], action for action, on a fixed input.
+    #[test]
+    fn plan_walk_with_greedy_is_exactly_plan_walk() {
+        let st = state();
+        let ctx = SolverContext::from_state(&st);
+        let targets = vec![vec![HexCoord::new(2, 0)], vec![], vec![]];
+        assert_eq!(
+            plan_walk_with(&ctx, &targets, WalkMode::Greedy),
+            plan_walk(&ctx, &targets),
+            "walk=greedy must be byte-for-byte the pre-#215 walk"
+        );
+        // And so is the omitted parameter, resolved through the mode default.
+        assert_eq!(plan_walk_with(&ctx, &targets, WalkMode::default()), plan_walk(&ctx, &targets));
     }
 }
