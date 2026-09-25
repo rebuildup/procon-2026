@@ -107,6 +107,7 @@ loop                                  iterations / initial / seed
 multiloop                             grid / kmeans / seed / refine
 greedy
 nearest
+astar                                 policy
 wait                                  （baseline — 全段0）
 ```
 
@@ -122,6 +123,7 @@ multiloop:grid=2x2
 multiloop:kmeans=4:seed=42
 greedy
 nearest
+astar:policy=step
 ```
 
 `initial` の候補: `greedy`（既定）/ `identity` / `reverse` / `sweep-row` / `sweep-col` / `random`。
@@ -142,6 +144,11 @@ nearest
 offline の `initial=` と live CLI の `--loop-initial-strategy` の対応は
 [`docs/development.md`](development.md)（Issue #170 の節）と
 `crates/cli/src/initial_strategy.rs` が SoT。
+
+`astar` の `policy` の候補: `step`（既定）/ `conservative` / `strict` —
+`solver-astar` の `CostPolicy` に対応。`step` は地形/交通量の重み付き step cost
+を最小化（燃料は hard constraint）、`conservative` は残燃料が減るほど step cost
+を大きくする、`strict` は残燃料が 1 以下の移動を拒否する。
 
 **1 candidate = 1 crate ではありません。** 新しいアルゴリズムは
 `bench::CandidateFactory` を実装して `CandidateRegistry` に登録するだけです。

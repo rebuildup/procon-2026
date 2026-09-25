@@ -350,6 +350,7 @@ impl CandidateRegistry {
         r.register(Arc::new(crate::adapters::MultiLoopFactory));
         r.register(Arc::new(crate::adapters::GreedyFactory));
         r.register(Arc::new(crate::adapters::NearestFactory));
+        r.register(Arc::new(crate::adapters::AstarFactory));
         r
     }
 
@@ -668,7 +669,7 @@ mod tests {
     #[test]
     fn builtin_registry_knows_every_named_algorithm() {
         let reg = CandidateRegistry::builtin();
-        for algo in ["wait", "loop", "multiloop", "greedy", "nearest"] {
+        for algo in ["wait", "loop", "multiloop", "greedy", "nearest", "astar"] {
             assert!(reg.factory(algo).is_some(), "missing algorithm {algo}");
         }
     }
