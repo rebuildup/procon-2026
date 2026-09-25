@@ -4,13 +4,19 @@
 //! Parameterised so a whole axis of candidates is just different ids:
 //!
 //! ```text
-//! loop                                  (defaults: iterations=50, initial=greedy)
+//! loop                                  (defaults: iterations=50, initial=greedy, operators=classic)
 //! loop:iterations=32:initial=greedy
 //! loop:iterations=128:initial=greedy
 //! loop:iterations=64:initial=random:seed=42
 //! loop:initial=sweep-row
 //! loop:initial=sweep-col
+//! loop:iterations=32:initial=greedy:operators=extended
 //! ```
+//!
+//! `operators=classic` (the default) is the pre-#191 move set, byte for
+//! byte; `operators=extended` adds all seven classical 3-opt moves plus
+//! or-opt (segment relocation ≤ 3) on top of it. The parameter is appended
+//! last in [`PARAMS`] so existing canonical ids keep their shape.
 //!
 //! # How the adapter works
 //!
@@ -31,14 +37,19 @@
 
 use engine::model::{AgentActions, HexCoord, Solver, SolverContext};
 use solver_loop::{
-    Agent as LoopAgent, HexCoord as LoopCoord, InitialStrategy, LoopSolver, Series as LoopSeries,
-    SolveProblem, Solver as _, Spot as LoopSpot,
+    Agent as LoopAgent, HexCoord as LoopCoord, InitialStrategy, LoopSolver, OperatorSet,
+    Series as LoopSeries, SolveProblem, Solver as _, Spot as LoopSpot,
 };
 
 use super::walk::plan_walk;
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
 /// Parameter schema, in canonical id order.
+///
+/// `operators` is appended after `seed` (Issue #191) so that every
+/// pre-existing canonical id — `loop:iterations=32:initial=greedy`,
+/// `loop:iterations=64:initial=random:seed=42`, … — keeps both its bytes
+/// and its meaning (omitted `operators` selects `classic`).
 pub const PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "iterations",
@@ -55,6 +66,11 @@ pub const PARAMS: &[ParamSpec] = &[
         required: false,
         doc: "RNG seed for initial=random (u64); required when initial=random",
     },
+    ParamSpec {
+        key: "operators",
+        required: false,
+        doc: "refinement operator set: classic (default; pre-#191 move set) | extended (7-move 3-opt + or-opt)",
+    },
 ];
 
 /// A [`LoopSolver`] configured from a candidate spec, driving one day at a
@@ -70,7 +86,11 @@ impl LoopCandidate {
     fn from_spec(spec: &CandidateSpec) -> Result<Self, CandidateError> {
         let iterations = spec.param_u32("iterations")?.unwrap_or(50);
         let initial = parse_initial(spec)?;
-        Ok(Self { inner: LoopSolver::new(initial, iterations), id: spec.id() })
+        let operators = parse_operators(spec)?;
+        Ok(Self {
+            inner: LoopSolver::with_operators(initial, iterations, operators),
+            id: spec.id(),
+        })
     }
 }
 
@@ -207,6 +227,26 @@ fn parse_initial(spec: &CandidateSpec) -> Result<InitialStrategy, CandidateError
     }
 }
 
+/// Parse the `operators` parameter into an [`OperatorSet`].
+///
+/// Omitted means `classic`: the pre-#191 move set, so existing ids keep
+/// their exact behaviour (Issue #191).
+///
+/// # Errors
+/// [`CandidateError::InvalidParameter`] for any value other than
+/// `classic` / `extended`.
+fn parse_operators(spec: &CandidateSpec) -> Result<OperatorSet, CandidateError> {
+    match spec.param("operators") {
+        Some("extended") => Ok(OperatorSet::Extended),
+        Some("classic") | None => Ok(OperatorSet::Classic),
+        Some(other) => Err(CandidateError::InvalidParameter {
+            key: "operators".to_owned(),
+            value: other.to_owned(),
+            reason: "expected classic | extended".to_owned(),
+        }),
+    }
+}
+
 /// Factory for [`LoopCandidate`].
 pub struct LoopFactory;
 
@@ -221,11 +261,13 @@ impl CandidateFactory for LoopFactory {
 
     fn describe(&self) -> &'static str {
         "Iterative-improvement loop tour (2-opt / 3-opt) over the day's spots, \
-         then walk the visit order. Supports initial= and iterations= sweeps."
+         then walk the visit order. Supports initial=, iterations= and operators= sweeps."
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {
-        parse_initial(spec).map(|_| ())
+        parse_initial(spec)?;
+        parse_operators(spec)?;
+        Ok(())
     }
 
     fn build(&self, spec: &CandidateSpec) -> Result<Box<dyn Solver>, CandidateError> {
@@ -265,6 +307,45 @@ mod tests {
         assert!(matches!(
             reg.build("loop:initial=nope"),
             Err(CandidateError::InvalidParameter { .. })
+        ));
+    }
+
+    /// Issue #191: `operators` is a schema-gated parameter. Both legal
+    /// values build (including inside full canonical ids, with `operators`
+    /// written last); anything else is rejected as
+    /// `CandidateError::InvalidParameter` at registry-build time.
+    #[test]
+    fn operators_param_is_schema_validated() {
+        let reg = CandidateRegistry::builtin();
+        for id in [
+            "loop:operators=classic",
+            "loop:operators=extended",
+            "loop:iterations=32:initial=greedy:operators=classic",
+            "loop:iterations=32:initial=greedy:operators=extended",
+            "loop:initial=sweep-row:operators=extended",
+            "loop:iterations=64:initial=random:seed=42:operators=extended",
+        ] {
+            assert!(reg.build(id).is_ok(), "{id} must be a valid candidate");
+        }
+        for id in [
+            "loop:operators=bogus",
+            "loop:operators=Classic",
+            "loop:operators=",
+            "loop:iterations=32:initial=greedy:operators=none",
+        ] {
+            assert!(
+                matches!(
+                    reg.build(id),
+                    Err(CandidateError::InvalidParameter { .. }
+                        | CandidateError::MissingParamValue(_))
+                ),
+                "{id} must be rejected"
+            );
+        }
+        // Unknown keys still lose to the schema before value validation.
+        assert!(matches!(
+            reg.build("loop:operator=extended"),
+            Err(CandidateError::UnknownParameter { .. })
         ));
     }
 

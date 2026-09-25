@@ -571,7 +571,9 @@ mod tests {
         let loop_entry =
             cat.algorithms.iter().find(|a| a.algorithm == "loop").expect("loop in catalog");
         let keys: Vec<_> = loop_entry.params.iter().map(|p| p.key.as_str()).collect();
-        assert_eq!(keys, vec!["iterations", "initial", "seed"]);
+        // Canonical id order; `operators` is appended (Issue #191) so older
+        // ids keep their shape.
+        assert_eq!(keys, vec!["iterations", "initial", "seed", "operators"]);
         let json = serde_json::to_string_pretty(&cat).unwrap();
         assert!(json.contains("sweep-row"));
     }
