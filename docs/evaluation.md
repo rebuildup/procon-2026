@@ -84,7 +84,7 @@ just eval-list
 登録済み:
 
 ```text
-loop                                  iterations / initial / seed
+loop                                  iterations / initial / seed / operators
 greedy
 wait                                  （baseline — 全段0）
 ```
@@ -97,12 +97,19 @@ loop:iterations=128:initial=greedy
 loop:iterations=64:initial=random:seed=42
 loop:initial=sweep-row
 loop:initial=sweep-col
+loop:iterations=32:initial=greedy:operators=extended
 greedy
 ```
 
 `initial` の候補: `greedy`（既定）/ `identity` / `sweep-row` / `sweep-col` / `random`。
 `initial=random` の時は `seed` が必須で、同じ seed は常に同じツアーを返します
 （xorshift64* を使い、外部 RNG crate に依存しません）。
+
+`operators` の候補: `classic`（既定）/ `extended`（#191）。
+`classic` は #191 より前の移動集合そのままで、`operators` を省略した既存 ID の
+挙動は変わりません。`extended` は古典 7 手の 3-opt と or-opt（長さ ≤3 の
+セグメント移動）を追加します。パラメータは id の末尾に追記するため
+既存 canonical ID の形は変わりません。
 
 **1 candidate = 1 crate ではありません。** 新しいアルゴリズムは
 `bench::CandidateFactory` を実装して `CandidateRegistry` に登録するだけです。
