@@ -75,7 +75,26 @@ agent の種類（巡回/補給）は wire に無いため依然 index 交替の
 ### 1. candidate を決める
 
 candidate ID の形は `アルゴリズム[:キー=値]...` で、アルゴリズム + パラメータを
-まとめて指します。パラメータは記書順のまま保持され、`parse → id` で完全に往復します。
+まとめて指します。identity は 2 層です。
+
+| 層 | 経路 | 保証 |
+|---|---|---|
+| 構文 | `CandidateSpec::parse → id` | 記書順のまま完全に往復。registry 無しで id を echo できる |
+| **canonical identity** | `CandidateRegistry::resolve`（= `build` / `build_all`） | 重複キーを拒否し、パラメータを `CandidateFactory::params()` の schema 順に並べ替える |
+
+canonical order の SoT は factory の schema だけで、`loop` なら `iterations / initial / seed`
+の順です。並べ替えは validation の後に行われるので、未知キーは既に拒否済みで
+どの present key も必ず 1 つずつ残ります。
+
+したがって **書き順は identity ではありません**:
+`loop:iterations=32:initial=greedy` と `loop:initial=greedy:iterations=32` は
+同一 candidate です。同じ batch に両方を書くと duplicate error になり、
+二重評価されません。キーの重複
+（`loop:iterations=32:iterations=128:initial=greedy`）も parser と registry の
+両方で明示的に拒否されます — どちらの値が有効かが曖昧なため。
+
+解決後の `Candidate::id()` が durable identity であり、`RunRecord.candidate_id` /
+`AggregateReport` / レポートはすべてそれを読みます。
 
 ```bash
 just eval-list
@@ -125,7 +144,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
     --output-dir target/eval
 ```
 
-`--cases all`（既定）は `crates/bench/fixtures/maps/` の 8 件すべてを使います。
+`--cases all`（既定）は `crates/bench/fixtures/maps/` の 9 件すべてを使います。
 **`--cases` は fixture 専用**です。seed 固定の generated case は `--generated` で
 明示的に加えます（[generated corpus](#generated-corpusseed-固定の再生成-case) を参照）。
 
@@ -181,7 +200,7 @@ setting                 本体（公式の試合設定 JSON 形状）
 
 ## generated corpus（seed 固定の再生成 case）
 
-固定 fixture 8 件だけではサンプルが狭く、少数 fixture に過学習した candidate や
+固定 fixture 9 件だけではサンプルが狭く、少数 fixture に過学習した candidate や
 1 枚の map の偶然に塗り替えられた淘汰が起き得ます（Issue #185）。generated
 corpus は fixture を**置き換えず補完**します。原則:
 
@@ -196,7 +215,7 @@ corpus は fixture を**置き換えず補完**します。原則:
 ### 使い方: `--generated`
 
 ```bash
-# 8 fixture + 生成 case を 1 バッチで（generated は opt-in）
+# 9 fixture + 生成 case を 1 バッチで（generated は opt-in）
 PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
   cargo run -q -p bench --bin procon-eval -- \
     --cases all \
@@ -217,13 +236,13 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
           | "days=" 1..=3               既定は archetype の既定 day 数
 ```
 
-- `--cases` は **fixture 専用**。`--cases all` は今も「bundled 8 件」の意味のままで、
+- `--cases` は **fixture 専用**。`--cases all` は今も「bundled 9 件」の意味のままで、
   既存の evidence の意味が勝手に変わることはありません。
 - 1 回のバッチが 1 つの `Corpus` を構築し、その corpus を全 candidate がそのまま
   使います（`TournamentRunner::run` は candidates × cases の直積）。つまり
   **sibling は自動的に同一 case / 同一 seed set** です。これは
   `one_selection_is_one_shared_case_set`（`procon-eval` のテスト）と
-  `eight_fixtures_and_generated_cases_evaluate_in_one_batch` で検証されています。
+  `bundled_fixtures_and_generated_cases_evaluate_in_one_batch` で検証されています。
 - 同じ spec を 2 回書くと `duplicate case_id` として corpus 構築時点で拒否されます。
 
 ### archetype 一覧
@@ -244,14 +263,16 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
 
 `road-heavy` は「道路を使い倒すか避けるか」が選択になるよう、**本当に道路が通った
 map** を生成します（road は燃料 2 / plain は 1、交通量は yesterday+today で再分類）。
-既存の `road-heavy` fixture は 4/256 セルしか道路がなく Issue #187 の対象ですが、
-generated 側はそれを繰り返しません。
+既存の `road-heavy` fixture は 4/256 セルしか道路がありませんでした（#187 で
+`road-heavy-v2` が新設され、旧 case は `medium` として legacy 保持）。generated 側は
+最初から本当に道路が通った map を生成します。
 
 ### day structure は一次の軸（fixture が持たない欠落）
 
-bundled 8 fixture は**すべて 1 日**（`daySteps` / `daySeconds` が 1 要素）なので、
-`daily_variety_sum ≡ variety` になり第 2 段が永久に差分ゼロ、end-of-day refill・
-yesterday/today 交通量分類・per-day budget 判定が評価されません。そこで:
+bundled fixture は **`road-heavy-v2`（3 日、#187）以外が単日**（`daySteps` /
+`daySeconds` が 1 要素）で、単日側は `daily_variety_sum ≡ variety` になり第 2 段が
+差分ゼロ、end-of-day refill・yesterday/today 交通量分類・per-day budget 判定が
+評価されません。そこで:
 
 - `generation_parameters.days` が day 数を明示的に持つ（`daySteps` / `daySeconds`
   は両方ともこの長さ、per-day 値は公式範囲 `W+H ..= (W+H)*4` 内）。
@@ -509,7 +530,7 @@ generated case も同じです — 同一 `(generator_version, params, seed)` �
 検証: `crates/bench/tests/canonical_evaluation.rs`
 （3 cases × 2 real solver variants の E2E、決定性、failure isolation を含む）、
 `crates/bench/tests/generated_corpus.rs`
-（8 fixtures + generated の 1 バッチ E2E、provenance、failure class、
+（bundled fixtures + generated の 1 バッチ E2E、provenance、failure class、
 baseline 完走、multi-day）、
 `crates/bench/src/generator.rs`（全 archetype の byte-equivalent 再生成と validator 通過）。
 

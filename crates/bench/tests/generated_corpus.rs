@@ -4,7 +4,7 @@
 //! deterministic and validator-clean. These integration tests prove the things
 //! that only show up once real candidates meet generated cases:
 //!
-//! 1. **E2E batch** — the 8 bundled fixtures *plus* generated cases evaluate
+//! 1. **E2E batch** — every bundled fixture *plus* generated cases evaluate
 //!    in one batch, all scored, with `seed` / `generation_parameters` /
 //!    generator version surviving into the durable records.
 //! 2. **Shared case axis** — sibling candidates in that batch see exactly the
@@ -67,16 +67,16 @@ fn generated_case(archetype: Archetype, seed: u64) -> CaseSpec {
 }
 
 // ---------------------------------------------------------------------------
-// 1 + 2. E2E: 8 fixtures + generated, one batch, shared case axis
+// 1 + 2. E2E: bundled fixtures + generated, one batch, shared case axis
 // ---------------------------------------------------------------------------
 
 #[test]
-fn eight_fixtures_and_generated_cases_evaluate_in_one_batch() {
+fn bundled_fixtures_and_generated_cases_evaluate_in_one_batch() {
     let registry = CandidateRegistry::builtin();
     let ids: Vec<String> =
         ["loop:iterations=4:initial=greedy", "wait"].iter().map(|s| (*s).to_owned()).collect();
     let corpus = mixed_corpus();
-    assert_eq!(corpus.len(), bundled_count() + 2, "8 fixtures + 2 generated cases");
+    assert_eq!(corpus.len(), bundled_count() + 2, "bundled fixtures + 2 generated cases");
     assert_eq!(corpus.case_ids().iter().filter(|id| id.starts_with("generated:")).count(), 2);
 
     let config = TournamentConfig::new(ids.clone(), Some("wait".to_owned()), "player-a", None)

@@ -14,7 +14,7 @@
 //!     --output-dir target/eval
 //!
 //! # fixtures + seed-fixed generated cases in one batch (Issue #185).
-//! # `--cases all` still means "the 8 bundled fixtures only"; generated cases
+//! # `--cases all` still means "the bundled fixtures only"; generated cases
 //! # are opt-in, and every candidate in the batch sees this same case set.
 //! procon-eval \
 //!     --cases all \
@@ -282,21 +282,34 @@ fn run_worker(args: &Args) -> Exit {
 /// testable: a flag that parses but is dropped here would otherwise be
 /// silently ignored (`--harness-margin-ms` was).
 ///
+/// Both `--candidates` and `--baseline` are resolved through the builtin
+/// registry, so the config holds **canonical** ids (parameters in schema
+/// order). The baseline is canonicalised the same way as the batch, because
+/// membership checking and `AggregateReport::build` compare ids by string.
+///
 /// # Errors
-/// A `--candidates` value that does not name a valid candidate id.
+/// A `--candidates` / `--baseline` value that does not name a valid candidate
+/// id, or a batch whose entries name the same configuration twice.
 fn build_config(args: &Args, source_commit_sha: String) -> Result<TournamentConfig, String> {
-    let candidate_ids = split_ids(args.candidates.as_deref().unwrap_or_default())?;
-    Ok(TournamentConfig::new(
-        candidate_ids,
-        args.baseline.clone(),
-        args.team.clone(),
-        args.harness_timeout_ms,
-    )
-    .with_source_commit_sha(source_commit_sha)
-    // Without this, `--harness-margin-ms` parsed but never reached the
-    // runner, which then used its own default.
-    .with_harness_margin_ms(args.harness_margin_ms)
-    .with_output_dir(args.output_dir.clone()))
+    // The CLI resolves against exactly one registry, the builtin one — the
+    // same registry `run` later builds the batch with.
+    let registry = CandidateRegistry::builtin();
+    let candidate_ids = split_ids(args.candidates.as_deref().unwrap_or_default(), &registry)?;
+    let baseline = match args.baseline.as_deref() {
+        Some(baseline) => Some(
+            registry
+                .build(baseline)
+                .map_err(|e| format_candidate_error(&format!("--baseline {baseline:?}"), &e))?
+                .id(),
+        ),
+        None => None,
+    };
+    Ok(TournamentConfig::new(candidate_ids, baseline, args.team.clone(), args.harness_timeout_ms)
+        .with_source_commit_sha(source_commit_sha)
+        // Without this, `--harness-margin-ms` parsed but never reached the
+        // runner, which then used its own default.
+        .with_harness_margin_ms(args.harness_margin_ms)
+        .with_output_dir(args.output_dir.clone()))
 }
 
 /// The deadline policy for this invocation.
@@ -361,22 +374,54 @@ fn print_catalog(registry: &CandidateRegistry) {
         }
         println!();
     }
-    println!("Candidate ids round-trip: `loop:iterations=32:initial=greedy` parses and");
-    println!("re-renders unchanged. Parameter order is preserved as written.");
+    println!("Id syntax: `loop:iterations=32:initial=greedy` parses and re-renders");
+    println!("unchanged. Evaluation identity is canonical: at resolve time the");
+    println!("parameters are reordered into this schema order, so");
+    println!("`loop:initial=greedy:iterations=32` is the same candidate — listing");
+    println!("both is a duplicate error, not two runs of one configuration.");
 }
 
-fn split_ids(text: &str) -> Result<Vec<String>, String> {
+/// Split `--candidates` into **canonical** ids, rejecting semantic duplicates.
+///
+/// Each entry is resolved through `registry`, which reorders parameters into
+/// schema order, so `loop:initial=greedy:iterations=32` and
+/// `loop:iterations=32:initial=greedy` arrive as one id and the second entry
+/// fails the duplicate check instead of being evaluated twice.
+///
+/// # Errors
+/// A bad id (with [`format_candidate_error`]'s wording), a duplicate
+/// configuration, or an empty list.
+fn split_ids(text: &str, registry: &CandidateRegistry) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
+    let mut seen: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for part in text.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        match bench::candidate::CandidateSpec::parse(part) {
-            Ok(_) => out.push(part.to_owned()),
-            Err(e) => return Err(format!("bad candidate id {part:?}: {e}")),
+        let candidate = registry
+            .build(part)
+            .map_err(|e| format_candidate_error(&format!("candidate id {part:?}"), &e))?;
+        let canonical = candidate.id();
+        if let Some(first) = seen.insert(canonical.clone(), out.len()) {
+            return Err(format!(
+                "duplicate candidate {canonical:?}: entry #{first} names the same algorithm \
+                 and parameters (parameter order is ignored)"
+            ));
         }
+        out.push(canonical);
     }
     if out.is_empty() {
         return Err("--candidates did not name any candidate".to_owned());
     }
     Ok(out)
+}
+
+/// Render a [`CandidateError`] for the CLI, keeping the `--list-candidates`
+/// hint for the one error a user can act on directly.
+fn format_candidate_error(subject: &str, e: &CandidateError) -> String {
+    match e {
+        CandidateError::UnknownAlgorithm(name) => format!(
+            "unknown algorithm {name:?} — run `procon-eval --list-candidates` to see what is registered"
+        ),
+        other => format!("bad {subject}: {other}"),
+    }
 }
 
 /// Build the batch corpus: the `--cases` fixture selection, then any opt-in
@@ -422,12 +467,7 @@ fn git_head() -> Option<String> {
 
 fn format_tournament_error(e: &TournamentError) -> String {
     match e {
-        TournamentError::Candidate(ce) => match ce {
-            CandidateError::UnknownAlgorithm(name) => format!(
-                "unknown algorithm {name:?} — run `procon-eval --list-candidates` to see what is registered"
-            ),
-            other => format!("bad candidate: {other}"),
-        },
+        TournamentError::Candidate(ce) => format_candidate_error("candidate", ce),
         other => other.to_string(),
     }
 }
@@ -461,6 +501,70 @@ mod tests {
         assert_eq!(config.harness_timeout_ms, Some(4321), "--harness-timeout-ms was dropped");
         assert_eq!(config.team, "cli-team", "--team was dropped");
         assert_eq!(config.source_commit_sha, "test-sha");
+    }
+
+    /// An id written in a shuffled parameter order reaches the config — and
+    /// therefore `RunRecord.candidate_id` — in canonical schema order.
+    #[test]
+    fn split_ids_yields_canonical_ids() {
+        let registry = CandidateRegistry::builtin();
+        let ids = split_ids("loop:initial=greedy:iterations=32,wait", &registry)
+            .expect("a shuffled id is still a valid id");
+        assert_eq!(ids, vec!["loop:iterations=32:initial=greedy", "wait"]);
+    }
+
+    /// Two spellings of one configuration must fail loudly rather than run
+    /// the same setting twice in one batch.
+    #[test]
+    fn split_ids_rejects_a_shuffled_semantic_duplicate() {
+        let registry = CandidateRegistry::builtin();
+        let err = split_ids(
+            "loop:iterations=32:initial=greedy,loop:initial=greedy:iterations=32",
+            &registry,
+        )
+        .expect_err("one configuration cannot be a batch of two");
+        assert!(err.contains("duplicate candidate"), "{err}");
+        assert!(
+            err.contains("loop:iterations=32:initial=greedy"),
+            "the error must name the canonical id: {err}"
+        );
+    }
+
+    /// The whole flag → config path, including `--baseline`, which is
+    /// canonicalised so its membership check and the aggregate's W/D/L
+    /// comparison match the (canonical) records.
+    #[test]
+    fn shuffled_candidates_and_baseline_reach_the_config_canonically() {
+        let args = Args::parse_from([
+            "procon-eval",
+            "--cases",
+            "small-8x8",
+            "--candidates",
+            "loop:initial=greedy:iterations=32,wait",
+            "--baseline",
+            "loop:iterations=32:initial=greedy",
+        ]);
+        let config = build_config(&args, "test-sha".to_owned()).expect("flags are valid");
+        assert_eq!(config.candidate_ids, vec!["loop:iterations=32:initial=greedy", "wait"]);
+        assert_eq!(
+            config.baseline_candidate_id.as_deref(),
+            Some("loop:iterations=32:initial=greedy")
+        );
+    }
+
+    /// The same duplicate check, but observed through `build_config` — the
+    /// only path from CLI flags to an evaluation.
+    #[test]
+    fn build_config_fails_on_a_shuffled_semantic_duplicate() {
+        let args = Args::parse_from([
+            "procon-eval",
+            "--cases",
+            "small-8x8",
+            "--candidates",
+            "loop:iterations=32:initial=greedy,loop:initial=greedy:iterations=32",
+        ]);
+        let err = build_config(&args, "test-sha".to_owned()).expect_err("duplicate configuration");
+        assert!(err.contains("duplicate candidate"), "{err}");
     }
 
     /// The margin default must stay a default, not become an override.

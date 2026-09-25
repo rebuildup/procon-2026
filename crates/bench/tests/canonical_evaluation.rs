@@ -182,6 +182,42 @@ fn batch_writes_machine_readable_results_that_reaggregate() {
 }
 
 // ---------------------------------------------------------------------------
+// 1b. Canonical candidate identity
+// ---------------------------------------------------------------------------
+
+/// Issue #186: a resolved candidate is identified by its canonical
+/// (schema-ordered) id, and that is the id the durable record and the
+/// aggregate carry. Writing the same configuration in another parameter
+/// order must therefore not create a second identity for it.
+#[test]
+fn a_shuffled_candidate_id_is_recorded_and_aggregated_canonically() {
+    let registry = CandidateRegistry::builtin();
+    // Deliberately not in schema order — validity never depended on order,
+    // and canonicalisation is what makes the identity unique.
+    let candidate = registry
+        .build("loop:initial=greedy:iterations=1")
+        .expect("parameter order is not part of validity");
+    assert_eq!(candidate.id(), "loop:iterations=1:initial=greedy");
+
+    let case = CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+    let record = Evaluator::new(config(HarnessDeadline::default(), Isolation::Thread))
+        .evaluate_one(&candidate, &case);
+    assert_eq!(record.status, RunStatus::Success);
+    assert_eq!(
+        record.candidate_id, "loop:iterations=1:initial=greedy",
+        "RunRecord.candidate_id must be the canonical id"
+    );
+
+    // The aggregate keys on the same canonical id as the record.
+    let report = agg(vec![record], Some("loop:iterations=1:initial=greedy"));
+    assert!(report.candidate("loop:iterations=1:initial=greedy").is_some());
+    assert!(
+        report.candidate("loop:initial=greedy:iterations=1").is_none(),
+        "the non-canonical spelling must not be a separate aggregate entry"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // 2. Solvers never score themselves
 // ---------------------------------------------------------------------------
 

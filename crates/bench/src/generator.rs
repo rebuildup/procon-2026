@@ -1,7 +1,7 @@
 //! Deterministic, seed-fixed generated case corpus (Issue #185).
 //!
-//! The bundled fixtures are the reproducible baseline, but eight fixed maps
-//! are a small sample: a solver tuned only against them can overfit their
+//! The bundled fixtures are the reproducible baseline, but a handful of
+//! fixed maps is a small sample: a solver tuned only against them can overfit their
 //! terrain quirks (or get lucky on one map's series layout). This module adds
 //! a **generated corpus that complements — never replaces — the fixtures**:
 //!
@@ -73,10 +73,11 @@
 //! | `sparse-spots` | few spots kept far apart | 3–6 | 2–4 | small | 1 |
 //! | `dense-spots` | clustered spot blob | 18–26 | 2–6 | large | 2 |
 //!
-//! Multi-day defaults matter: every bundled fixture is single-day, so
-//! `daily_variety_sum` ≡ `variety` and the multi-day machinery (per-day
-//! budgets, end-of-day spot refill, yesterday/today traffic classification,
-//! lookahead) is unexercised by fixtures alone. `road-heavy` and
+//! Multi-day defaults matter: every bundled fixture is single-day except
+//! the3-day `fixture:road-heavy-v2` (Issue #187), so on the fixture set
+//! `daily_variety_sum` ≡ `variety` almost everywhere and the multi-day
+//! machinery (per-day budgets, end-of-day spot refill, yesterday/today
+//! traffic classification, lookahead) is barely exercised. `road-heavy` and
 //! `many-series` default to 3 days, `pond-obstacle` and `dense-spots` to 2,
 //! so screening can observe tier-2 differences; any archetype can be forced
 //! into `1..=3` days with `:days=`.
@@ -1640,7 +1641,9 @@ mod tests {
             );
         }
 
-        // Every bundled fixture is single-day; the generated corpus must not be.
+        // Until #187 no bundled fixture was multi-day; today only
+        // `road-heavy-v2` is. The generated corpus must carry multi-day
+        // coverage itself.
         assert!(Archetype::RoadHeavy.default_days() >= 2, "road-heavy drives multi-day traffic");
         assert!(Archetype::ManySeries.default_days() >= 2, "many-series drives tier 2");
         assert!(Archetype::PondObstacle.default_days() >= 2);
