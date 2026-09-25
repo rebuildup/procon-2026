@@ -1,7 +1,7 @@
 {
   "name": "road-heavy",
-  "description": "16x16 map dominated by a road network: central road cross plus four diagonal roads radiating to the corners, with 5 agents and 10 spots across 2 brands. Solvers that special-case road cost (solver-astar) should dominate.",
-  "category": "road_heavy",
+  "description": "Legacy 16x16 map kept byte-identical for historical `fixture:road-heavy` evidence (pre-#187 content): a pond-heavy field with a diagonal pond wall and only 4 road cells, 5 agents and 10 spots across 2 brands. Relabeled from `road_heavy` to `medium` because its terrain never matched that category - it does NOT exercise road-cost-aware pathing. Use `road-heavy-v2` for the real road corpus case.",
+  "category": "medium",
   "startsAt": 0,
   "daySeconds": [
     60

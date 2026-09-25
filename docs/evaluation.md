@@ -144,7 +144,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
     --output-dir target/eval
 ```
 
-`--cases all`（既定）は `crates/bench/fixtures/maps/` の 8 件すべてを使います。
+`--cases all`（既定）は `crates/bench/fixtures/maps/` の 9 件すべてを使います。
 
 ### 3. baseline と比較する
 
