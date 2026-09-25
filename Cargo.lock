@@ -190,6 +190,7 @@ dependencies = [
  "protocol",
  "serde",
  "serde_json",
+ "solver-astar",
  "solver-greedy",
  "solver-loop",
  "thiserror 2.0.20",

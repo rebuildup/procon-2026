@@ -27,7 +27,7 @@
 //! greedy-family candidate via [`super::context`], so `greedy` and `nearest`
 //! differ only in assignment policy.
 
-use engine::model::{AgentActions, Solver, SolverContext};
+use engine::model::{AgentActions, HexCoord, Solver, SolverContext};
 use solver_greedy::{GreedySolver, Solver as _};
 
 use super::context;
@@ -45,8 +45,22 @@ pub struct GreedyCandidate {
 }
 
 impl GreedyCandidate {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { inner: GreedySolver::new() }
+    }
+
+    /// Greedy's target spot per controlled agent, one entry per position in
+    /// `ctx.agent_ids` (empty when the agent has no target).
+    ///
+    /// Extracted from [`Solver::decide`] so the `astar` candidate can reuse
+    /// the exact same variety-aware nearest assignment and differ only in
+    /// *routing* — the comparison then isolates path quality. Built on the
+    /// shared greedy-family conversion in [`super::context`], so `greedy`,
+    /// `nearest` and `astar` all see identical inputs.
+    pub(crate) fn targets(&self, ctx: &SolverContext<'_>) -> Vec<Vec<HexCoord>> {
+        let gctx = context::solve_context(ctx);
+        let intents = self.inner.decide(&gctx);
+        context::targets_from_intents(ctx, &intents)
     }
 }
 
@@ -56,10 +70,7 @@ impl Solver for GreedyCandidate {
     }
 
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
-        let gctx = context::solve_context(ctx);
-        let intents = self.inner.decide(&gctx);
-        let targets = context::targets_from_intents(ctx, &intents);
-        plan_walk(ctx, &targets)
+        plan_walk(ctx, &self.targets(ctx))
     }
 }
 
