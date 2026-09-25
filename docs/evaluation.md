@@ -246,8 +246,32 @@ generator は `CaseSpec::generated(case_id, seed, params, setting)` を通るだ
 | harness deadline | `EvalConfig::harness_deadline` / `--harness-timeout-ms` (旧 `--timeout-ms` alias) | 動かなくなった worker を kill する保険。順位には使わない |
 | 公式 day window | `CaseSpec::day_budget_us()` → `RunRecord::day_budget_exceeded_days` | 各日の `daySeconds`。超過した日があると `invalid` / 順位対象外 |
 
-`run_record.team` は candidate がプレイした team を記録します（process isolation 経由の
-引き渡しミスを検出できるようにしたものです）。
+#### harness deadline は **case から導出**する（既定）
+
+フラットな既定値は誤ります。`daySeconds = [60,60,60]` は**合計180秒の合法な回答時間**なので、
+60秒のキャップは「各日 budget 内・合計60秒超」の合法な run を途中で kill します。
+
+| ポリシー | 内容 |
+|---|---|
+| `HarnessDeadline::CaseWindow { margin }`（**既定**） | `sum(daySeconds) + margin`。合法な run は切られない。hang は公式 window 終了後に kill |
+| `HarnessDeadline::Fixed(ms)` | 明示 override。早く fail したい場合だけ使う |
+
+CLI: `--harness-margin-ms`（既定 5000）で導出の余白を調整。
+`--harness-timeout-ms`（`--timeout-ms` alias）を指定した場合だけ `Fixed` になり導出は無効。
+
+> 導出モードは hang した candidate を公式 window + margin ぶんだけ生かします。
+> 大量スイープでまずい場合は `--harness-timeout-ms` で明示的に絞れますが、
+> **絞った分だけ合法な run が timeout になり得ます**。
+
+回帰テスト: `harness_deadline_is_derived_from_the_cases_official_window`（`[60,60,60]` が60秒を超える）と
+`a_flat_deadline_kills_a_legal_run_but_the_case_window_does_not`（同一入力で Fixed は kill / CaseWindow は成功）。
+
+#### record.team の正規化
+
+`Evaluator::stamp_identity` が identity（candidate / case / sha / team）を**親側の値で1箇所に
+正規化**します。よって `evaluate_one` の戻り値を見て `--team` の引き渡しを判定することはできません —
+それでは親が正しければ子が間違っていても通ってしまいます。正しい検査は worker 自身が返す JSON で、
+それが `worker_reports_the_team_it_was_given`（`tests/canonical_evaluation.rs`）です。
 
 ### isolation
 

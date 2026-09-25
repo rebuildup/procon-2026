@@ -278,7 +278,8 @@ pub struct EvalConfig {
     pub source_commit_sha: String,
     /// Team the candidate plays as.
     pub team: PlayerId,
-    /// Harness deadline for a single `(candidate, case)` run.
+    /// How long a single `(candidate, case)` run may take before it is
+    /// killed. See [`HarnessDeadline`].
     ///
     /// This is a **safety net that kills a runaway worker**, not the official
     /// per-day answer window. The official budget is `daySeconds`, judged per
@@ -286,9 +287,67 @@ pub struct EvalConfig {
     /// One total deadline cannot stand in for N daily budgets: raising it
     /// would let a day that blew its own window look like a success, and
     /// lowering it would kill runs that were never actually late.
-    pub harness_deadline: Duration,
+    pub harness_deadline: HarnessDeadline,
     /// How a run is executed when the deadline expires.
     pub isolation: Isolation,
+}
+
+/// How the harness deadline for one run is chosen.
+///
+/// A flat default is wrong for this job: `daySeconds = [60, 60, 60]` is 180 s
+/// of *legal* answering time, so a flat 60 s cap would kill a solver that is
+/// comfortably inside its official window on every day. The default therefore
+/// derives the deadline from the case itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HarnessDeadline {
+    /// `sum(daySeconds) + margin` — a legal run is never cut short, and a
+    /// genuinely hung run is killed after the official window closes.
+    CaseWindow {
+        /// Slack on top of the official window, to absorb process startup and
+        /// serialization rather than having them eat the solver's budget.
+        margin: Duration,
+    },
+    /// An absolute deadline regardless of the case.
+    ///
+    /// Explicit override: use it to fail fast instead of waiting out the
+    /// official window. Never the default, because it is where false
+    /// timeouts come from.
+    Fixed(Duration),
+}
+
+/// Fallback window for a case that declares no usable `daySeconds`.
+///
+/// Such a case is already rejected by `engine::from_wire`; this only keeps
+/// the deadline finite while the run is being refused.
+const UNKNOWN_CASE_WINDOW: Duration = Duration::from_secs(60);
+
+impl HarnessDeadline {
+    /// The default: derive from the case, with 5 s of overhead slack.
+    #[must_use]
+    pub const fn case_derived(margin: Duration) -> Self {
+        Self::CaseWindow { margin }
+    }
+
+    /// Resolve the policy against one case.
+    #[must_use]
+    pub fn resolve(&self, case: &CaseSpec) -> Duration {
+        match *self {
+            Self::Fixed(d) => d,
+            Self::CaseWindow { margin } => {
+                let total_secs: u64 = case.day_seconds().iter().map(|secs| u64::from(*secs)).sum();
+                if total_secs == 0 {
+                    return UNKNOWN_CASE_WINDOW + margin;
+                }
+                Duration::from_secs(total_secs).saturating_add(margin)
+            }
+        }
+    }
+}
+
+impl Default for HarnessDeadline {
+    fn default() -> Self {
+        Self::CaseWindow { margin: Duration::from_secs(5) }
+    }
 }
 
 impl EvalConfig {
@@ -298,7 +357,7 @@ impl EvalConfig {
     /// Defaults to [`Isolation::Thread`]. Prefer [`Self::with_process_isolation`]
     /// for batches: only a child process can be killed when it overruns.
     #[must_use]
-    pub fn new(team: PlayerId, harness_deadline: Duration) -> Self {
+    pub fn new(team: PlayerId, harness_deadline: HarnessDeadline) -> Self {
         Self {
             source_commit_sha: source_commit_sha(),
             team,
@@ -443,17 +502,18 @@ impl Evaluator {
                 );
             }
         };
-        let child = match self.spawn_worker(worker_exe, &candidate_id, case_json) {
+        let deadline = self.config.harness_deadline.resolve(case);
+        let child = match self.spawn_worker(worker_exe, &candidate_id, case_json, deadline) {
             Ok(c) => c,
             Err(e) => return failed(RunStatus::Invalid, e, 0),
         };
 
-        match read_child(child, self.config.harness_deadline) {
+        match read_child(child, deadline) {
             WorkerOutcome::TimedOut => failed(
                 RunStatus::Timeout,
                 format!(
                     "exceeded harness_deadline of {}ms; worker process was killed",
-                    self.config.harness_deadline.as_millis()
+                    deadline.as_millis()
                 ),
                 elapsed_us(started),
             ),
@@ -493,9 +553,9 @@ impl Evaluator {
         worker_exe: &std::path::Path,
         candidate_id: &str,
         case_json: String,
+        deadline: Duration,
     ) -> Result<std::process::Child, String> {
-        let deadline_ms =
-            u64::try_from(self.config.harness_deadline.as_millis()).unwrap_or(u64::MAX);
+        let deadline_ms = u64::try_from(deadline.as_millis()).unwrap_or(u64::MAX);
         std::process::Command::new(worker_exe)
             .arg("--worker")
             .arg("--candidate-id")
@@ -613,16 +673,14 @@ impl Evaluator {
 
         let elapsed_us = |t: Instant| micros_u64(t.elapsed().as_micros());
 
-        match rx.recv_timeout(self.config.harness_deadline) {
+        let deadline = self.config.harness_deadline.resolve(case);
+        match rx.recv_timeout(deadline) {
             Err(mpsc::RecvTimeoutError::Timeout) => RunRecord::unscored(
                 candidate_id,
                 case,
                 sha,
                 RunStatus::Timeout,
-                Some(format!(
-                    "exceeded harness_deadline of {}ms",
-                    self.config.harness_deadline.as_millis()
-                )),
+                Some(format!("exceeded harness_deadline of {}ms", deadline.as_millis())),
                 elapsed_us(started),
             ),
             Err(mpsc::RecvTimeoutError::Disconnected) => RunRecord::unscored(
@@ -889,6 +947,44 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
 mod tests {
     use super::*;
 
+    /// `stamp_identity` deliberately overwrites the identity fields with the
+    /// parent's own. That normalisation is useful — it makes a worker-side
+    /// failure record carry the parent's ids — but it also means an assertion
+    /// on `record.team` *after* `evaluate_one` cannot detect a broken `--team`
+    /// hand-off. The worker-side check lives in
+    /// `tests/canonical_evaluation.rs::worker_reports_the_team_it_was_given`,
+    /// which inspects the child's raw JSON instead.
+    #[test]
+    fn stamp_identity_overwrites_the_parent_identity() {
+        let registry = CandidateRegistry::builtin();
+        let candidate = registry.build("wait").expect("wait is builtin");
+        let case = CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+
+        let evaluator = Evaluator::new(EvalConfig {
+            source_commit_sha: "parent-sha".to_owned(),
+            team: PlayerId::new("parent-team").expect("valid team"),
+            harness_deadline: HarnessDeadline::default(),
+            isolation: Isolation::Thread,
+        });
+
+        // Pretend a worker came back with its own (wrong) identity.
+        let mut child_record = RunRecord::unscored(
+            "child-guess",
+            &case,
+            "child-sha",
+            RunStatus::Panic,
+            Some("child failed".to_owned()),
+            42,
+        );
+        child_record.team = "child-team".to_owned();
+
+        let stamped = evaluator.stamp_identity(child_record, &candidate, &case);
+        assert_eq!(stamped.candidate_id, candidate.id());
+        assert_eq!(stamped.case_id, case.case_id);
+        assert_eq!(stamped.source_commit_sha, "parent-sha");
+        assert_eq!(stamped.team, "parent-team");
+    }
+
     #[test]
     fn days_over_budget_flags_only_the_late_days() {
         assert_eq!(days_over_budget(&[100, 1_000_001], &[1_000_000, 1_000_000]), vec![1]);
@@ -909,7 +1005,7 @@ mod tests {
     use crate::case::Corpus;
 
     fn config() -> EvalConfig {
-        EvalConfig::new(PlayerId::new("player-a").unwrap(), Duration::from_secs(30))
+        EvalConfig::new(PlayerId::new("player-a").unwrap(), HarnessDeadline::default())
     }
 
     fn registry() -> CandidateRegistry {

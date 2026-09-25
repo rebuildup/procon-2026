@@ -66,12 +66,22 @@ struct Args {
     #[arg(long, default_value = "player-a")]
     team: String,
 
-    /// Harness deadline per run, in milliseconds: how long the parent will
-    /// wait before killing a worker. A safety net for a worker that has
-    /// stopped making progress — **not** the official per-day answer window
+    /// Absolute harness deadline per run, in milliseconds: how long the parent
+    /// waits before killing a worker. A safety net for a worker that has
+    /// stopped making progress, **not** the official per-day answer window
     /// (`daySeconds`), which the evaluator judges separately per day.
-    #[arg(long = "harness-timeout-ms", alias = "timeout-ms", default_value_t = 60_000)]
-    harness_timeout_ms: u64,
+    ///
+    /// Omit it to derive the deadline from the case instead: the case's
+    /// `sum(daySeconds)` plus `--harness-margin-ms`. Deriving is the default
+    /// because a flat absolute value can kill a perfectly legal run —
+    /// `daySeconds = [60,60,60]` allows 180 s of answering in total.
+    #[arg(long = "harness-timeout-ms", alias = "timeout-ms")]
+    harness_timeout_ms: Option<u64>,
+
+    /// Slack added when deriving the deadline from the case, covering process
+    /// startup and serialization. Ignored when `--harness-timeout-ms` is set.
+    #[arg(long = "harness-margin-ms", default_value_t = 5_000)]
+    harness_margin_ms: u64,
 
     /// Directory for `runs.jsonl` + `aggregate.json`.
     #[arg(long, default_value = "target/eval")]
@@ -165,7 +175,7 @@ fn run() -> Exit {
         candidate_ids,
         args.baseline.clone(),
         args.team.clone(),
-        Duration::from_millis(args.harness_timeout_ms),
+        args.harness_timeout_ms,
     )
     .with_source_commit_sha(source_commit_sha)
     .with_output_dir(args.output_dir.clone());
@@ -248,6 +258,21 @@ fn run_worker(args: &Args) -> Exit {
     }
 }
 
+/// The deadline policy for this invocation.
+///
+/// The parent always sends the deadline it already resolved for *this case*,
+/// so the worker inherits it verbatim rather than re-deriving it against
+/// whatever case body happens to be in the argument.
+fn worker_deadline(args: &Args) -> bench::evaluate::HarnessDeadline {
+    use bench::evaluate::HarnessDeadline;
+    match args.harness_timeout_ms {
+        Some(ms) => HarnessDeadline::Fixed(Duration::from_millis(ms)),
+        None => {
+            HarnessDeadline::CaseWindow { margin: Duration::from_millis(args.harness_margin_ms) }
+        }
+    }
+}
+
 /// Build and evaluate one run for worker mode.
 fn worker_record(args: &Args) -> Result<RunRecord, String> {
     use bench::evaluate::{EvalConfig, Evaluator, Isolation};
@@ -272,7 +297,7 @@ fn worker_record(args: &Args) -> Result<RunRecord, String> {
     let config = EvalConfig {
         source_commit_sha: args.source_commit_sha.clone(),
         team,
-        harness_deadline: Duration::from_millis(args.harness_timeout_ms),
+        harness_deadline: worker_deadline(args),
         isolation: Isolation::Thread,
     };
     Ok(Evaluator::new(config).evaluate_one(&candidate, &case))

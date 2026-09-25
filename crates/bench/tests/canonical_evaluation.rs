@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use bench::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 use bench::case::{CaseSpec, Corpus};
-use bench::evaluate::{EvalConfig, Evaluator, Isolation, RunRecord, RunStatus};
+use bench::evaluate::{EvalConfig, Evaluator, HarnessDeadline, Isolation, RunRecord, RunStatus};
 use bench::tournament::{TournamentConfig, TournamentRunner};
 use bench::{AggregateReport, CandidateRegistry};
 use domain::PlayerId;
@@ -55,7 +55,7 @@ fn agg(runs: Vec<RunRecord>, baseline: Option<&str>) -> AggregateReport {
 /// Config for this suite. `isolation` defaults to a killed child process —
 /// the same thing a real batch uses — because a timeout must *stop* the run,
 /// not just stop waiting for it.
-fn config(harness_deadline: Duration, isolation: Isolation) -> EvalConfig {
+fn config(harness_deadline: HarnessDeadline, isolation: Isolation) -> EvalConfig {
     EvalConfig {
         source_commit_sha: "test-commit".to_owned(),
         team: team(),
@@ -66,11 +66,11 @@ fn config(harness_deadline: Duration, isolation: Isolation) -> EvalConfig {
 
 fn evaluator() -> Evaluator {
     Evaluator::new(
-        config(Duration::from_secs(60), Isolation::Thread).with_process_isolation(worker_exe()),
+        config(HarnessDeadline::default(), Isolation::Thread).with_process_isolation(worker_exe()),
     )
 }
 
-fn evaluator_with_timeout(isolation: Isolation, harness_deadline: Duration) -> Evaluator {
+fn evaluator_with_timeout(isolation: Isolation, harness_deadline: HarnessDeadline) -> Evaluator {
     Evaluator::new(config(harness_deadline, isolation))
 }
 
@@ -136,14 +136,9 @@ fn three_cases_by_two_real_solver_variants_produce_real_scores() {
 fn batch_writes_machine_readable_results_that_reaggregate() {
     let registry = CandidateRegistry::builtin();
     let ids: Vec<String> = TWO_VARIANTS.iter().map(|s| (*s).to_owned()).collect();
-    let config = TournamentConfig::new(
-        ids,
-        Some(TWO_VARIANTS[0].to_owned()),
-        "player-a",
-        Duration::from_secs(60),
-    )
-    .with_source_commit_sha("test-commit")
-    .with_output_dir(std::env::temp_dir().join("procon-bench-e2e-results"));
+    let config = TournamentConfig::new(ids, Some(TWO_VARIANTS[0].to_owned()), "player-a", None)
+        .with_source_commit_sha("test-commit")
+        .with_output_dir(std::env::temp_dir().join("procon-bench-e2e-results"));
 
     let runner = TournamentRunner::new(config);
     let corpus = Corpus::bundled_subset(THREE_CASES).expect("corpus loads");
@@ -336,7 +331,10 @@ fn panic_timeout_and_invalid_are_isolated_per_run() {
     // they cannot be built by the `procon-eval` worker — thread isolation is
     // the only way to exercise them. Real batches use process isolation, and
     // `process_isolation_kills_the_worker_on_timeout` below proves that path.
-    let evaluator = evaluator_with_timeout(Isolation::Thread, Duration::from_millis(400));
+    let evaluator = evaluator_with_timeout(
+        Isolation::Thread,
+        HarnessDeadline::Fixed(Duration::from_millis(400)),
+    );
 
     let ids = [
         "wait",
@@ -410,7 +408,8 @@ fn process_isolation_kills_the_worker_on_timeout() {
     let case = CaseSpec::from_bundled_fixture("large-32x32").unwrap();
 
     let evaluator = Evaluator::new(
-        config(Duration::from_millis(3), Isolation::Thread).with_process_isolation(worker_exe()),
+        config(HarnessDeadline::Fixed(Duration::from_millis(3)), Isolation::Thread)
+            .with_process_isolation(worker_exe()),
     );
 
     let record = evaluator.evaluate_one(&candidate, &case);
@@ -444,27 +443,89 @@ fn process_isolation_kills_the_worker_on_timeout() {
 }
 
 #[test]
-fn process_isolation_round_trips_a_non_default_team() {
-    // The parent sends `--team`; the worker used to read a separate
-    // `--worker-team` that nothing passed, so a non-default team silently
-    // became `player-a` under process isolation.
-    let registry = CandidateRegistry::builtin();
-    let candidate = registry.build("wait").unwrap();
-    let case = CaseSpec::from_bundled_fixture("small-8x8").unwrap();
-    let evaluator = Evaluator::new(
-        EvalConfig {
-            source_commit_sha: "test-commit".to_owned(),
-            team: PlayerId::new("team-roundtrip").expect("valid team"),
-            harness_deadline: Duration::from_secs(60),
-            isolation: Isolation::Thread,
-        }
-        .with_process_isolation(worker_exe()),
+fn worker_reports_the_team_it_was_given() {
+    // Asserts on the record the *child* produced, before
+    // `Evaluator::stamp_identity` normalises `team` from the parent's config.
+    // The previous version of this test asserted after that stamping, so it
+    // passed even when the worker ignored `--team` entirely — which is
+    // exactly the regression it was meant to catch.
+    let case = CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+    let out = std::process::Command::new(worker_exe())
+        .arg("--worker")
+        .arg("--candidate-id")
+        .arg("wait")
+        .arg("--case-json")
+        .arg(serde_json::to_string(&case).expect("case serialises"))
+        .arg("--team")
+        .arg("raw-team")
+        .arg("--source-commit-sha")
+        .arg("test-commit")
+        .arg("--harness-timeout-ms")
+        .arg("60000")
+        .output()
+        .expect("worker starts");
+    assert!(out.status.success(), "worker failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    let line = stdout.lines().next_back().expect("worker printed a record");
+    let raw: RunRecord = serde_json::from_str(line).expect("record parses");
+    assert_eq!(raw.team, "raw-team", "the worker must read `--team`, not a flag nothing sends");
+}
+
+#[test]
+fn harness_deadline_is_derived_from_the_cases_official_window() {
+    // `daySeconds = [60,60,60]` is 180 s of legal answering time. The flat
+    // 60 s default that used to ship would have killed a run that is inside
+    // its official budget on every single day.
+    let mut case = CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+    case.setting.day_steps = vec![16, 16, 16];
+    case.setting.day_seconds = vec![60, 60, 60];
+
+    let derived = HarnessDeadline::CaseWindow { margin: Duration::from_secs(5) }.resolve(&case);
+    assert!(
+        derived > Duration::from_secs(60),
+        "a flat 60 s cap would kill a legal 180 s run; derived deadline was {derived:?}"
     );
+    assert!(derived >= Duration::from_secs(185), "expected window + margin, got {derived:?}");
 
-    let record = evaluator.evaluate_one(&candidate, &case);
+    // An explicit override still means what it says.
+    let fixed = HarnessDeadline::Fixed(Duration::from_millis(600)).resolve(&case);
+    assert_eq!(fixed, Duration::from_millis(600));
+}
 
-    assert_eq!(record.team, "team-roundtrip", "the child must use the parent's team");
-    assert_eq!(record.status, RunStatus::Success);
+#[test]
+fn a_flat_deadline_kills_a_legal_run_but_the_case_window_does_not() {
+    // Behavioural version of the test above, at a scale a test can afford:
+    // 1.1 s of work inside a 2 s per-day budget — late for nobody.
+    let registry = registry_with_failures();
+    let candidate = registry.build("broken:mode=sleep").unwrap();
+
+    let mut case = CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+    case.setting.day_seconds = vec![2];
+    assert_eq!(case.setting.day_steps.len(), 1, "daySeconds must match daySteps");
+
+    // The failure mode: one flat deadline that is shorter than the run.
+    let flat = evaluator_with_timeout(
+        Isolation::Thread,
+        HarnessDeadline::Fixed(Duration::from_millis(600)),
+    );
+    let killed = flat.evaluate_one(&candidate, &case);
+    assert_eq!(killed.status, RunStatus::Timeout, "the flat cap kills a legal run");
+
+    // The fix: the deadline comes from the case's own window.
+    let derived = evaluator_with_timeout(
+        Isolation::Thread,
+        HarnessDeadline::CaseWindow { margin: Duration::from_secs(1) },
+    );
+    let survived = derived.evaluate_one(&candidate, &case);
+    assert_eq!(
+        survived.status,
+        RunStatus::Success,
+        "2 s window + 1 s margin must outlive a 1.1 s answer: {:?}",
+        survived.status_detail
+    );
+    assert!(survived.is_scored());
+    assert!(survived.day_budget_exceeded_days.is_empty());
 }
 
 #[test]
@@ -484,7 +545,8 @@ fn exceeding_the_per_day_answer_window_makes_a_run_unrankable() {
 
     // Thread isolation: this candidate exists only in this binary. The
     // harness deadline is generous — the run is *late*, not *hung*.
-    let evaluator = evaluator_with_timeout(Isolation::Thread, Duration::from_secs(10));
+    let evaluator =
+        evaluator_with_timeout(Isolation::Thread, HarnessDeadline::Fixed(Duration::from_secs(10)));
     let record = evaluator.evaluate_one(&candidate, &case);
 
     assert_eq!(record.status, RunStatus::Invalid, "detail: {:?}", record.status_detail);

@@ -21,6 +21,9 @@
 //! independent (see [`crate::evaluate`]'s failure-isolation notes) and yields
 //! one self-contained record.
 
+/// Default slack, in milliseconds, added to a case-derived harness deadline.
+pub const DEFAULT_HARNESS_MARGIN_MS: u64 = 5_000;
+
 pub mod render;
 
 use std::path::{Path, PathBuf};
@@ -32,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use crate::aggregate::AggregateReport;
 use crate::candidate::{Candidate, CandidateError, CandidateRegistry};
 use crate::case::{CaseError, CaseSpec, Corpus};
-use crate::evaluate::{EvalConfig, Evaluator, Isolation, RunRecord};
+use crate::evaluate::{EvalConfig, Evaluator, HarnessDeadline, Isolation, RunRecord};
 use crate::report::{ReportError, ReportPaths};
 
 /// Configuration for one batch.
@@ -49,11 +52,19 @@ pub struct TournamentConfig {
     /// Commit SHA stamped onto every record. Defaults to
     /// [`crate::evaluate::source_commit_sha`] (`PROCON_SOURCE_COMMIT_SHA`).
     pub source_commit_sha: String,
-    /// Harness deadline for a single `(candidate, case)` run — a safety net
-    /// that kills a runaway worker, **not** the official per-day `daySeconds`
-    /// window (that is judged per day against `daily_response_us`).
-    #[serde(with = "duration_ms")]
-    pub harness_deadline: Duration,
+    /// Absolute harness deadline in milliseconds, for a caller that wants to
+    /// fail fast instead of waiting out the case's official window.
+    ///
+    /// `None` (the default) derives the deadline from the case instead —
+    /// `sum(daySeconds) + harness_margin_ms`. A flat absolute value is where
+    /// false timeouts come from: `daySeconds = [60, 60, 60]` is 180 s of
+    /// legal answering time, so a flat 60 s cap would kill a run that is inside
+    /// its official budget on every day.
+    pub harness_timeout_ms: Option<u64>,
+    /// Slack added to the derived deadline, covering process startup and
+    /// serialization so they do not eat the solver's budget. Used only when
+    /// [`Self::harness_timeout_ms`] is `None`.
+    pub harness_margin_ms: u64,
     /// Optional directory to write `runs.jsonl` + `aggregate.json` into.
     pub output_dir: Option<PathBuf>,
     /// Explicit `procon-eval` executable for process isolation.
@@ -71,17 +82,32 @@ impl TournamentConfig {
         candidate_ids: Vec<String>,
         baseline_candidate_id: Option<String>,
         team: impl Into<String>,
-        harness_deadline: Duration,
+        harness_timeout_ms: Option<u64>,
     ) -> Self {
         Self {
             candidate_ids,
             baseline_candidate_id,
             team: team.into(),
             source_commit_sha: crate::evaluate::source_commit_sha(),
-            harness_deadline,
+            harness_timeout_ms,
+            harness_margin_ms: DEFAULT_HARNESS_MARGIN_MS,
             output_dir: None,
             worker_exe: None,
         }
+    }
+
+    /// Override the derived harness deadline with an absolute one.
+    #[must_use]
+    pub fn with_harness_timeout_ms(mut self, ms: u64) -> Self {
+        self.harness_timeout_ms = Some(ms);
+        self
+    }
+
+    /// Slack added when deriving the deadline from the case.
+    #[must_use]
+    pub fn with_harness_margin_ms(mut self, ms: u64) -> Self {
+        self.harness_margin_ms = ms;
+        self
     }
 
     /// Pin the executable used for process isolation (see [`Isolation`]).
@@ -103,21 +129,6 @@ impl TournamentConfig {
     pub fn with_output_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.output_dir = Some(dir.into());
         self
-    }
-}
-
-mod duration_ms {
-    use std::time::Duration;
-
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_u64(u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Duration, D::Error> {
-        let ms = u64::deserialize(d)?;
-        Ok(Duration::from_millis(ms))
     }
 }
 
@@ -214,6 +225,19 @@ impl TournamentRunner {
         self.run_cases(registry, &corpus.cases)
     }
 
+    /// The deadline policy this batch runs under.
+    ///
+    /// An explicit `harness_timeout_ms` becomes [`HarnessDeadline::Fixed`];
+    /// otherwise the deadline is derived per case from its official window.
+    fn harness_deadline(&self) -> HarnessDeadline {
+        match self.config.harness_timeout_ms {
+            Some(ms) => HarnessDeadline::Fixed(Duration::from_millis(ms)),
+            None => HarnessDeadline::CaseWindow {
+                margin: Duration::from_millis(self.config.harness_margin_ms),
+            },
+        }
+    }
+
     /// Same as [`Self::run`] against an explicit case list.
     ///
     /// # Errors
@@ -236,7 +260,7 @@ impl TournamentRunner {
         let mut eval_config = EvalConfig {
             source_commit_sha: self.config.source_commit_sha.clone(),
             team,
-            harness_deadline: self.config.harness_deadline,
+            harness_deadline: self.harness_deadline(),
             isolation: Isolation::Thread,
         };
         if let Some(exe) = self.config.worker_exe.clone().or_else(worker_executable) {
