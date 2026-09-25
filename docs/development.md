@@ -145,7 +145,7 @@ JSON レポートには p50 / p90 / max（µs 単位）とサンプル数が含�
 **辞書順**で比較します。詳細と標準手順は [`docs/evaluation.md`](evaluation.md) が SoT。
 
 ```bash
-just eval-list          # 登録済み candidate（loop / greedy / wait とパラメータ）
+just eval-list          # 登録済み candidate（loop / multiloop / greedy / wait とパラメータ）
 just eval               # 全 fixture × 既定 candidate、wait を baseline に
                         # → target/eval/{runs.jsonl, aggregate.json, report.md}
 

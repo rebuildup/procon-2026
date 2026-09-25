@@ -13,12 +13,17 @@
 //! algorithms; one algorithm may expose many parameter sets. Neither needs a
 //! new crate.
 
+pub mod context;
 pub mod greedy_solver;
 pub mod loop_solver;
+pub mod multiloop_solver;
+pub mod nearest_solver;
 pub mod walk;
 
 pub use greedy_solver::GreedyFactory;
 pub use loop_solver::LoopFactory;
+pub use multiloop_solver::MultiLoopFactory;
+pub use nearest_solver::NearestFactory;
 
 use engine::model::{AgentActions, Solver, SolverContext};
 
