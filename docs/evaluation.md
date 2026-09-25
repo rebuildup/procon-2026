@@ -75,7 +75,26 @@ agent の種類（巡回/補給）は wire に無いため依然 index 交替の
 ### 1. candidate を決める
 
 candidate ID の形は `アルゴリズム[:キー=値]...` で、アルゴリズム + パラメータを
-まとめて指します。パラメータは記書順のまま保持され、`parse → id` で完全に往復します。
+まとめて指します。identity は 2 層です。
+
+| 層 | 経路 | 保証 |
+|---|---|---|
+| 構文 | `CandidateSpec::parse → id` | 記書順のまま完全に往復。registry 無しで id を echo できる |
+| **canonical identity** | `CandidateRegistry::resolve`（= `build` / `build_all`） | 重複キーを拒否し、パラメータを `CandidateFactory::params()` の schema 順に並べ替える |
+
+canonical order の SoT は factory の schema だけで、`loop` なら `iterations / initial / seed`
+の順です。並べ替えは validation の後に行われるので、未知キーは既に拒否済みで
+どの present key も必ず 1 つずつ残ります。
+
+したがって **書き順は identity ではありません**:
+`loop:iterations=32:initial=greedy` と `loop:initial=greedy:iterations=32` は
+同一 candidate です。同じ batch に両方を書くと duplicate error になり、
+二重評価されません。キーの重複
+（`loop:iterations=32:iterations=128:initial=greedy`）も parser と registry の
+両方で明示的に拒否されます — どちらの値が有効かが曖昧なため。
+
+解決後の `Candidate::id()` が durable identity であり、`RunRecord.candidate_id` /
+`AggregateReport` / レポートはすべてそれを読みます。
 
 ```bash
 just eval-list

@@ -70,13 +70,17 @@ branch 名は delivery identity であり、solver identity ではない。
 
 評価対象には stable candidate ID を与える。
 
-例:
+例（parameter は `CandidateFactory::params()` の schema 順 = canonical 形）:
 
 ```text
-loop:initial=greedy:iterations=32
-loop:initial=random:seed=42:iterations=64
-loop:initial=random:seed=42:iterations=64:2opt=true
+loop:iterations=32:initial=greedy
+loop:iterations=64:initial=random:seed=42
+loop:iterations=128:initial=sweep-row
 ```
+
+書き順は identity ではありません。`loop:initial=greedy:iterations=32` は resolve 時に
+上記の canonical 形へ並べ替えられ、同一 candidate として扱われます
+（`docs/evaluation.md` の candidate identity 参照）。
 
 評価 artifact には最低限、candidate ID と source commit SHA の両方を保存する。
 
