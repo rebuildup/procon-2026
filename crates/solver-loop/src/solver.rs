@@ -291,10 +291,12 @@ impl Solver for LoopSolver {
         let initial_tour = self.initial_tour(problem);
         let (refined_tour, _stats) = self.refine(initial_tour, problem);
 
-        // Distribute the refined tour across agents and days. The stub
-        // distribution is round-robin: spot i goes to agent (i mod n_agents)
-        // on day (i mod days). This keeps the visit order intact while
-        // honoring the multi-agent / multi-day problem shape.
+        // Distribute the refined tour across agents and days. The
+        // distribution is round-robin: days first (spot i -> day
+        // i % days), then each day's share round-robin across the agents
+        // (position j of day d -> agent (j + d) % n_agents), which keeps
+        // every agent's leg count on a day a floor-or-ceil split while
+        // honoring the multi-agent / multi-day problem shape (Issue #210).
         let plans = distribute_plan(&refined_tour, problem);
         let score = evaluate_plan(&plans, problem);
         Ok(SolveOutcome { plans, score })
@@ -405,6 +407,27 @@ fn compute_iterations(_a: &ScoreRanking, _b: &ScoreRanking) -> u32 {
 }
 
 /// Round-robin distribution of `tour` across (days, agents).
+///
+/// Days are dealt first (spot `i` → day `i % days`), then each day's share
+/// is dealt round-robin across the agents, rotated by the day index: the
+/// spot at position `j` of day `d` goes to agent `(j + d) % n_agents`.
+///
+/// Keying the agent off the *per-day position* rather than the global spot
+/// index is what decouples the two modulos (Issue #210). The old mapping
+/// `(i % days, i % agents)` derived both keys from the same counter, so
+/// whenever `gcd(days, n_agents) > 1` day `d`'s agent index walked a coset
+/// of size `n_agents / gcd`: every agent outside the coset received an
+/// empty leg while coset members held several (on `lookahead=crossday`
+/// that is the leg the adapter walks, so half a team could idle). With the
+/// per-day counter each day's counts are a floor-or-ceil split — no agent
+/// sits on an empty leg while another holds more than one whenever the
+/// day's legs can cover the team.
+///
+/// Byte-for-byte the legacy plan when `days == 1` (the day-mod collapses:
+/// position `j == i`, rotation `d == 0`) or `n_agents == 1` (agent-mod
+/// collapses) — pinned by `tests::one_day_and_single_agent_distribution_is_unchanged`,
+/// which is what keeps `lookahead=none` and every other `days = 1` path
+/// identical.
 #[must_use]
 pub fn distribute_plan(tour: &[u32], problem: &SolveProblem) -> Vec<Vec<Vec<u32>>> {
     let days = problem.days as usize;
@@ -413,9 +436,11 @@ pub fn distribute_plan(tour: &[u32], problem: &SolveProblem) -> Vec<Vec<Vec<u32>
     for plan_day in plans.iter_mut().take(days) {
         *plan_day = vec![Vec::new(); agents];
     }
+    let mut day_position = vec![0_usize; days];
     for (i, spot_id) in tour.iter().enumerate() {
         let d = i % days;
-        let a = i % agents;
+        let a = (day_position[d] + d) % agents;
+        day_position[d] += 1;
         plans[d][a].push(*spot_id);
     }
     plans
