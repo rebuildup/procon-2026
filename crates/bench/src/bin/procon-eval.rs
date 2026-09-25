@@ -144,19 +144,15 @@ fn run() -> Exit {
         return Exit::Ok;
     }
 
-    let Some(candidate_list) = args.candidates.as_deref() else {
+    if args.candidates.is_none() {
         return Exit::Fail(
             "--candidates is required (or use --list-candidates to see what is available)"
                 .to_owned(),
         );
-    };
+    }
 
-    let candidate_ids = match split_ids(candidate_list) {
-        Ok(ids) if !ids.is_empty() => ids,
-        Ok(_) => return Exit::Fail("--candidates did not name any candidate".to_owned()),
-        Err(e) => return Exit::Fail(e),
-    };
-
+    // Ids themselves are parsed and validated by `build_config`, so the flag
+    // → config path is the one the tests cover.
     let corpus = match load_corpus(&args.cases) {
         Ok(c) => c,
         Err(e) => return Exit::Fail(e),
@@ -171,14 +167,10 @@ fn run() -> Exit {
         .or_else(git_head)
         .unwrap_or_else(|| "unknown".to_owned());
 
-    let config = TournamentConfig::new(
-        candidate_ids,
-        args.baseline.clone(),
-        args.team.clone(),
-        args.harness_timeout_ms,
-    )
-    .with_source_commit_sha(source_commit_sha)
-    .with_output_dir(args.output_dir.clone());
+    let config = match build_config(&args, source_commit_sha) {
+        Ok(c) => c,
+        Err(e) => return Exit::Fail(e),
+    };
 
     let runner = TournamentRunner::new(config);
     let outcome = match runner.run(&registry, &corpus) {
@@ -256,6 +248,29 @@ fn run_worker(args: &Args) -> Exit {
         }
         Err(e) => Exit::Fail(format!("could not encode the record: {e}")),
     }
+}
+
+/// Turn parsed CLI flags into a [`TournamentConfig`].
+///
+/// Kept apart from `run` so the flag → config mapping is directly
+/// testable: a flag that parses but is dropped here would otherwise be
+/// silently ignored (`--harness-margin-ms` was).
+///
+/// # Errors
+/// A `--candidates` value that does not name a valid candidate id.
+fn build_config(args: &Args, source_commit_sha: String) -> Result<TournamentConfig, String> {
+    let candidate_ids = split_ids(args.candidates.as_deref().unwrap_or_default())?;
+    Ok(TournamentConfig::new(
+        candidate_ids,
+        args.baseline.clone(),
+        args.team.clone(),
+        args.harness_timeout_ms,
+    )
+    .with_source_commit_sha(source_commit_sha)
+    // Without this, `--harness-margin-ms` parsed but never reached the
+    // runner, which then used its own default.
+    .with_harness_margin_ms(args.harness_margin_ms)
+    .with_output_dir(args.output_dir.clone()))
 }
 
 /// The deadline policy for this invocation.
@@ -367,5 +382,64 @@ fn format_tournament_error(e: &TournamentError) -> String {
             other => format!("bad candidate: {other}"),
         },
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(extra: &[&str]) -> Args {
+        let mut argv = vec!["procon-eval", "--candidates", "wait", "--cases", "small-8x8"];
+        argv.extend_from_slice(extra);
+        Args::parse_from(argv)
+    }
+
+    /// `--harness-margin-ms` used to parse and then be dropped: the runner
+    /// kept its own default. This asserts the flag actually reaches the
+    /// config, which is the only path from CLI to evaluation.
+    #[test]
+    fn cli_flags_reach_the_tournament_config() {
+        let args = parse(&[
+            "--harness-margin-ms",
+            "1234",
+            "--harness-timeout-ms",
+            "4321",
+            "--team",
+            "cli-team",
+        ]);
+        let config = build_config(&args, "test-sha".to_owned()).expect("flags are valid");
+
+        assert_eq!(config.harness_margin_ms, 1234, "--harness-margin-ms was dropped");
+        assert_eq!(config.harness_timeout_ms, Some(4321), "--harness-timeout-ms was dropped");
+        assert_eq!(config.team, "cli-team", "--team was dropped");
+        assert_eq!(config.source_commit_sha, "test-sha");
+    }
+
+    /// The margin default must stay a default, not become an override.
+    #[test]
+    fn an_unspecified_margin_keeps_the_default() {
+        let config = build_config(&parse(&[]), "s".to_owned()).expect("flags are valid");
+        assert_eq!(config.harness_margin_ms, 5_000);
+        assert_eq!(
+            config.harness_timeout_ms, None,
+            "omitting --harness-timeout-ms must mean 'derive from the case'"
+        );
+    }
+
+    /// The derived deadline must be `sum(daySeconds) + margin`, so the margin
+    /// is observable end to end rather than only at the flag boundary.
+    #[test]
+    fn the_configured_margin_is_used_when_resolving_the_deadline() {
+        use std::time::Duration;
+
+        let config = build_config(&parse(&["--harness-margin-ms", "1234"]), "s".to_owned())
+            .expect("flags are valid");
+        let runner = bench::tournament::TournamentRunner::new(config);
+        let case = bench::CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+
+        // `small-8x8` declares daySeconds = [60].
+        let deadline = runner.resolved_harness_deadline(&case);
+        assert_eq!(deadline, Duration::from_secs(60) + Duration::from_millis(1234));
     }
 }

@@ -238,6 +238,16 @@ impl TournamentRunner {
         }
     }
 
+    /// The deadline this batch will actually use for one case, resolving
+    /// [`Self::harness_deadline`] against the case's official window.
+    ///
+    /// Exposed so callers (and tests) can see what a config maps to without
+    /// running a batch — the margin is only useful if it really reaches here.
+    #[must_use]
+    pub fn resolved_harness_deadline(&self, case: &CaseSpec) -> Duration {
+        self.harness_deadline().resolve(case)
+    }
+
     /// Same as [`Self::run`] against an explicit case list.
     ///
     /// # Errors
