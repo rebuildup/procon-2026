@@ -347,6 +347,7 @@ impl CandidateRegistry {
         let mut r = Self::new();
         r.register(Arc::new(crate::adapters::WaitFactory));
         r.register(Arc::new(crate::adapters::LoopFactory));
+        r.register(Arc::new(crate::adapters::MultiLoopFactory));
         r.register(Arc::new(crate::adapters::GreedyFactory));
         r.register(Arc::new(crate::adapters::NearestFactory));
         r
@@ -667,7 +668,7 @@ mod tests {
     #[test]
     fn builtin_registry_knows_every_named_algorithm() {
         let reg = CandidateRegistry::builtin();
-        for algo in ["wait", "loop", "greedy", "nearest"] {
+        for algo in ["wait", "loop", "multiloop", "greedy", "nearest"] {
             assert!(reg.factory(algo).is_some(), "missing algorithm {algo}");
         }
     }
@@ -683,6 +684,19 @@ mod tests {
             let built = reg.build(id).unwrap_or_else(|e| panic!("{id}: {e}"));
             assert_eq!(built.id(), id);
             assert!(built.build_solver().is_ok(), "{id} must build a solver");
+        }
+    }
+
+    #[test]
+    fn multiloop_candidate_ids_round_trip_exactly() {
+        for id in [
+            "multiloop:grid=2x2",
+            "multiloop:grid=3x3",
+            "multiloop:kmeans=4:seed=42",
+            "multiloop:grid=2x2:refine=false",
+        ] {
+            let spec = CandidateSpec::parse(id).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(spec.id(), id, "id must round-trip unchanged");
         }
     }
 
