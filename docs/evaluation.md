@@ -82,8 +82,10 @@ candidate ID の形は `アルゴリズム[:キー=値]...` で、アルゴリ�
 | 構文 | `CandidateSpec::parse → id` | 記書順のまま完全に往復。registry 無しで id を echo できる |
 | **canonical identity** | `CandidateRegistry::resolve`（= `build` / `build_all`） | 重複キーを拒否し、パラメータを `CandidateFactory::params()` の schema 順に並べ替える |
 
-canonical order の SoT は factory の schema だけで、`loop` なら `iterations / initial / seed`
-の順です。並べ替えは validation の後に行われるので、未知キーは既に拒否済みで
+canonical order の SoT は factory の schema だけで、`loop` なら
+`iterations / initial / seed / lookahead` の順です（`lookahead` は #193 で
+`seed` の**後**に追記されたので、既存 id の形はバイト単位で不変）。
+並べ替えは validation の後に行われるので、未知キーは既に拒否済みで
 どの present key も必ず 1 つずつ残ります。
 
 したがって **書き順は identity ではありません**:
@@ -103,7 +105,7 @@ just eval-list
 登録済み:
 
 ```text
-loop                                  iterations / initial / seed / operators
+loop                                  iterations / initial / seed / operators / lookahead
 multiloop                             grid / kmeans / seed / refine
 greedy
 nearest
@@ -120,6 +122,7 @@ loop:iterations=64:initial=random:seed=42
 loop:initial=sweep-row
 loop:initial=sweep-col
 loop:iterations=32:initial=greedy:operators=extended
+loop:iterations=32:initial=greedy:lookahead=crossday
 multiloop:grid=2x2
 multiloop:kmeans=4:seed=42
 greedy
@@ -137,6 +140,20 @@ astar:policy=step
 挙動は変わりません。`extended` は古典 7 手の 3-opt と or-opt（長さ ≤3 の
 セグメント移動）を追加します。パラメータは id の末尾に追記するため
 既存 canonical ID の形は変わりません。
+
+`lookahead` の候補: `none`（既定）/ `crossday`（Issue #193）。
+adapter は毎日 live state から再解決するという day contract を保ったまま、
+1 解決の計画日数だけを切り替えます。
+
+| 値 | `SolveProblem.days` | 歩く leg |
+|---|---|---|
+| `none`（既定・省略） | `1`（当日のみ） | `plans[0]` — 従来どおり |
+| `crossday` | 残り日数 = `num_days − day` | その計画の当日 leg（計画は当日を先頭に anchor するため index 0） |
+
+multi-day の leg 分割は `solver-loop::distribute_plan` の round-robin
+（`i % days`）を使う dormant path を外部から起動するだけで、
+`crates/solver-loop` 本体・`score.rs`・evaluate / scoring semantics は変更しません。
+1 日の case では `crossday` の残り日数が 1 になるので `none` と厳密に一致します。
 
 `multiloop` は `solver-loop::MultiLoopComposer` を evaluator に接続した
 領域分割候補（Issue #190）。**`grid` と `kmeans` のどちらか一方だけ**を指定します。
