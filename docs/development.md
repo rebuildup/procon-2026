@@ -137,6 +137,30 @@ cargo run -q --bin procon -- warmup --solvers greedy,astar --json
 
 JSON レポートには p50 / p90 / max（µs 単位）とサンプル数が含まれる。スモーク p90 が `60_000_000 µs`（=60秒）を超えるソルバは試合投入前にチューニング必須。
 
+## ソルバ評価（Issue #178）
+
+解法の良し悪しを測るのは **offline の canonical evaluator** です。
+`engine::MatchSim` を唯一の採点 oracle とし、公式スコア tuple
+（`variety`, `daily_variety_sum`, `total_balls`, `response_time`）を
+**辞書順**で比較します。詳細と標準手順は [`docs/evaluation.md`](evaluation.md) が SoT。
+
+```bash
+just eval-list          # 登録済み candidate（loop / greedy / wait とパラメータ）
+just eval               # 全 fixture × 既定 candidate、wait を baseline に
+                        # → target/eval/{runs.jsonl, aggregate.json, report.md}
+
+# 部分的に回す
+PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
+  cargo run -q -p bench --bin procon-eval -- \
+    --cases small-8x8,series-many \
+    --candidates 'loop:iterations=32:initial=greedy,greedy,wait' \
+    --baseline wait --output-dir target/eval
+```
+
+対照: `procon tournament` は**公式サーバに対する wire/protocol smoke harness** で、
+返るのは `protocol_progress = days_completed * 100 + sum(revisions)`（プロトコルが
+どこまで進んだか）です。競技性能ではありません。
+
 ## 次の作業を探す
 
 - GitHub Projects の `Ready` column

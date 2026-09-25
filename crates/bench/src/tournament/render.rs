@@ -1,231 +1,291 @@
-//! Markdown / JSON renderers for the tournament leaderboard.
+//! Human-readable rendering of an [`AggregateReport`].
 //!
-//! The Markdown output is meant to be dropped straight into a PR comment or
-//! GitHub Projects card. Column widths are derived per-render so the table
-//! stays aligned regardless of solver name length.
+//! Two renderers:
+//!
+//! - [`render_markdown`] — tables for a PR body, a terminal, or a notebook.
+//! - [`render_json`] — pretty JSON, identical to what `aggregate.json` holds.
+//!
+//! Rendering is pure and deterministic: the same report always produces the
+//! same text, so a rendered diff is a meaningful review artifact.
 
-use super::runner::{Leaderboard, LeaderboardEntry};
-use std::fmt::Write;
+use std::fmt::Write as _;
 
-/// Render the leaderboard as a Markdown table.
+use crate::aggregate::{AggregateReport, CandidateSummary, Outcome};
+
+/// Render the full report as Markdown.
 #[must_use]
-pub fn render_markdown(board: &Leaderboard) -> String {
+pub fn render_markdown(report: &AggregateReport) -> String {
     let mut out = String::new();
-    let title = if board.config.title.is_empty() {
-        "Tournament leaderboard".to_owned()
+    write_header(&mut out, report);
+    write_overall_table(&mut out, report);
+    write_per_case_tables(&mut out, report);
+    write_failure_table(&mut out, report);
+    out
+}
+
+fn write_header(out: &mut String, report: &AggregateReport) {
+    let _ = writeln!(out, "# Evaluation report");
+    let _ = writeln!(out);
+    if report.source_commit_shas.len() == 1 {
+        let _ = writeln!(out, "- commit: `{}`", report.source_commit_shas[0]);
     } else {
-        board.config.title.clone()
-    };
-    writeln!(out, "## {title}").expect("writing to String cannot fail");
-    writeln!(out).expect("writing to String cannot fail");
-    writeln!(out, "_Elapsed: {} ms · reports: {}_", board.elapsed_ms, board.reports.len())
-        .expect("writing to String cannot fail");
-    writeln!(out).expect("writing to String cannot fail");
-
-    let headers = [
-        "Rank",
-        "Solver",
-        "Total",
-        "Wins/Matches",
-        "Win%",
-        "Variety",
-        "Daily",
-        "Balls",
-        "Response (ms)",
-    ];
-    let rows: Vec<[String; 9]> = board
-        .entries
-        .iter()
-        .map(|e| {
-            [
-                e.rank.to_string(),
-                e.solver.clone(),
-                e.total_score.to_string(),
-                format!("{}/{}", e.wins, e.matches),
-                format!("{:.1}", e.win_rate * 100.0),
-                e.best.variety.to_string(),
-                e.best.daily_variety.to_string(),
-                e.best.total.to_string(),
-                e.best.response_time_ms.to_string(),
-            ]
-        })
-        .collect();
-
-    if rows.is_empty() {
-        writeln!(out, "_No solvers reported a result._").expect("writing to String cannot fail");
-        return out;
-    }
-
-    let widths = column_widths(&headers, &rows);
-    write_row(&mut out, &headers, &widths);
-    write_separator(&mut out, &widths);
-    for row in &rows {
-        write_row_owned(&mut out, row, &widths);
-    }
-    writeln!(out).expect("writing to String cannot fail");
-    out
-}
-
-/// Render the leaderboard as pretty JSON.
-pub fn render_json(board: &Leaderboard) -> Result<String, serde_json::Error> {
-    serde_json::to_string_pretty(board)
-}
-
-/// Convenience: render as a human-friendly Markdown block including each
-/// individual [`crate::types::ScoreReport`] below the leaderboard.
-#[must_use]
-pub fn render_markdown_with_reports(board: &Leaderboard) -> String {
-    let mut out = render_markdown(board);
-    out.push_str("\n### Per-match reports\n\n");
-    out.push_str("| match | solver | variety | daily | total | response_ms | timed_out |\n");
-    out.push_str("| --- | --- | --- | --- | --- | --- | --- |\n");
-    for r in &board.reports {
-        writeln!(
+        // Not silently collapsed: a batch spanning commits must be obvious,
+        // because the numbers underneath are not comparable across them.
+        let _ = writeln!(
             out,
-            "| {} | {} | {} | {} | {} | {} | {} |",
-            r.match_id,
-            r.solver,
-            r.variety,
-            r.daily_variety,
-            r.total,
-            r.response_time_ms,
-            r.timed_out
-        )
-        .expect("writing to String cannot fail");
+            "- **commits: {} ({})** — these runs are not comparable as one evidence set",
+            report.source_commit_shas.len(),
+            report.source_commit_shas.join(", ")
+        );
     }
-    out
-}
-
-fn column_widths(headers: &[&str; 9], rows: &[[String; 9]]) -> [usize; 9] {
-    let mut widths = [0usize; 9];
-    for (i, h) in headers.iter().enumerate() {
-        widths[i] = h.chars().count();
-    }
-    for row in rows {
-        for (i, cell) in row.iter().enumerate() {
-            widths[i] = widths[i].max(cell.chars().count());
+    match &report.baseline_candidate_id {
+        Some(b) => {
+            let _ = writeln!(out, "- baseline: `{b}` (win / draw / lose is measured against it)");
+        }
+        None => {
+            let _ = writeln!(out, "- baseline: _none_ (comparisons reported as not-compared)");
         }
     }
-    widths
+    let _ = writeln!(out, "- candidates: {}", report.candidates.len());
+    let _ = writeln!(out, "- cases: {}", report.cases.len());
+    let _ = writeln!(
+        out,
+        "- runs: {} ({} scored)",
+        report.runs.len(),
+        report.runs.iter().filter(|r| r.is_scored()).count()
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "Ranking order is the official lexicographic one — **variety → daily variety sum → total balls → response time (lower better)**. It is never collapsed into a weighted score. Response time is measured; wall-clock elapsed is recorded separately and never ranked."
+    );
+    let _ = writeln!(out);
 }
 
-fn write_row(out: &mut String, row: &[&str], widths: &[usize; 9]) {
-    out.push('|');
-    for (i, cell) in row.iter().enumerate() {
-        let w = widths[i];
-        let cell_chars = cell.chars().count();
-        if cell_chars > w {
-            // Truncate at the column boundary.
-            let truncated: String = cell.chars().take(w).collect();
-            out.push(' ');
-            out.push_str(&truncated);
-        } else {
-            out.push(' ');
-            out.push_str(cell);
-            for _ in 0..w.saturating_sub(cell_chars) {
-                out.push(' ');
-            }
-        }
-        out.push_str(" |");
+fn write_overall_table(out: &mut String, report: &AggregateReport) {
+    let _ = writeln!(out, "## Candidates");
+    let _ = writeln!(out);
+    if report.per_candidate.is_empty() {
+        let _ = writeln!(out, "_no candidates_");
+        let _ = writeln!(out);
+        return;
     }
-    out.push('\n');
-}
-
-fn write_row_owned(out: &mut String, row: &[String; 9], widths: &[usize; 9]) {
-    let refs: [&str; 9] = [
-        row[0].as_str(),
-        row[1].as_str(),
-        row[2].as_str(),
-        row[3].as_str(),
-        row[4].as_str(),
-        row[5].as_str(),
-        row[6].as_str(),
-        row[7].as_str(),
-        row[8].as_str(),
-    ];
-    write_row(out, &refs, widths);
-}
-
-fn write_separator(out: &mut String, widths: &[usize; 9]) {
-    out.push('|');
-    for w in widths {
-        out.push(' ');
-        for _ in 0..*w {
-            out.push('-');
-        }
-        out.push_str(" |");
+    let _ = writeln!(
+        out,
+        "| candidate | wins | draws | losses | timeouts | invalid | panics | variety (min–max) | daily sum (min–max) | total balls (min–max) | response µs (min–max) |"
+    );
+    let _ = writeln!(out, "|---|---:|---:|---:|---:|---:|---:|---|---|---|---|");
+    for c in &report.per_candidate {
+        let s = &c.score_summary;
+        let _ = writeln!(
+            out,
+            "| `{}` | {} | {} | {} | {} | {} | {} | {}–{} | {}–{} | {}–{} | {}–{} |",
+            c.candidate_id,
+            c.wins,
+            c.draws,
+            c.losses,
+            c.timeouts,
+            c.invalids,
+            c.panics,
+            s.variety.min,
+            s.variety.max,
+            s.daily_variety_sum.min,
+            s.daily_variety_sum.max,
+            s.total_balls.min,
+            s.total_balls.max,
+            s.response_time_us.min,
+            s.response_time_us.max,
+        );
     }
-    out.push('\n');
+    let _ = writeln!(out);
+    if report.baseline_candidate_id.is_none() {
+        let _ = writeln!(out, "_comparisons: n/a — no baseline configured._");
+        let _ = writeln!(out);
+    } else {
+        let _ = writeln!(
+            out,
+            "Comparison counts cover only cases where **both** the candidate and the baseline produced a score; the rest land in `not compared`."
+        );
+        let _ = writeln!(out);
+    }
 }
 
-#[allow(dead_code)]
-fn _ensure_used(_: &LeaderboardEntry) {}
+fn write_per_case_tables(out: &mut String, report: &AggregateReport) {
+    let _ = writeln!(out, "## Per-case ranking");
+    let _ = writeln!(out);
+    for case in &report.per_case {
+        let _ = writeln!(out, "### `{}`", case.case_id);
+        let _ = writeln!(out);
+        let _ = writeln!(
+            out,
+            "| rank | candidate | variety | daily sum | total balls | response µs | status |"
+        );
+        let _ = writeln!(out, "|---:|---|---:|---:|---:|---:|---|");
+        for e in &case.entries {
+            let _ = writeln!(
+                out,
+                "| {} | `{}` | {} | {} | {} | {} | {} |",
+                e.rank,
+                e.candidate_id,
+                e.score.variety,
+                e.score.daily_variety_sum,
+                e.score.total_noodles,
+                e.response_time_us,
+                e.status,
+            );
+        }
+        let _ = writeln!(out);
+    }
+}
+
+fn write_failure_table(out: &mut String, report: &AggregateReport) {
+    let failures: Vec<_> =
+        report.runs.iter().filter(|r| !r.is_scored() || r.status_detail.is_some()).collect();
+    if failures.is_empty() {
+        return;
+    }
+    let _ = writeln!(out, "## Failures and warnings");
+    let _ = writeln!(out);
+    let _ = writeln!(out, "| candidate | case | status | detail |");
+    let _ = writeln!(out, "|---|---|---|---|");
+    for r in failures {
+        let detail = r.status_detail.as_deref().unwrap_or("—");
+        let _ = writeln!(
+            out,
+            "| `{}` | `{}` | {} | {} |",
+            r.candidate_id,
+            r.case_id,
+            r.status,
+            escape_cell(detail),
+        );
+    }
+    let _ = writeln!(out);
+}
+
+fn escape_cell(s: &str) -> String {
+    s.replace('|', "\\|").replace('\n', " ")
+}
+
+/// Render the report as pretty JSON.
+///
+/// # Errors
+/// Propagates `serde_json` errors. In practice this cannot fail for
+/// `AggregateReport`, which is plain data.
+pub fn render_json(report: &AggregateReport) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(report)
+}
+
+/// One-line-per-candidate summary, for a terminal.
+#[must_use]
+pub fn render_summary_line(c: &CandidateSummary) -> String {
+    format!(
+        "{:<40} W/D/L {}/{}/{}  timeouts {}  invalid {}  panics {}",
+        c.candidate_id, c.wins, c.draws, c.losses, c.timeouts, c.invalids, c.panics
+    )
+}
+
+/// Render the outcome of one comparison pair, for logs.
+#[must_use]
+pub fn render_outcome(o: Outcome) -> &'static str {
+    match o {
+        Outcome::Win => "win",
+        Outcome::Draw => "draw",
+        Outcome::Lose => "lose",
+        Outcome::NotCompared => "not-compared",
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use super::super::runner::{Leaderboard, LeaderboardEntry, TournamentConfig};
-    use super::super::types::ScoreReport;
     use super::*;
-    use std::time::Duration;
+    use crate::aggregate::AggregateReport;
+    use crate::evaluate::{RunRecord, RunStatus};
 
-    fn entry(
-        rank: u32,
-        name: &str,
-        total: u32,
-        wins: u32,
-        matches_: u32,
-        best: ScoreReport,
-    ) -> LeaderboardEntry {
-        LeaderboardEntry {
-            solver: name.to_owned(),
-            rank,
-            total_score: total,
-            matches: matches_,
-            wins,
-            win_rate: if matches_ == 0 { 0.0 } else { f64::from(wins) / f64::from(matches_) },
-            best,
+    fn record(candidate: &str, case: &str, v: u32, status: RunStatus) -> RunRecord {
+        RunRecord {
+            candidate_id: candidate.to_owned(),
+            case_id: case.to_owned(),
+            seed: None,
+            generation_parameters: None,
+            source_commit_sha: "abc123".to_owned(),
+            team: "player-a".to_owned(),
+            variety: v,
+            daily_variety_sum: v * 2,
+            total_balls: v * 3,
+            response_time_us: 1_000,
+            elapsed_us: 2_000,
+            timeout: status == RunStatus::Timeout,
+            status,
+            scored: status != RunStatus::Timeout && status != RunStatus::Panic,
+            status_detail: if status == RunStatus::Success {
+                None
+            } else {
+                Some("something went wrong | with a pipe".to_owned())
+            },
+            last_acquisition_at: None,
+            illegal_action_count: 0,
+            fuel_short_count: 0,
+            day_budget_exceeded_days: Vec::new(),
+            daily_response_us: vec![1_000],
+            daily_varieties: vec![v],
         }
     }
 
-    fn board(entries: Vec<LeaderboardEntry>) -> Leaderboard {
-        Leaderboard {
-            config: TournamentConfig { sequential: true, title: "sample".into() },
-            entries,
-            reports: vec![],
-            elapsed_ms: 1234,
-        }
-    }
-
-    fn best(name: &str) -> ScoreReport {
-        ScoreReport::new("m1", name, 5, 7, 30, 100, Duration::from_millis(100), false)
-    }
-
-    #[test]
-    fn markdown_contains_header_and_rows() {
-        let board = board(vec![
-            entry(1, "alpha", 60, 2, 2, best("alpha")),
-            entry(2, "beta", 40, 1, 2, best("beta")),
-        ]);
-        let md = render_markdown(&board);
-        assert!(md.contains("## sample"));
-        assert!(md.contains("| Rank | Solver |"));
-        assert!(md.contains("alpha"));
-        assert!(md.contains("---"), "separator dashes present");
+    fn sample() -> AggregateReport {
+        AggregateReport::build(
+            vec![
+                record(
+                    "loop:iterations=32:initial=greedy",
+                    "fixture:small-8x8",
+                    3,
+                    RunStatus::Success,
+                ),
+                record("greedy", "fixture:small-8x8", 1, RunStatus::Success),
+                record(
+                    "loop:iterations=32:initial=greedy",
+                    "fixture:series-few",
+                    2,
+                    RunStatus::Success,
+                ),
+                record("greedy", "fixture:series-few", 0, RunStatus::Timeout),
+            ],
+            Some("greedy"),
+        )
+        .expect("homogeneous synthetic records")
     }
 
     #[test]
-    fn json_round_trips() {
-        let board = board(vec![entry(1, "alpha", 60, 2, 2, best("alpha"))]);
-        let s = render_json(&board).unwrap();
-        assert!(s.contains("\"alpha\""));
-        let back: Leaderboard = serde_json::from_str(&s).unwrap();
-        assert_eq!(back, board);
+    fn markdown_contains_the_headline_tables() {
+        let md = render_markdown(&sample());
+        assert!(md.contains("# Evaluation report"));
+        assert!(md.contains("`loop:iterations=32:initial=greedy`"));
+        assert!(md.contains("`fixture:small-8x8`"));
+        assert!(md.contains("## Candidates"));
+        assert!(md.contains("## Per-case ranking"));
+        assert!(md.contains("## Failures and warnings"));
+        // The ranking order is stated so a reader cannot mistake it for a
+        // weighted score.
+        assert!(md.contains("lexicographic"));
     }
 
     #[test]
-    fn empty_leaderboard_renders_gracefully() {
-        let board = board(vec![]);
-        let md = render_markdown(&board);
-        assert!(md.contains("No solvers reported"));
+    fn markdown_escapes_pipes_in_failure_details() {
+        let md = render_markdown(&sample());
+        assert!(md.contains("with a pipe"));
+        assert!(!md.contains("wrong | with"));
+    }
+
+    #[test]
+    fn render_is_deterministic() {
+        let r = sample();
+        assert_eq!(render_markdown(&r), render_markdown(&r));
+    }
+
+    #[test]
+    fn json_render_matches_struct() {
+        let r = sample();
+        let json = render_json(&r).unwrap();
+        let back: AggregateReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.candidates, r.candidates);
     }
 }

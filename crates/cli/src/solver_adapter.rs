@@ -350,9 +350,7 @@ fn translate_plans_to_actions(
     // agent start positions when available; otherwise default to (0, 0)
     // for every agent (the legacy fallback path).
     let mut positions: Vec<EHexCoord> = (0..agent_count)
-        .map(|i| {
-            setting.and_then(|s| s.agents.get(i)).map_or(EHexCoord::new(0, 0), |a| a.pos)
-        })
+        .map(|i| setting.and_then(|s| s.agents.get(i)).map_or(EHexCoord::new(0, 0), |a| a.pos))
         .collect();
 
     for step in 0..day_steps {

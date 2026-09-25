@@ -1,16 +1,20 @@
-//! Self-contained game model used by the local match simulator.
+//! Game model used by the local match simulator: [`MatchSetting`],
+//! [`MatchState`], [`RunResult`], the per-step [`AgentActions`] plan, and
+//! [`Solver`].
 //!
-//! EXPECTED INTEGRATION: types in this module are temporary. The authoritative
-//! home for them is `crates/domain` once issues #11 / #12 / #13 (hex / cell /
-//! agent) and #53 (action / direction) ship. The simulator stays useful while
-//! the migration is pending because its public surface is `MatchSim`, not
-//! these types — once `domain` lands, the `MatchSim` API keeps the same shape
-//! and only the type aliases swap.
+//! # Why two solver contracts exist (and why that is intentional)
 //!
-//! Likewise [`Solver`] below is a minimal local stand-in for the trait
-//! introduced by issue #57 (`engine::Solver`). Once #57 merges, this local
-//! trait is replaced by a `pub use engine::solver::Solver` and the helper
-//! [`Action::wait_all`] / [`AgentActions`] constructors move with it.
+//! | | [`Solver`] (this module) | [`crate::solver::Solver`] |
+//! |---|---|---|
+//! | Context | rich [`MatchState`] (map, agents, stock, traffic) | thin [`protocol::MatchSnapshot`] (match id, turn, scores) |
+//! | Output | one day of [`AgentActions`] | one day of [`crate::solver::SolverDecision`] |
+//! | Used by | [`crate::sim::MatchSim`] — offline evaluation | the coordinator loop over the live wire |
+//!
+//! The live wire does not publish the map or agent positions, so
+//! [`crate::solver::Solver`]'s context cannot carry them; the offline
+//! simulator has them all. They are two views for two transports, not two
+//! competing designs. The offline evaluation path deliberately drives
+//! [`Solver`] below, because that is what [`crate::sim::MatchSim`] consumes.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -307,6 +311,22 @@ impl Agent {
         }
     }
 
+    /// Construct a patrol agent with an explicit fuel cap.
+    ///
+    /// Used when the fuel budget is a match property (the wire's
+    /// `fuelLimits`) rather than a multiple of the day's step count.
+    #[must_use]
+    pub fn patrol_with_fuel(id: u8, pos: HexCoord, fuel_cap: u32) -> Self {
+        Self {
+            id,
+            kind: AgentKind::Patrol,
+            pos,
+            fuel: fuel_cap,
+            fuel_cap,
+            inventory: BTreeMap::new(),
+        }
+    }
+
     /// Construct a supply agent at `pos`. Fuel is uncapped.
     #[must_use]
     pub fn supply(id: u8, pos: HexCoord) -> Self {
@@ -502,10 +522,32 @@ pub struct MatchSetting {
     pub team: PlayerId,
     pub map: MapGrid,
     pub agents: Vec<Agent>,
-    /// Steps per day (`daySteps`).
+    /// Steps per day for day 0 (`daySteps[0]`).
+    ///
+    /// Prefer [`MatchSetting::day_steps_for`], which honours the per-day
+    /// vector. Kept as a field so callers that only ever build single-day-
+    /// variation settings stay simple.
     pub day_steps: u32,
-    /// Total days in the match (`numDays`).
+    /// Total days in the match (`daySteps.len()`).
     pub num_days: u32,
+    /// Per-day step counts, indexed by day. Empty means "every day uses
+    /// [`Self::day_steps`]".
+    ///
+    /// The official `daySteps` is a per-day vector, so a match whose day 1
+    /// allows 24 steps and day 0 allows 16 must not be flattened to one
+    /// value. Validated against `num_days` in [`MatchSetting::validate`].
+    pub day_steps_by_day: Vec<u32>,
+}
+
+impl MatchSetting {
+    /// Steps allowed on `day`.
+    #[must_use]
+    pub fn day_steps_for(&self, day: u32) -> u32 {
+        match self.day_steps_by_day.get(day as usize) {
+            Some(&n) => n,
+            None => self.day_steps,
+        }
+    }
 }
 
 impl MatchSetting {
@@ -523,6 +565,24 @@ impl MatchSetting {
         }
         if self.num_days == 0 {
             return Err("num_days must be >= 1".to_owned());
+        }
+        if !self.day_steps_by_day.is_empty() {
+            if self.day_steps_by_day.len() != self.num_days as usize {
+                return Err(format!(
+                    "day_steps_by_day has {} entries but num_days is {}",
+                    self.day_steps_by_day.len(),
+                    self.num_days
+                ));
+            }
+            if self.day_steps_by_day.contains(&0) {
+                return Err("every day must allow at least one step".to_owned());
+            }
+            if self.day_steps_by_day[0] != self.day_steps {
+                return Err(format!(
+                    "day_steps ({}) must equal day_steps_by_day[0] ({})",
+                    self.day_steps, self.day_steps_by_day[0]
+                ));
+            }
         }
         let mut ids = BTreeSet::new();
         for agent in &self.agents {
@@ -592,9 +652,29 @@ pub struct MatchState {
     /// Set of series ever acquired across all days. Drives the
     /// "variety" tie-breaker (募集要項「順位決定」).
     pub series_taken: BTreeSet<u32>,
-    /// Per-day first-acquisition time (step index). Used for the
-    /// "early finish" tie-breaker (募集要項「順位決定」).
+    /// Per-series first-acquisition time `(day, step)`. Diagnostic evidence
+    /// only — it is *not* a ranking tier (tier 4 is response time).
     pub series_first_taken_at: BTreeMap<u32, (u32, u32)>,
+    /// Actions the simulator had to downgrade because they were not legal
+    /// (out of bounds, impassable terrain, or out of fuel).
+    ///
+    /// This exists for the *evaluator*: the official answer rules reject an
+    /// answer containing an invalid action outright (Q&A Q6), whereas
+    /// [`crate::MatchSim`] deliberately degrades such an action to `Wait` so
+    /// the match still completes. Without this counter an evaluator reading
+    /// only the final score would happily rank a solver the server would
+    /// have refused.
+    pub illegal_action_count: u32,
+    /// The subset of [`Self::illegal_action_count`] caused by running out of
+    /// fuel rather than by a malformed destination. Tracked separately: it is
+    /// a resource limit, not a malformed answer, and callers may want to
+    /// report it without treating it as a contract violation.
+    pub fuel_short_count: u32,
+    /// Series acquired on each day, keyed by day. Drives
+    /// `daily_variety_sum` = Σ_days |series acquired that day| (募集要項
+    /// 「順位決定」tier 2, 「各日の種類数の累積」). A series re-acquired on a
+    /// later day counts again for that later day.
+    pub series_acquired_by_day: BTreeMap<u32, BTreeSet<u32>>,
 }
 
 impl MatchState {
@@ -621,14 +701,19 @@ impl MatchState {
             spot_picks_today: HashMap::new(),
             series_taken: BTreeSet::new(),
             series_first_taken_at: BTreeMap::new(),
+            series_acquired_by_day: BTreeMap::new(),
+            illegal_action_count: 0,
+            fuel_short_count: 0,
             setting: MatchSetting { map, ..setting.clone() },
         })
     }
 
-    /// Convenience accessor.
+    /// Steps allowed on the *current* day. Honours the per-day `daySteps`
+    /// vector, so a setting with `daySteps = [16, 24]` really does give day 1
+    /// twenty-four steps.
     #[must_use]
     pub fn day_steps(&self) -> u32 {
-        self.setting.day_steps
+        self.setting.day_steps_for(self.day)
     }
 
     /// Convenience accessor.
@@ -648,6 +733,19 @@ impl MatchState {
     pub fn is_finished(&self) -> bool {
         self.day >= self.num_days()
     }
+
+    /// Distinct series acquired on each day, indexed by day, length
+    /// `num_days`. Days with no acquisition contribute `0`.
+    ///
+    /// This is the per-day input to the official tier-2 metric
+    /// (`daily_variety_sum` = the sum of this vector). See
+    /// [`Self::series_acquired_by_day`].
+    #[must_use]
+    pub fn daily_varieties(&self) -> Vec<u32> {
+        (0..self.num_days())
+            .map(|d| self.series_acquired_by_day.get(&d).map_or(0, |series| series.len() as u32))
+            .collect()
+    }
 }
 
 /// Summary returned by [`super::MatchSim::run`].
@@ -660,20 +758,35 @@ pub struct RunResult {
     pub daily_variety_sum: u32,
     /// Total balls acquired across the whole match.
     pub total_balls: u32,
-    /// `(day, step)` of the last acquisition — earlier is better per
-    /// 募集要項「順位決定」.
+    /// `(day, step)` of the *latest first-acquisition* — i.e. the last
+    /// timestamp at which a previously-unseen series was first taken.
+    ///
+    /// Diagnostic evidence only. It is **not** a ranking tier: 募集要項
+    /// 「順位決定」tier 4 is the cumulative per-day response time, which
+    /// [`domain::Score::total_response_time_ms`] carries and the evaluator
+    /// measures outside the simulator (the simulator has no clock).
     pub last_acquisition_at: Option<(u32, u32)>,
+    /// Non-legal actions the simulator downgraded to `Wait`. Non-zero means
+    /// the official rules would have rejected this answer, so the evaluator
+    /// must not treat the run as a clean `success`.
+    pub illegal_action_count: u32,
+    /// Subset of [`Self::illegal_action_count`] caused by fuel exhaustion.
+    pub fuel_short_count: u32,
 }
 
 // ---------------------------------------------------------------------------
-// Solver trait — local stand-in for issue #57's `engine::Solver`.
+// Solver trait — the contract `MatchSim` consumes.
 // ---------------------------------------------------------------------------
 
-/// Local solver contract.
+/// Solver contract for the offline simulation.
 ///
-/// EXPECTED INTEGRATION: replaced by `engine::solver::Solver` (issue #57).
-/// Once that lands, callers implement that trait directly and this module
-/// becomes a thin re-export.
+/// `decide` returns one day's worth of [`AgentActions`] and **nothing else**:
+/// no score, no ranking. Scoring is [`crate::sim::RunResult`]'s job, derived
+/// from the final [`MatchState`], which is what keeps the evaluation path
+/// one-directional (see `docs/evaluation.md`).
+///
+/// Distinct from [`crate::solver::Solver`] (the wire-facing contract) — see
+/// the module docs for the comparison.
 pub trait Solver: Send + Sync {
     /// Stable, human-readable identifier. Used in logs and metadata.
     fn name(&self) -> &'static str;

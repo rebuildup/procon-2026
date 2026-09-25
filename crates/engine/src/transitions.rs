@@ -249,6 +249,7 @@ pub fn phase_acquire(agent: &Agent, state: &mut MatchState, events: &mut Vec<Ste
     }
     state.series_taken.insert(series);
     state.series_first_taken_at.entry(series).or_insert((state.day, state.day_step));
+    state.series_acquired_by_day.entry(state.day).or_default().insert(series);
     events.push(StepEvent::Picked { agent_id: agent.id, coord, series });
 }
 
@@ -548,6 +549,7 @@ mod tests {
             ],
             day_steps: 5,
             num_days: 1,
+            day_steps_by_day: Vec::new(),
         };
         let mut state = MatchState::new(setting).unwrap();
         let mut events = Vec::new();
@@ -596,6 +598,7 @@ mod tests {
             ],
             day_steps: 5,
             num_days: 2,
+            day_steps_by_day: Vec::new(),
         };
         let mut state = MatchState::new(setting).unwrap();
         state.traffic_yesterday.insert(HexCoord::new(0, 0), 3); // yesterday was Busy

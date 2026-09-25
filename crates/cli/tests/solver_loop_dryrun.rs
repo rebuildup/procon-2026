@@ -154,6 +154,7 @@ fn build_engine_setting_from_engine(
         agents: agents_vec,
         day_steps,
         num_days: 4,
+        day_steps_by_day: Vec::new(),
     }
 }
 
@@ -208,11 +209,7 @@ fn assert_all_moves_valid(
         .my_agent_ids
         .iter()
         .map(|id| {
-            setting
-                .agents
-                .iter()
-                .find(|a| a.id == *id)
-                .map_or(HexCoord::new(0, 0), |a| a.pos)
+            setting.agents.iter().find(|a| a.id == *id).map_or(HexCoord::new(0, 0), |a| a.pos)
         })
         .collect();
 
