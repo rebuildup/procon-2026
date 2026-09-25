@@ -16,6 +16,7 @@ mod action_adapter;
 mod bundle;
 mod coordinator_loop;
 mod fixtures;
+mod initial_strategy;
 mod loop_runner;
 mod match_config;
 mod openapi_fixture;
@@ -34,6 +35,7 @@ use engine::replay::Replay;
 use engine::{EngineServer, EngineServerConfig};
 use protocol::{HttpClientError, MatchClient, RetryPolicy};
 use serde_json::json;
+use solver_loop::InitialStrategy;
 use tracing_subscriber::EnvFilter;
 
 use crate::coordinator_loop::{CoordinatorLoopConfig, run_coordinator_loop};
@@ -100,6 +102,24 @@ enum Cmd {
         #[arg(long, default_value = "loop", value_parser = ["loop", "wait"])]
         solver: String,
 
+        /// Initial strategy for the `loop` solver — the same label set as
+        /// `tournament --loop-initial-strategy`
+        /// (`greedy | identity | reverse | sweep-row | sweep-col | random:<seed>`,
+        /// `PascalCase` aliases accepted; offline↔live table in
+        /// `crates/cli/src/initial_strategy.rs`). Ignored by `--solver wait`.
+        /// An unknown label is an error, never a silent fallback.
+        #[arg(
+            long,
+            default_value = "greedy",
+            value_parser = initial_strategy::parse_initial_strategy
+        )]
+        loop_initial_strategy: InitialStrategy,
+
+        /// Iteration cap for the `loop` solver's local search (same flag as
+        /// `tournament --loop-iterations`). Ignored by `--solver wait`.
+        #[arg(long, default_value_t = 32)]
+        loop_iterations: u32,
+
         /// Only resolve config + print it. Do not actually start the loop.
         #[arg(long)]
         dry_run: bool,
@@ -141,9 +161,18 @@ enum Cmd {
         /// Override `PROCON_TOKEN`.
         #[arg(long, env = "PROCON_TOKEN")]
         token: Option<String>,
-        /// Initial strategy for the `loop` solver.
-        #[arg(long, default_value = "GreedyNearestNeighbor")]
-        loop_initial_strategy: String,
+        /// Initial strategy for the `loop` solver —
+        /// `greedy | identity | reverse | sweep-row | sweep-col | random:<seed>`
+        /// (`PascalCase` aliases accepted). Each label maps 1:1 onto an
+        /// offline `loop:initial=<value>` candidate parameter; see
+        /// `crates/cli/src/initial_strategy.rs`. An unknown label is an
+        /// error, never a silent `Identity` fallback.
+        #[arg(
+            long,
+            default_value = "greedy",
+            value_parser = initial_strategy::parse_initial_strategy
+        )]
+        loop_initial_strategy: InitialStrategy,
         /// Iteration cap for the `loop` solver's local search.
         #[arg(long, default_value_t = 32)]
         loop_iterations: u32,
@@ -210,6 +239,8 @@ async fn main() -> ExitCode {
     }
 }
 
+// One arm per `Cmd` variant: subcommand dispatch, not a single logic block.
+#[allow(clippy::too_many_lines, reason = "one arm per Cmd variant")]
 async fn run(cli: Cli) -> Result<()> {
     let server = EngineServer::new(EngineServerConfig::default());
     match cli.cmd {
@@ -250,8 +281,25 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Loop { days, player } => {
             run_loop(days, &player).await?;
         }
-        Cmd::Coordinator { server, token, solver, dry_run, state_output } => {
-            cmd_coordinator(server, token, solver, dry_run, state_output).await?;
+        Cmd::Coordinator {
+            server,
+            token,
+            solver,
+            loop_initial_strategy,
+            loop_iterations,
+            dry_run,
+            state_output,
+        } => {
+            cmd_coordinator(
+                server,
+                token,
+                solver,
+                loop_initial_strategy,
+                loop_iterations,
+                dry_run,
+                state_output,
+            )
+            .await?;
         }
         Cmd::MatchConfig(sub) => cmd_match_config(sub)?,
         Cmd::Version => {
@@ -344,6 +392,8 @@ async fn cmd_coordinator(
     server: Option<String>,
     token: Option<String>,
     solver: String,
+    loop_initial_strategy: InitialStrategy,
+    loop_iterations: u32,
     dry_run: bool,
     state_output: Option<PathBuf>,
 ) -> Result<()> {
@@ -423,10 +473,18 @@ async fn cmd_coordinator(
     // this injection the adapter would plan against a stand-in problem
     // and emit moves that fall off the real map, causing the official
     // server to reject day 0 with `revision=-1` (issue #158).
+    //
+    // `--loop-initial-strategy` / `--loop-iterations` are the same knobs
+    // `tournament` exposes (Issue #170): one parser, one surface, no
+    // per-variant protocol client.
     let engine_setting_slot = match solver_strategy.as_str() {
         "loop" => {
-            let adapter =
-                EngineLoopAdapter::new(solver_loop::InitialStrategy::GreedyNearestNeighbor, 32);
+            tracing::info!(
+                strategy = %initial_strategy::initial_strategy_label(loop_initial_strategy),
+                iterations = loop_iterations,
+                "loop initial strategy selected"
+            );
+            let adapter = EngineLoopAdapter::new(loop_initial_strategy, loop_iterations);
             let slot = adapter.setting_handle();
             let solver: Box<dyn engine::solver::Solver> = Box::new(adapter);
             (solver, Some(slot))
@@ -476,7 +534,7 @@ async fn cmd_tournament(
     solvers: Vec<String>,
     server: Option<String>,
     token: Option<String>,
-    loop_initial_strategy: String,
+    loop_initial_strategy: InitialStrategy,
     loop_iterations: u32,
     team_id: String,
     state_output_dir: Option<PathBuf>,
@@ -492,12 +550,17 @@ async fn cmd_tournament(
             .or_else(|| std::env::var("PROCON_TOKEN").ok())
             .unwrap_or_else(|| "token-p0".to_owned()),
         solvers,
-        loop_initial_strategy: TournamentConfig::parse_initial_strategy(&loop_initial_strategy),
+        loop_initial_strategy,
         loop_iterations,
         team_id,
         state_output_dir,
         auto_restart_server,
     };
+    tracing::info!(
+        strategy = %initial_strategy::initial_strategy_label(cfg.loop_initial_strategy),
+        iterations = cfg.loop_iterations,
+        "tournament loop initial strategy selected"
+    );
     let report = run_tournament(cfg).await.map_err(|e| anyhow::anyhow!("tournament: {e}"))?;
     print!("{}", render_markdown(&report));
     Ok(())
@@ -644,5 +707,125 @@ mod tests {
             Cmd::Coordinator { state_output, .. } => assert_eq!(state_output, None),
             _ => panic!("expected Coordinator variant"),
         }
+    }
+
+    /// Feed `--loop-initial-strategy <label>` to `tournament` and return the
+    /// parsed strategy, or the (clap-wrapped) parser error text.
+    fn tournament_initial_label(label: &str) -> Result<InitialStrategy, String> {
+        Cli::try_parse_from(["procon", "tournament", "--loop-initial-strategy", label])
+            .map_err(|e| e.to_string())
+            .map(|cli| match cli.cmd {
+                Cmd::Tournament { loop_initial_strategy, .. } => loop_initial_strategy,
+                other => panic!("expected Tournament, got {other:?}"),
+            })
+    }
+
+    /// Same for `coordinator` — the two subcommands share one parser.
+    fn coordinator_initial_label(label: &str) -> Result<InitialStrategy, String> {
+        Cli::try_parse_from(["procon", "coordinator", "--loop-initial-strategy", label])
+            .map_err(|e| e.to_string())
+            .map(|cli| match cli.cmd {
+                Cmd::Coordinator { loop_initial_strategy, .. } => loop_initial_strategy,
+                other => panic!("expected Coordinator, got {other:?}"),
+            })
+    }
+
+    /// Issue #170: `tournament` **and** `coordinator` parse the whole live
+    /// label set (`greedy`, `identity`, `reverse`, `sweep-row`, `sweep-col`,
+    /// `random:<seed>`), and label → strategy → label round-trips.
+    #[test]
+    fn both_subcommands_parse_every_initial_strategy_label() {
+        for (label, expected) in [
+            ("greedy", InitialStrategy::GreedyNearestNeighbor),
+            ("identity", InitialStrategy::Identity),
+            ("reverse", InitialStrategy::Reverse),
+            ("sweep-row", InitialStrategy::SweepRow),
+            ("sweep-col", InitialStrategy::SweepCol),
+            ("random:7", InitialStrategy::Random { seed: 7 }),
+            ("random:0", InitialStrategy::Random { seed: 0 }),
+            // Legacy PascalCase aliases stay accepted.
+            ("GreedyNearestNeighbor", InitialStrategy::GreedyNearestNeighbor),
+            ("Identity", InitialStrategy::Identity),
+            ("Reverse", InitialStrategy::Reverse),
+            ("SweepRow", InitialStrategy::SweepRow),
+            ("SweepCol", InitialStrategy::SweepCol),
+        ] {
+            assert_eq!(tournament_initial_label(label), Ok(expected), "tournament {label}");
+            assert_eq!(coordinator_initial_label(label), Ok(expected), "coordinator {label}");
+            // Round-trip through the canonical label both flags report.
+            let canonical = initial_strategy::initial_strategy_label(expected);
+            assert_eq!(
+                tournament_initial_label(&canonical),
+                Ok(expected),
+                "tournament round-trip of {canonical}"
+            );
+            assert_eq!(
+                coordinator_initial_label(&canonical),
+                Ok(expected),
+                "coordinator round-trip of {canonical}"
+            );
+        }
+    }
+
+    /// Both flags default to the same strategy as the offline
+    /// `loop:initial` default (`greedy`).
+    #[test]
+    fn initial_strategy_flags_default_to_greedy() {
+        let cli = Cli::try_parse_from(["procon", "tournament"]).unwrap();
+        match cli.cmd {
+            Cmd::Tournament { loop_initial_strategy, .. } => {
+                assert_eq!(loop_initial_strategy, InitialStrategy::GreedyNearestNeighbor);
+            }
+            other => panic!("expected Tournament, got {other:?}"),
+        }
+        let cli = Cli::try_parse_from(["procon", "coordinator"]).unwrap();
+        match cli.cmd {
+            Cmd::Coordinator { loop_initial_strategy, loop_iterations, .. } => {
+                assert_eq!(loop_initial_strategy, InitialStrategy::GreedyNearestNeighbor);
+                assert_eq!(loop_iterations, 32);
+            }
+            other => panic!("expected Coordinator, got {other:?}"),
+        }
+    }
+
+    /// The core Issue #170 bug: an unknown label must fail loudly on both
+    /// subcommands instead of silently becoming `Identity`.
+    #[test]
+    fn both_subcommands_reject_unknown_initial_strategy_labels() {
+        for label in ["GreedyZoneCoverage", "reverse-2", "SWEEP-ROW", "randomx"] {
+            for (side, err) in [
+                ("tournament", tournament_initial_label(label).expect_err("must be rejected")),
+                ("coordinator", coordinator_initial_label(label).expect_err("must be rejected")),
+            ] {
+                assert!(err.contains("unknown --loop-initial-strategy"), "{side} {label}: {err}");
+                assert!(
+                    err.contains("greedy | identity | reverse | sweep-row | sweep-col"),
+                    "{side} {label}: {err}"
+                );
+                assert!(!err.contains("Identity"), "{side} {label} must not fall back: {err}");
+            }
+        }
+        // `random` without a seed is rejected too (seed passthrough is
+        // `random:<seed>`, mirroring offline `initial=random:seed=N`).
+        let err = coordinator_initial_label("random").expect_err("seed required");
+        assert!(err.contains("needs a seed"), "{err}");
+        assert!(tournament_initial_label("random:abc").is_err());
+    }
+
+    /// The parsed strategy reaches `TournamentConfig` unchanged.
+    #[test]
+    fn tournament_config_receives_the_flag_value() {
+        let cli =
+            Cli::try_parse_from(["procon", "tournament", "--loop-initial-strategy", "reverse"])
+                .unwrap();
+        let Cmd::Tournament { loop_initial_strategy, .. } = cli.cmd else {
+            panic!("expected Tournament");
+        };
+        let cfg = tournament::TournamentConfig {
+            loop_initial_strategy,
+            ..tournament::TournamentConfig::default()
+        };
+        assert_eq!(cfg.loop_initial_strategy, InitialStrategy::Reverse);
+        assert_eq!(initial_strategy::initial_strategy_label(cfg.loop_initial_strategy), "reverse");
     }
 }
