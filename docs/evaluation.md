@@ -106,6 +106,7 @@ just eval-list
 loop                                  iterations / initial / seed
 multiloop                             grid / kmeans / seed / refine
 greedy
+nearest
 wait                                  （baseline — 全段0）
 ```
 
@@ -120,6 +121,7 @@ loop:initial=sweep-col
 multiloop:grid=2x2
 multiloop:kmeans=4:seed=42
 greedy
+nearest
 ```
 
 `initial` の候補: `greedy`（既定）/ `identity` / `sweep-row` / `sweep-col` / `random`。
