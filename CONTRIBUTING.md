@@ -9,6 +9,7 @@ procon-2026 への貢献方法。Issue 駆動 / Release sprint ベースのチ�
 - **source code / commit message は英語**、**docs / Issue / PR / review は日本語**。
 - `main` は released state。active development は `release-x-y-z` branch 上で行う。
 - `target_version` は Issue / Project 上で明示し、対応する release branch と整合させる。
+- Solver 性能探索に限り、`docs/contest/solver-exploration.md` の stacked PR rule を適用できる。この場合も **1 candidate delta = 1 Issue = 1 branch = 1 PR** は維持する。
 
 ## 開発の流れ
 
@@ -39,6 +40,31 @@ procon-2026 への貢献方法。Issue 駆動 / Release sprint ベースのチ�
 
 6. CI 緑 + reviewer 承認 + acceptance criteria 達成で Draft → Ready。
 7. Release PR (release-x-y-z → main) でマージし、Issue を Close。
+
+## Solver exploration の例外
+
+solver candidate の比較・派生では、PR の base を常に release branch に固定しない。
+
+親 candidate を前提にする child candidate は親 branch から切り、親 branch 向け Draft PR を作る。
+
+```text
+release-0-2-0
+└─ 201
+   ├─ 202
+   │  └─ 204
+   └─ 203
+
+PR: 201 -> release-0-2-0
+PR: 202 -> 201
+PR: 203 -> 201
+PR: 204 -> 202
+```
+
+親が release branch に merge されたら direct child PR を release branch へ retarget する。親が rejected の場合、child は viable ancestor へ移植して再評価するまで release 候補へ昇格させない。
+
+評価済み commit SHA は durable evidence である。descendant を持つ published candidate branch の destructive rebase / force-push は原則禁止し、SHA が変わった場合は以前の評価を current proof として再利用しない。
+
+詳細・candidate ID・branch lifetime・agent behavior は `docs/contest/solver-exploration.md` を canonical source とする。
 
 ## Commit メッセージ
 
