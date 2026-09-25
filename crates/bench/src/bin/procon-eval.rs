@@ -13,6 +13,16 @@
 //!     --baseline wait \
 //!     --output-dir target/eval
 //!
+//! # fixtures + seed-fixed generated cases in one batch (Issue #185).
+//! # `--cases all` still means "the bundled fixtures only"; generated cases
+//! # are opt-in, and every candidate in the batch sees this same case set.
+//! procon-eval \
+//!     --cases all \
+//!     --generated 'open:seed=1,road-heavy:seed=7' \
+//!     --candidates 'loop:iterations=32:initial=greedy,wait' \
+//!     --baseline wait \
+//!     --output-dir target/eval
+//!
 //! # the candidate axis the registry supports today
 //! procon-eval --list-candidates
 //! ```
@@ -49,8 +59,22 @@ struct Args {
 
     /// Comma-separated case names (`small-8x8,medium-16x16`), or `all` for the
     /// whole bundled fixture corpus.
+    ///
+    /// `all` (and every other value) selects **fixtures only** — generated
+    /// cases are never implied, so existing evidence keeps its meaning. Add
+    /// them with `--generated`.
     #[arg(long, default_value = "all")]
     cases: String,
+
+    /// Opt-in generated cases, comma-separated with explicit seeds, e.g.
+    /// `open:seed=1,road-heavy:seed=7:size=small:days=3`.
+    ///
+    /// Grammar: `<archetype>[:seed=<u64>][:size=small|medium|large]
+    /// [:days=1..3]`, where `seed=` is required — explicit seeds are what let
+    /// sibling candidates be compared on one identical case axis. Appended to
+    /// the `--cases` selection; an empty value selects nothing.
+    #[arg(long, default_value = "")]
+    generated: String,
 
     /// Comma-separated candidate ids, e.g.
     /// `loop:iterations=32:initial=greedy,greedy,wait`.
@@ -152,8 +176,10 @@ fn run() -> Exit {
     }
 
     // Ids themselves are parsed and validated by `build_config`, so the flag
-    // → config path is the one the tests cover.
-    let corpus = match load_corpus(&args.cases) {
+    // → config path is the one the tests cover. Corpus construction (fixtures
+    // + opt-in generated cases) fails fast here, before any candidate runs —
+    // a generation failure can never become a run record.
+    let corpus = match load_corpus(&args.cases, &args.generated) {
         Ok(c) => c,
         Err(e) => return Exit::Fail(e),
     };
@@ -256,21 +282,34 @@ fn run_worker(args: &Args) -> Exit {
 /// testable: a flag that parses but is dropped here would otherwise be
 /// silently ignored (`--harness-margin-ms` was).
 ///
+/// Both `--candidates` and `--baseline` are resolved through the builtin
+/// registry, so the config holds **canonical** ids (parameters in schema
+/// order). The baseline is canonicalised the same way as the batch, because
+/// membership checking and `AggregateReport::build` compare ids by string.
+///
 /// # Errors
-/// A `--candidates` value that does not name a valid candidate id.
+/// A `--candidates` / `--baseline` value that does not name a valid candidate
+/// id, or a batch whose entries name the same configuration twice.
 fn build_config(args: &Args, source_commit_sha: String) -> Result<TournamentConfig, String> {
-    let candidate_ids = split_ids(args.candidates.as_deref().unwrap_or_default())?;
-    Ok(TournamentConfig::new(
-        candidate_ids,
-        args.baseline.clone(),
-        args.team.clone(),
-        args.harness_timeout_ms,
-    )
-    .with_source_commit_sha(source_commit_sha)
-    // Without this, `--harness-margin-ms` parsed but never reached the
-    // runner, which then used its own default.
-    .with_harness_margin_ms(args.harness_margin_ms)
-    .with_output_dir(args.output_dir.clone()))
+    // The CLI resolves against exactly one registry, the builtin one — the
+    // same registry `run` later builds the batch with.
+    let registry = CandidateRegistry::builtin();
+    let candidate_ids = split_ids(args.candidates.as_deref().unwrap_or_default(), &registry)?;
+    let baseline = match args.baseline.as_deref() {
+        Some(baseline) => Some(
+            registry
+                .build(baseline)
+                .map_err(|e| format_candidate_error(&format!("--baseline {baseline:?}"), &e))?
+                .id(),
+        ),
+        None => None,
+    };
+    Ok(TournamentConfig::new(candidate_ids, baseline, args.team.clone(), args.harness_timeout_ms)
+        .with_source_commit_sha(source_commit_sha)
+        // Without this, `--harness-margin-ms` parsed but never reached the
+        // runner, which then used its own default.
+        .with_harness_margin_ms(args.harness_margin_ms)
+        .with_output_dir(args.output_dir.clone()))
 }
 
 /// The deadline policy for this invocation.
@@ -335,17 +374,38 @@ fn print_catalog(registry: &CandidateRegistry) {
         }
         println!();
     }
-    println!("Candidate ids round-trip: `loop:iterations=32:initial=greedy` parses and");
-    println!("re-renders unchanged. Parameter order is preserved as written.");
+    println!("Id syntax: `loop:iterations=32:initial=greedy` parses and re-renders");
+    println!("unchanged. Evaluation identity is canonical: at resolve time the");
+    println!("parameters are reordered into this schema order, so");
+    println!("`loop:initial=greedy:iterations=32` is the same candidate — listing");
+    println!("both is a duplicate error, not two runs of one configuration.");
 }
 
-fn split_ids(text: &str) -> Result<Vec<String>, String> {
+/// Split `--candidates` into **canonical** ids, rejecting semantic duplicates.
+///
+/// Each entry is resolved through `registry`, which reorders parameters into
+/// schema order, so `loop:initial=greedy:iterations=32` and
+/// `loop:iterations=32:initial=greedy` arrive as one id and the second entry
+/// fails the duplicate check instead of being evaluated twice.
+///
+/// # Errors
+/// A bad id (with [`format_candidate_error`]'s wording), a duplicate
+/// configuration, or an empty list.
+fn split_ids(text: &str, registry: &CandidateRegistry) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
+    let mut seen: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for part in text.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        match bench::candidate::CandidateSpec::parse(part) {
-            Ok(_) => out.push(part.to_owned()),
-            Err(e) => return Err(format!("bad candidate id {part:?}: {e}")),
+        let candidate = registry
+            .build(part)
+            .map_err(|e| format_candidate_error(&format!("candidate id {part:?}"), &e))?;
+        let canonical = candidate.id();
+        if let Some(first) = seen.insert(canonical.clone(), out.len()) {
+            return Err(format!(
+                "duplicate candidate {canonical:?}: entry #{first} names the same algorithm \
+                 and parameters (parameter order is ignored)"
+            ));
         }
+        out.push(canonical);
     }
     if out.is_empty() {
         return Err("--candidates did not name any candidate".to_owned());
@@ -353,15 +413,47 @@ fn split_ids(text: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-fn load_corpus(spec: &str) -> Result<Corpus, String> {
-    if spec.trim().eq_ignore_ascii_case("all") {
-        return Corpus::bundled().map_err(|e| format!("could not load the bundled corpus: {e}"));
+/// Render a [`CandidateError`] for the CLI, keeping the `--list-candidates`
+/// hint for the one error a user can act on directly.
+fn format_candidate_error(subject: &str, e: &CandidateError) -> String {
+    match e {
+        CandidateError::UnknownAlgorithm(name) => format!(
+            "unknown algorithm {name:?} — run `procon-eval --list-candidates` to see what is registered"
+        ),
+        other => format!("bad {subject}: {other}"),
     }
-    let names: Vec<&str> = spec.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
-    if names.is_empty() {
-        return Err("--cases did not name any case".to_owned());
+}
+
+/// Build the batch corpus: the `--cases` fixture selection, then any opt-in
+/// `--generated` cases appended in written order.
+///
+/// `--cases` is untouched by the generator (`all` still means the bundled
+/// fixtures only), so generated cases can never silently change what an
+/// existing invocation evaluates. Sibling candidates share this one corpus
+/// object, which is what puts them on a single case axis.
+///
+/// # Errors
+/// Fixture load errors, or a [`bench::GenerationError`] whose message starts
+/// with `case generation failure` — distinct from any candidate failure.
+fn load_corpus(cases: &str, generated: &str) -> Result<Corpus, String> {
+    let mut fixtures = if cases.trim().eq_ignore_ascii_case("all") {
+        Corpus::bundled().map_err(|e| format!("could not load the bundled corpus: {e}"))?
+    } else {
+        let names: Vec<&str> = cases.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+        if names.is_empty() {
+            return Err("--cases did not name any case".to_owned());
+        }
+        Corpus::bundled_subset(&names)
+            .map_err(|e| format!("could not load cases {names:?}: {e}"))?
+    };
+
+    let params = bench::generator::parse_selection(generated).map_err(|e| e.to_string())?;
+    if params.is_empty() {
+        return Ok(fixtures);
     }
-    Corpus::bundled_subset(&names).map_err(|e| format!("could not load cases {names:?}: {e}"))
+    let generated = bench::generator::build_corpus(&params).map_err(|e| e.to_string())?;
+    fixtures.cases.extend(generated.cases);
+    Corpus::new(fixtures.cases).map_err(|e| e.to_string())
 }
 
 fn git_head() -> Option<String> {
@@ -375,12 +467,7 @@ fn git_head() -> Option<String> {
 
 fn format_tournament_error(e: &TournamentError) -> String {
     match e {
-        TournamentError::Candidate(ce) => match ce {
-            CandidateError::UnknownAlgorithm(name) => format!(
-                "unknown algorithm {name:?} — run `procon-eval --list-candidates` to see what is registered"
-            ),
-            other => format!("bad candidate: {other}"),
-        },
+        TournamentError::Candidate(ce) => format_candidate_error("candidate", ce),
         other => other.to_string(),
     }
 }
@@ -414,6 +501,70 @@ mod tests {
         assert_eq!(config.harness_timeout_ms, Some(4321), "--harness-timeout-ms was dropped");
         assert_eq!(config.team, "cli-team", "--team was dropped");
         assert_eq!(config.source_commit_sha, "test-sha");
+    }
+
+    /// An id written in a shuffled parameter order reaches the config — and
+    /// therefore `RunRecord.candidate_id` — in canonical schema order.
+    #[test]
+    fn split_ids_yields_canonical_ids() {
+        let registry = CandidateRegistry::builtin();
+        let ids = split_ids("loop:initial=greedy:iterations=32,wait", &registry)
+            .expect("a shuffled id is still a valid id");
+        assert_eq!(ids, vec!["loop:iterations=32:initial=greedy", "wait"]);
+    }
+
+    /// Two spellings of one configuration must fail loudly rather than run
+    /// the same setting twice in one batch.
+    #[test]
+    fn split_ids_rejects_a_shuffled_semantic_duplicate() {
+        let registry = CandidateRegistry::builtin();
+        let err = split_ids(
+            "loop:iterations=32:initial=greedy,loop:initial=greedy:iterations=32",
+            &registry,
+        )
+        .expect_err("one configuration cannot be a batch of two");
+        assert!(err.contains("duplicate candidate"), "{err}");
+        assert!(
+            err.contains("loop:iterations=32:initial=greedy"),
+            "the error must name the canonical id: {err}"
+        );
+    }
+
+    /// The whole flag → config path, including `--baseline`, which is
+    /// canonicalised so its membership check and the aggregate's W/D/L
+    /// comparison match the (canonical) records.
+    #[test]
+    fn shuffled_candidates_and_baseline_reach_the_config_canonically() {
+        let args = Args::parse_from([
+            "procon-eval",
+            "--cases",
+            "small-8x8",
+            "--candidates",
+            "loop:initial=greedy:iterations=32,wait",
+            "--baseline",
+            "loop:iterations=32:initial=greedy",
+        ]);
+        let config = build_config(&args, "test-sha".to_owned()).expect("flags are valid");
+        assert_eq!(config.candidate_ids, vec!["loop:iterations=32:initial=greedy", "wait"]);
+        assert_eq!(
+            config.baseline_candidate_id.as_deref(),
+            Some("loop:iterations=32:initial=greedy")
+        );
+    }
+
+    /// The same duplicate check, but observed through `build_config` — the
+    /// only path from CLI flags to an evaluation.
+    #[test]
+    fn build_config_fails_on_a_shuffled_semantic_duplicate() {
+        let args = Args::parse_from([
+            "procon-eval",
+            "--cases",
+            "small-8x8",
+            "--candidates",
+            "loop:iterations=32:initial=greedy,loop:initial=greedy:iterations=32",
+        ]);
+        let err = build_config(&args, "test-sha".to_owned()).expect_err("duplicate configuration");
+        assert!(err.contains("duplicate candidate"), "{err}");
     }
 
     /// The margin default must stay a default, not become an override.
@@ -453,5 +604,87 @@ mod tests {
             runner.resolved_harness_deadline(&case),
             Duration::from_secs(60) + Duration::from_millis(1234)
         );
+    }
+
+    /// Number of bundled fixtures — the `--cases all` meaning that must not
+    /// drift when generated cases are added.
+    fn bundled_count() -> usize {
+        bench::fixture::MatchFixtureLoader::bundled_fixtures().len()
+    }
+
+    /// The `--generated` flag parses and actually reaches corpus selection.
+    #[test]
+    fn the_generated_flag_selects_generated_cases() {
+        // `days=2` is deliberately off road-heavy's default (3), so the id
+        // must spell both overrides out — two specs that differ only there
+        // must not collide.
+        let args = parse(&["--generated", "open:seed=1,road-heavy:seed=7:size=small:days=2"]);
+        assert_eq!(args.generated, "open:seed=1,road-heavy:seed=7:size=small:days=2");
+
+        let corpus = load_corpus(&args.cases, &args.generated).expect("selection loads");
+        // `--cases small-8x8` (the parse helper's default) + 2 generated.
+        assert_eq!(corpus.len(), 3);
+        assert!(corpus.case_ids().contains(&"fixture:small-8x8"));
+        assert!(corpus.case_ids().contains(&"generated:v1:open:seed=1"));
+        assert!(corpus.case_ids().contains(&"generated:v1:road-heavy:seed=7:size=small:days=2"));
+
+        // The generated cases carry full provenance into the records' source.
+        for case in &corpus.cases {
+            if case.case_id.starts_with("generated:") {
+                assert!(case.seed.is_some(), "{} must carry a seed", case.case_id);
+                let params = case.generation_parameters.as_ref().expect("params recorded");
+                assert_eq!(params["generator_version"], bench::GENERATOR_VERSION);
+            }
+        }
+    }
+
+    /// Generated cases are opt-in: `--cases all` alone still evaluates exactly
+    /// the bundled fixtures, so no existing evidence changes meaning.
+    #[test]
+    fn cases_all_still_means_the_bundled_fixtures_only() {
+        let fixtures_only = load_corpus("all", "").expect("bundled corpus loads");
+        assert_eq!(fixtures_only.len(), bundled_count());
+        assert!(fixtures_only.case_ids().iter().all(|id| id.starts_with("fixture:")));
+
+        let mixed = load_corpus("all", "open:seed=1,road-heavy:seed=7").expect("mixed loads");
+        assert_eq!(mixed.len(), bundled_count() + 2);
+        // Fixtures first, generated appended — order is stable per selection.
+        assert_eq!(mixed.case_ids()[0], "fixture:openapi-sample");
+        assert_eq!(mixed.case_ids()[bundled_count()], "generated:v1:open:seed=1");
+        assert_eq!(mixed.case_ids()[bundled_count() + 1], "generated:v1:road-heavy:seed=7");
+    }
+
+    /// One corpus object per batch: every sibling candidate runs against this
+    /// exact case set, which is what keeps comparisons on one case axis.
+    #[test]
+    fn one_selection_is_one_shared_case_set() {
+        let corpus =
+            load_corpus("all", "many-series:seed=3,road-heavy:seed=3").expect("selection loads");
+        let ids = corpus.case_ids();
+        let mut unique = ids.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len(), "case ids must be unique");
+        // The two generated siblings share one seed per archetype: comparing
+        // candidates on this corpus varies the candidate, never the cases.
+        assert!(ids.contains(&"generated:v1:many-series:seed=3"));
+        assert!(ids.contains(&"generated:v1:road-heavy:seed=3"));
+    }
+
+    /// A rejected selection surfaces as a *case generation failure* — a
+    /// corpus-build error — not as a run record that could look like a
+    /// candidate failing.
+    #[test]
+    fn a_bad_generated_selection_is_a_case_generation_failure() {
+        let err = load_corpus("all", "open").expect_err("seed= is required");
+        assert!(err.starts_with("case generation failure"), "{err}");
+        assert!(err.contains("seed= is required"), "{err}");
+
+        let err = load_corpus("all", "bogus:seed=1").expect_err("unknown archetype");
+        assert!(err.starts_with("case generation failure"), "{err}");
+
+        let err = load_corpus("all", "open:seed=1,open:seed=1").expect_err("duplicate ids");
+        assert!(err.starts_with("case generation failure"), "{err}");
+        assert!(err.contains("duplicate"), "{err}");
     }
 }
