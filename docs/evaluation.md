@@ -151,9 +151,11 @@ adapter は毎日 live state から再解決するという day contract を保�
 | `crossday` | 残り日数 = `num_days − day` | その計画の当日 leg（計画は当日を先頭に anchor するため index 0） |
 
 multi-day の leg 分割は `solver-loop::distribute_plan` の round-robin
-（`i % days`）を使う dormant path を外部から起動するだけで、
-`crates/solver-loop` 本体・`score.rs`・evaluate / scoring semantics は変更しません。
-1 日の case では `crossday` の残り日数が 1 になるので `none` と厳密に一致します。
+（day は `i % days`、day 内の agent は位置順 round-robin — Issue #210 で
+`gcd(days, n_agents) > 1` の coupling が生む空 leg を解消）を使う dormant pathを
+外部から起動するだけで、`score.rs`・evaluate / scoring semantics は変更しません。
+1 日の case では `crossday` の残り日数が 1 になるので `none` と厳密に一致します
+（`distribute_plan` は `days = 1` / 単一 agent の形状で旧挙動と byte-for-byte 同一）。
 
 `multiloop` は `solver-loop::MultiLoopComposer` を evaluator に接続した
 領域分割候補（Issue #190）。**`grid` と `kmeans` のどちらか一方だけ**を指定します。

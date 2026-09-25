@@ -351,10 +351,12 @@ impl Solver for LoopSolver {
         let initial_tour = self.initial_tour(problem);
         let (refined_tour, _stats) = self.refine(initial_tour, problem);
 
-        // Distribute the refined tour across agents and days. The stub
-        // distribution is round-robin: spot i goes to agent (i mod n_agents)
-        // on day (i mod days). This keeps the visit order intact while
-        // honoring the multi-agent / multi-day problem shape.
+        // Distribute the refined tour across agents and days. The
+        // distribution is round-robin: days first (spot i -> day
+        // i % days), then each day's share round-robin across the agents
+        // (position j of day d -> agent (j + d) % n_agents), which keeps
+        // every agent's leg count on a day a floor-or-ceil split while
+        // honoring the multi-agent / multi-day problem shape (Issue #210).
         let plans = distribute_plan(&refined_tour, problem);
         let score = evaluate_plan(&plans, problem);
         Ok(SolveOutcome { plans, score })
@@ -465,6 +467,27 @@ fn compute_iterations(_a: &ScoreRanking, _b: &ScoreRanking) -> u32 {
 }
 
 /// Round-robin distribution of `tour` across (days, agents).
+///
+/// Days are dealt first (spot `i` → day `i % days`), then each day's share
+/// is dealt round-robin across the agents, rotated by the day index: the
+/// spot at position `j` of day `d` goes to agent `(j + d) % n_agents`.
+///
+/// Keying the agent off the *per-day position* rather than the global spot
+/// index is what decouples the two modulos (Issue #210). The old mapping
+/// `(i % days, i % agents)` derived both keys from the same counter, so
+/// whenever `gcd(days, n_agents) > 1` day `d`'s agent index walked a coset
+/// of size `n_agents / gcd`: every agent outside the coset received an
+/// empty leg while coset members held several (on `lookahead=crossday`
+/// that is the leg the adapter walks, so half a team could idle). With the
+/// per-day counter each day's counts are a floor-or-ceil split — no agent
+/// sits on an empty leg while another holds more than one whenever the
+/// day's legs can cover the team.
+///
+/// Byte-for-byte the legacy plan when `days == 1` (the day-mod collapses:
+/// position `j == i`, rotation `d == 0`) or `n_agents == 1` (agent-mod
+/// collapses) — pinned by `tests::one_day_and_single_agent_distribution_is_unchanged`,
+/// which is what keeps `lookahead=none` and every other `days = 1` path
+/// identical.
 #[must_use]
 pub fn distribute_plan(tour: &[u32], problem: &SolveProblem) -> Vec<Vec<Vec<u32>>> {
     let days = problem.days as usize;
@@ -473,9 +496,11 @@ pub fn distribute_plan(tour: &[u32], problem: &SolveProblem) -> Vec<Vec<Vec<u32>
     for plan_day in plans.iter_mut().take(days) {
         *plan_day = vec![Vec::new(); agents];
     }
+    let mut day_position = vec![0_usize; days];
     for (i, spot_id) in tour.iter().enumerate() {
         let d = i % days;
-        let a = i % agents;
+        let a = (day_position[d] + d) % agents;
+        day_position[d] += 1;
         plans[d][a].push(*spot_id);
     }
     plans
@@ -796,5 +821,184 @@ mod tests {
         all_ids.sort_unstable();
         all_ids.dedup();
         assert_eq!(all_ids, vec![0, 1, 2]);
+    }
+
+    // ------------------------------------------------------------------
+    // Issue #210: `distribute_plan` leg fairness (causality + regression)
+    // ------------------------------------------------------------------
+
+    /// `(label, days, agents, spots)` shapes for the fairness checks.
+    ///
+    /// The first block is the gcd-coupling table: `SolveProblem` shapes the
+    /// `lookahead=crossday` adapter actually builds for the Stage C
+    /// multi-day cases where `gcd(days, agents) > 1` (counts read from the
+    /// generated case JSON — `days` is the solve's horizon, i.e. a match
+    /// day `t` solves with `days = num_days − t`, so a 3-day case appears
+    /// as both `(3, …)` and `(2, …)`), plus the combinations Issue #210
+    /// names explicitly. These are the shapes on which the pre-#210
+    /// distribution left agents on empty legs.
+    ///
+    /// The second block is `gcd == 1` controls: same distribution code,
+    /// same invariant — they passed it before the fix too, which is what
+    /// makes the table discriminate on the coupling itself.
+    const LEG_FAIRNESS_CASES: &[(&str, u32, usize, usize)] = &[
+        // Issue #210 examples.
+        ("issue example: 3 days x 6 agents", 3, 6, 18),
+        ("issue example: 2 days x 4 agents", 2, 4, 8),
+        ("issue example: 2 days x 6 agents", 2, 6, 12),
+        // generated:v1:road-heavy:seed=4 (3-day match, agents=6, spots=15).
+        ("road-heavy:seed=4 day0", 3, 6, 15),
+        ("road-heavy:seed=4 day1", 2, 6, 15),
+        // generated:v1:road-heavy:seed=3 (agents=8): gcd(2, 8) = 2 bites on
+        // match day 1, where only 2 days remain.
+        ("road-heavy:seed=3 day1", 2, 8, 12),
+        // generated:v1:road-heavy:seed=5 (agents=8).
+        ("road-heavy:seed=5 day1", 2, 8, 11),
+        // generated:v1:road-heavy:seed=8 (agents=4).
+        ("road-heavy:seed=8 day1", 2, 4, 10),
+        // generated:v1:many-series:seed=2 (agents=6).
+        ("many-series:seed=2 day0", 3, 6, 9),
+        ("many-series:seed=2 day1", 2, 6, 9),
+        // generated:v1:many-series:seed=3 (agents=6).
+        ("many-series:seed=3 day0", 3, 6, 11),
+        ("many-series:seed=3 day1", 2, 6, 11),
+        // generated:v1:many-series:seed=7 (agents=3): the coupling is a
+        // structural defect, it also occurs in a case that happened to win.
+        ("many-series:seed=7 day0", 3, 3, 13),
+        // generated:v1:dense-spots:seed=6 (2-day match, agents=8, spots=18).
+        ("dense-spots:seed=6 day0", 2, 8, 18),
+        // gcd == 1 controls — multi-day cases with the same code path but
+        // no coupling (must satisfy the invariant at all times).
+        ("control road-heavy:seed=1 day0", 3, 5, 9),
+        ("control pond-obstacle:seed=2 day0", 2, 3, 8),
+        ("control many-series:seed=5 day0", 3, 7, 8),
+        ("control dense-spots:seed=5 day0", 2, 5, 19),
+        ("control fixture:road-heavy-v2 day0", 3, 5, 10),
+    ];
+
+    /// `gcd` for the assertion messages.
+    fn gcd_usize(mut a: usize, mut b: usize) -> usize {
+        while b != 0 {
+            (a, b) = (b, a % b);
+        }
+        a
+    }
+
+    /// Minimal `SolveProblem` + tour with the given shape: `spots` spots
+    /// (ids `0..spots`), `agents` agents, `days` days. The tour order is
+    /// irrelevant to leg counts — they depend only on the three numbers —
+    /// so the identity tour is used.
+    fn shaped_problem(days: u32, agents: usize, spots: usize) -> (SolveProblem, Vec<u32>) {
+        let spot_list = (0..spots)
+            .map(|i| {
+                spot(
+                    u32::try_from(i).expect("index fits u32"),
+                    i32::try_from(i).expect("index fits i32"),
+                    0,
+                    "kake",
+                )
+            })
+            .collect();
+        let agent_list =
+            (0..agents).map(|i| agent(u32::try_from(i).expect("index fits u32"), 0, 0)).collect();
+        let tour = (0..spots).map(|i| u32::try_from(i).expect("index fits u32")).collect();
+        (SolveProblem::new(spot_list, agent_list, days), tour)
+    }
+
+    /// Issue #210 — causality + regression: on every day each agent must
+    /// receive a floor-or-ceil equal share of that day's legs, so no agent
+    /// can sit on an empty leg while another holds more than one.
+    ///
+    /// Pre-#210, `distribute_plan` mapped spot `i` to
+    /// `(day, agent) = (i % days, i % agents)`. Both keys come from the
+    /// same counter, so whenever `gcd(days, agents) > 1` day `d`'s agent
+    /// index walks a coset of size `agents / gcd` and every agent outside
+    /// the coset gets an empty leg while coset members hold several — the
+    /// coupling that emptied legs on Stage C's multi-day crossday runs
+    /// (shapes in [`LEG_FAIRNESS_CASES`]).
+    ///
+    /// The test fails on that defect with the per-agent counts in the
+    /// assertion message (the minimal reproduction), and passes once the
+    /// distribution is fixed — the gcd = 1 controls pass either way, so
+    /// the table discriminates on the coupling itself.
+    #[test]
+    fn day_legs_are_shared_evenly_across_agents() {
+        let mut violations: Vec<String> = Vec::new();
+        for &(label, days, agents, spots) in LEG_FAIRNESS_CASES {
+            let (problem, tour) = shaped_problem(days, agents, spots);
+            let plans = distribute_plan(&tour, &problem);
+            assert_eq!(plans.len(), days as usize, "{label}: one leg per day");
+            for (d, day_plans) in plans.iter().enumerate() {
+                let counts: Vec<usize> = day_plans.iter().map(Vec::len).collect();
+                let max = counts.iter().copied().max().unwrap_or(0);
+                let min = counts.iter().copied().min().unwrap_or(0);
+                let empty: Vec<usize> = counts
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, count)| **count == 0)
+                    .map(|(a, _)| a)
+                    .collect();
+                let gcd = gcd_usize(days as usize, agents);
+                if max > min + 1 {
+                    violations.push(format!(
+                        "{label}: day {d} counts {counts:?} (days={days}, agents={agents}, \
+                         spots={spots}, gcd={gcd}) — agent(s) {empty:?} on an empty leg \
+                         while another holds {max}",
+                    ));
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "leg distribution is not fair — {} shape(s) violate floor/ceil sharing:\n{}",
+            violations.len(),
+            violations.join("\n"),
+        );
+    }
+
+    /// The pre-#210 distribution, kept verbatim as the equivalence
+    /// reference for the shapes that must not change.
+    fn legacy_distribute_plan(tour: &[u32], problem: &SolveProblem) -> Vec<Vec<Vec<u32>>> {
+        let days = problem.days as usize;
+        let agents = problem.agents.len();
+        let mut plans: Vec<Vec<Vec<u32>>> = vec![Vec::with_capacity(agents); days];
+        for plan_day in plans.iter_mut().take(days) {
+            *plan_day = vec![Vec::new(); agents];
+        }
+        for (i, spot_id) in tour.iter().enumerate() {
+            let d = i % days;
+            let a = i % agents;
+            plans[d][a].push(*spot_id);
+        }
+        plans
+    }
+
+    /// Issue #210 — everything downstream of `days = 1` must stay
+    /// byte-for-byte identical: `lookahead=none` always solves with
+    /// `days = 1`, `MultiLoopComposer` distributes one agent per row, and
+    /// a 1-day match collapses `crossday` to `none`. On those shapes the
+    /// day-mod (`i % 1 == 0`, position `j == i`, rotation `d == 0`) and the
+    /// agent-mod (`i % 1 == 0`) collapse exactly onto the legacy mapping,
+    /// so the fair distribution reproduces the old plans verbatim.
+    #[test]
+    fn one_day_and_single_agent_distribution_is_unchanged() {
+        let shapes: &[(u32, usize, usize)] = &[
+            (1, 1, 12),
+            (1, 3, 12),
+            (1, 6, 17),
+            (1, 8, 5),
+            (1, 7, 1),
+            (2, 1, 9),
+            (3, 1, 14),
+            (2, 1, 2),
+        ];
+        for &(days, agents, spots) in shapes {
+            let (problem, tour) = shaped_problem(days, agents, spots);
+            assert_eq!(
+                distribute_plan(&tour, &problem),
+                legacy_distribute_plan(&tour, &problem),
+                "days={days} agents={agents} spots={spots} must be byte-for-byte the legacy plan",
+            );
+        }
     }
 }
