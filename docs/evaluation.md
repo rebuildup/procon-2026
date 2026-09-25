@@ -86,6 +86,7 @@ just eval-list
 ```text
 loop                                  iterations / initial / seed
 greedy
+astar                                 policy
 wait                                  （baseline — 全段0）
 ```
 
@@ -98,11 +99,17 @@ loop:iterations=64:initial=random:seed=42
 loop:initial=sweep-row
 loop:initial=sweep-col
 greedy
+astar:policy=step
 ```
 
 `initial` の候補: `greedy`（既定）/ `identity` / `sweep-row` / `sweep-col` / `random`。
 `initial=random` の時は `seed` が必須で、同じ seed は常に同じツアーを返します
 （xorshift64* を使い、外部 RNG crate に依存しません）。
+
+`astar` の `policy` の候補: `step`（既定）/ `conservative` / `strict` —
+`solver-astar` の `CostPolicy` に対応。`step` は地形/交通量の重み付き step cost
+を最小化（燃料は hard constraint）、`conservative` は残燃料が減るほど step cost
+を大きくする、`strict` は残燃料が 1 以下の移動を拒否する。
 
 **1 candidate = 1 crate ではありません。** 新しいアルゴリズムは
 `bench::CandidateFactory` を実装して `CandidateRegistry` に登録するだけです。

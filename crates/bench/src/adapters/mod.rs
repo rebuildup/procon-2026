@@ -13,10 +13,12 @@
 //! algorithms; one algorithm may expose many parameter sets. Neither needs a
 //! new crate.
 
+pub mod astar_solver;
 pub mod greedy_solver;
 pub mod loop_solver;
 pub mod walk;
 
+pub use astar_solver::AstarFactory;
 pub use greedy_solver::GreedyFactory;
 pub use loop_solver::LoopFactory;
 

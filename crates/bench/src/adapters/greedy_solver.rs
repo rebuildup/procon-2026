@@ -44,24 +44,23 @@ pub struct GreedyCandidate {
 }
 
 impl GreedyCandidate {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { inner: GreedySolver::new() }
     }
-}
 
-impl Solver for GreedyCandidate {
-    fn name(&self) -> &'static str {
-        "greedy"
-    }
-
-    fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+    /// Greedy's target spot per controlled agent, one entry per position in
+    /// `ctx.agent_ids` (empty when the agent has no target).
+    ///
+    /// Extracted from [`Solver::decide`] so the `astar` candidate can reuse
+    /// the exact same variety-aware nearest assignment and differ only in
+    /// *routing* — the comparison then isolates path quality.
+    pub(crate) fn targets(&self, ctx: &SolverContext<'_>) -> Vec<Vec<HexCoord>> {
         let gctx = greedy_context(ctx);
         let intents = self.inner.decide(&gctx);
         let map = &ctx.state.setting.map;
 
         // One target per controlled agent, in `ctx.agent_ids` order.
-        let targets: Vec<Vec<HexCoord>> = ctx
-            .agent_ids
+        ctx.agent_ids
             .iter()
             .map(|id| {
                 let target = intents.iter().find_map(|a| match a {
@@ -72,9 +71,17 @@ impl Solver for GreedyCandidate {
                 });
                 target.into_iter().collect()
             })
-            .collect();
+            .collect()
+    }
+}
 
-        plan_walk(ctx, &targets)
+impl Solver for GreedyCandidate {
+    fn name(&self) -> &'static str {
+        "greedy"
+    }
+
+    fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+        plan_walk(ctx, &self.targets(ctx))
     }
 }
 
