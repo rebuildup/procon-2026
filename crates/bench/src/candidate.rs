@@ -551,6 +551,7 @@ mod tests {
             "loop:iterations=128:initial=greedy",
             "loop:initial=sweep-row",
             "loop:initial=sweep-col",
+            "loop:initial=reverse",
             "loop:iterations=64:initial=random:seed=42",
         ];
         let mut built = Vec::new();
@@ -574,6 +575,8 @@ mod tests {
         assert_eq!(keys, vec!["iterations", "initial", "seed"]);
         let json = serde_json::to_string_pretty(&cat).unwrap();
         assert!(json.contains("sweep-row"));
+        // `reverse` ships in the `initial` value list (Issue #170).
+        assert!(json.contains("reverse"));
     }
 
     #[test]
