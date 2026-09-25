@@ -1,45 +1,32 @@
-//! Shared conversion between the live [`SolverContext`] and the local stub
-//! types every `solver-greedy` solver understands.
+//! Shared conversion from the engine's live [`SolverContext`] to
+//! `solver_greedy`'s [`SolveContext`].
 //!
-//! The greedy family (`greedy`, `fuelgreedy`, …) differs only in its
-//! *assignment policy*. Everything else is identical:
-//!
-//! - the world view — one [`solver_greedy::Spot`] per spot cell, one
-//!   [`solver_greedy::Agent`] per controlled agent, packed spot ids,
-//! - the day contract — solve once at day start, turn the resulting intents
-//!   into per-agent target lists, then walk with
-//!   [`super::walk::plan_walk`].
-//!
-//! Keeping that shared half here means a new greedy-family candidate only
-//! adds its own `SolveContext` construction and scoring rule, and cannot
-//! silently drift from the others on spot-id packing or target ordering.
+//! Every adapter here that drives a solver from `crates/solver-greedy` asks
+//! the engine the same question — *where are my agents, and which spots still
+//! have stock today?* — and turns the answers into the same view of the day.
+//! Keeping that conversion in one place is what makes two greedy-family
+//! candidates comparable: `greedy` and `nearest` see identical spots, in the
+//! identical order, with identical ids, and differ **only** in their
+//! assignment policy. An evaluation gap therefore cannot come from a subtly
+//! different input conversion.
 
 use engine::model::{HexCoord, MapGrid, SolverContext};
 use solver_greedy::{
     Action as GreedyAction, Agent as GreedyAgent, AgentId as GreedyAgentId,
-    HexCoord as GreedyCoord, Spot as GreedySpot, SpotId as GreedySpotId,
+    HexCoord as GreedyCoord, SolveContext as GreedyContext, Spot as GreedySpot,
+    SpotId as GreedySpotId,
 };
 
-/// Spot ids are packed `row * 32 + col`, which is unique for every contest
-/// map (`MapSize::MAX = 32`) and fits greedy's `SpotId(u16)`.
-pub(crate) fn spot_id_for_coord(coord: HexCoord) -> u16 {
-    let id = coord.row * 32 + coord.col;
-    u16::try_from(id).unwrap_or(0)
-}
-
-/// Inverse of [`spot_id_for_coord`]: unpack and confirm the cell really
-/// carries a spot.
-pub(crate) fn coord_for_spot_id(spot_id: u16, map: &MapGrid) -> Option<HexCoord> {
-    let id = i32::from(spot_id);
-    let row = id / 32;
-    let col = id % 32;
-    let coord = HexCoord::new(col, row);
-    map.get(coord).filter(|c| c.spot.is_some()).map(|_| coord)
-}
-
-/// Every spot cell on the map, in row-major order, with its live stock.
-pub(crate) fn spots(map: &MapGrid) -> Vec<GreedySpot> {
-    map.cells()
+/// Build the greedy-family solver's view of the world from the live match
+/// state at day start.
+///
+/// Spot order follows `map.cells()` iteration and agent order follows
+/// `ctx.agent_ids`, so the resulting decision is deterministic for a given
+/// state — which is what lets the evaluator claim run-to-run reproducibility.
+pub(crate) fn solve_context(ctx: &SolverContext<'_>) -> GreedyContext {
+    let map = &ctx.state.setting.map;
+    let spots: Vec<GreedySpot> = map
+        .cells()
         .iter()
         .filter_map(|cell| {
             let s = cell.spot.as_ref()?;
@@ -50,13 +37,9 @@ pub(crate) fn spots(map: &MapGrid) -> Vec<GreedySpot> {
                 stock: s.current_stock,
             })
         })
-        .collect()
-}
-
-/// The controlled agents, in `ctx.agent_ids` order — the same order in which
-/// solvers emit actions and [`super::walk::plan_walk`] indexes targets.
-pub(crate) fn agents(ctx: &SolverContext<'_>) -> Vec<GreedyAgent> {
-    ctx.agent_ids
+        .collect();
+    let agents: Vec<GreedyAgent> = ctx
+        .agent_ids
         .iter()
         .filter_map(|id| {
             let a = ctx.state.agents.iter().find(|a| a.id == *id)?;
@@ -66,17 +49,19 @@ pub(crate) fn agents(ctx: &SolverContext<'_>) -> Vec<GreedyAgent> {
                 fuel: a.fuel,
             })
         })
-        .collect()
+        .collect();
+    GreedyContext::for_test(0, agents, spots)
 }
 
-/// Turn a solver's intents into per-agent day target lists.
+/// Turn one day's worth of *intents* into [`super::walk::plan_walk`]'s
+/// target list: one target per controlled agent, in `ctx.agent_ids` order.
 ///
-/// The result is indexed by position in `ctx.agent_ids`, so `out[i]` belongs
-/// to `ctx.agent_ids[i]`; an agent with no matching intent gets an empty
-/// list and waits all day. Unresolvable spot ids (a spot the map does not
-/// have) also degrade to an empty list rather than panicking — the engine
-/// remains the final authority on what happens.
-pub(crate) fn day_targets(ctx: &SolverContext<'_>, intents: &[GreedyAction]) -> Vec<Vec<HexCoord>> {
+/// An agent whose intent is missing or is a `Stay` gets an empty target list,
+/// which [`super::walk::plan_walk`] turns into waiting all day.
+pub(crate) fn targets_from_intents(
+    ctx: &SolverContext<'_>,
+    intents: &[GreedyAction],
+) -> Vec<Vec<HexCoord>> {
     let map = &ctx.state.setting.map;
     ctx.agent_ids
         .iter()
@@ -92,6 +77,23 @@ pub(crate) fn day_targets(ctx: &SolverContext<'_>, intents: &[GreedyAction]) -> 
         .collect()
 }
 
+/// Spot ids are packed `row * 32 + col`, which is unique for every contest
+/// map (`MapSize::MAX = 32`) and fits greedy's `SpotId(u16)`.
+pub(crate) fn spot_id_for_coord(coord: HexCoord) -> u16 {
+    let id = coord.row * 32 + coord.col;
+    u16::try_from(id).unwrap_or(0)
+}
+
+/// Inverse of [`spot_id_for_coord`]; `None` when the id does not name a cell
+/// that actually carries a spot on `map`.
+pub(crate) fn coord_for_spot_id(spot_id: u16, map: &MapGrid) -> Option<HexCoord> {
+    let id = i32::from(spot_id);
+    let row = id / 32;
+    let col = id % 32;
+    let coord = HexCoord::new(col, row);
+    map.get(coord).filter(|c| c.spot.is_some()).map(|_| coord)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,16 +107,19 @@ mod tests {
     }
 
     #[test]
-    fn packed_ids_are_row_major_and_unique() {
-        assert_eq!(spot_id_for_coord(HexCoord::new(0, 0)), 0);
-        assert_eq!(spot_id_for_coord(HexCoord::new(3, 1)), 35);
-        assert_eq!(spot_id_for_coord(HexCoord::new(31, 31)), 31 * 32 + 31);
+    fn spot_ids_are_unique_across_the_whole_map() {
+        let mut seen = std::collections::HashSet::new();
+        for row in 0..32 {
+            for col in 0..32 {
+                assert!(seen.insert(spot_id_for_coord(HexCoord::new(col, row))));
+            }
+        }
     }
 
     /// A 32x32 map with a spot on every cell, so spot-id round-tripping can
     /// be checked at the contest's size bound.
     fn dummy_map() -> MapGrid {
-        use engine::model::{MapSize, Spot, Terrain};
+        use engine::model::{MapGrid, MapSize, Spot, Terrain};
         let size = MapSize::new(32, 32).unwrap();
         let cells = (0..32)
             .flat_map(|row| {

@@ -17,11 +17,15 @@ pub mod context;
 pub mod fuelgreedy_solver;
 pub mod greedy_solver;
 pub mod loop_solver;
+pub mod multiloop_solver;
+pub mod nearest_solver;
 pub mod walk;
 
 pub use fuelgreedy_solver::FuelGreedyFactory;
 pub use greedy_solver::GreedyFactory;
 pub use loop_solver::LoopFactory;
+pub use multiloop_solver::MultiLoopFactory;
+pub use nearest_solver::NearestFactory;
 
 use engine::model::{AgentActions, Solver, SolverContext};
 

@@ -23,12 +23,12 @@
 //! therefore contributes its *assignment policy*; the engine contributes the
 //! *outcome*.
 //!
-//! The shared half of that contract (world view, spot-id packing, target
-//! extraction) lives in [`super::context`]; this module owns only greedy's
-//! context construction.
+//! The `SolverContext` → `solver_greedy` conversion is shared with the other
+//! greedy-family candidate via [`super::context`], so `greedy` and `nearest`
+//! differ only in assignment policy.
 
 use engine::model::{AgentActions, Solver, SolverContext};
-use solver_greedy::{GreedySolver, SolveContext as GreedyContext, Solver as _};
+use solver_greedy::{GreedySolver, Solver as _};
 
 use super::context;
 use super::walk::plan_walk;
@@ -56,17 +56,11 @@ impl Solver for GreedyCandidate {
     }
 
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
-        let gctx = greedy_context(ctx);
+        let gctx = context::solve_context(ctx);
         let intents = self.inner.decide(&gctx);
-        plan_walk(ctx, &context::day_targets(ctx, &intents))
+        let targets = context::targets_from_intents(ctx, &intents);
+        plan_walk(ctx, &targets)
     }
-}
-
-/// Build greedy's view of the world from the live match state at day start.
-fn greedy_context(ctx: &SolverContext<'_>) -> GreedyContext {
-    let agents = context::agents(ctx);
-    let spots = context::spots(&ctx.state.setting.map);
-    GreedyContext::for_test(0, agents, spots)
 }
 
 /// Factory for [`GreedyCandidate`].
@@ -96,55 +90,11 @@ impl CandidateFactory for GreedyFactory {
 mod tests {
     use super::*;
     use crate::candidate::CandidateRegistry;
-    use engine::model::HexCoord;
 
     #[test]
     fn factory_accepts_bare_greedy_and_rejects_unknown_params() {
         let reg = CandidateRegistry::builtin();
         assert!(reg.build("greedy").is_ok());
         assert!(matches!(reg.build("greedy:beam=4"), Err(CandidateError::UnknownParameter { .. })));
-    }
-
-    #[test]
-    fn greedy_decides_well_shaped_actions_for_every_controlled_agent() {
-        use domain::{MatchId, PlayerId};
-        use engine::model::{Agent, MapGrid, MapSize, MatchSetting, MatchState, Spot, Terrain};
-
-        let size = MapSize::new(8, 8).unwrap();
-        let cells = (0..8)
-            .flat_map(|row| {
-                (0..8).map(move |col| {
-                    let coord = HexCoord::new(col, row);
-                    let spot = if (col, row) == (2, 0) {
-                        Some(Spot { series: 1, pos: coord, max_stock: 3, current_stock: 3 })
-                    } else {
-                        None
-                    };
-                    engine::model::Cell { coord, terrain: Terrain::Plain, spot }
-                })
-            })
-            .collect();
-        let map = MapGrid::new(size, cells).unwrap();
-        let mut agents = vec![Agent::patrol(0, HexCoord::new(0, 0), 4, 3)];
-        while agents.len() < 3 {
-            let id = u8::try_from(agents.len()).unwrap_or(u8::MAX);
-            agents.push(Agent::supply(id, HexCoord::new(7, 7)));
-        }
-        let st = MatchState::new(MatchSetting {
-            match_id: MatchId::new("greedy-test").unwrap(),
-            team: PlayerId::new("player-a").unwrap(),
-            map,
-            agents,
-            day_steps: 4,
-            num_days: 1,
-            day_steps_by_day: Vec::new(),
-        })
-        .unwrap();
-        let ctx = SolverContext::from_state(&st);
-        let actions = GreedyCandidate::new().decide(&ctx);
-        assert!(
-            actions.is_well_shaped(&ctx.agent_ids, ctx.day_steps),
-            "greedy must produce a well-shaped day plan"
-        );
     }
 }

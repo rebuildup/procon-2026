@@ -66,12 +66,18 @@ impl FuelGreedyCandidate {
     /// Build `FuelTrafficGreedy`'s world view from the live match state at
     /// day start: fuel per controlled agent, every spot with live stock, and
     /// this candidate's (empty) traffic map.
+    ///
+    /// The world view itself comes from the shared `context::solve_context`
+    /// (same spots / same agents in the same order as `greedy` and
+    /// `nearest`); only the context *type* and the fuel/traffic knobs are
+    /// specific to this candidate.
     fn solve_context(&self, ctx: &SolverContext<'_>) -> FuelTrafficSolveContext {
+        let base = context::solve_context(ctx);
         FuelTrafficSolveContext {
             step: 0,
             start_of_day: true,
-            agents: context::agents(ctx),
-            spots: context::spots(&ctx.state.setting.map),
+            agents: base.agents,
+            spots: base.spots,
             traffic: self.traffic.clone(),
             fuel_low_threshold: DEFAULT_FUEL_LOW_THRESHOLD,
         }
@@ -80,7 +86,7 @@ impl FuelGreedyCandidate {
     /// One target per controlled agent, indexed like `ctx.agent_ids`.
     fn day_targets(&self, ctx: &SolverContext<'_>) -> Vec<Vec<HexCoord>> {
         let intents = self.inner.decide(&self.solve_context(ctx));
-        context::day_targets(ctx, &intents)
+        context::targets_from_intents(ctx, &intents)
     }
 }
 
