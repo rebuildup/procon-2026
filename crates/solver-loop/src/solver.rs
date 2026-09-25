@@ -5,6 +5,8 @@
 //!    - `GreedyNearestNeighbor` — start at the first spot, repeatedly jump
 //!      to the nearest unvisited spot. O(n^2).
 //!    - `Identity` — visit spots in input order (useful as a baseline).
+//!    - `Reverse` — the exact reversal of `Identity` (input order, last →
+//!      first). Also deterministic, no coordinates involved.
 //! 2. Wrap the visit order into a closed loop (return to the first spot).
 //! 3. Refine: while the previous iteration improved at least one move, for
 //!    each pair `(i, j)` try a 2-opt swap; if better, keep; also try
@@ -53,6 +55,17 @@ use crate::types::{Agent, Spot};
 pub enum InitialStrategy {
     /// Visit spots in input order, then close the loop.
     Identity,
+    /// Visit spots in **reverse input order**, then close the loop —
+    /// exactly [`InitialStrategy::Identity`]'s ordering played backwards
+    /// (`initial_tour(Reverse) == initial_tour(Identity).rev()`).
+    ///
+    /// Deterministic and coordinate-independent: the tour depends only on
+    /// the order spots appear in the problem, never on coordinates or an
+    /// RNG, so the same spot list always yields the same tour. It is the
+    /// opposite end of the input order from `Identity`, which changes
+    /// which spot each agent is sent to first (the round-robin plan
+    /// distribution keys off tour position).
+    Reverse,
     /// Nearest-neighbor greedy: start at the first spot, repeatedly jump
     /// to the nearest unvisited spot. O(n^2).
     #[default]
@@ -214,6 +227,13 @@ impl LoopSolver {
         let spot_ids: Vec<u32> = problem.spots.iter().map(|s| s.id).collect();
         match self.initial {
             InitialStrategy::Identity => spot_ids,
+            InitialStrategy::Reverse => {
+                // Reverse of the identity ordering: input order, last -> first.
+                // Pinned by `tests::reverse_is_identity_ordering_reversed`.
+                let mut reversed = spot_ids;
+                reversed.reverse();
+                reversed
+            }
             InitialStrategy::GreedyNearestNeighbor => greedy_nearest_neighbor(&problem.spots),
             InitialStrategy::SweepRow => sweep_row(&problem.spots),
             InitialStrategy::SweepCol => sweep_col(&problem.spots),
@@ -565,6 +585,7 @@ mod tests {
         ];
         for initial in [
             InitialStrategy::Identity,
+            InitialStrategy::Reverse,
             InitialStrategy::GreedyNearestNeighbor,
             InitialStrategy::SweepRow,
             InitialStrategy::SweepCol,
@@ -576,6 +597,45 @@ mod tests {
             sorted.sort_unstable();
             assert_eq!(sorted, vec![0, 1, 2, 3, 4], "strategy {initial:?} is not a permutation");
         }
+    }
+
+    /// `InitialStrategy::Reverse` semantics, pinned: the tour is exactly
+    /// the identity (input) ordering played backwards. Same spot list ⇒
+    /// same tour, every call — the determinism the other variants have.
+    #[test]
+    fn reverse_is_identity_ordering_reversed() {
+        let spots = vec![
+            spot(0, 0, 0, "a"),
+            spot(1, 2, 0, "b"),
+            spot(2, 4, 1, "a"),
+            spot(3, 1, 2, "b"),
+            spot(4, 3, 3, "c"),
+        ];
+        let problem = SolveProblem::new(spots.clone(), vec![agent(0, 0, 0)], 1);
+        let identity_solver = LoopSolver::new(InitialStrategy::Identity, 0);
+        let reverse_solver = LoopSolver::new(InitialStrategy::Reverse, 0);
+
+        let identity = identity_solver.initial_tour(&problem);
+        let reverse = reverse_solver.initial_tour(&problem);
+        assert_eq!(reverse, vec![4, 3, 2, 1, 0], "reverse is input order, last -> first");
+        assert_eq!(
+            reverse,
+            identity.iter().rev().copied().collect::<Vec<u32>>(),
+            "reverse must be the exact reversal of identity"
+        );
+        // Deterministic: repeated calls on the same problem agree.
+        assert_eq!(reverse, reverse_solver.initial_tour(&problem));
+        // The whole solve is deterministic too (refinement is deterministic
+        // given the initial tour).
+        let a = reverse_solver.solve(&problem).expect("solve a");
+        let b = reverse_solver.solve(&problem).expect("solve b");
+        assert_eq!(a, b, "Reverse solve must be reproducible");
+        // Unlike the sweeps, Reverse follows input order — reordering the
+        // input spots changes the tour (that is the point of the variant).
+        let mut reordered = spots;
+        reordered.swap(0, 4);
+        let reordered_tour = reverse_solver.initial_tour(&SolveProblem::new(reordered, vec![], 1));
+        assert_ne!(reverse, reordered_tour);
     }
 
     /// `loop:initial=random:seed=N` must be reproducible: the same seed on

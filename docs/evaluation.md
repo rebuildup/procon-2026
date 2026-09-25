@@ -104,7 +104,9 @@ just eval-list
 
 ```text
 loop                                  iterations / initial / seed / operators
+multiloop                             grid / kmeans / seed / refine
 greedy
+nearest
 wait                                  （baseline — 全段0）
 ```
 
@@ -117,10 +119,14 @@ loop:iterations=64:initial=random:seed=42
 loop:initial=sweep-row
 loop:initial=sweep-col
 loop:iterations=32:initial=greedy:operators=extended
+multiloop:grid=2x2
+multiloop:kmeans=4:seed=42
 greedy
+nearest
 ```
 
-`initial` の候補: `greedy`（既定）/ `identity` / `sweep-row` / `sweep-col` / `random`。
+`initial` の候補: `greedy`（既定）/ `identity` / `reverse` / `sweep-row` / `sweep-col` / `random`。
+`reverse` は入力順の完全な反転（`identity` の逆）で、座標にも seed にも依存しない決定的ツアーです。
 `initial=random` の時は `seed` が必須で、同じ seed は常に同じツアーを返します
 （xorshift64* を使い、外部 RNG crate に依存しません）。
 
@@ -129,6 +135,20 @@ greedy
 挙動は変わりません。`extended` は古典 7 手の 3-opt と or-opt（長さ ≤3 の
 セグメント移動）を追加します。パラメータは id の末尾に追記するため
 既存 canonical ID の形は変わりません。
+
+`multiloop` は `solver-loop::MultiLoopComposer` を evaluator に接続した
+領域分割候補（Issue #190）。**`grid` と `kmeans` のどちらか一方だけ**を指定します。
+
+| key | 値 | 規則 |
+|---|---|---|
+| `grid` | `<rows>x<cols>`（例 `2x2`） | 各辺 1..=32（`MapSize::MAX`）、`rows*cols <= 64`。`grid` と `kmeans` は排他 |
+| `kmeans` | `k`（例 `kmeans=4`、`k=4` ではない） | 1..=64。`grid` と `kmeans` は排他 |
+| `seed` | u64 | `kmeans` が在る時 **必須**、`grid` の時 **拒否**（`loop` の `initial=random` と同じ規則） |
+| `refine` | `true` / `false` | region 毎の 2-opt refinement。省略時の既定は composer 自身の既定どおり `true` |
+
+offline の `initial=` と live CLI の `--loop-initial-strategy` の対応は
+[`docs/development.md`](development.md)（Issue #170 の節）と
+`crates/cli/src/initial_strategy.rs` が SoT。
 
 **1 candidate = 1 crate ではありません。** 新しいアルゴリズムは
 `bench::CandidateFactory` を実装して `CandidateRegistry` に登録するだけです。

@@ -347,7 +347,9 @@ impl CandidateRegistry {
         let mut r = Self::new();
         r.register(Arc::new(crate::adapters::WaitFactory));
         r.register(Arc::new(crate::adapters::LoopFactory));
+        r.register(Arc::new(crate::adapters::MultiLoopFactory));
         r.register(Arc::new(crate::adapters::GreedyFactory));
+        r.register(Arc::new(crate::adapters::NearestFactory));
         r
     }
 
@@ -621,6 +623,8 @@ mod tests {
             "loop:iterations=64:initial=random:seed=42",
             "loop:initial=sweep-row",
             "loop:initial=sweep-col",
+            "greedy",
+            "nearest",
             "mcts:iterations=200",
         ] {
             let spec = CandidateSpec::parse(id).unwrap_or_else(|e| panic!("{id}: {e}"));
@@ -664,8 +668,35 @@ mod tests {
     #[test]
     fn builtin_registry_knows_every_named_algorithm() {
         let reg = CandidateRegistry::builtin();
-        for algo in ["wait", "loop", "greedy"] {
+        for algo in ["wait", "loop", "multiloop", "greedy", "nearest"] {
             assert!(reg.factory(algo).is_some(), "missing algorithm {algo}");
+        }
+    }
+
+    /// A registered algorithm must be usable as a bare canonical id: parse →
+    /// build → id must round-trip without touching the parameter grammar.
+    #[test]
+    fn builtin_bare_ids_round_trip_and_build() {
+        let reg = CandidateRegistry::builtin();
+        for id in ["wait", "loop", "greedy", "nearest"] {
+            let spec = CandidateSpec::parse(id).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(spec.id(), id, "bare id must round-trip unchanged");
+            let built = reg.build(id).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(built.id(), id);
+            assert!(built.build_solver().is_ok(), "{id} must build a solver");
+        }
+    }
+
+    #[test]
+    fn multiloop_candidate_ids_round_trip_exactly() {
+        for id in [
+            "multiloop:grid=2x2",
+            "multiloop:grid=3x3",
+            "multiloop:kmeans=4:seed=42",
+            "multiloop:grid=2x2:refine=false",
+        ] {
+            let spec = CandidateSpec::parse(id).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(spec.id(), id, "id must round-trip unchanged");
         }
     }
 
@@ -684,6 +715,7 @@ mod tests {
             "loop:iterations=128:initial=greedy",
             "loop:initial=sweep-row",
             "loop:initial=sweep-col",
+            "loop:initial=reverse",
             "loop:iterations=64:initial=random:seed=42",
         ];
         let mut built = Vec::new();
@@ -709,6 +741,8 @@ mod tests {
         assert_eq!(keys, vec!["iterations", "initial", "seed", "operators"]);
         let json = serde_json::to_string_pretty(&cat).unwrap();
         assert!(json.contains("sweep-row"));
+        // `reverse` ships in the `initial` value list (Issue #170).
+        assert!(json.contains("reverse"));
     }
 
     #[test]

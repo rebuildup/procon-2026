@@ -190,10 +190,12 @@ pub struct TournamentConfig {
     pub token: String,
     /// Solver names to evaluate. Must be non-empty.
     pub solvers: Vec<String>,
-    /// Initial-strategy label for the `loop` solver.
-    /// `GreedyNearestNeighbor` (default) or `Identity` (fallback when the
-    /// label is unrecognised — `Identity` is the safest deterministic
-    /// stand-in and avoids producing a mystery behaviour).
+    /// Initial strategy for the `loop` solver. Parsed from
+    /// `--loop-initial-strategy` by
+    /// [`crate::initial_strategy::parse_initial_strategy`] — the same
+    /// parser `procon coordinator` uses — which **rejects unknown labels**
+    /// rather than falling back (Issue #170). Its offline counterpart is
+    /// the `loop:initial=<label>` candidate parameter.
     pub loop_initial_strategy: InitialStrategy,
     /// Iteration cap for the `loop` solver's local search.
     pub loop_iterations: u32,
@@ -223,23 +225,6 @@ impl Default for TournamentConfig {
             team_id: "team-p0".to_owned(),
             state_output_dir: None,
             auto_restart_server: None,
-        }
-    }
-}
-
-impl TournamentConfig {
-    /// Parse a `GreedyNearestNeighbor` / `Identity` style label into an
-    /// [`InitialStrategy`]. Unknown labels degrade to
-    /// [`InitialStrategy::Identity`] so a future variant can ship without
-    /// breaking the harness; callers that need to reject unknown names
-    /// should validate before constructing the config.
-    #[must_use]
-    pub fn parse_initial_strategy(label: &str) -> InitialStrategy {
-        match label {
-            "GreedyNearestNeighbor" => InitialStrategy::GreedyNearestNeighbor,
-            // Both `Identity` and unrecognised labels fall through to the
-            // safest deterministic stand-in. Documented defensive fallback.
-            _ => InitialStrategy::Identity,
         }
     }
 }
@@ -460,22 +445,45 @@ mod tests {
         assert_eq!(compute_protocol_progress(&outcome), 2 * 100 + 5);
     }
 
+    /// Label → `TournamentConfig.loop_initial_strategy` → label round-trip
+    /// for the whole live label set, plus the Issue #170 guarantee that an
+    /// unknown label errors instead of silently becoming `Identity`.
+    /// (The parser itself lives in [`crate::initial_strategy`]; the CLI
+    /// flag test for both subcommands is in `main.rs`.)
     #[test]
-    fn parse_initial_strategy_recognises_known_labels() {
-        assert_eq!(
-            TournamentConfig::parse_initial_strategy("GreedyNearestNeighbor"),
-            InitialStrategy::GreedyNearestNeighbor
-        );
-        assert_eq!(TournamentConfig::parse_initial_strategy("Identity"), InitialStrategy::Identity);
-    }
+    fn tournament_config_round_trips_every_initial_label() {
+        use crate::initial_strategy::{initial_strategy_label, parse_initial_strategy};
 
-    #[test]
-    fn parse_initial_strategy_falls_back_to_identity_for_unknown_labels() {
-        // Documented defensive fallback: future strategies should keep
-        // working until the harness grows explicit support for them.
-        assert_eq!(
-            TournamentConfig::parse_initial_strategy("GreedyZoneCoverage"),
-            InitialStrategy::Identity
+        for (label, expected) in [
+            ("greedy", InitialStrategy::GreedyNearestNeighbor),
+            ("identity", InitialStrategy::Identity),
+            ("reverse", InitialStrategy::Reverse),
+            ("sweep-row", InitialStrategy::SweepRow),
+            ("sweep-col", InitialStrategy::SweepCol),
+            ("random:42", InitialStrategy::Random { seed: 42 }),
+        ] {
+            let parsed = parse_initial_strategy(label).unwrap_or_else(|e| panic!("{label}: {e}"));
+            let cfg =
+                TournamentConfig { loop_initial_strategy: parsed, ..TournamentConfig::default() };
+            assert_eq!(cfg.loop_initial_strategy, expected, "label {label}");
+            assert_eq!(
+                initial_strategy_label(cfg.loop_initial_strategy),
+                label,
+                "config must round-trip back to the canonical label"
+            );
+        }
+
+        // Unknown label ⇒ explicit error, never a silent Identity fallback.
+        let err = parse_initial_strategy("GreedyZoneCoverage")
+            .expect_err("unknown labels must be rejected");
+        assert!(
+            err.to_string().contains("greedy | identity | reverse"),
+            "error must list the accepted labels: {err}"
+        );
+        assert_ne!(
+            parse_initial_strategy("GreedyZoneCoverage"),
+            Ok(InitialStrategy::Identity),
+            "a typo must not resolve to Identity"
         );
     }
 
