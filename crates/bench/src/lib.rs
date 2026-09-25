@@ -23,6 +23,7 @@
 //! | [`candidate`] | candidate identity (`loop:iterations=32:initial=greedy`) + registry |
 //! | [`adapters`] | turn real solver crates into [`engine::model::Solver`]s |
 //! | [`evaluate`] | the canonical path: candidate × case → [`evaluate::RunRecord`] |
+//! | [`generator`] | seed-fixed generated cases (`--generated`), opt-in complement to the fixtures |
 //! | [`aggregate`] | per-case ranking, win / draw / lose vs baseline, summaries |
 //! | [`tournament`] | N cases × M candidates batch runner + Markdown rendering |
 //! | [`report`] | JSONL / JSON persistence |
@@ -62,6 +63,7 @@ pub mod candidate;
 pub mod case;
 pub mod evaluate;
 pub mod fixture;
+pub mod generator;
 pub mod report;
 pub mod tournament;
 
@@ -76,6 +78,9 @@ pub use candidate::{
 pub use case::{CaseError, CaseSource, CaseSpec, Corpus};
 pub use evaluate::{EvalConfig, Evaluator, RunRecord, RunStatus, source_commit_sha};
 pub use fixture::{FixtureCategory, FixtureError, FixtureResult, MatchFixture, MatchFixtureLoader};
+pub use generator::{
+    Archetype, GENERATOR_VERSION, GenerationError, GenerationParams, MAX_GENERATED_DAYS, SizeClass,
+};
 pub use report::{ReportError, ReportPaths, read_runs, write_runs};
 pub use tournament::{TournamentConfig, TournamentError, TournamentOutcome, TournamentRunner};
 

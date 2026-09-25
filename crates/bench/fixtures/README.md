@@ -17,6 +17,13 @@ Each fixture matches the official Procon 37 `MatchSetting` shape
 (`name`, `description`, `category`) so the runner can pick fixtures by
 characteristic without re-deriving labels.
 
+> **Complementary, not replaced:** this directory stays the fixed corpus.
+> Seed-fixed *generated* cases (Issue #185) are opt-in via
+> `procon-eval --generated` and never change what `--cases all` means here —
+> including the procedure for promoting a high-value generated case into a
+> new fixture in this directory. See
+> [`docs/evaluation.md`](../../../docs/evaluation.md#generated-corpusseed-固定の再生成-case).
+
 ## Layout
 
 ```

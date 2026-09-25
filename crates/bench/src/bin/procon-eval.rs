@@ -13,6 +13,16 @@
 //!     --baseline wait \
 //!     --output-dir target/eval
 //!
+//! # fixtures + seed-fixed generated cases in one batch (Issue #185).
+//! # `--cases all` still means "the bundled fixtures only"; generated cases
+//! # are opt-in, and every candidate in the batch sees this same case set.
+//! procon-eval \
+//!     --cases all \
+//!     --generated 'open:seed=1,road-heavy:seed=7' \
+//!     --candidates 'loop:iterations=32:initial=greedy,wait' \
+//!     --baseline wait \
+//!     --output-dir target/eval
+//!
 //! # the candidate axis the registry supports today
 //! procon-eval --list-candidates
 //! ```
@@ -49,8 +59,22 @@ struct Args {
 
     /// Comma-separated case names (`small-8x8,medium-16x16`), or `all` for the
     /// whole bundled fixture corpus.
+    ///
+    /// `all` (and every other value) selects **fixtures only** — generated
+    /// cases are never implied, so existing evidence keeps its meaning. Add
+    /// them with `--generated`.
     #[arg(long, default_value = "all")]
     cases: String,
+
+    /// Opt-in generated cases, comma-separated with explicit seeds, e.g.
+    /// `open:seed=1,road-heavy:seed=7:size=small:days=3`.
+    ///
+    /// Grammar: `<archetype>[:seed=<u64>][:size=small|medium|large]
+    /// [:days=1..3]`, where `seed=` is required — explicit seeds are what let
+    /// sibling candidates be compared on one identical case axis. Appended to
+    /// the `--cases` selection; an empty value selects nothing.
+    #[arg(long, default_value = "")]
+    generated: String,
 
     /// Comma-separated candidate ids, e.g.
     /// `loop:iterations=32:initial=greedy,greedy,wait`.
@@ -152,8 +176,10 @@ fn run() -> Exit {
     }
 
     // Ids themselves are parsed and validated by `build_config`, so the flag
-    // → config path is the one the tests cover.
-    let corpus = match load_corpus(&args.cases) {
+    // → config path is the one the tests cover. Corpus construction (fixtures
+    // + opt-in generated cases) fails fast here, before any candidate runs —
+    // a generation failure can never become a run record.
+    let corpus = match load_corpus(&args.cases, &args.generated) {
         Ok(c) => c,
         Err(e) => return Exit::Fail(e),
     };
@@ -398,15 +424,36 @@ fn format_candidate_error(subject: &str, e: &CandidateError) -> String {
     }
 }
 
-fn load_corpus(spec: &str) -> Result<Corpus, String> {
-    if spec.trim().eq_ignore_ascii_case("all") {
-        return Corpus::bundled().map_err(|e| format!("could not load the bundled corpus: {e}"));
+/// Build the batch corpus: the `--cases` fixture selection, then any opt-in
+/// `--generated` cases appended in written order.
+///
+/// `--cases` is untouched by the generator (`all` still means the bundled
+/// fixtures only), so generated cases can never silently change what an
+/// existing invocation evaluates. Sibling candidates share this one corpus
+/// object, which is what puts them on a single case axis.
+///
+/// # Errors
+/// Fixture load errors, or a [`bench::GenerationError`] whose message starts
+/// with `case generation failure` — distinct from any candidate failure.
+fn load_corpus(cases: &str, generated: &str) -> Result<Corpus, String> {
+    let mut fixtures = if cases.trim().eq_ignore_ascii_case("all") {
+        Corpus::bundled().map_err(|e| format!("could not load the bundled corpus: {e}"))?
+    } else {
+        let names: Vec<&str> = cases.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+        if names.is_empty() {
+            return Err("--cases did not name any case".to_owned());
+        }
+        Corpus::bundled_subset(&names)
+            .map_err(|e| format!("could not load cases {names:?}: {e}"))?
+    };
+
+    let params = bench::generator::parse_selection(generated).map_err(|e| e.to_string())?;
+    if params.is_empty() {
+        return Ok(fixtures);
     }
-    let names: Vec<&str> = spec.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
-    if names.is_empty() {
-        return Err("--cases did not name any case".to_owned());
-    }
-    Corpus::bundled_subset(&names).map_err(|e| format!("could not load cases {names:?}: {e}"))
+    let generated = bench::generator::build_corpus(&params).map_err(|e| e.to_string())?;
+    fixtures.cases.extend(generated.cases);
+    Corpus::new(fixtures.cases).map_err(|e| e.to_string())
 }
 
 fn git_head() -> Option<String> {
@@ -557,5 +604,87 @@ mod tests {
             runner.resolved_harness_deadline(&case),
             Duration::from_secs(60) + Duration::from_millis(1234)
         );
+    }
+
+    /// Number of bundled fixtures — the `--cases all` meaning that must not
+    /// drift when generated cases are added.
+    fn bundled_count() -> usize {
+        bench::fixture::MatchFixtureLoader::bundled_fixtures().len()
+    }
+
+    /// The `--generated` flag parses and actually reaches corpus selection.
+    #[test]
+    fn the_generated_flag_selects_generated_cases() {
+        // `days=2` is deliberately off road-heavy's default (3), so the id
+        // must spell both overrides out — two specs that differ only there
+        // must not collide.
+        let args = parse(&["--generated", "open:seed=1,road-heavy:seed=7:size=small:days=2"]);
+        assert_eq!(args.generated, "open:seed=1,road-heavy:seed=7:size=small:days=2");
+
+        let corpus = load_corpus(&args.cases, &args.generated).expect("selection loads");
+        // `--cases small-8x8` (the parse helper's default) + 2 generated.
+        assert_eq!(corpus.len(), 3);
+        assert!(corpus.case_ids().contains(&"fixture:small-8x8"));
+        assert!(corpus.case_ids().contains(&"generated:v1:open:seed=1"));
+        assert!(corpus.case_ids().contains(&"generated:v1:road-heavy:seed=7:size=small:days=2"));
+
+        // The generated cases carry full provenance into the records' source.
+        for case in &corpus.cases {
+            if case.case_id.starts_with("generated:") {
+                assert!(case.seed.is_some(), "{} must carry a seed", case.case_id);
+                let params = case.generation_parameters.as_ref().expect("params recorded");
+                assert_eq!(params["generator_version"], bench::GENERATOR_VERSION);
+            }
+        }
+    }
+
+    /// Generated cases are opt-in: `--cases all` alone still evaluates exactly
+    /// the bundled fixtures, so no existing evidence changes meaning.
+    #[test]
+    fn cases_all_still_means_the_bundled_fixtures_only() {
+        let fixtures_only = load_corpus("all", "").expect("bundled corpus loads");
+        assert_eq!(fixtures_only.len(), bundled_count());
+        assert!(fixtures_only.case_ids().iter().all(|id| id.starts_with("fixture:")));
+
+        let mixed = load_corpus("all", "open:seed=1,road-heavy:seed=7").expect("mixed loads");
+        assert_eq!(mixed.len(), bundled_count() + 2);
+        // Fixtures first, generated appended — order is stable per selection.
+        assert_eq!(mixed.case_ids()[0], "fixture:openapi-sample");
+        assert_eq!(mixed.case_ids()[bundled_count()], "generated:v1:open:seed=1");
+        assert_eq!(mixed.case_ids()[bundled_count() + 1], "generated:v1:road-heavy:seed=7");
+    }
+
+    /// One corpus object per batch: every sibling candidate runs against this
+    /// exact case set, which is what keeps comparisons on one case axis.
+    #[test]
+    fn one_selection_is_one_shared_case_set() {
+        let corpus =
+            load_corpus("all", "many-series:seed=3,road-heavy:seed=3").expect("selection loads");
+        let ids = corpus.case_ids();
+        let mut unique = ids.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len(), "case ids must be unique");
+        // The two generated siblings share one seed per archetype: comparing
+        // candidates on this corpus varies the candidate, never the cases.
+        assert!(ids.contains(&"generated:v1:many-series:seed=3"));
+        assert!(ids.contains(&"generated:v1:road-heavy:seed=3"));
+    }
+
+    /// A rejected selection surfaces as a *case generation failure* — a
+    /// corpus-build error — not as a run record that could look like a
+    /// candidate failing.
+    #[test]
+    fn a_bad_generated_selection_is_a_case_generation_failure() {
+        let err = load_corpus("all", "open").expect_err("seed= is required");
+        assert!(err.starts_with("case generation failure"), "{err}");
+        assert!(err.contains("seed= is required"), "{err}");
+
+        let err = load_corpus("all", "bogus:seed=1").expect_err("unknown archetype");
+        assert!(err.starts_with("case generation failure"), "{err}");
+
+        let err = load_corpus("all", "open:seed=1,open:seed=1").expect_err("duplicate ids");
+        assert!(err.starts_with("case generation failure"), "{err}");
+        assert!(err.contains("duplicate"), "{err}");
     }
 }
