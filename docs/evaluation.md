@@ -124,7 +124,8 @@ greedy
 nearest
 ```
 
-`initial` の候補: `greedy`（既定）/ `identity` / `sweep-row` / `sweep-col` / `random`。
+`initial` の候補: `greedy`（既定）/ `identity` / `reverse` / `sweep-row` / `sweep-col` / `random`。
+`reverse` は入力順の完全な反転（`identity` の逆）で、座標にも seed にも依存しない決定的ツアーです。
 `initial=random` の時は `seed` が必須で、同じ seed は常に同じツアーを返します
 （xorshift64* を使い、外部 RNG crate に依存しません）。
 
@@ -137,6 +138,10 @@ nearest
 | `kmeans` | `k`（例 `kmeans=4`、`k=4` ではない） | 1..=64。`grid` と `kmeans` は排他 |
 | `seed` | u64 | `kmeans` が在る時 **必須**、`grid` の時 **拒否**（`loop` の `initial=random` と同じ規則） |
 | `refine` | `true` / `false` | region 毎の 2-opt refinement。省略時の既定は composer 自身の既定どおり `true` |
+
+offline の `initial=` と live CLI の `--loop-initial-strategy` の対応は
+[`docs/development.md`](development.md)（Issue #170 の節）と
+`crates/cli/src/initial_strategy.rs` が SoT。
 
 **1 candidate = 1 crate ではありません。** 新しいアルゴリズムは
 `bench::CandidateFactory` を実装して `CandidateRegistry` に登録するだけです。
