@@ -105,6 +105,7 @@ just eval-list
 ```text
 loop                                  iterations / initial / seed
 greedy
+nearest
 wait                                  （baseline — 全段0）
 ```
 
@@ -117,6 +118,7 @@ loop:iterations=64:initial=random:seed=42
 loop:initial=sweep-row
 loop:initial=sweep-col
 greedy
+nearest
 ```
 
 `initial` の候補: `greedy`（既定）/ `identity` / `sweep-row` / `sweep-col` / `random`。
