@@ -30,6 +30,7 @@
 - 1 sprint = 1 target semantic version. Sprint start cuts `release-<major>-<minor>-<patch>` from `main`.
 - 1 top-level Issue = 1 durable ticket branch named **only with the Issue number**.
 - After a meaningful first commit, open a Draft PR from the ticket branch to the active `release-x-y-z` branch.
+- **Solver exploration exception**: candidate branches may use another candidate branch as the PR base to form a stacked candidate DAG. The canonical rule is `docs/contest/solver-exploration.md`; `1 candidate delta = 1 Issue = 1 numbered branch = 1 PR` remains mandatory.
 - The release PR `release-x-y-z -> main` represents release integration.
 
 ## Engineering decision precedence
@@ -137,3 +138,4 @@ Do not re-read the full `project-init` prompt for routine tasks — load only th
 - ADRs: `docs/adr/`
 - Troubleshooting: `docs/troubleshooting.md`
 - Roles / responsibilities: `docs/roles/`
+- Solver candidate DAG / stacked PR workflow: `docs/contest/solver-exploration.md`

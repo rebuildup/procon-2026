@@ -122,10 +122,11 @@
 
 ## 7. 検証・ベンチ方針
 
-- **簡易サーバー** (`docs/pdf/...簡易版の回答用サーバー`) を使って実機動作確認
-- 過去問題の再現: 公式が例題マップを公開しているか確認
-- ヘリック法（自チーム内で複数戦略を並走させ、一番良いものを採用）は
-  実装が重いため本選直前まで保留
+- canonical offline evaluator (#178) で複数 candidate × 同一 corpus を継続比較する。
+- solver の改良案は既存 candidate を上書きせず、`docs/contest/solver-exploration.md` に従って child/sibling branch + stacked PR として保持する。
+- 有望 candidate のみ非公式 arena (#179) に投入し、外部環境で追加検証する。
+- **簡易サーバー** (`docs/pdf/...簡易版の回答用サーバー`) は protocol / coordinator の実機互換確認に使う。
+- 固定 fixture と seed 固定 generated case を使い、同一条件で再現可能な比較 evidence を残す。
 
 ## 8. 参考
 
