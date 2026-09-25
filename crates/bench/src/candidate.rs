@@ -308,6 +308,7 @@ impl CandidateRegistry {
         r.register(Arc::new(crate::adapters::WaitFactory));
         r.register(Arc::new(crate::adapters::LoopFactory));
         r.register(Arc::new(crate::adapters::GreedyFactory));
+        r.register(Arc::new(crate::adapters::NearestFactory));
         r
     }
 
@@ -488,6 +489,8 @@ mod tests {
             "loop:iterations=64:initial=random:seed=42",
             "loop:initial=sweep-row",
             "loop:initial=sweep-col",
+            "greedy",
+            "nearest",
             "mcts:iterations=200",
         ] {
             let spec = CandidateSpec::parse(id).unwrap_or_else(|e| panic!("{id}: {e}"));
@@ -531,8 +534,22 @@ mod tests {
     #[test]
     fn builtin_registry_knows_every_named_algorithm() {
         let reg = CandidateRegistry::builtin();
-        for algo in ["wait", "loop", "greedy"] {
+        for algo in ["wait", "loop", "greedy", "nearest"] {
             assert!(reg.factory(algo).is_some(), "missing algorithm {algo}");
+        }
+    }
+
+    /// A registered algorithm must be usable as a bare canonical id: parse →
+    /// build → id must round-trip without touching the parameter grammar.
+    #[test]
+    fn builtin_bare_ids_round_trip_and_build() {
+        let reg = CandidateRegistry::builtin();
+        for id in ["wait", "loop", "greedy", "nearest"] {
+            let spec = CandidateSpec::parse(id).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(spec.id(), id, "bare id must round-trip unchanged");
+            let built = reg.build(id).unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(built.id(), id);
+            assert!(built.build_solver().is_ok(), "{id} must build a solver");
         }
     }
 
