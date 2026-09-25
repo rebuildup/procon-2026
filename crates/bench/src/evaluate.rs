@@ -985,6 +985,42 @@ mod tests {
         assert_eq!(stamped.team, "parent-team");
     }
 
+    /// A record's `candidate_id` comes from exactly one place —
+    /// [`Evaluator::stamp_identity`] — and reads the resolved candidate's id,
+    /// which the registry canonicalises. So a spec written in a shuffled
+    /// parameter order can never reach `runs.jsonl` as a second identity for
+    /// one configuration. (No simulation runs here: identity stamping is the
+    /// whole subject.)
+    #[test]
+    fn stamped_candidate_id_is_the_canonical_schema_order() {
+        let registry = CandidateRegistry::builtin();
+        let candidate = registry
+            .build("loop:initial=greedy:iterations=32")
+            .expect("a shuffled id is still a valid id");
+        let case = CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+
+        let evaluator = Evaluator::new(EvalConfig {
+            source_commit_sha: "parent-sha".to_owned(),
+            team: PlayerId::new("parent-team").expect("valid team"),
+            harness_deadline: HarnessDeadline::default(),
+            isolation: Isolation::Thread,
+        });
+
+        // Pretend a worker came back spelling the id its own way.
+        let child_record = RunRecord::unscored(
+            "loop:initial=greedy:iterations=32",
+            &case,
+            "child-sha",
+            RunStatus::Panic,
+            Some("child failed".to_owned()),
+            42,
+        );
+
+        let stamped = evaluator.stamp_identity(child_record, &candidate, &case);
+        assert_eq!(stamped.candidate_id, "loop:iterations=32:initial=greedy");
+        assert_eq!(stamped.candidate_id, candidate.id());
+    }
+
     #[test]
     fn days_over_budget_flags_only_the_late_days() {
         assert_eq!(days_over_budget(&[100, 1_000_001], &[1_000_000, 1_000_000]), vec![1]);
