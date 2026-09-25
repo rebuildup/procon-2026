@@ -126,6 +126,8 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
 ```
 
 `--cases all`（既定）は `crates/bench/fixtures/maps/` の 8 件すべてを使います。
+**`--cases` は fixture 専用**です。seed 固定の generated case は `--generated` で
+明示的に加えます（[generated corpus](#generated-corpusseed-固定の再生成-case) を参照）。
 
 ### 3. baseline と比較する
 
@@ -172,10 +174,190 @@ source                  fixture | generated
 setting                 本体（公式の試合設定 JSON 形状）
 ```
 
-固定 fixture はそれ自体が真値なので `seed` を持ちません。将来の random map
-generator は `CaseSpec::generated(case_id, seed, params, setting)` を通るだけで、
-評価器の再設計は不要です — `case_id` / `seed` / `generation_parameters` は
+固定 fixture はそれ自体が真値なので `seed` を持ちません。generated case は
+`CaseSpec::generated(case_id, seed, params, setting)` を通っており（実装は
+`crates/bench/src/generator.rs`）、`case_id` / `seed` / `generation_parameters` は
 すべて `RunRecord` に保存されます。
+
+## generated corpus（seed 固定の再生成 case）
+
+固定 fixture 8 件だけではサンプルが狭く、少数 fixture に過学習した candidate や
+1 枚の map の偶然に塗り替えられた淘汰が起き得ます（Issue #185）。generated
+corpus は fixture を**置き換えず補完**します。原則:
+
+- 同じ `generator_version` + `generation_parameters` + `seed` ⇒ **バイト単位で同一**の
+  case が再生成される。
+- 生成結果は公式 validator / `engine::from_wire` / engine の `MatchState::new` を
+  **すべて通ってから corpus に入る**（通らなければ case generation failure）。
+- candidate ごとに別の seed を使わない。比較する siblings は**同一 seed set** を使う。
+- 採点経路・score semantics は変更しない（生成するのは case だけで、scoring は
+  既存の canonical path のまま）。
+
+### 使い方: `--generated`
+
+```bash
+# 8 fixture + 生成 case を 1 バッチで（generated は opt-in）
+PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
+  cargo run -q -p bench --bin procon-eval -- \
+    --cases all \
+    --generated 'open:seed=1,road-heavy:seed=7,mountain-heavy:seed=7:size=small' \
+    --candidates 'loop:iterations=32:initial=greedy,wait' \
+    --baseline wait \
+    --output-dir target/eval
+```
+
+構文:
+
+```text
+<spec>  := <item> ("," <item>)*
+<item>  := <archetype> (":" <kv>)+
+<kv>    := "seed=" <u64>              必須。explicit seed こそが sibling 比較を
+                                       1 つの case 軸に乗せるもの
+          | "size=" small|medium|large  既定は archetype の既定 size
+          | "days=" 1..=3               既定は archetype の既定 day 数
+```
+
+- `--cases` は **fixture 専用**。`--cases all` は今も「bundled 8 件」の意味のままで、
+  既存の evidence の意味が勝手に変わることはありません。
+- 1 回のバッチが 1 つの `Corpus` を構築し、その corpus を全 candidate がそのまま
+  使います（`TournamentRunner::run` は candidates × cases の直積）。つまり
+  **sibling は自動的に同一 case / 同一 seed set** です。これは
+  `one_selection_is_one_shared_case_set`（`procon-eval` のテスト）と
+  `eight_fixtures_and_generated_cases_evaluate_in_one_batch` で検証されています。
+- 同じ spec を 2 回書くと `duplicate case_id` として corpus 構築時点で拒否されます。
+
+### archetype 一覧
+
+`crates/bench/src/generator.rs` のテストが各 archetype の materiality を固定 seed で
+検証しています（名前だけの別称にならないようにするのが目的です）。
+
+| archetype | 地形 / 配置 | spots | brands | 既定 size | 既定 days |
+|---|---|---|---|---|---|
+| `open` | ≥90 % plain、pond / road なし | 6–14 | 2–6 | medium | 1 |
+| `mountain-heavy` | ≥50 % mountain + くり抜いた plain 十字路 | 4–10 | 2–4 | medium | 1 |
+| `pond-obstacle` | ≥10 % の pond ブロブ（十字路は温存） | 6–12 | 2–6 | medium | **2** |
+| `road-heavy` | ≥15 % の**連結した** road 格子（8 セルおきの行 / 列） | 8–16 | 2–6 | medium | **3** |
+| `many-series` | plain + mountain 散布 | 8–16 | ≥6 | medium | **3** |
+| `few-series` | mountain の壁で 2 分け | 6–12 | ちょうど 1 | medium | 1 |
+| `sparse-spots` | 少ない spot を広く間隔を空けて配置 | 3–6 | 2–4 | small | 1 |
+| `dense-spots` | 18–26 個の spot を密クラスタに | 18–26 | 2–6 | large | **2** |
+
+`road-heavy` は「道路を使い倒すか避けるか」が選択になるよう、**本当に道路が通った
+map** を生成します（road は燃料 2 / plain は 1、交通量は yesterday+today で再分類）。
+既存の `road-heavy` fixture は 4/256 セルしか道路がなく Issue #187 の対象ですが、
+generated 側はそれを繰り返しません。
+
+### day structure は一次の軸（fixture が持たない欠落）
+
+bundled 8 fixture は**すべて 1 日**（`daySteps` / `daySeconds` が 1 要素）なので、
+`daily_variety_sum ≡ variety` になり第 2 段が永久に差分ゼロ、end-of-day refill・
+yesterday/today 交通量分類・per-day budget 判定が評価されません。そこで:
+
+- `generation_parameters.days` が day 数を明示的に持つ（`daySteps` / `daySeconds`
+  は両方ともこの長さ、per-day 値は公式範囲 `W+H ..= (W+H)*4` 内）。
+- 複数 archetype（`road-heavy` / `many-series` = 3 日、`pond-obstacle` /
+  `dense-spots` = 2 日）を**既定で multi-day** にし、`:days=` で全 archetype を
+  1..=3 日に指定できる。
+- multi-day は **front-loaded**（`daySteps[0]` が長く、後半は `W+H` 下限）。
+  燃料は `daySteps[0]` の 3 倍が上限（Q14）なのに**日をまたいで補給されない**
+  ため、均一な `[B,B,B]` は候補者が燃料切れして全件 `invalid` になります。
+  generator は `fuelLimits >= 2 × sum(daySteps)`（1 行動の最大燃料消費 2 × 総 step 数）
+  を**生成時の不変条件**として検査し、違反は case generation failure にします。
+
+### determinism と case id
+
+```text
+case_id = generated:v<generator_version>:<archetype>:seed=<seed>[:size=<class>][:days=<n>]
+```
+
+`:size=` / `:days=` は archetype の既定と異なるときだけ付くので、既定なら
+`generated:v1:road-heavy:seed=7` のように短く、それでも (version, archetype, seed,
+size, days) は id から一意に復元できます。`generation_parameters` は
+`{generator_version, archetype, seed, size, days}` を JSON で保持し、
+`RunRecord` にそのまま保存されます。
+
+generator の出力は `GENERATOR_VERSION` に束縛されています。**出力が変わる変更を
+したら version を上げる**こと。v1 の (params, seed) を黙って書き換えると、
+過去の evidence が別物として読み替えられてしまいます。
+
+### seed set をどう記録するか
+
+screening / confirmation は結果を別条件のまま直接比較しません。比較可能な 2 つは
+**次が全部一致しているときだけ**比較します:
+
+1. `source_commit_sha`
+2. fixture corpus（`--cases` の選択）
+3. **generated seed set**（`--generated` の spec 文字列、または records の
+   `case_id` + `seed` + `generation_parameters`）
+4. generator version（`generation_parameters.generator_version`）
+5. scoring semantics（official 4 段組）
+6. timeout policy（`--harness-timeout-ms` / `--harness-margin-ms`）
+
+`runs.jsonl` は (3)(4) を行ごとに持っているので、seed set は evidence から
+直接復元できます:
+
+```bash
+jq -r 'select(.case_id | startswith("generated:"))
+       | [.case_id, .seed, .generation_parameters.generator_version] | @tsv' \
+  target/eval/runs.jsonl
+```
+
+推奨 funnel（Issue #185 の原則）:
+
+| 段 | corpus | 目的 |
+|---|---|---|
+| smoke | bundled fixtures + generated 数 seed | まず壊れていないか |
+| screening | archetype ごとに複数 seed | 多様な map で足切り |
+| confirmation | 生存者のみ seed 数を増やす | 偶然の map 特性を排除 |
+| regression | 負けた case / edge case を**固定 fixture に昇格** | 回帰を永続化 |
+
+wall-clock（第 4 段 `response_time`）のノイズだけで淘汰しないこと。
+第 1〜3 段を主 evidence とし、第 4 段は同点時の追加 evidence です。
+
+### failure semantics: case generation failure ≠ candidate failure
+
+| | case generation failure | candidate failure |
+|---|---|---|
+| 型 | `bench::GenerationError`（`Err`） | `RunRecord` + `status = invalid/timeout/panic` |
+| 発生時点 | corpus 構築時（**candidate 実行前**） | 評価中 |
+| メッセージ | `case generation failure: archetype=… seed=…: <cause>` | `status_detail` |
+| 記録 | **1 件も残らない**（`CaseSpec` が存在しない） | `runs.jsonl` に 1 行 |
+
+不正な generator 出力（validator 拒否・day 数違反・燃料不足になる case・重複
+`case_id` など）は corpus 構築で `Err` になり、評価は**そもそも始まりません**。
+したがって「generator の欠陥が candidate の `invalid` に化ける」経路は構造的に
+存在しません。検証:
+`crates/bench/tests/generated_corpus.rs::a_generation_failure_and_a_candidate_failure_are_distinct_classes`、
+`crates/bench/src/generator.rs` の `corpus_build_fails_fast_and_stays_a_generation_failure`。
+
+加えて `baselines_complete_every_archetype_without_fuel_short_or_illegal_actions` が、
+全 archetype × 複数 seed で baseline（`wait` / `loop:iterations=32:initial=greedy`）が
+燃料切れ・非法 action なしで完走することを確認し、「生成 case が invalid なのは
+generator の bug」という失敗クラスをテストで塞いでいます。
+
+### 回帰価値の高い generated case を固定 fixture に昇格する（promotion）
+
+screening / regression で「この case で負けた」価値が高い場合、その case を固定
+fixture にして回帰を永続化します。
+
+1. **元の case を特定する** — evidence の `runs.jsonl` から
+   `case_id` / `seed` / `generation_parameters` を拾う（この 3 つで再生成可能）。
+2. **同じ入力で再生成する** — `bench::generator::generate(&params)`（`params` は
+   record の `generation_parameters` を `GenerationParams` に deserialize）。
+   再生成結果が evidence とバイト一致しないなら、generator version が evidence
+   と違います。そこで止まってください。
+3. **fixture JSON として書き出す** — `crates/bench/fixtures/maps/<新しい名前>.json` に、
+   fixture スキーマ（`name` / `description` / `category` ヘッダ + `MatchSetting`）
+   で保存します。素の `MatchSetting` ではありません。
+4. **新しい名前を付ける** — 生成時の id（`generated:v1:…`）は**使いません**。
+   昇格後は `fixture:<新しい名前>` という**別 id** になります。古い evidence は
+   `generated:…` のまま履史として残り、新しい fixture の結果と読み違えられません。
+5. **bundled 登録する** — `MatchFixtureLoader::bundled_fixtures()` に追加し、
+   `category` を実態に合わせます。**これは `--cases all` の意味を 8 → 9 に変える**
+   ので、専用 PR にして fixture corpus 全体の baseline evidence を作り直します。
+6. **generator を触らない** — 昇格で generator の出力を書き換えてはいけません。
+   v1 の (params, seed) は過去の evidence を指しているからです。generator 自体を
+   変える必要が出たときは `GENERATOR_VERSION` を上げ、新しい id 系として扱います。
 
 ## durable result
 
@@ -319,8 +501,17 @@ E2E smoke path** です。返るのは `protocol_progress = days_completed * 100
 `MatchSim` には RNG・clock・I/O がなく、`step_towards` の方向探索、
 `seeded_shuffle` の順序も全て決定的です。
 
+generated case も同じです — 同一 `(generator_version, params, seed)` なら
+**setting がバイト単位で一致**します（PRNG は in-crate の xorshift64\* で、
+外部 RNG crate に依存しないため compiler / dependency の増減にも影響されません）。
+これが seed set を evidence として保存できる根拠です。
+
 検証: `crates/bench/tests/canonical_evaluation.rs`
-（3 cases × 2 real solver variants の E2E、決定性、failure isolation を含む）。
+（3 cases × 2 real solver variants の E2E、決定性、failure isolation を含む）、
+`crates/bench/tests/generated_corpus.rs`
+（8 fixtures + generated の 1 バッチ E2E、provenance、failure class、
+baseline 完走、multi-day）、
+`crates/bench/src/generator.rs`（全 archetype の byte-equivalent 再生成と validator 通過）。
 
 ```bash
 cargo test -p bench --locked
