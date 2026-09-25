@@ -33,6 +33,7 @@ protocol = { path = "crates/protocol" }
 engine = { path = "crates/engine" }
 solver-loop = { path = "crates/solver-loop" }
 solver-greedy = { path = "crates/solver-greedy" }
+solver-astar = { path = "crates/solver-astar" }
 
 # Serialization (core ↔ frontend wire format)
 serde = { version = "1", features = ["derive"] }

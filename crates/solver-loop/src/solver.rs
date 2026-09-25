@@ -38,8 +38,9 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::or_opt::apply_or_opt_pass;
 use crate::score::{ScoreRanking, ScoreReport, simulate_day};
-use crate::three_opt::try_three_opt;
+use crate::three_opt::{try_three_opt, try_three_opt_full};
 use crate::two_opt::{best_two_opt_move, edge_cost};
 use crate::types::{Agent, Spot};
 
@@ -79,6 +80,29 @@ pub enum InitialStrategy {
     /// same spot list always yields the same tour — required for the
     /// reproducible-evaluation guarantee.
     Random { seed: u64 },
+}
+
+/// Refinement operator set for [`LoopSolver`] (`operators=` in candidate
+/// ids, Issue #191).
+///
+/// The set only decides *which moves* the refinement may apply. The
+/// acceptance criterion — the same strict-improvement rule the `classic`
+/// set already uses, with `judge()` / [`ScoreReport`] untouched — is
+/// identical for both sets: widening the move set while keeping the
+/// objective fixed is the hypothesis under test (Issue #191).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OperatorSet {
+    /// Pre-#191 move set: best-move 2-opt pass plus the single
+    /// range-reversal 3-opt move (`try_three_opt`'s move 0). The default —
+    /// omitting `operators=` in a candidate id selects it, so every
+    /// existing `loop:…` id keeps its exact behaviour.
+    #[default]
+    Classic,
+    /// Extended move set: all seven classical 3-opt moves
+    /// (`try_three_opt_full`) plus or-opt relocation of segments of length
+    /// ≤ 3. A strictly larger neighbourhood than [`Self::Classic`], at a
+    /// higher per-iteration cost.
+    Extended,
 }
 
 /// Touring-problem contract, internal to this crate.
@@ -164,21 +188,37 @@ pub enum SolverError {
 pub struct LoopSolver {
     pub initial: InitialStrategy,
     pub max_iter: u32,
+    /// Refinement operator set. [`OperatorSet::Classic`] unless built with
+    /// [`Self::with_operators`].
+    pub operators: OperatorSet,
 }
 
 impl Default for LoopSolver {
     fn default() -> Self {
-        Self { initial: InitialStrategy::default(), max_iter: 50 }
+        Self {
+            initial: InitialStrategy::default(),
+            max_iter: 50,
+            operators: OperatorSet::default(),
+        }
     }
 }
 
 impl LoopSolver {
-    /// Construct with custom initial strategy and iteration cap.
+    /// Construct with custom initial strategy and iteration cap, using the
+    /// default [`OperatorSet::Classic`] move set — i.e. byte-for-byte the
+    /// pre-#191 behaviour, so every existing caller keeps its semantics.
     /// `max_iter` defaults to 50 to prevent infinite loops on pathological
     /// instances; callers can raise or lower as needed.
     #[must_use]
     pub fn new(initial: InitialStrategy, max_iter: u32) -> Self {
-        Self { initial, max_iter }
+        Self { initial, max_iter, operators: OperatorSet::Classic }
+    }
+
+    /// Construct with an explicit [`OperatorSet`] (`operators=classic |
+    /// extended` on the bench candidate id).
+    #[must_use]
+    pub fn with_operators(initial: InitialStrategy, max_iter: u32, operators: OperatorSet) -> Self {
+        Self { initial, max_iter, operators }
     }
 
     /// Build the initial tour through the spots according to the configured
@@ -201,7 +241,8 @@ impl LoopSolver {
         }
     }
 
-    /// Refine the initial tour via repeated 2-opt / 3-opt passes.
+    /// Refine the initial tour via repeated 2-opt / 3-opt passes (plus an
+    /// or-opt pass under [`OperatorSet::Extended`]).
     /// Returns the refined tour and the solve stats.
     pub(crate) fn refine(
         &self,
@@ -211,6 +252,15 @@ impl LoopSolver {
         let initial_score = score_tour(&tour, problem);
         let mut improvements_applied: u32 = 0;
         let mut max_iter_reached = false;
+
+        // The operator set selects the 3-opt primitive; the triple scan
+        // below (and the 2-opt pass) is shared so `classic` keeps its exact
+        // pre-#191 behaviour.
+        let three_opt_move: fn(&mut [u32], &[Spot], usize, usize, usize) -> bool =
+            match self.operators {
+                OperatorSet::Classic => try_three_opt,
+                OperatorSet::Extended => try_three_opt_full,
+            };
 
         for iter in 0..self.max_iter {
             let mut any_improved = false;
@@ -236,7 +286,7 @@ impl LoopSolver {
                     while i + 2 < k {
                         let mut j = i + 1;
                         while j < k {
-                            if try_three_opt(&mut tour, &problem.spots, i, j, k) {
+                            if three_opt_move(&mut tour, &problem.spots, i, j, k) {
                                 any_improved = true;
                                 improvements_applied = improvements_applied.saturating_add(1);
                             }
@@ -245,6 +295,16 @@ impl LoopSolver {
                         i = i.saturating_add(1);
                     }
                     k = k.saturating_add(1);
+                }
+            }
+
+            // or-opt pass (extended set only): relocate segments of
+            // length <= 3 to another position.
+            if self.operators == OperatorSet::Extended {
+                let relocated = apply_or_opt_pass(&mut tour, &problem.spots);
+                if relocated > 0 {
+                    any_improved = true;
+                    improvements_applied = improvements_applied.saturating_add(relocated);
                 }
             }
 
@@ -648,6 +708,101 @@ mod tests {
         // Row sweep orders by (row, col); column sweep by (col, row).
         assert_eq!(sweep_row(&spots), vec![1, 3, 0, 2]);
         assert_eq!(sweep_col(&spots), vec![0, 2, 1, 3]);
+    }
+
+    /// Issue #191 invariance: building the solver the old way
+    /// (`LoopSolver::new` = default `OperatorSet::Classic`) must produce
+    /// exactly the same outcome as naming the operator set explicitly, for
+    /// every initial strategy and a range of iteration caps. This is the
+    /// unit-level proof that omitting `operators=` from a candidate id
+    /// keeps its pre-#191 behaviour.
+    #[test]
+    fn classic_operator_set_matches_default_constructor() {
+        let spots = vec![
+            spot(0, 0, 0, "kake"),
+            spot(1, 4, 0, "bukkake"),
+            spot(2, 1, 3, "kake"),
+            spot(3, 5, 2, "soba"),
+            spot(4, 2, -2, "bukkake"),
+            spot(5, -3, 1, "kake"),
+            spot(6, 6, -1, "soba"),
+            spot(7, -1, 4, "bukkake"),
+        ];
+        let problem = SolveProblem::new(spots, vec![agent(0, 0, 0), agent(1, 4, 0)], 2);
+        for initial in [
+            InitialStrategy::Identity,
+            InitialStrategy::GreedyNearestNeighbor,
+            InitialStrategy::SweepRow,
+            InitialStrategy::SweepCol,
+            InitialStrategy::Random { seed: 7 },
+        ] {
+            for max_iter in [0, 5, 50] {
+                let implicit = LoopSolver::new(initial, max_iter)
+                    .solve(&problem)
+                    .expect("default constructor solve");
+                let explicit = LoopSolver::with_operators(initial, max_iter, OperatorSet::Classic)
+                    .solve(&problem)
+                    .expect("explicit classic solve");
+                assert_eq!(
+                    implicit, explicit,
+                    "classic must equal the pre-#191 default for {initial:?} max_iter={max_iter}"
+                );
+            }
+        }
+    }
+
+    /// `operators=extended` must be reproducible: the same problem solved
+    /// twice yields the identical plan and score.
+    #[test]
+    fn extended_operator_set_is_deterministic() {
+        let spots = vec![
+            spot(0, 0, 0, "kake"),
+            spot(1, 4, 0, "bukkake"),
+            spot(2, 1, 3, "kake"),
+            spot(3, 5, 2, "soba"),
+            spot(4, 2, -2, "bukkake"),
+            spot(5, -3, 1, "kake"),
+            spot(6, 6, -1, "soba"),
+            spot(7, -1, 4, "bukkake"),
+        ];
+        let problem = SolveProblem::new(spots, vec![agent(0, 0, 0)], 2);
+        let solver = LoopSolver::with_operators(
+            InitialStrategy::GreedyNearestNeighbor,
+            32,
+            OperatorSet::Extended,
+        );
+        let first = solver.solve(&problem).expect("extended solve");
+        let second = solver.solve(&problem).expect("extended solve");
+        assert_eq!(first, second, "extended refinement must be deterministic");
+    }
+
+    /// Every operator set accepts a move only when it strictly lowers the
+    /// tour's edge cost, so refinement is monotone for `extended` too.
+    #[test]
+    fn extended_refine_never_increases_tour_cost() {
+        use crate::two_opt::tour_cost;
+        let spots = vec![
+            spot(0, 0, 0, "kake"),
+            spot(1, 4, 0, "bukkake"),
+            spot(2, 1, 3, "kake"),
+            spot(3, 5, 2, "soba"),
+            spot(4, 2, -2, "bukkake"),
+            spot(5, -3, 1, "kake"),
+            spot(6, 6, -1, "soba"),
+            spot(7, -1, 4, "bukkake"),
+        ];
+        let problem = SolveProblem::new(spots, vec![agent(0, 0, 0)], 1);
+        for initial in [InitialStrategy::Identity, InitialStrategy::GreedyNearestNeighbor] {
+            let solver = LoopSolver::with_operators(initial, 32, OperatorSet::Extended);
+            let start = solver.initial_tour(&problem);
+            let before = tour_cost(&start, &problem.spots);
+            let (refined, _) = solver.refine(start, &problem);
+            let after = tour_cost(&refined, &problem.spots);
+            assert!(
+                after <= before,
+                "extended refine must not raise tour cost for {initial:?}: {before} -> {after}"
+            );
+        }
     }
 
     #[test]

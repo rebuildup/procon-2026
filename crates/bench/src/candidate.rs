@@ -350,6 +350,7 @@ impl CandidateRegistry {
         r.register(Arc::new(crate::adapters::MultiLoopFactory));
         r.register(Arc::new(crate::adapters::GreedyFactory));
         r.register(Arc::new(crate::adapters::NearestFactory));
+        r.register(Arc::new(crate::adapters::AstarFactory));
         r
     }
 
@@ -668,7 +669,7 @@ mod tests {
     #[test]
     fn builtin_registry_knows_every_named_algorithm() {
         let reg = CandidateRegistry::builtin();
-        for algo in ["wait", "loop", "multiloop", "greedy", "nearest"] {
+        for algo in ["wait", "loop", "multiloop", "greedy", "nearest", "astar"] {
             assert!(reg.factory(algo).is_some(), "missing algorithm {algo}");
         }
     }
@@ -736,9 +737,9 @@ mod tests {
         let loop_entry =
             cat.algorithms.iter().find(|a| a.algorithm == "loop").expect("loop in catalog");
         let keys: Vec<_> = loop_entry.params.iter().map(|p| p.key.as_str()).collect();
-        // `lookahead` (#193) is appended after `seed`, so every id that
-        // existed before it keeps its byte-exact canonical form.
-        assert_eq!(keys, vec!["iterations", "initial", "seed", "lookahead"]);
+        // Canonical id order: `operators` (#191) then `lookahead` (#193)
+        // are appended after `seed`, so every older id keeps its exact shape.
+        assert_eq!(keys, vec!["iterations", "initial", "seed", "operators", "lookahead"]);
         let json = serde_json::to_string_pretty(&cat).unwrap();
         assert!(json.contains("sweep-row"));
         // `reverse` ships in the `initial` value list (Issue #170).
