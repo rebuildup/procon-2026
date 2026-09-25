@@ -10,7 +10,12 @@
 //! loop:iterations=64:initial=random:seed=42
 //! loop:initial=sweep-row
 //! loop:initial=sweep-col
+//! loop:initial=reverse
 //! ```
+//!
+//! Every `initial=` value here has exactly one live-CLI counterpart
+//! (`procon tournament|coordinator --loop-initial-strategy <label>`); the
+//! correspondence table lives in `crates/cli/src/initial_strategy.rs`.
 //!
 //! # How the adapter works
 //!
@@ -48,7 +53,7 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "initial",
         required: false,
-        doc: "initial tour strategy: greedy | identity | sweep-row | sweep-col | random (default greedy)",
+        doc: "initial tour strategy: greedy | identity | reverse | sweep-row | sweep-col | random (default greedy)",
     },
     ParamSpec {
         key: "seed",
@@ -102,7 +107,11 @@ impl Solver for LoopCandidate {
 /// they round-trip back to a coordinate exactly. That scheme is unique for
 /// every contest map (`MapSize::MAX = 32`) and matches the convention used by
 /// the CLI's wire-path adapter.
-fn problem_from_state(ctx: &SolverContext<'_>) -> SolveProblem {
+///
+/// `pub(crate)` because every tour-shaped adapter (`loop`, `multiloop`) needs
+/// the *same* spot-id ↔ coordinate round-trip: two schemes would silently
+/// misroute visits. See `super::multiloop_solver`.
+pub(crate) fn problem_from_state(ctx: &SolverContext<'_>) -> SolveProblem {
     let map = &ctx.state.setting.map;
     let spots: Vec<LoopSpot> = map
         .cells()
@@ -132,7 +141,11 @@ fn problem_from_state(ctx: &SolverContext<'_>) -> SolveProblem {
 /// Convert the loop solver's per-agent spot-id visit order into map
 /// coordinates, one target list per controlled agent (in `ctx.agent_ids`
 /// order).
-fn agent_targets(
+///
+/// `pub(crate)` for the same reason as [`problem_from_state`]: `multiloop`
+/// reuses this exact target/`plan_walk` path so the only difference between
+/// the two candidates is the tour construction, not the day contract.
+pub(crate) fn agent_targets(
     ctx: &SolverContext<'_>,
     outcome: &solver_loop::SolveOutcome,
 ) -> Vec<Vec<HexCoord>> {
@@ -191,6 +204,7 @@ fn parse_initial(spec: &CandidateSpec) -> Result<InitialStrategy, CandidateError
         }
         Some("greedy") => Ok(InitialStrategy::GreedyNearestNeighbor),
         Some("identity") => Ok(InitialStrategy::Identity),
+        Some("reverse") => Ok(InitialStrategy::Reverse),
         Some("sweep-row") => Ok(InitialStrategy::SweepRow),
         Some("sweep-col") => Ok(InitialStrategy::SweepCol),
         Some("random") => match seed_param {
@@ -200,9 +214,8 @@ fn parse_initial(spec: &CandidateSpec) -> Result<InitialStrategy, CandidateError
                 key: "seed".to_owned(),
             }),
         },
-        Some(other) => {
-            let _ = other;
-            Err(bad("expected greedy | identity | sweep-row | sweep-col | random"))
+        Some(_) => {
+            Err(bad("expected greedy | identity | reverse | sweep-row | sweep-col | random"))
         }
     }
 }
@@ -249,9 +262,24 @@ mod tests {
             "loop:iterations=64:initial=random:seed=42",
             "loop:initial=sweep-row",
             "loop:initial=sweep-col",
+            "loop:initial=reverse",
         ] {
             assert!(reg.build(id).is_ok(), "{id} must be a valid candidate");
         }
+    }
+
+    /// `loop:initial=reverse` is a stable candidate id that selects
+    /// `InitialStrategy::Reverse` — the offline half of the live parity
+    /// table in `crates/cli/src/initial_strategy.rs`.
+    #[test]
+    fn initial_reverse_maps_to_reverse_strategy() {
+        let spec = CandidateSpec::parse("loop:initial=reverse").expect("parse");
+        assert_eq!(parse_initial(&spec), Ok(InitialStrategy::Reverse));
+        // With iterations it stays the same strategy (a separate axis).
+        let spec = CandidateSpec::parse("loop:initial=reverse:iterations=7").expect("parse");
+        assert_eq!(parse_initial(&spec), Ok(InitialStrategy::Reverse));
+        // The id round-trips unchanged, as every candidate id must.
+        assert_eq!(spec.id(), "loop:initial=reverse:iterations=7");
     }
 
     #[test]

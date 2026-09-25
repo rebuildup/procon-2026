@@ -22,14 +22,15 @@
 //! here would duplicate [`engine::MatchSim`] and make the two drift. Greedy
 //! therefore contributes its *assignment policy*; the engine contributes the
 //! *outcome*.
+//!
+//! The `SolverContext` → `solver_greedy` conversion is shared with the other
+//! greedy-family candidate via [`super::context`], so `greedy` and `nearest`
+//! differ only in assignment policy.
 
 use engine::model::{AgentActions, HexCoord, Solver, SolverContext};
-use solver_greedy::{
-    Action as GreedyAction, Agent as GreedyAgent, AgentId as GreedyAgentId, GreedySolver,
-    HexCoord as GreedyCoord, SolveContext as GreedyContext, Solver as _, Spot as GreedySpot,
-    SpotId as GreedySpotId,
-};
+use solver_greedy::{GreedySolver, Solver as _};
 
+use super::context;
 use super::walk::plan_walk;
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
@@ -53,25 +54,13 @@ impl GreedyCandidate {
     ///
     /// Extracted from [`Solver::decide`] so the `astar` candidate can reuse
     /// the exact same variety-aware nearest assignment and differ only in
-    /// *routing* — the comparison then isolates path quality.
+    /// *routing* — the comparison then isolates path quality. Built on the
+    /// shared greedy-family conversion in [`super::context`], so `greedy`,
+    /// `nearest` and `astar` all see identical inputs.
     pub(crate) fn targets(&self, ctx: &SolverContext<'_>) -> Vec<Vec<HexCoord>> {
-        let gctx = greedy_context(ctx);
+        let gctx = context::solve_context(ctx);
         let intents = self.inner.decide(&gctx);
-        let map = &ctx.state.setting.map;
-
-        // One target per controlled agent, in `ctx.agent_ids` order.
-        ctx.agent_ids
-            .iter()
-            .map(|id| {
-                let target = intents.iter().find_map(|a| match a {
-                    GreedyAction::MoveToward { agent, spot } if agent.0 == *id => {
-                        coord_for_spot_id(spot.0, map)
-                    }
-                    _ => None,
-                });
-                target.into_iter().collect()
-            })
-            .collect()
+        context::targets_from_intents(ctx, &intents)
     }
 }
 
@@ -83,52 +72,6 @@ impl Solver for GreedyCandidate {
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         plan_walk(ctx, &self.targets(ctx))
     }
-}
-
-/// Build greedy's view of the world from the live match state at day start.
-fn greedy_context(ctx: &SolverContext<'_>) -> GreedyContext {
-    let map = &ctx.state.setting.map;
-    let spots: Vec<GreedySpot> = map
-        .cells()
-        .iter()
-        .filter_map(|cell| {
-            let s = cell.spot.as_ref()?;
-            Some(GreedySpot {
-                id: GreedySpotId::new(spot_id_for_coord(cell.coord)),
-                coord: GreedyCoord::new(cell.coord.col, cell.coord.row),
-                series_id: u16::try_from(s.series).unwrap_or(u16::MAX),
-                stock: s.current_stock,
-            })
-        })
-        .collect();
-    let agents: Vec<GreedyAgent> = ctx
-        .agent_ids
-        .iter()
-        .filter_map(|id| {
-            let a = ctx.state.agents.iter().find(|a| a.id == *id)?;
-            Some(GreedyAgent {
-                id: GreedyAgentId::new(*id),
-                coord: GreedyCoord::new(a.pos.col, a.pos.row),
-                fuel: a.fuel,
-            })
-        })
-        .collect();
-    GreedyContext::for_test(0, agents, spots)
-}
-
-/// Spot ids are packed `row * 32 + col`, which is unique for every contest
-/// map (`MapSize::MAX = 32`) and fits greedy's `SpotId(u16)`.
-fn spot_id_for_coord(coord: HexCoord) -> u16 {
-    let id = coord.row * 32 + coord.col;
-    u16::try_from(id).unwrap_or(0)
-}
-
-fn coord_for_spot_id(spot_id: u16, map: &engine::model::MapGrid) -> Option<HexCoord> {
-    let id = i32::from(spot_id);
-    let row = id / 32;
-    let col = id % 32;
-    let coord = HexCoord::new(col, row);
-    map.get(coord).filter(|c| c.spot.is_some()).map(|_| coord)
 }
 
 /// Factory for [`GreedyCandidate`].
@@ -164,33 +107,5 @@ mod tests {
         let reg = CandidateRegistry::builtin();
         assert!(reg.build("greedy").is_ok());
         assert!(matches!(reg.build("greedy:beam=4"), Err(CandidateError::UnknownParameter { .. })));
-    }
-
-    #[test]
-    fn spot_ids_round_trip_within_contest_bounds() {
-        for (col, row) in [(0, 0), (5, 9), (31, 31), (7, 3)] {
-            let c = HexCoord::new(col, row);
-            assert_eq!(coord_for_spot_id(spot_id_for_coord(c), &dummy_map()), Some(c));
-        }
-    }
-
-    /// A 32x32 map with a spot on every cell, so spot-id round-tripping can
-    /// be checked at the contest's size bound.
-    fn dummy_map() -> engine::model::MapGrid {
-        use engine::model::{MapGrid, MapSize, Spot, Terrain};
-        let size = MapSize::new(32, 32).unwrap();
-        let cells = (0..32)
-            .flat_map(|row| {
-                (0..32).map(move |col| {
-                    let coord = HexCoord::new(col, row);
-                    engine::model::Cell {
-                        coord,
-                        terrain: Terrain::Plain,
-                        spot: Some(Spot { series: 1, pos: coord, max_stock: 1, current_stock: 1 }),
-                    }
-                })
-            })
-            .collect();
-        MapGrid::new(size, cells).unwrap()
     }
 }

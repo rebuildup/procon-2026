@@ -145,7 +145,7 @@ JSON レポートには p50 / p90 / max（µs 単位）とサンプル数が含�
 **辞書順**で比較します。詳細と標準手順は [`docs/evaluation.md`](evaluation.md) が SoT。
 
 ```bash
-just eval-list          # 登録済み candidate（loop / greedy / wait とパラメータ）
+just eval-list          # 登録済み candidate（loop / multiloop / greedy / wait とパラメータ）
 just eval               # 全 fixture × 既定 candidate、wait を baseline に
                         # → target/eval/{runs.jsonl, aggregate.json, report.md}
 
@@ -160,6 +160,32 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
 対照: `procon tournament` は**公式サーバに対する wire/protocol smoke harness** で、
 返るのは `protocol_progress = days_completed * 100 + sum(revisions)`（プロトコルが
 どこまで進んだか）です。競技性能ではありません。
+
+### offline candidate と live CLI の対応（Issue #170）
+
+offline で選んだ `loop:initial=<value>` は、同じ意味のまま live 側に持ち出せます。
+対応は 1:1 で、表の SoT は `crates/cli/src/initial_strategy.rs`
+（docs の表はその写し）:
+
+| offline candidate          | live `--loop-initial-strategy`（`tournament` / `coordinator` 共通） | `InitialStrategy`         |
+|----------------------------|---------------------------------------|---------------------------|
+| `initial=greedy`（既定）   | `greedy`（既定）                     | `GreedyNearestNeighbor`   |
+| `initial=identity`         | `identity`                           | `Identity`                |
+| `initial=reverse`          | `reverse`                            | `Reverse`                 |
+| `initial=sweep-row`        | `sweep-row`                          | `SweepRow`                |
+| `initial=sweep-col`        | `sweep-col`                          | `SweepCol`                |
+| `initial=random:seed=N`    | `random:N`                           | `Random { seed: N }`      |
+
+- seed だけ形が違います。offline は `seed=N` を独立パラメータにしますが、
+  live は 1 フラグ = 1 戦略を保つため `random:N` に畳み込みます。
+- 未知ラベルは**エラー**（以前の `Identity` への暗黙フォールバックは廃止）。
+- どちらのサブコマンドも同じ parser を `value_parser` で共有しているので、
+  protocol client は 1 本のままです。
+
+```bash
+cargo run -q --bin procon -- coordinator --loop-initial-strategy reverse
+cargo run -q --bin procon -- tournament --solvers loop --loop-initial-strategy random:42
+```
 
 ## 次の作業を探す
 
