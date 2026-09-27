@@ -20,6 +20,10 @@ domain = { workspace = true }
 protocol = { workspace = true }
 engine = { workspace = true }
 solver-loop = { workspace = true }
+# Issue #179: the live CLI resolves `--candidate` through the same
+# `CandidateRegistry` the offline evaluator (Issue #178) ranks with, so an
+# arena run and its selecting `RunRecord` share one identity source.
+bench = { path = "../bench" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -13,7 +13,10 @@
 //!   - `bundle build <output.zip>`     : build a contest deliverable zip.
 
 mod action_adapter;
+mod arena;
+mod arena_import;
 mod bundle;
+mod candidate_bridge;
 mod coordinator_loop;
 mod fixtures;
 mod initial_strategy;
@@ -131,7 +134,46 @@ enum Cmd {
         /// so a half-written file is never visible to the frontend.
         #[arg(long, value_name = "PATH", env = "PROCON_STATE_OUTPUT")]
         state_output: Option<PathBuf>,
+
+        /// Run against the unofficial practice arena (Issue #179).
+        ///
+        /// This is a **profile layer**, not a second coordinator: the same
+        /// `protocol::MatchClient` and `run_coordinator_loop` drive the
+        /// match. `--arena` only supplies defaults — server from
+        /// `PROCON_ARENA_SERVER` (default `https://procon37arena.online`),
+        /// token from `PROCON_ARENA_TOKEN` (injected via Infisical; never a
+        /// CLI argument on the standard path) — and appends a durable run
+        /// record to `target/arena/runs.jsonl`. Explicit `--server` /
+        /// `--token` (or `PROCON_SERVER` / `PROCON_TOKEN`) still win.
+        #[arg(long)]
+        arena: bool,
+
+        /// Wait for the next arena match (`:00/:15/:30/:45` cadence),
+        /// register inside the pre-match window by polling `GET /settings`
+        /// with the arena token (403 during the wait is not an error), then
+        /// play exactly one match and exit after recording evidence.
+        /// Requires `--arena`.
+        #[arg(long)]
+        next: bool,
+
+        /// Offline-selected candidate to play, using the Issue #178
+        /// registry id verbatim (e.g. `multiloop:kmeans=4:seed=42`,
+        /// `astar:policy=step`). Resolved through
+        /// `bench::CandidateRegistry` and adapted onto the canonical
+        /// coordinator loop — overrides `--solver` and the loop knobs, and
+        /// the id is recorded in the arena evidence for correspondence
+        /// with the offline `RunRecord` that selected it.
+        #[arg(long)]
+        candidate: Option<String>,
+
+        /// JSONL evidence path for `--arena` runs.
+        /// Default: `target/arena/runs.jsonl`.
+        #[arg(long, value_name = "PATH")]
+        arena_evidence: Option<PathBuf>,
     },
+    /// Arena utilities that do not touch the network.
+    #[command(subcommand)]
+    Arena(ArenaCmd),
     /// Inspect or validate a match configuration JSON file.
     #[command(subcommand)]
     MatchConfig(MatchConfigCmd),
@@ -220,6 +262,26 @@ enum MatchConfigCmd {
     },
 }
 
+/// Subcommands under `procon arena` (offline helpers — no network).
+#[derive(Debug, Subcommand)]
+enum ArenaCmd {
+    /// Convert the arena's same-board replay JSON into an offline
+    /// `CaseSpec` so an arena loss can be re-run through the Issue #178
+    /// evaluator (`procon-eval --case-files <output>`).
+    ImportCase {
+        /// Path to the arena replay JSON.
+        #[arg(long, value_name = "PATH")]
+        input: PathBuf,
+        /// Where to write the `CaseSpec` JSON.
+        #[arg(long, value_name = "PATH")]
+        output: PathBuf,
+        /// Case name (`fixture:<name>`). Defaults to the replay's match
+        /// identifier, sanitised to `[A-Za-z0-9._-]`.
+        #[arg(long)]
+        name: Option<String>,
+    },
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     tracing_subscriber::fmt()
@@ -289,6 +351,10 @@ async fn run(cli: Cli) -> Result<()> {
             loop_iterations,
             dry_run,
             state_output,
+            arena,
+            next,
+            candidate,
+            arena_evidence,
         } => {
             cmd_coordinator(
                 server,
@@ -298,9 +364,11 @@ async fn run(cli: Cli) -> Result<()> {
                 loop_iterations,
                 dry_run,
                 state_output,
+                ArenaFlags { arena, next, candidate, arena_evidence },
             )
             .await?;
         }
+        Cmd::Arena(sub) => cmd_arena(sub)?,
         Cmd::MatchConfig(sub) => cmd_match_config(sub)?,
         Cmd::Version => {
             println!(
@@ -371,6 +439,19 @@ fn cmd_match_config(sub: MatchConfigCmd) -> Result<()> {
     Ok(())
 }
 
+/// Arena-mode inputs for [`cmd_coordinator`], bundled so the dispatcher's
+/// argument list stays manageable.
+struct ArenaFlags {
+    /// `--arena` — resolve the arena profile and record run evidence.
+    arena: bool,
+    /// `--next` — wait for the next `:00/:15/:30/:45` window and register.
+    next: bool,
+    /// `--candidate` — Issue #178 registry id to play (overrides `--solver`).
+    candidate: Option<String>,
+    /// `--arena-evidence` — evidence JSONL path override.
+    arena_evidence: Option<PathBuf>,
+}
+
 /// `coordinator` subcommand dispatcher.
 ///
 /// Behaviour matrix:
@@ -384,10 +465,21 @@ fn cmd_match_config(sub: MatchConfigCmd) -> Result<()> {
 ///   (server URL + `has_token`) and exit.
 /// - default: build a `MatchClient`, build the `--solver` strategy
 ///   (`loop` → `EngineLoopAdapter` wrapping `solver_loop::LoopSolver`,
-///   `wait` → `WaitSolver`), hand both to the wired-up
+///   `wait` → `WaitSolver`) — or the `--candidate` bridge when an Issue
+///   #178 candidate id is given — hand both to the wired-up
 ///   `run_coordinator_loop`, and idle-block on the per-day driver.
 ///   When the real loop completes, we idle-tick forever so the container
 ///   stays healthy for ops to inspect.
+/// - `--arena`: the same path with an env-backed profile
+///   (`PROCON_ARENA_SERVER` / `PROCON_ARENA_TOKEN`), a durable run record
+///   appended to `target/arena/runs.jsonl`, and **exit after one match**
+///   instead of idle-ticking. `--arena --next` additionally waits for the
+///   next cadence window and registers via `GET /settings` first
+///   (Issue #179). No arena-specific protocol client and no second
+///   coordinator — the profile only supplies the values the canonical
+///   path already takes.
+#[allow(clippy::too_many_arguments, reason = "arena flags arrive as a bundle; see ArenaFlags")]
+#[allow(clippy::too_many_lines, reason = "one dispatcher, one behaviour matrix")]
 async fn cmd_coordinator(
     server: Option<String>,
     token: Option<String>,
@@ -396,9 +488,36 @@ async fn cmd_coordinator(
     loop_iterations: u32,
     dry_run: bool,
     state_output: Option<PathBuf>,
+    arena_flags: ArenaFlags,
 ) -> Result<()> {
+    let ArenaFlags { arena, next, candidate, arena_evidence } = arena_flags;
+    if next && !arena {
+        anyhow::bail!(
+            "--next requires --arena: the :00/:15/:30/:45 cadence and the \
+             /settings pre-match registration are arena-specific"
+        );
+    }
+
+    // Arena profile: env-backed defaults for server/token. Resolved before
+    // `--dry-run` so a dry run reports exactly what a real run would use.
+    let profile = if arena {
+        let env = arena::ArenaEnv::from_env();
+        Some(
+            arena::resolve_profile(server.clone(), token.clone(), env)
+                .map_err(|e| anyhow::anyhow!("{e}"))?,
+        )
+    } else {
+        None
+    };
+    // Explicit `--server` / `--token` (clap already merges PROCON_SERVER /
+    // PROCON_TOKEN) still win; the arena profile only fills the defaults.
+    let effective_server =
+        profile.as_ref().map(|p| p.server_url.clone()).or_else(|| server.clone());
+    let effective_token =
+        profile.as_ref().map(|p| p.token.expose().to_owned()).or_else(|| token.clone());
+
     if dry_run {
-        if server.is_none() {
+        if effective_server.is_none() {
             // Load the OpenAPI fixture and build a real MatchClient — but
             // do NOT call the loop yet; full E2E driving belongs to #C.
             let openapi_path = std::path::Path::new(".reference/procon37/openapi.json");
@@ -439,34 +558,37 @@ async fn cmd_coordinator(
             let _ = client;
             return Ok(());
         }
-        // dry_run + explicit server: minimal resolved-config dump.
-        let base_url = server.unwrap();
-        let token = token.unwrap_or_default();
+        // dry_run + resolved server: minimal config dump. `has_token` is a
+        // boolean precisely so the token itself can never be printed.
+        let base_url = effective_server.expect("checked above");
+        let token = effective_token.unwrap_or_default();
         println!(
             "{}",
             json!({
                 "server": base_url,
                 "has_token": !token.is_empty(),
                 "dry_run": true,
+                "arena": profile.is_some(),
             })
         );
         return Ok(());
     }
 
     // Default behaviour: drive the real loop against the live server.
-    let base_url =
-        server.clone().ok_or_else(|| anyhow::anyhow!("PROCON_SERVER (or --server) must be set"))?;
-    let token = token.clone().unwrap_or_default();
+    let base_url = effective_server
+        .ok_or_else(|| anyhow::anyhow!("PROCON_SERVER (or --server) must be set"))?;
+    let token = effective_token.unwrap_or_default();
     let client = MatchClient::builder(base_url.clone(), token)
         .retry_policy(RetryPolicy::default())
         .request_timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|e: HttpClientError| anyhow::anyhow!("match client: {e}"))?;
 
-    // Build the solver selected by `--solver`. The `value_parser` already
-    // restricts the surface to {"loop", "wait"}; the `match` here is
-    // exhaustive and the `_` arm is `unreachable!()` defensively.
-    let solver_strategy = solver.clone();
+    // Pick the solver: an Issue #178 candidate (`--candidate`) or the
+    // `--solver` flag. The `value_parser` restricts `--solver` to
+    // {"loop", "wait"}; the `match` below is exhaustive with an
+    // `unreachable!()` fallback.
+    //
     // The loop adapter exposes a setting slot so the coordinator loop
     // can hand the parsed engine setting (real map + agent positions)
     // back to the solver after `protocol_setting_to_engine`. Without
@@ -477,29 +599,44 @@ async fn cmd_coordinator(
     // `--loop-initial-strategy` / `--loop-iterations` are the same knobs
     // `tournament` exposes (Issue #170): one parser, one surface, no
     // per-variant protocol client.
-    let engine_setting_slot = match solver_strategy.as_str() {
-        "loop" => {
-            tracing::info!(
-                strategy = %initial_strategy::initial_strategy_label(loop_initial_strategy),
-                iterations = loop_iterations,
-                "loop initial strategy selected"
-            );
-            let adapter = EngineLoopAdapter::new(loop_initial_strategy, loop_iterations);
-            let slot = adapter.setting_handle();
-            let solver: Box<dyn engine::solver::Solver> = Box::new(adapter);
-            (solver, Some(slot))
-        }
-        "wait" => (Box::new(WaitSolver) as Box<dyn engine::solver::Solver>, None),
-        other => {
-            unreachable!("--solver value_parser already restricts to {{loop, wait}}, got {other}")
+    let solver_strategy = solver.clone();
+    let mut live_state_slot = None;
+    let mut candidate_id: Option<String> = None;
+    let mut solver_label = solver_strategy.clone();
+    let (solver, engine_setting_slot) = if let Some(id) = candidate.as_deref() {
+        let bridge = candidate_bridge::CandidateBridge::from_registry_id(id)
+            .map_err(|e| anyhow::anyhow!("bad --candidate {id:?}: {e}"))?;
+        let canonical = bridge.candidate_id().to_owned();
+        tracing::info!(candidate = %canonical, "offline candidate selected for the live run");
+        candidate_id = Some(canonical.clone());
+        solver_label = format!("candidate:{canonical}");
+        let slots = bridge.slots();
+        live_state_slot = Some(slots.live_state);
+        (Box::new(bridge) as Box<dyn engine::solver::Solver>, Some(slots.setting))
+    } else {
+        match solver_strategy.as_str() {
+            "loop" => {
+                tracing::info!(
+                    strategy = %initial_strategy::initial_strategy_label(loop_initial_strategy),
+                    iterations = loop_iterations,
+                    "loop initial strategy selected"
+                );
+                let adapter = EngineLoopAdapter::new(loop_initial_strategy, loop_iterations);
+                let slot = adapter.setting_handle();
+                (Box::new(adapter) as Box<dyn engine::solver::Solver>, Some(slot))
+            }
+            "wait" => (Box::new(WaitSolver) as Box<dyn engine::solver::Solver>, None),
+            other => {
+                unreachable!(
+                    "--solver value_parser already restricts to {{loop, wait}}, got {other}"
+                )
+            }
         }
     };
-    let solver = engine_setting_slot.0;
-    let engine_setting_slot = engine_setting_slot.1;
     tracing::info!(solver = solver.name(), "coordinator loop strategy selected");
 
     let loop_cfg = CoordinatorLoopConfig {
-        solver_name: solver_strategy,
+        solver_name: solver_label.clone(),
         // `MatchClient::base_url()` is not exposed publicly (we must not
         // modify `crates/protocol`), so we forward the URL we handed to
         // the builder above. The snapshot's `server` field mirrors this
@@ -507,8 +644,44 @@ async fn cmd_coordinator(
         server_url: Some(base_url.clone()),
         state_output_path: state_output.clone(),
         engine_setting_slot,
+        live_state_slot,
+        secret_redaction: profile.as_ref().map(|p| p.token.clone()),
         ..Default::default()
     };
+
+    // Arena mode: one match, then evidence, then exit (no idle tick).
+    if let Some(profile) = profile.as_ref() {
+        let evidence_path = arena_evidence.clone().unwrap_or_else(arena::default_evidence_path);
+        let solver_cfg = if let Some(canonical) = candidate_id.as_deref() {
+            arena::ArenaSolverConfig {
+                mode: "candidate".to_owned(),
+                solver: canonical.split(':').next().unwrap_or(canonical).to_owned(),
+                loop_initial_strategy: None,
+                loop_iterations: None,
+            }
+        } else {
+            arena::ArenaSolverConfig {
+                mode: "cli-solver".to_owned(),
+                solver: solver_strategy.clone(),
+                loop_initial_strategy: Some(initial_strategy::initial_strategy_label(
+                    loop_initial_strategy,
+                )),
+                loop_iterations: Some(loop_iterations),
+            }
+        };
+        return run_arena_once(
+            profile,
+            client,
+            solver,
+            loop_cfg,
+            next,
+            candidate_id,
+            solver_cfg,
+            &evidence_path,
+        )
+        .await;
+    }
+
     let outcome = run_coordinator_loop(client, solver, loop_cfg)
         .await
         .map_err(|e| anyhow::anyhow!("coordinator loop: {e}"))?;
@@ -521,6 +694,135 @@ async fn cmd_coordinator(
     loop {
         ticker.tick().await;
     }
+}
+
+/// Run exactly one arena match through the canonical coordinator loop and
+/// record durable evidence for it (Issue #179).
+///
+/// Sequence: optional pre-match registration (`--next`) →
+/// `run_coordinator_loop` → append an [`arena::ArenaRunRecord`] to
+/// `evidence_path` → return. Every failure path also records evidence, so
+/// a failed join or an API drift is just as durable as a completed match.
+/// All error text is redacted through the profile token before it reaches
+/// the caller (and therefore stderr).
+#[allow(clippy::too_many_arguments, reason = "one call site, explicit inputs")]
+async fn run_arena_once(
+    profile: &arena::ArenaProfile,
+    client: protocol::MatchClient,
+    solver: Box<dyn engine::solver::Solver>,
+    loop_cfg: CoordinatorLoopConfig,
+    next: bool,
+    candidate_id: Option<String>,
+    solver_cfg: arena::ArenaSolverConfig,
+    evidence_path: &std::path::Path,
+) -> Result<()> {
+    let team_id = loop_cfg.team_id.clone();
+    let source_commit_sha = bench::source_commit_sha();
+
+    // Phase A: pre-match registration (only with `--next`; that is the
+    // documented standard entry point `just arena-next`).
+    let mut registration = None;
+    let mut early: Option<(arena::ArenaRunStatus, Option<String>)> = None;
+    if next {
+        match arena::wait_for_registration(
+            &client,
+            profile,
+            &arena::RegistrationOptions::default(),
+            chrono::Utc::now(),
+        )
+        .await
+        {
+            Ok(outcome) => {
+                tracing::info!(
+                    attempts = outcome.attempts,
+                    registered_at = %outcome.registered_at,
+                    match_id = ?outcome.arena_match_id,
+                    "arena registration complete"
+                );
+                registration = Some(outcome);
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "arena registration failed");
+                early = Some((e.status(), Some(e.to_string())));
+            }
+        }
+    } else {
+        tracing::info!(
+            "arena: pre-match registration skipped (use --next to wait for \
+             the next :00/:15/:30/:45 window and register automatically)"
+        );
+    }
+
+    // Phase B: play through the unchanged canonical loop.
+    let mut outcome = None;
+    let (status, error) = if let Some(early) = early {
+        early
+    } else {
+        let result = run_coordinator_loop(client, solver, loop_cfg).await;
+        let (status, error) = arena::classify_loop_result(&result);
+        if let Ok(o) = &result {
+            outcome = Some(o.clone());
+        }
+        (status, error)
+    };
+
+    // Phase C: durable evidence — for success *and* failure alike.
+    let window_starts_at_unix = registration.as_ref().map_or_else(
+        || {
+            let lead = std::time::Duration::from_secs(
+                u64::try_from(arena::ARENA_PRE_MATCH_LEAD_SECS).unwrap_or(180),
+            );
+            arena::next_match_window(chrono::Utc::now(), lead).starts_at.timestamp()
+        },
+        |r| r.window.starts_at.timestamp(),
+    );
+    let record = arena::ArenaRunRecord::build(arena::ArenaRecordInput {
+        profile,
+        candidate_id: candidate_id.as_deref(),
+        solver: solver_cfg,
+        team_id: &team_id,
+        source_commit_sha,
+        window_starts_at_unix,
+        registration: registration.as_ref(),
+        outcome: outcome.as_ref(),
+        status,
+        error: error.clone(),
+    });
+    arena::append_evidence(evidence_path, &record)
+        .map_err(|e| anyhow::anyhow!("arena evidence could not be written: {e}"))?;
+    tracing::info!(
+        status = %status,
+        path = %evidence_path.display(),
+        candidate = candidate_id.as_deref().unwrap_or("-"),
+        "arena run recorded"
+    );
+
+    if status == arena::ArenaRunStatus::Completed {
+        return Ok(());
+    }
+    let text = error.unwrap_or_else(|| format!("arena run ended with status {status}"));
+    Err(anyhow::anyhow!("{}", profile.token.redact(&text)))
+}
+
+/// `arena` subcommand dispatcher (offline helpers, no network).
+fn cmd_arena(sub: ArenaCmd) -> Result<()> {
+    match sub {
+        ArenaCmd::ImportCase { input, output, name } => {
+            let case = arena_import::case_from_replay_file(&input, name.as_deref())
+                .map_err(|e| anyhow::anyhow!("arena import: {e}"))?;
+            arena_import::write_case(&output, &case)
+                .map_err(|e| anyhow::anyhow!("arena import: {e}"))?;
+            println!(
+                "{}",
+                json!({
+                    "case_id": case.case_id,
+                    "output": output.display().to_string(),
+                    "days": case.setting.day_steps.len(),
+                })
+            );
+        }
+    }
+    Ok(())
 }
 
 /// `tournament` subcommand dispatcher.
@@ -706,6 +1008,84 @@ mod tests {
         match cli.cmd {
             Cmd::Coordinator { state_output, .. } => assert_eq!(state_output, None),
             _ => panic!("expected Coordinator variant"),
+        }
+    }
+
+    /// Issue #179: the arena profile, cadence wait, candidate selection and
+    /// evidence path all parse — and only under explicit flags.
+    #[test]
+    fn parses_arena_coordinator_flags() {
+        let cli = Cli::try_parse_from([
+            "procon",
+            "coordinator",
+            "--arena",
+            "--next",
+            "--candidate",
+            "multiloop:kmeans=4:seed=42",
+            "--arena-evidence",
+            "/tmp/arena-runs.jsonl",
+        ])
+        .expect("arena invocation parses");
+        match cli.cmd {
+            Cmd::Coordinator { arena, next, candidate, arena_evidence, .. } => {
+                assert!(arena, "--arena");
+                assert!(next, "--next");
+                assert_eq!(candidate.as_deref(), Some("multiloop:kmeans=4:seed=42"));
+                assert_eq!(arena_evidence, Some(PathBuf::from("/tmp/arena-runs.jsonl")));
+            }
+            _ => panic!("expected Coordinator variant"),
+        }
+    }
+
+    /// Offline isolation (AC): every arena behaviour is opt-in. A plain
+    /// `procon coordinator` parses with the arena flags at their inert
+    /// defaults, so the default path cannot have changed meaning.
+    #[test]
+    fn arena_flags_are_opt_in() {
+        let cli = Cli::try_parse_from(["procon", "coordinator"]).expect("parses");
+        match cli.cmd {
+            Cmd::Coordinator { arena, next, candidate, arena_evidence, .. } => {
+                assert!(!arena, "arena must be off by default");
+                assert!(!next, "--next must be off by default");
+                assert!(candidate.is_none(), "no candidate implied");
+                assert!(arena_evidence.is_none(), "evidence path only in arena mode");
+            }
+            _ => panic!("expected Coordinator variant"),
+        }
+    }
+
+    /// Token hygiene (AC): `PROCON_ARENA_TOKEN` is read from the
+    /// environment in code — there is no flag that could carry it (the
+    /// standard flow never prints or types a token).
+    #[test]
+    fn no_flag_carries_the_arena_token() {
+        let err = Cli::try_parse_from(["procon", "coordinator", "--arena-token", "shhh"])
+            .expect_err("there is deliberately no --arena-token flag");
+        assert!(err.to_string().contains("arena-token"), "{err}");
+    }
+
+    /// The import hook is an offline subcommand of `procon arena`.
+    #[test]
+    fn parses_arena_import_case() {
+        let cli = Cli::try_parse_from([
+            "procon",
+            "arena",
+            "import-case",
+            "--input",
+            "replay.json",
+            "--output",
+            "case.json",
+            "--name",
+            "loss-001",
+        ])
+        .expect("import-case parses");
+        match cli.cmd {
+            Cmd::Arena(ArenaCmd::ImportCase { input, output, name }) => {
+                assert_eq!(input, PathBuf::from("replay.json"));
+                assert_eq!(output, PathBuf::from("case.json"));
+                assert_eq!(name.as_deref(), Some("loss-001"));
+            }
+            _ => panic!("expected Arena(ImportCase)"),
         }
     }
 

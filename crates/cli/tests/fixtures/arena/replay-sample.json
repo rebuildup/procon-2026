@@ -1,0 +1,32 @@
+{
+  "matchId": "arena-sample-0001",
+  "comment": "Sanitised sample of the unofficial arena's same-board replay JSON (Issue #179). Contains only the public match identifier and the official wire MatchSetting — no token, email, display name, or other account data.",
+  "setting": {
+    "startsAt": 1790000100,
+    "daySeconds": [30, 30],
+    "daySteps": [16, 16],
+    "map": {
+      "height": 8,
+      "width": 8,
+      "cells": [
+        [0, 0, 0, 0, 3, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 2, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0]
+      ]
+    },
+    "spots": [
+      { "brand": 0, "pos": 12, "stocks": 4 },
+      { "brand": 1, "pos": 27, "stocks": 4 }
+    ],
+    "agents": [0, 8, 16],
+    "fuelLimits": 30,
+    "players": 2,
+    "busyThreshold": 1,
+    "jammedThreshold": 2
+  }
+}

@@ -37,6 +37,7 @@
 //!
 //! [`protocol::MatchClient`]: protocol::MatchClient
 
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -49,6 +50,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::action_adapter::{AdapterError, decision_to_actions};
+use crate::arena::Secret;
 use crate::protocol_to_engine::protocol_setting_to_engine;
 use crate::solver_adapter::{dummy_match_snapshot, match_state_to_snapshot};
 
@@ -134,6 +136,19 @@ pub struct CoordinatorLoopConfig {
     /// type-erased boundary. When `None`, no injection happens (the
     /// solver falls back to its legacy, map-blind mode).
     pub engine_setting_slot: Option<Arc<Mutex<Option<EngineSetting>>>>,
+    /// Optional shared slot the loop refreshes with the **live** wire
+    /// `MatchState` at the start of every day (Phase 5, after `GET /`).
+    /// Solvers that mirror the offline candidate model (see
+    /// [`crate::candidate_bridge::CandidateBridge`]) clone this slot so
+    /// each day's plan starts from the server's agent positions, fuel and
+    /// traffic instead of day-0 defaults. `None` on every default path —
+    /// injecting into a slot nobody reads cannot change behaviour.
+    pub live_state_slot: Option<Arc<Mutex<Option<protocol::match_config::MatchState>>>>,
+    /// Optional secret scrubbed out of snapshot error text before it is
+    /// written (the arena token in arena mode). `None` outside arena runs;
+    /// [`Secret`]'s redacted `Debug` keeps the token out of any render of
+    /// this config either way.
+    pub secret_redaction: Option<Secret>,
 }
 
 impl Default for CoordinatorLoopConfig {
@@ -150,6 +165,8 @@ impl Default for CoordinatorLoopConfig {
             server_url: None,
             days_total_hint: None,
             engine_setting_slot: None,
+            live_state_slot: None,
+            secret_redaction: None,
         }
     }
 }
@@ -198,6 +215,8 @@ impl CoordinatorLoopConfig {
             server_url,
             days_total_hint: None,
             engine_setting_slot: None,
+            live_state_slot: None,
+            secret_redaction: None,
         })
     }
 }
@@ -316,7 +335,20 @@ fn write_snapshot(cfg: &CoordinatorLoopConfig, snap: &MatchStateSnapshot) {
     let Some(path) = cfg.state_output_path.as_ref() else {
         return;
     };
-    let Ok(json) = serde_json::to_vec_pretty(snap) else {
+    // Arena mode may register a secret (the arena token). Server-provided
+    // error text lands in `snap.error`, so scrub the secret before this
+    // durable artifact can contain it.
+    let redacted;
+    let payload: &MatchStateSnapshot = match cfg.secret_redaction.as_ref() {
+        Some(secret) => {
+            let mut copy = snap.clone();
+            copy.error = copy.error.map(|e| secret.redact(&e));
+            redacted = copy;
+            &redacted
+        }
+        None => snap,
+    };
+    let Ok(json) = serde_json::to_vec_pretty(payload) else {
         tracing::warn!("state snapshot: serde_json serialization failed");
         return;
     };
@@ -567,6 +599,15 @@ where
             )));
         }
 
+        // Hand the live wire state to solvers that registered a slot
+        // (candidate bridge). Default path: no slot, nothing happens.
+        if let Some(slot) = cfg.live_state_slot.as_ref() {
+            let mut guard = slot.lock().map_err(|_| {
+                CoordinatorLoopError::Conversion("live state slot mutex poisoned".to_owned())
+            })?;
+            *guard = Some(state.clone());
+        }
+
         let snapshot =
             match_state_to_snapshot(&state, &match_id, &team).unwrap_or_else(dummy_match_snapshot);
         let remaining_ms = u64::try_from(day_seconds.saturating_mul(1000)).unwrap_or(60_000);
@@ -648,27 +689,59 @@ async fn submit_agent_with_retry(
     max_attempts: u32,
     backoff: Duration,
 ) -> Result<SubmitAck, CoordinatorLoopError> {
+    retry_on_access_time(
+        "POST /agent",
+        max_attempts,
+        backoff,
+        "kind window did not open within retry budget",
+        || client.submit_agent(kinds.clone()),
+    )
+    .await
+    .map_err(CoordinatorLoopError::AgentSubmit)
+}
+
+/// Bounded retry on `403 AccessTimeError` — the shared semantics fixed in
+/// PR #165 for the coordinator's pre-start windows (issue #156 kind window,
+/// issue #164 `-match-start-delay`).
+///
+/// `op` is attempted up to `max_attempts` times, sleeping `backoff` between
+/// attempts. An [`protocol::HttpClientError::AccessTime`] means "the window
+/// is not open yet / already closed" and is retried; **every other error is
+/// propagated immediately** (auth, drift, transport — those must not be
+/// retried blindly). When the budget runs out the last `AccessTime`
+/// message is surfaced, or `exhausted_hint` if no attempt ran at all.
+///
+/// This is the *one* `AccessTime` retry path in the CLI: the arena's
+/// pre-match registration phase reuses it instead of inventing a second
+/// retry loop (Issue #179).
+pub async fn retry_on_access_time<T, F, Fut>(
+    what: &str,
+    max_attempts: u32,
+    backoff: Duration,
+    exhausted_hint: &str,
+    mut op: F,
+) -> Result<T, protocol::HttpClientError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, protocol::HttpClientError>>,
+{
     let mut last_access_time: Option<String> = None;
     for attempt in 0..max_attempts {
-        match client.submit_agent(kinds.clone()).await {
-            Ok(ack) => return Ok(ack),
+        match op().await {
+            Ok(value) => return Ok(value),
             Err(protocol::HttpClientError::AccessTime { message }) => {
-                // The kind window is either not yet open (server still
-                // in pre-start) or just closed (race against deadline).
-                // Either way, retrying with backoff is the documented
-                // behaviour. Cache the last message so we can surface
-                // it once the budget is exhausted.
-                tracing::debug!(attempt, message = %message, "POST /agent 403 AccessTime, retrying");
+                tracing::debug!(attempt, what, message = %message, "403 AccessTime, retrying");
                 last_access_time = Some(message);
-                tokio::time::sleep(backoff).await;
+                if attempt + 1 < max_attempts {
+                    tokio::time::sleep(backoff).await;
+                }
             }
-            Err(e) => return Err(CoordinatorLoopError::AgentSubmit(e)),
+            Err(e) => return Err(e),
         }
     }
-    Err(CoordinatorLoopError::AgentSubmit(protocol::HttpClientError::AccessTime {
-        message: last_access_time
-            .unwrap_or_else(|| "kind window did not open within retry budget".to_owned()),
-    }))
+    Err(protocol::HttpClientError::AccessTime {
+        message: last_access_time.unwrap_or_else(|| exhausted_hint.to_owned()),
+    })
 }
 
 /// Retry `GET /` while the server is still in the pre-start window
@@ -684,27 +757,15 @@ async fn fetch_state_with_retry(
     max_attempts: u32,
     backoff: Duration,
 ) -> Result<protocol::match_config::MatchState, CoordinatorLoopError> {
-    let mut last_access_time: Option<String> = None;
-    for attempt in 0..max_attempts {
-        match client.get_match_state().await {
-            Ok(state) => return Ok(state),
-            Err(protocol::HttpClientError::AccessTime { message }) => {
-                // The match has been announced via `starts_at > 0` but
-                // the server's `-match-start-delay` (default 1s,
-                // configurable up to 5s) has not yet elapsed. Retry
-                // with backoff until the budget is exhausted; cache
-                // the last message so the terminal error is meaningful.
-                tracing::debug!(attempt, message = %message, "GET / 403 AccessTime, retrying");
-                last_access_time = Some(message);
-                tokio::time::sleep(backoff).await;
-            }
-            Err(e) => return Err(CoordinatorLoopError::State(e)),
-        }
-    }
-    Err(CoordinatorLoopError::State(protocol::HttpClientError::AccessTime {
-        message: last_access_time
-            .unwrap_or_else(|| "match-start-delay did not elapse within retry budget".to_owned()),
-    }))
+    retry_on_access_time(
+        "GET /",
+        max_attempts,
+        backoff,
+        "match-start-delay did not elapse within retry budget",
+        || client.get_match_state(),
+    )
+    .await
+    .map_err(CoordinatorLoopError::State)
 }
 
 /// Build the `POST /agent` kinds vector for a given solver name.
