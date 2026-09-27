@@ -23,6 +23,15 @@
 //!     --baseline wait \
 //!     --output-dir target/eval
 //!
+//! # the fuel-stress axis (Issue #204): `fuel=tight` pins fuelLimits to the
+//! # Q14 floor, so fuel-aware and fuel-blind candidates finally differ
+//! procon-eval \
+//!     --cases all \
+//!     --generated 'road-heavy:seed=1:fuel=tight,open:seed=1:fuel=tight' \
+//!     --candidates 'loop:iterations=32:initial=greedy:walk=astar,wait' \
+//!     --baseline wait \
+//!     --output-dir target/eval-tight
+//!
 //! # the candidate axis the registry supports today
 //! procon-eval --list-candidates
 //! ```
@@ -67,12 +76,14 @@ struct Args {
     cases: String,
 
     /// Opt-in generated cases, comma-separated with explicit seeds, e.g.
-    /// `open:seed=1,road-heavy:seed=7:size=small:days=3`.
+    /// `open:seed=1,road-heavy:seed=7:size=small:days=3:fuel=tight`.
     ///
     /// Grammar: `<archetype>[:seed=<u64>][:size=small|medium|large]
-    /// [:days=1..3]`, where `seed=` is required — explicit seeds are what let
-    /// sibling candidates be compared on one identical case axis. Appended to
-    /// the `--cases` selection; an empty value selects nothing.
+    /// [:days=1..3][:fuel=comfortable|tight]`, where `seed=` is required —
+    /// explicit seeds are what let sibling candidates be compared on one
+    /// identical case axis, and `fuel=tight` is the fuel-stress axis (Issue
+    /// #204; default `comfortable` keeps the v1 no-fuel-short invariant).
+    /// Appended to the `--cases` selection; an empty value selects nothing.
     #[arg(long, default_value = "")]
     generated: String,
 
@@ -636,6 +647,35 @@ mod tests {
                 assert_eq!(params["generator_version"], bench::GENERATOR_VERSION);
             }
         }
+    }
+
+    /// The fuel axis (Issue #204) survives flag → corpus → recorded
+    /// parameters, the default spelling adds no bytes to the id, and a
+    /// nonsense mode dies as a case generation failure — never a run record.
+    #[test]
+    fn the_generated_flag_carries_the_fuel_axis() {
+        let args = parse(&["--generated", "open:seed=1:fuel=tight"]);
+        assert_eq!(args.generated, "open:seed=1:fuel=tight");
+        let corpus = load_corpus(&args.cases, &args.generated).expect("tight selection loads");
+        let case =
+            corpus.cases.iter().find(|c| c.case_id.starts_with("generated:")).expect("generated");
+        assert_eq!(case.case_id, "generated:v1:open:seed=1:fuel=tight");
+        let params = case.generation_parameters.as_ref().expect("params recorded");
+        assert_eq!(params["fuel"], "tight");
+
+        // The default spelling is byte-identical to the pre-axis corpus.
+        let default = load_corpus("all", "open:seed=1").expect("default loads");
+        assert!(default.case_ids().contains(&"generated:v1:open:seed=1"));
+        let case =
+            default.cases.iter().find(|c| c.case_id.starts_with("generated:")).expect("generated");
+        assert_eq!(
+            case.generation_parameters.as_ref().expect("params recorded")["fuel"],
+            "comfortable"
+        );
+
+        // A nonsense mode is a selection-time generation failure.
+        let err = load_corpus("all", "open:seed=1:fuel=extreme").expect_err("bad mode");
+        assert!(err.starts_with("case generation failure"), "{err}");
     }
 
     /// Generated cases are opt-in: `--cases all` alone still evaluates exactly

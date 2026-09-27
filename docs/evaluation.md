@@ -287,6 +287,15 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
     --candidates 'loop:iterations=32:initial=greedy,wait' \
     --baseline wait \
     --output-dir target/eval
+
+# 燃料ストレス軸（#204）: fuel=tight で Q14 下限まで絞った同一 seed set
+PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
+  cargo run -q -p bench --bin procon-eval -- \
+    --cases all \
+    --generated 'road-heavy:seed=1:fuel=tight,open:seed=1:fuel=tight' \
+    --candidates 'loop:iterations=32:initial=greedy:walk=astar,wait' \
+    --baseline wait \
+    --output-dir target/eval-tight
 ```
 
 構文:
@@ -298,7 +307,24 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
                                        1 つの case 軸に乗せるもの
           | "size=" small|medium|large  既定は archetype の既定 size
           | "days=" 1..=3               既定は archetype の既定 day 数
+          | "fuel=" comfortable|tight   既定 comfortable（#185 の v1 と同一意味）。
+                                       tight は燃料ストレス軸（#204）
 ```
+
+- `fuel=` は archetype / size / days とは独立な軸です（Issue #204）。
+  `comfortable` は v1 の不変条件 `3 × daySteps[0] ≥ fuelLimits ≥ 2 × sum(daySteps)`
+  をそのまま維持し、燃料は**一度も枯渇しません**（`fuel_short_count = 0` が構造的に保証）。
+  `tight` は公式 envelope（Q&A Q14: `fuelLimits ∈ 1..=3 × daySteps[0]`、
+  `docs/contest/api.md:199`）の下限 `fuelLimits = daySteps[0]` に固定し、
+  worst-case burn `2 × sum(daySteps)` がタンクを超えるようにする — つまり
+  **fuel-blind な候補が invalid になり得る**軸です（fuel-short は候補の敗北であり
+  case の欠陥ではなく、`RunRecord: status=invalid` として記録されます）。
+- **fuel mode は seed set evidence に必ず含まれます**（#204 の AC）:
+  `fuel=tight` は `case_id` に `:fuel=tight` として現れ（既定 `comfortable` は
+  セグメントを付けず id が byte 単位で既存と同一のまま）、
+  `generation_parameters.fuel` として両モードとも `RunRecord` に行単位で保存されます。
+  したがって (3) generated seed set を復元するだけで、その evidence が
+  comfortable 用か tight 用かは常に判別できます。
 
 - `--cases` は **fixture 専用**。`--cases all` は今も「bundled 9 件」の意味のままで、
   既存の evidence の意味が勝手に変わることはありません。
@@ -346,20 +372,25 @@ bundled fixture は **`road-heavy-v2`（3 日、#187）以外が単日**（`dayS
 - multi-day は **front-loaded**（`daySteps[0]` が長く、後半は `W+H` 下限）。
   燃料は `daySteps[0]` の 3 倍が上限（Q14）なのに**日をまたいで補給されない**
   ため、均一な `[B,B,B]` は候補者が燃料切れして全件 `invalid` になります。
-  generator は `fuelLimits >= 2 × sum(daySteps)`（1 行動の最大燃料消費 2 × 総 step 数）
+  既定の `fuel=comfortable` では generator が
+  `fuelLimits >= 2 × sum(daySteps)`（1 行動の最大燃料消費 2 × 総 step 数）
   を**生成時の不変条件**として検査し、違反は case generation failure にします。
+  （`fuel=tight` はこの下限を意図的に外します — 下の fuel mode 節参照。）
 
 ### determinism と case id
 
 ```text
-case_id = generated:v<generator_version>:<archetype>:seed=<seed>[:size=<class>][:days=<n>]
+case_id = generated:v<generator_version>:<archetype>:seed=<seed>[:size=<class>][:days=<n>][:fuel=<mode>]
 ```
 
-`:size=` / `:days=` は archetype の既定と異なるときだけ付くので、既定なら
-`generated:v1:road-heavy:seed=7` のように短く、それでも (version, archetype, seed,
-size, days) は id から一意に復元できます。`generation_parameters` は
-`{generator_version, archetype, seed, size, days}` を JSON で保持し、
-`RunRecord` にそのまま保存されます。
+`:size=` / `:days=` は archetype の既定と異なるときだけ、`:fuel=` は既定
+（`comfortable`）以外のときだけ付くので、既定なら
+`generated:v1:road-heavy:seed=7` のように短く — **fuel 軸追加前と byte 単位で同一** —
+それでも (version, archetype, seed, size, days, fuel) は id から一意に復元できます。
+`generation_parameters` は `{generator_version, archetype, seed, size, days, fuel}` を
+JSON で保持し、`RunRecord` にそのまま保存されます（fuel 軸の追加は既定 params の
+出力を変えないため `GENERATOR_VERSION` は 1 のままです。v1 の既存 evidence は
+`fuel` キーなしで読めば `comfortable` と解釈されます）。
 
 generator の出力は `GENERATOR_VERSION` に束縛されています。**出力が変わる変更を
 したら version を上げる**こと。v1 の (params, seed) を黙って書き換えると、
@@ -373,17 +404,19 @@ screening / confirmation は結果を別条件のまま直接比較しません�
 1. `source_commit_sha`
 2. fixture corpus（`--cases` の選択）
 3. **generated seed set**（`--generated` の spec 文字列、または records の
-   `case_id` + `seed` + `generation_parameters`）
+   `case_id` + `seed` + `generation_parameters`。**fuel mode もここに入ります** —
+   `case_id` の `:fuel=tight` セグメントと `generation_parameters.fuel`）
 4. generator version（`generation_parameters.generator_version`）
 5. scoring semantics（official 4 段組）
 6. timeout policy（`--harness-timeout-ms` / `--harness-margin-ms`）
 
 `runs.jsonl` は (3)(4) を行ごとに持っているので、seed set は evidence から
-直接復元できます:
+直接復元できます（fuel mode 列つき）:
 
 ```bash
 jq -r 'select(.case_id | startswith("generated:"))
-       | [.case_id, .seed, .generation_parameters.generator_version] | @tsv' \
+       | [.case_id, .seed, .generation_parameters.generator_version,
+          .generation_parameters.fuel] | @tsv' \
   target/eval/runs.jsonl
 ```
 
@@ -395,6 +428,11 @@ jq -r 'select(.case_id | startswith("generated:"))
 | screening | archetype ごとに複数 seed | 多様な map で足切り |
 | confirmation | 生存者のみ seed 数を増やす | 偶然の map 特性を排除 |
 | regression | 負けた case / edge case を**固定 fixture に昇格** | 回帰を永続化 |
+
+fuel 系 hypothesis は funnel 全段を **既定 `fuel=comfortable`** で回し、
+**confirmation 段だけ `fuel=tight` の seed set** を追加で回します（Issue #204 の方針）。
+どちらの seed set で取った evidence かは上記 (3) に必ず現れるので、
+comfortable と tight の結果を読み違えることはできません。
 
 wall-clock（第 4 段 `response_time`）のノイズだけで淘汰しないこと。
 第 1〜3 段を主 evidence とし、第 4 段は同点時の追加 evidence です。
