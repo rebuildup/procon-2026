@@ -79,7 +79,8 @@ pub use case::{CaseError, CaseSource, CaseSpec, Corpus};
 pub use evaluate::{EvalConfig, Evaluator, RunRecord, RunStatus, source_commit_sha};
 pub use fixture::{FixtureCategory, FixtureError, FixtureResult, MatchFixture, MatchFixtureLoader};
 pub use generator::{
-    Archetype, GENERATOR_VERSION, GenerationError, GenerationParams, MAX_GENERATED_DAYS, SizeClass,
+    Archetype, FuelMode, GENERATOR_VERSION, GenerationError, GenerationParams, MAX_GENERATED_DAYS,
+    SizeClass,
 };
 pub use report::{ReportError, ReportPaths, read_runs, write_runs};
 pub use tournament::{TournamentConfig, TournamentError, TournamentOutcome, TournamentRunner};

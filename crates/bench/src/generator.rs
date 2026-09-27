@@ -6,7 +6,7 @@
 //! a **generated corpus that complements — never replaces — the fixtures**:
 //!
 //! ```text
-//! GenerationParams { generator_version, archetype, seed, size, days }
+//! GenerationParams { generator_version, archetype, seed, size, days, fuel }
 //!         │   in-crate xorshift64* PRNG (no new Cargo dependency)
 //!         ▼
 //! protocol::match_config::MatchSetting
@@ -22,10 +22,12 @@
 //!    generations with `serde_json`
 //!    (`same_params_and_seed_regenerate_byte_identical`).
 //! 2. **Traceable identity** — `case_id` embeds generator version, archetype
-//!    and seed: `generated:v1:road-heavy:seed=7`, with `:size=` / `:days=`
-//!    appended when they differ from the archetype default. `seed`,
-//!    `generation_parameters` (which carry `generator_version`) and `case_id`
-//!    all reach `RunRecord` unchanged.
+//!    and seed: `generated:v1:road-heavy:seed=7`, with `:size=` / `:days=` /
+//!    `:fuel=` appended when they differ from the archetype default (the fuel
+//!    mode is appended only for the non-default `fuel=tight`, so every
+//!    pre-existing id stays byte-identical). `seed`,
+//!    `generation_parameters` (which carry `generator_version` and `fuel`)
+//!    and `case_id` all reach `RunRecord` unchanged.
 //! 3. **Validator-first** — every generated setting passes
 //!    [`validate_setting`], which runs the structural fixture validator, the
 //!    official `daySteps` / `daySeconds` bounds, `engine::from_wire` (the one
@@ -52,7 +54,7 @@
 //! | agents | `3..=8` | `MatchSetting::validate` (`crates/engine/src/model.rs`), `GameModel::AGENT_COUNT_MIN/MAX`, `MatchFixture::validate_counts` |
 //! | spots | `3..=32` | `MatchFixture::validate_counts` (`crates/bench/src/fixture.rs`), `GameModel::SPOT_COUNT_MAX` (Q&A Q15) |
 //! | spot `stocks` | `1..= agent count` | Q&A Q15 (`crates/domain/src/cell.rs::Spot::new`) |
-//! | `fuelLimits` | `3 * daySteps[0]`, and always `>= 2 * sum(daySteps)` | Q&A Q14 multiplier `1..=3` (`crates/engine/src/rules.rs`, `docs/contest/api.md`) + the completability invariant in [`validate_setting`] |
+//! | `fuelLimits` | `fuel=comfortable` (default): `3 * daySteps[0]` and always `>= 2 * sum(daySteps)`; `fuel=tight`: `daySteps[0]` (the Q14 floor) | Q&A Q14 multiplier `1..=3` (`crates/engine/src/rules.rs`, `docs/contest/api.md:199`) + the per-mode invariants in [`check_fuel_budget`] |
 //! | `busyThreshold` | `1..=5` | Q&A Q13 (`crates/engine/src/rules.rs::TrafficThresholds::new`) |
 //! | `jammedThreshold` | `busy+1 ..= 10` | Q&A Q13 (same function) |
 //! | cell type | `0..=3` | `protocol::match_config::CellType` |
@@ -85,9 +87,38 @@
 //! Multi-day cases are **front-loaded** (`daySteps[0]` is the long day, later
 //! days sit at the `W+H` floor): fuel is capped at `3 x daySteps[0]` but does
 //! not refill across days, so a uniform `[B,B,B]` plan would let any real
-//! candidate run the tank dry. See [`validate_setting`]'s fuel invariant —
-//! generated cases are completable by construction, and a case that could
-//! not be is a *case-generation failure*, never a candidate failure.
+//! candidate run the tank dry. See [`check_fuel_budget`]'s per-mode fuel
+//! invariants — in the default `fuel=comfortable` mode generated cases are
+//! completable by construction, and a case that could not be is a
+//! *case-generation failure*, never a candidate failure.
+//!
+//! # Fuel modes (`fuel=comfortable | tight`) — Issue #204
+//!
+//! The fuel budget is an axis, not a constant. Two modes, both inside the
+//! official Q&A Q14 envelope `1 ..= 3 x daySteps[0]`
+//! (`docs/contest/api.md:199`, `crates/engine/src/rules.rs`):
+//!
+//! | mode | `fuelLimits` | invariant | what it can observe |
+//! |---|---|---|---|
+//! | `comfortable` (default) | `3 x daySteps[0]` | `3 x daySteps[0] >= fuelLimits >= 2 x sum(daySteps)` — every agent could walk every step of every day on worst-case terrain (fuel 2/step) and still not run dry | nothing fuel-related: fuel never binds, `fuel_short_count` is structurally 0 (the v1 guarantee, unchanged) |
+//! | `tight` | `daySteps[0]` — the floor of the generator's band, and the value the official sample's ratio is closest to on multi-day plans | `fuelLimits = daySteps[0] < 2 x sum(daySteps)` — the worst-case burn of *one* agent exceeds the tank, so a fuel-blind walk **can** go fuel-short | the fuel axis: fuel-aware vs fuel-blind candidates finally differ |
+//!
+//! `tight` deliberately drops the `>= 2 x sum(daySteps)` completability floor:
+//! that floor is exactly why the axis was unobservable (Issue #192's Stage B
+//! saw `fuel_short_count = 0` on every run). A fuel-short run is a
+//! **candidate** failure (`RunRecord` with `status: invalid`), never a case
+//! failure — the distinction Issue #185's failure semantics established.
+//!
+//! Completability under `tight` is proved, not assumed: the fuel-aware walker
+//! (`walk=astar`, Issue #215) plans every leg against the fuel the agent will
+//! actually have and re-checks affordability before emitting, so it completes
+//! every tight case with `fuel_short_count = 0`. That proof lives in
+//! `crates/bench/tests/fuel_stress.rs` — a tight case no fuel-aware walker
+//! can finish would be a generator bug, caught there rather than shipped.
+//!
+//! Determinism note: `tight` pins one value (`daySteps[0]`) instead of
+//! sampling the band, so a tight case has a single number to quote in
+//! evidence and regeneration stays a pure function of the recorded params.
 //!
 //! # Selection grammar (`procon-eval --generated`)
 //!
@@ -98,6 +129,8 @@
 //!                                      sibling comparisons on one case axis
 //!          | "size=" small|medium|large
 //!          | "days=" 1..=3
+//!          | "fuel=" comfortable|tight  default comfortable — the fuel-stress
+//!                                      axis (Issue #204)
 //! ```
 //!
 //! Empty input selects nothing: generated cases are **opt-in** and `--cases
@@ -356,6 +389,65 @@ impl std::fmt::Display for SizeClass {
 }
 
 // ---------------------------------------------------------------------------
+// Fuel mode (Issue #204)
+// ---------------------------------------------------------------------------
+
+/// How much fuel the generated case hands out — the fuel-stress axis.
+///
+/// Both modes stay inside the official Q&A Q14 envelope
+/// `fuelLimits ∈ 1..=3 × daySteps[0]` (`docs/contest/api.md:199`,
+/// `crates/engine/src/rules.rs::validate_patrol_fuel_multiplier`); they differ
+/// in which end of the band they pick and therefore in what the evaluation can
+/// *observe*. See the module docs' "Fuel modes" table and
+/// [`check_fuel_budget`] for the per-mode invariants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FuelMode {
+    /// Generator v1 semantics, unchanged: `3 × daySteps[0] ≥ fuelLimits ≥
+    /// 2 × sum(daySteps)`, so no candidate can run the tank dry and
+    /// `fuel_short_count` is structurally 0. This is the default, and default
+    /// cases keep byte-identical `case_id`s (no `:fuel=` segment).
+    #[default]
+    Comfortable,
+    /// Fuel-stress mode: `fuelLimits = daySteps[0]` — the floor of the
+    /// generator's Q14 band — dropped *below* the v1 completability floor so a
+    /// fuel-blind walk can go fuel-short while a fuel-aware walk still
+    /// completes. Surfaced as `:fuel=tight` in the `case_id`.
+    Tight,
+}
+
+impl FuelMode {
+    /// Every mode, in `case_id` order (default first).
+    pub const ALL: [Self; 2] = [Self::Comfortable, Self::Tight];
+
+    /// Stable lowercase name — the `case_id` / grammar segment and the JSON
+    /// value.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Comfortable => "comfortable",
+            Self::Tight => "tight",
+        }
+    }
+
+    /// Parse the lowercase name.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.as_str() == text)
+    }
+
+    /// The comma-separated list of valid names, for error messages.
+    pub fn names() -> String {
+        Self::ALL.iter().map(|m| m.as_str()).collect::<Vec<_>>().join(", ")
+    }
+}
+
+impl std::fmt::Display for FuelMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Parameters
 // ---------------------------------------------------------------------------
 
@@ -363,7 +455,7 @@ impl std::fmt::Display for SizeClass {
 ///
 /// Stored verbatim into `CaseSpec::generation_parameters`, which `RunRecord`
 /// copies — so a durable record carries generator version, archetype, seed,
-/// size and day count without any extra schema.
+/// size, day count and fuel mode without any extra schema.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenerationParams {
     /// [`GENERATOR_VERSION`] of the implementation that must reproduce this.
@@ -376,11 +468,16 @@ pub struct GenerationParams {
     pub size: SizeClass,
     /// Number of days (`daySteps` / `daySeconds` entries).
     pub days: u32,
+    /// Fuel budget mode (Issue #204). Defaults to [`FuelMode::Comfortable`],
+    /// so every record written before this field existed still deserializes
+    /// as the mode it was generated under.
+    #[serde(default)]
+    pub fuel: FuelMode,
 }
 
 impl GenerationParams {
     /// Parameters for `archetype` at `seed`, using the archetype's default
-    /// size and day count.
+    /// size, day count and the default fuel mode.
     #[must_use]
     pub const fn new(archetype: Archetype, seed: u64) -> Self {
         Self {
@@ -389,6 +486,7 @@ impl GenerationParams {
             seed,
             size: archetype.default_size(),
             days: archetype.default_days(),
+            fuel: FuelMode::Comfortable,
         }
     }
 
@@ -409,13 +507,15 @@ impl GenerationParams {
     /// Grammar (reverse-parseable to generator version + archetype + seed):
     ///
     /// ```text
-    /// generated:v<version>:<archetype>:seed=<seed>[:size=<class>][:days=<n>]
+    /// generated:v<version>:<archetype>:seed=<seed>[:size=<class>][:days=<n>][:fuel=<mode>]
     /// ```
     ///
     /// `:size=` / `:days=` appear only when they differ from the archetype
-    /// default, so the common screening id stays short
-    /// (`generated:v1:road-heavy:seed=7`) while two specs that differ in size
-    /// or day count can never collide inside one `Corpus`.
+    /// default, and `:fuel=` only for the non-default `fuel=tight`, so the
+    /// common screening id stays short (`generated:v1:road-heavy:seed=7`) —
+    /// byte-identical to every id written before the fuel axis existed — while
+    /// two specs that differ in size, day count or fuel mode can never collide
+    /// inside one `Corpus`.
     #[must_use]
     pub fn case_id(&self) -> String {
         let mut id = format!(
@@ -430,11 +530,14 @@ impl GenerationParams {
         if self.days != self.default_days() {
             let _ = write!(id, ":days={}", self.days);
         }
+        if self.fuel != FuelMode::default() {
+            let _ = write!(id, ":fuel={}", self.fuel.as_str());
+        }
         id
     }
 
     /// `generation_parameters` payload — a flat JSON object carrying
-    /// `generator_version`, `archetype`, `seed`, `size` and `days`.
+    /// `generator_version`, `archetype`, `seed`, `size`, `days` and `fuel`.
     ///
     /// # Errors
     /// Only if `serde_json` cannot encode the struct, which cannot happen for
@@ -640,7 +743,7 @@ fn parse_item(item: &str) -> Result<GenerationParams, GenerationError> {
         )));
     };
     let mut params = GenerationParams::new(archetype, 0);
-    let (mut seed_seen, mut size_seen, mut days_seen) = (false, false, false);
+    let (mut seed_seen, mut size_seen, mut days_seen, mut fuel_seen) = (false, false, false, false);
     for kv in parts {
         let Some((key, value)) = kv.split_once('=') else {
             return Err(reject(format!("expected key=value, got {kv:?}")));
@@ -673,8 +776,19 @@ fn parse_item(item: &str) -> Result<GenerationParams, GenerationError> {
                     .map_err(|_| reject(format!("days {value:?} is not an integer")))?;
                 days_seen = true;
             }
+            "fuel" => {
+                if fuel_seen {
+                    return Err(reject("duplicate key `fuel`".to_owned()));
+                }
+                params.fuel = FuelMode::parse(value).ok_or_else(|| {
+                    reject(format!("fuel {value:?}; expected {}", FuelMode::names()))
+                })?;
+                fuel_seen = true;
+            }
             other => {
-                return Err(reject(format!("unknown key {other:?}; expected seed | size | days")));
+                return Err(reject(format!(
+                    "unknown key {other:?}; expected seed | size | days | fuel"
+                )));
             }
         }
     }
@@ -705,9 +819,11 @@ fn parse_item(item: &str) -> Result<GenerationParams, GenerationError> {
 /// 2. day-structure bounds (`daySteps` per-day official range, `daySeconds`
 ///    range, equal lengths, expected day count);
 /// 3. [`check_fuel_budget`] — Q&A Q14's `1..=3 x daySteps[0]` cap *and* the
-///    completability invariant `fuel >= 2 x sum(daySteps)`, which is what
-///    makes a fuel-short (`invalid`) run structurally impossible rather than
-///    merely unlikely;
+///    per-mode invariant: `fuel=comfortable` keeps
+///    `fuel >= 2 x sum(daySteps)` (what makes a fuel-short `invalid` run
+///    structurally impossible), `fuel=tight` pins `fuel == daySteps[0]`
+///    below that bound (the fuel axis exists, completable by a fuel-aware
+///    walk — Issue #204);
 /// 4. spot `stocks <= agent count` (Q&A Q15, which no wire validator
 ///    enforces on this path);
 /// 5. `engine::from_wire::sim_config_from_wire` — Q&A Q13 thresholds;
@@ -798,13 +914,15 @@ fn check_day_structure(
     Ok(())
 }
 
-/// The fuel invariant: the official cap and the completability bound together.
+/// The fuel invariant: the official cap plus the per-mode budget rule.
 ///
 /// Two facts collide here:
 ///
 /// - **The cap.** `fuelLimits` must sit in `1..=3 x daySteps[0]` (Q&A Q14;
 ///   `docs/contest/api.md`, `docs/contest/openapi.md` — the official sample
-///   declares `daySteps [64,64,64]` → `fuelLimits 192` = 3x).
+///   declares `daySteps [64,64,64]` → `fuelLimits 192` = 3x). The generator's
+///   own band is the tighter `daySteps[0] ..= 3 x daySteps[0]`, and **both**
+///   fuel modes stay inside it.
 /// - **The burn does not reset.** Fuel is a per-agent tank that persists
 ///   across the whole match: only a supply-agent contact refills it. So burn
 ///   scales with `sum(daySteps)` over *all* days while the cap scales only
@@ -812,17 +930,26 @@ fn check_day_structure(
 ///
 /// Worst-case burn for one agent is `2 x sum(daySteps)` — the maximum terrain
 /// fuel cost is 2 (`engine::rules::fuel_cost`: plain 1, mountain / road 2) and
-/// an agent acts at most once per step — so the generator guarantees
+/// an agent acts at most once per step — and the two modes split on which side
+/// of it the tank sits (Issue #204):
 ///
 /// ```text
-/// 3 x daySteps[0] >= fuelLimits >= 2 x sum(daySteps)
+/// comfortable: 3 x daySteps[0] >= fuelLimits >= 2 x sum(daySteps)   ← never binds
+/// tight:       fuelLimits == daySteps[0] <  2 x sum(daySteps)       ← can bind
 /// ```
 ///
-/// Without the right-hand inequality a uniform multi-day case such as
-/// `[24,24,24]` with `fuelLimits 72` is legal on paper yet every real
+/// **comfortable** without the right-hand inequality a uniform multi-day case
+/// such as `[24,24,24]` with `fuelLimits 72` is legal on paper yet every real
 /// candidate runs the tank dry and the whole corpus column comes back
 /// `invalid` — invalid-by-construction. This check turns that generator bug
 /// into an explicit case-generation failure.
+///
+/// **tight** drops that floor *on purpose*: it is what makes fuel observable
+/// at all (every Stage B run on the comfortable corpus reported
+/// `fuel_short_count = 0`). A candidate that still runs dry here is judged the
+/// way Issue #185 always judged candidates — an `invalid` `RunRecord`, never a
+/// case failure — and `crates/bench/tests/fuel_stress.rs` proves the axis is
+/// still completable by the fuel-aware `walk=astar`.
 fn check_fuel_budget(
     params: &GenerationParams,
     setting: &WireSetting,
@@ -841,14 +968,41 @@ fn check_fuel_budget(
     }
     let total: i64 = setting.day_steps.iter().map(|s| i64::from(*s)).sum();
     let worst_case_burn = total.saturating_mul(2);
-    if fuel < worst_case_burn {
-        return Err(params.invalid(format!(
-            "fuelLimits {fuel} cannot cover the worst-case burn {worst_case_burn} \
-             (2 fuel x {total} total steps across {} days); fuel does not refill at day \
-             boundaries while Q&A Q14 caps fuelLimits at 3 x daySteps[0], so this case would \
-             be invalid-by-construction",
-            setting.day_steps.len()
-        )));
+    match params.fuel {
+        FuelMode::Comfortable => {
+            if fuel < worst_case_burn {
+                return Err(params.invalid(format!(
+                    "fuelLimits {fuel} cannot cover the worst-case burn {worst_case_burn} \
+                     (2 fuel x {total} total steps across {} days); fuel does not refill at day \
+                     boundaries while Q&A Q14 caps fuelLimits at 3 x daySteps[0], so this case would \
+                     be invalid-by-construction",
+                    setting.day_steps.len()
+                )));
+            }
+        }
+        FuelMode::Tight => {
+            // `tight` is *defined* as the Q14 floor of the generator's band:
+            // one day's steps of fuel for the whole match. Anything else would
+            // be a different case than the `:fuel=tight` case_id promises.
+            if fuel != floor {
+                return Err(params.invalid(format!(
+                    "fuel=tight requires fuelLimits == daySteps[0] == {floor}, got {fuel} — \
+                     the Q&A Q14 floor of 1..=3 x daySteps[0] (docs/contest/api.md) is the \
+                     fuel-stress axis (Issue #204)"
+                )));
+            }
+            // The axis-existence condition: worst-case burn must be able to
+            // exceed the tank, otherwise `tight` is indistinguishable from
+            // `comfortable` and the mode is lying about what it can observe.
+            if fuel >= worst_case_burn {
+                return Err(params.invalid(format!(
+                    "fuel=tight requires fuelLimits {fuel} < worst-case burn {worst_case_burn} \
+                     (2 fuel x {total} total steps across {} days) — without that gap the fuel \
+                     axis does not exist",
+                    setting.day_steps.len()
+                )));
+            }
+        }
     }
     Ok(())
 }
@@ -879,11 +1033,18 @@ fn build_setting(params: &GenerationParams) -> Result<WireSetting, GenerationErr
     let base_steps = params.size.edge().saturating_add(params.size.edge());
     let day_steps = plan_day_steps(params, &mut rng, base_steps)?;
     let day_seconds = vec![DAY_SECONDS; days_len(params)];
-    // Q&A Q14: fuel cap = 1..=3 x day-1 steps. The generator always picks the
-    // top of the range (12x the floor of a single `W+H` day) *and* keeps the
-    // completability invariant `fuel >= 2 x sum(daySteps)`, so no legal plan
-    // can run the tank dry — see `check_fuel_budget`.
-    let fuel_limits = day_steps.first().copied().unwrap_or(base_steps).saturating_mul(3);
+    // Q&A Q14: fuel cap = 1..=3 x day-1 steps (docs/contest/api.md:199,
+    // crates/engine/src/rules.rs). `comfortable` picks the top of the range
+    // (12x the floor of a single `W+H` day) *and* keeps the completability
+    // invariant `fuel >= 2 x sum(daySteps)`, so no legal plan can run the tank
+    // dry; `tight` picks the band floor instead — one day's steps for the whole
+    // match — so fuel genuinely binds. Per-mode invariants are re-checked by
+    // `check_fuel_budget`.
+    let day0 = day_steps.first().copied().unwrap_or(base_steps);
+    let fuel_limits = match params.fuel {
+        FuelMode::Comfortable => day0.saturating_mul(3),
+        FuelMode::Tight => day0,
+    };
 
     // Q&A Q13 thresholds, inside the ranges `TrafficThresholds::new` checks.
     let busy_idx = rng.inclusive(1, 5);
@@ -1503,20 +1664,32 @@ mod tests {
     fn same_params_and_seed_regenerate_byte_identical() {
         for archetype in Archetype::ALL {
             for seed in SEEDS {
-                let first = generate_ok(&GenerationParams::new(archetype, seed));
-                let second = generate_ok(&GenerationParams::new(archetype, seed));
+                for fuel in FuelMode::ALL {
+                    let make = || {
+                        let mut p = GenerationParams::new(archetype, seed);
+                        p.fuel = fuel;
+                        p
+                    };
+                    let first = generate_ok(&make());
+                    let second = generate_ok(&make());
 
-                assert_eq!(first.case_id, second.case_id, "case_id must reproduce");
-                assert_eq!(first.seed, Some(seed), "seed must be recorded");
-                assert_eq!(
-                    first.generation_parameters, second.generation_parameters,
-                    "generation_parameters must reproduce"
-                );
-                let a = serde_json::to_string(&first.setting).expect("setting encodes");
-                let b = serde_json::to_string(&second.setting).expect("setting encodes");
-                assert_eq!(a, b, "{archetype} seed={seed} must regenerate byte-identically");
-                // And the provenance slot is the generated one, not a fixture.
-                assert!(matches!(first.source, crate::case::CaseSource::Generated));
+                    assert_eq!(first.case_id, second.case_id, "case_id must reproduce");
+                    assert_eq!(first.seed, Some(seed), "seed must be recorded");
+                    assert_eq!(
+                        first.generation_parameters, second.generation_parameters,
+                        "generation_parameters must reproduce"
+                    );
+                    let a = serde_json::to_string(&first.setting).expect("setting encodes");
+                    let b = serde_json::to_string(&second.setting).expect("setting encodes");
+                    assert_eq!(
+                        a,
+                        b,
+                        "{archetype} seed={seed} fuel={} must regenerate byte-identically",
+                        fuel.as_str()
+                    );
+                    // And the provenance slot is the generated one, not a fixture.
+                    assert!(matches!(first.source, crate::case::CaseSource::Generated));
+                }
             }
         }
     }
@@ -1530,7 +1703,18 @@ mod tests {
         assert_eq!(params["seed"], 3);
         assert_eq!(params["size"], "medium");
         assert_eq!(params["days"], 1);
+        // The fuel mode is part of the durable identity, so seed-set evidence
+        // can always tell which axis a record was generated under (Issue #204).
+        assert_eq!(params["fuel"], "comfortable");
         assert!(case.case_id.starts_with("generated:v1:"));
+
+        // …and a tight record says so, in both slots.
+        let mut tight = GenerationParams::new(Archetype::Open, 3);
+        tight.fuel = FuelMode::Tight;
+        let case = generate_ok(&tight);
+        let params = case.generation_parameters.as_ref().expect("generated case carries params");
+        assert_eq!(params["fuel"], "tight");
+        assert_eq!(case.case_id, "generated:v1:open:seed=3:fuel=tight");
     }
 
     // -- identity -----------------------------------------------------------
@@ -1546,11 +1730,27 @@ mod tests {
         assert_eq!(spaced.case_id(), "generated:v1:road-heavy:seed=7:size=small:days=1");
 
         // Defaults are implied, so an explicit-but-default spec collides with
-        // the short form — the two really are the same case.
+        // the short form — the two really are the same case. This includes the
+        // default fuel mode: `fuel=comfortable` adds no bytes, so every id
+        // written before the fuel axis existed still renders identically.
         let mut explicit = GenerationParams::new(Archetype::RoadHeavy, 7);
         explicit.size = SizeClass::Medium;
         explicit.days = 3;
+        explicit.fuel = FuelMode::Comfortable;
         assert_eq!(explicit.case_id(), base.case_id());
+
+        // The non-default mode appends `:fuel=tight`, last of the segments.
+        let mut tight = GenerationParams::new(Archetype::RoadHeavy, 7);
+        tight.fuel = FuelMode::Tight;
+        assert_eq!(tight.case_id(), "generated:v1:road-heavy:seed=7:fuel=tight");
+        let mut tight_spaced = GenerationParams::new(Archetype::RoadHeavy, 7);
+        tight_spaced.size = SizeClass::Small;
+        tight_spaced.days = 1;
+        tight_spaced.fuel = FuelMode::Tight;
+        assert_eq!(
+            tight_spaced.case_id(),
+            "generated:v1:road-heavy:seed=7:size=small:days=1:fuel=tight"
+        );
 
         // Different seeds (and different overrides) are distinct ids. The
         // override is deliberately off-default for *every* archetype —
@@ -1565,8 +1765,100 @@ mod tests {
             other.size = SizeClass::Small;
             other.days = 3;
             ids.insert(other.case_id());
+            let mut tight = GenerationParams::new(archetype, 1);
+            tight.fuel = FuelMode::Tight;
+            ids.insert(tight.case_id());
         }
-        assert_eq!(ids.len(), Archetype::ALL.len() * 4, "no id may collide");
+        assert_eq!(ids.len(), Archetype::ALL.len() * 5, "no id may collide");
+    }
+
+    // -- fuel modes (Issue #204) -------------------------------------------
+
+    #[test]
+    fn fuel_modes_pin_opposite_ends_inside_the_official_q14_band() {
+        for archetype in Archetype::ALL {
+            for seed in SEEDS {
+                let mut comfortable = GenerationParams::new(archetype, seed);
+                comfortable.fuel = FuelMode::Comfortable;
+                let comfortable = generate_ok(&comfortable);
+                let mut tight = GenerationParams::new(archetype, seed);
+                tight.fuel = FuelMode::Tight;
+                let tight = generate_ok(&tight);
+
+                // The map / day plan is an axis of its own: fuel mode must
+                // not silently repaint the case — the whole setting is
+                // identical apart from the one number.
+                let mut normalized = tight.setting.clone();
+                normalized.fuel_limits = comfortable.setting.fuel_limits;
+                assert_eq!(
+                    normalized, comfortable.setting,
+                    "{archetype} seed={seed}: fuel mode may change only fuelLimits"
+                );
+
+                let day0 = i64::from(comfortable.setting.day_steps[0]);
+                let total: i64 = comfortable.setting.day_steps.iter().map(|s| i64::from(*s)).sum();
+                let c_fuel = i64::from(comfortable.setting.fuel_limits);
+                let t_fuel = i64::from(tight.setting.fuel_limits);
+
+                // Both modes satisfy the official envelope (Q&A Q14:
+                // `1..=3 x daySteps[0]`, docs/contest/api.md:199) — the AC's
+                // first bullet, checked on the generated body itself.
+                for (mode, fuel) in [("comfortable", c_fuel), ("tight", t_fuel)] {
+                    assert!(
+                        (day0..=3 * day0).contains(&fuel),
+                        "{archetype} seed={seed} {mode}: fuelLimits {fuel} outside {day0}..={}",
+                        3 * day0
+                    );
+                }
+
+                // comfortable: v1 invariant, unchanged — the tank covers every
+                // agent's worst-case burn, so fuel never binds.
+                assert_eq!(c_fuel, 3 * day0, "{archetype} seed={seed}: comfortable = 3 x day0");
+                assert!(
+                    c_fuel >= 2 * total,
+                    "{archetype} seed={seed}: comfortable must keep fuel {c_fuel} >= \
+                     worst-case burn {}",
+                    2 * total
+                );
+
+                // tight: the Q14 floor, *below* the worst-case burn — the gap
+                // is what makes the axis observable at all.
+                assert_eq!(t_fuel, day0, "{archetype} seed={seed}: tight = day0 floor");
+                assert!(
+                    t_fuel < 2 * total,
+                    "{archetype} seed={seed}: tight fuel {t_fuel} must stay below the \
+                     worst-case burn {} or the axis does not exist",
+                    2 * total
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn comfortable_and_tight_never_silently_converge() {
+        // A tight body with comfortable's budget (and vice versa) must fail
+        // generation — the mode is part of the contract, not a label.
+        let mut tight_params = GenerationParams::new(Archetype::ManySeries, 4);
+        tight_params.fuel = FuelMode::Tight;
+        let tight_case = generate_ok(&tight_params);
+        let mut comfortable_body = tight_case.setting.clone();
+        comfortable_body.fuel_limits = comfortable_body.day_steps[0] * 3;
+        let err = validate_setting(&tight_params, &comfortable_body)
+            .expect_err("a tight case must not carry the comfortable budget");
+        let msg = err.to_string();
+        assert!(msg.starts_with("case generation failure"), "{msg}");
+        assert!(msg.contains("fuel=tight requires fuelLimits == daySteps[0]"), "{msg}");
+
+        let mut comfortable_params = GenerationParams::new(Archetype::ManySeries, 4);
+        comfortable_params.fuel = FuelMode::Comfortable;
+        let comfortable_case = generate_ok(&comfortable_params);
+        let mut tight_body = comfortable_case.setting.clone();
+        tight_body.fuel_limits = tight_body.day_steps[0];
+        let err = validate_setting(&comfortable_params, &tight_body)
+            .expect_err("a comfortable case must keep the completability floor");
+        let msg = err.to_string();
+        assert!(msg.starts_with("case generation failure"), "{msg}");
+        assert!(msg.contains("worst-case burn"), "{msg}");
     }
 
     // -- validation ---------------------------------------------------------
@@ -1905,6 +2197,15 @@ mod tests {
         assert_eq!(sel[1].days, 3);
         assert_eq!(sel[1].case_id(), "generated:v1:road-heavy:seed=7:size=small");
 
+        // `fuel=` follows the same `<kv>` grammar; the default is implied so
+        // `fuel=comfortable` writes no bytes into the id (Issue #204).
+        let sel = parse_selection("open:seed=1:fuel=comfortable,road-heavy:seed=1:fuel=tight")
+            .expect("fuel modes parse");
+        assert_eq!(sel[0], GenerationParams::new(Archetype::Open, 1));
+        assert_eq!(sel[0].case_id(), "generated:v1:open:seed=1");
+        assert_eq!(sel[1].fuel, FuelMode::Tight);
+        assert_eq!(sel[1].case_id(), "generated:v1:road-heavy:seed=1:fuel=tight");
+
         // An empty selection selects nothing (generated cases are opt-in).
         assert!(parse_selection("").expect("empty parses").is_empty());
         assert!(parse_selection("   ").expect("blank parses").is_empty());
@@ -1913,13 +2214,15 @@ mod tests {
     #[test]
     fn selection_grammar_rejects_ambiguous_or_incomplete_items() {
         let bad = [
-            "open",                  // no seed
-            "bogus:seed=1",          // unknown archetype
-            "open:size=huge:seed=1", // unknown size
-            "open:seed=1:days=abc",  // unparseable days
-            "open:seed=1:weight=2",  // unknown key
-            "open:seed=1:seed=2",    // duplicate key
-            "open:seed=1,",          // empty item
+            "open",                              // no seed
+            "bogus:seed=1",                      // unknown archetype
+            "open:size=huge:seed=1",             // unknown size
+            "open:seed=1:days=abc",              // unparseable days
+            "open:seed=1:weight=2",              // unknown key
+            "open:seed=1:seed=2",                // duplicate key
+            "open:seed=1,",                      // empty item
+            "open:seed=1:fuel=extreme",          // unknown fuel mode
+            "open:seed=1:fuel=tight:fuel=tight", // duplicate fuel mode
         ];
         for spec in bad {
             match parse_selection(spec) {
