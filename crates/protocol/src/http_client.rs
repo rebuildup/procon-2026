@@ -756,4 +756,128 @@ mod tests {
         assert_eq!(accepted, ActionAccepted { revision: 7 });
         mock.assert_async().await;
     }
+
+    // ------------------------------------------------------------------
+    // Issue #179: `get_json` (arena registration) + fail-closed drift
+    // detection on every JSON-where-it-must-be endpoint.
+    // ------------------------------------------------------------------
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_json_decodes_with_the_token_header() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/settings")
+            .match_header("Procon-Token", "test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json; charset=utf-8")
+            .with_body(r#"{"matchId":"m-1"}"#)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let value: serde_json::Value = client.get_json("/settings").await.expect("json");
+        assert_eq!(value["matchId"], "m-1");
+        mock.assert_async().await;
+    }
+
+    /// The unofficial arena serves its SPA HTML shell with HTTP 200 for
+    /// unauthenticated / unknown paths. That must surface as `ApiDrift`
+    /// after exactly **one** request — never a retry storm, never a
+    /// guessed parse of the body.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_json_fails_closed_on_an_html_shell() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/settings")
+            .with_status(200)
+            .with_header("content-type", "text/html; charset=utf-8")
+            .with_body("<!DOCTYPE html><html><title>ヘキサうどん 非公式練習場</title></html>")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let err = client
+            .get_json::<serde_json::Value>("/settings")
+            .await
+            .expect_err("HTML must not decode as JSON");
+        match err {
+            HttpClientError::ApiDrift { path, detail } => {
+                assert_eq!(path, "/settings");
+                assert!(detail.contains("text/html"), "{detail}");
+            }
+            other => panic!("expected ApiDrift, got {other:?}"),
+        }
+        mock.assert_async().await;
+    }
+
+    /// A JSON-less body without any content type (the other half of the
+    /// SPA fallback) is drift too — detected from the body itself.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_json_fails_closed_when_the_body_is_html_without_content_type() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/settings")
+            .with_status(200)
+            .with_body("<!DOCTYPE html><html></html>")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let err = client
+            .get_json::<serde_json::Value>("/settings")
+            .await
+            .expect_err("HTML must not decode");
+        assert!(matches!(err, HttpClientError::ApiDrift { .. }), "got {err:?}");
+        mock.assert_async().await;
+    }
+
+    /// The same fail-closed rule applies to the official endpoints, so an
+    /// arena (or server) that starts serving HTML where `MatchSetting` was
+    /// promised stops the coordinator with a drift error instead of a bare
+    /// serde decode failure.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_match_setting_fails_closed_on_an_html_shell() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/setting")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body("<!DOCTYPE html><html></html>")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let err = client.get_match_setting().await.expect_err("drift must fail closed");
+        assert!(matches!(err, HttpClientError::ApiDrift { .. }), "got {err:?}");
+        mock.assert_async().await;
+    }
+
+    /// Status codes alone are never trusted: a 403 carrying the HTML shell
+    /// is classified from the body, not silently retried as `AccessTime`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_json_403_html_is_not_mistaken_for_an_access_time_window() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/settings")
+            .with_status(403)
+            .with_header("content-type", "text/html")
+            .with_body("<!DOCTYPE html><html></html>")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = fast_client(&server);
+        let err = client
+            .get_json::<serde_json::Value>("/settings")
+            .await
+            .expect_err("403 HTML is not an AccessTime envelope");
+        assert!(
+            !matches!(err, HttpClientError::AccessTime { .. }),
+            "a 403 HTML body must not enter the retry path: {err:?}"
+        );
+        mock.assert_async().await;
+    }
 }

@@ -87,6 +87,15 @@ struct Args {
     #[arg(long, default_value = "")]
     generated: String,
 
+    /// Comma-separated paths to `CaseSpec` JSON files to append to the
+    /// corpus — the offline re-run half of the Issue #179 import hook
+    /// (`procon arena import-case` output). Each file is parsed and
+    /// validated **before** any candidate runs, so a malformed import
+    /// fails fast instead of surfacing as a poisoned record inside a
+    /// worker. Never implied: an empty value changes nothing.
+    #[arg(long, default_value = "")]
+    case_files: String,
+
     /// Comma-separated candidate ids, e.g.
     /// `loop:iterations=32:initial=greedy,greedy,wait`.
     #[arg(long)]
@@ -190,7 +199,7 @@ fn run() -> Exit {
     // → config path is the one the tests cover. Corpus construction (fixtures
     // + opt-in generated cases) fails fast here, before any candidate runs —
     // a generation failure can never become a run record.
-    let corpus = match load_corpus(&args.cases, &args.generated) {
+    let corpus = match load_corpus(&args.cases, &args.generated, &args.case_files) {
         Ok(c) => c,
         Err(e) => return Exit::Fail(e),
     };
@@ -435,18 +444,22 @@ fn format_candidate_error(subject: &str, e: &CandidateError) -> String {
     }
 }
 
-/// Build the batch corpus: the `--cases` fixture selection, then any opt-in
-/// `--generated` cases appended in written order.
+/// Build the batch corpus: the `--cases` fixture selection, then any
+/// `--case-files` imports, then any opt-in `--generated` cases appended in
+/// written order.
 ///
-/// `--cases` is untouched by the generator (`all` still means the bundled
-/// fixtures only), so generated cases can never silently change what an
-/// existing invocation evaluates. Sibling candidates share this one corpus
-/// object, which is what puts them on a single case axis.
+/// `--cases` is untouched by both appenders (`all` still means the bundled
+/// fixtures only), so imported or generated cases can never silently
+/// change what an existing invocation evaluates. Sibling candidates share
+/// this one corpus object, which is what puts them on a single case axis.
 ///
 /// # Errors
-/// Fixture load errors, or a [`bench::GenerationError`] whose message starts
-/// with `case generation failure` — distinct from any candidate failure.
-fn load_corpus(cases: &str, generated: &str) -> Result<Corpus, String> {
+/// Fixture load errors, unreadable / non-`CaseSpec` / non-evaluable
+/// `--case-files` entries (Issue #179 import hook — fail closed here,
+/// before any candidate runs), or a [`bench::GenerationError`] whose
+/// message starts with `case generation failure` — distinct from any
+/// candidate failure.
+fn load_corpus(cases: &str, generated: &str, case_files: &str) -> Result<Corpus, String> {
     let mut fixtures = if cases.trim().eq_ignore_ascii_case("all") {
         Corpus::bundled().map_err(|e| format!("could not load the bundled corpus: {e}"))?
     } else {
@@ -458,13 +471,45 @@ fn load_corpus(cases: &str, generated: &str) -> Result<Corpus, String> {
             .map_err(|e| format!("could not load cases {names:?}: {e}"))?
     };
 
+    let mut has_case_files = false;
+    for path in case_files.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        has_case_files = true;
+        let case = load_case_file(path)?;
+        fixtures.cases.push(case);
+    }
+
     let params = bench::generator::parse_selection(generated).map_err(|e| e.to_string())?;
     if params.is_empty() {
-        return Ok(fixtures);
+        if !has_case_files {
+            return Ok(fixtures);
+        }
+        // Re-validate the corpus so a duplicate / malformed import is
+        // rejected here rather than inside a worker.
+        return Corpus::new(fixtures.cases).map_err(|e| e.to_string());
     }
     let generated = bench::generator::build_corpus(&params).map_err(|e| e.to_string())?;
     fixtures.cases.extend(generated.cases);
     Corpus::new(fixtures.cases).map_err(|e| e.to_string())
+}
+
+/// Read one `--case-files` entry as a validated [`CaseSpec`].
+///
+/// Both evaluator-side validators run up front (thresholds and the
+/// wire→engine board conversion), so an import that could not produce a
+/// real score is rejected before the batch starts.
+fn load_case_file(path: &str) -> Result<CaseSpec, String> {
+    let raw =
+        std::fs::read(path).map_err(|e| format!("could not read --case-files {path}: {e}"))?;
+    let text =
+        String::from_utf8(raw).map_err(|e| format!("--case-files {path} is not UTF-8: {e}"))?;
+    let case: CaseSpec = serde_json::from_str(&text)
+        .map_err(|e| format!("--case-files {path} is not a CaseSpec JSON: {e}"))?;
+    case.sim_config().map_err(|e| format!("--case-files {path} is not evaluable: {e}"))?;
+    let team = domain::PlayerId::new("case-files-check")
+        .map_err(|e| format!("--case-files {path}: team id: {e}"))?;
+    case.to_engine_setting(&team)
+        .map_err(|e| format!("--case-files {path} is not evaluable: {e}"))?;
+    Ok(case)
 }
 
 fn git_head() -> Option<String> {
@@ -632,7 +677,7 @@ mod tests {
         let args = parse(&["--generated", "open:seed=1,road-heavy:seed=7:size=small:days=2"]);
         assert_eq!(args.generated, "open:seed=1,road-heavy:seed=7:size=small:days=2");
 
-        let corpus = load_corpus(&args.cases, &args.generated).expect("selection loads");
+        let corpus = load_corpus(&args.cases, &args.generated, "").expect("selection loads");
         // `--cases small-8x8` (the parse helper's default) + 2 generated.
         assert_eq!(corpus.len(), 3);
         assert!(corpus.case_ids().contains(&"fixture:small-8x8"));
@@ -649,6 +694,62 @@ mod tests {
         }
     }
 
+    /// Issue #179 import hook, offline half: a `CaseSpec` JSON produced by
+    /// `procon arena import-case` joins the corpus through `--case-files`,
+    /// and a malformed file fails closed **before** any candidate runs.
+    #[test]
+    fn case_files_append_imported_cases_and_fail_closed() {
+        let dir =
+            std::env::temp_dir().join(format!("procon-eval-case-files-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("arena-import.json");
+        // Fixture-shaped CaseSpec: identity + the flattened wire setting.
+        let case_json = r#"{
+            "case_id": "fixture:arena-imported",
+            "seed": null,
+            "generation_parameters": null,
+            "source": {"kind": "fixture", "name": "arena-imported"},
+            "startsAt": 1790000100,
+            "daySeconds": [30],
+            "daySteps": [16],
+            "map": {
+                "height": 8, "width": 8,
+                "cells": [[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],
+                          [0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0],
+                          [0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]
+            },
+            "spots": [],
+            "agents": [0, 8, 16],
+            "fuelLimits": 30,
+            "players": 2,
+            "busyThreshold": 1,
+            "jammedThreshold": 2
+        }"#;
+        std::fs::write(&path, case_json).expect("write case file");
+        let path_str = path.to_str().expect("utf8 path");
+
+        // Flag → corpus: `--cases small-8x8` (parse helper default) + 1 import.
+        let args = parse(&["--case-files", path_str]);
+        assert_eq!(args.case_files, path_str);
+        let corpus = load_corpus(&args.cases, &args.generated, &args.case_files)
+            .expect("imported case loads");
+        assert_eq!(corpus.len(), 2);
+        assert!(corpus.case_ids().contains(&"fixture:arena-imported"));
+
+        // Empty value selects nothing — the default corpus is untouched.
+        let untouched = load_corpus("small-8x8", "", "").expect("default loads");
+        assert_eq!(untouched.len(), 1);
+
+        // Garbage (an HTML shell, say) fails closed with a clear message.
+        let bad = dir.join("bad.json");
+        std::fs::write(&bad, "<!DOCTYPE html><html></html>").expect("write garbage");
+        let err = load_corpus("small-8x8", "", bad.to_str().expect("utf8 path"))
+            .expect_err("garbage must not load");
+        assert!(err.contains("not a CaseSpec JSON"), "{err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The fuel axis (Issue #204) survives flag → corpus → recorded
     /// parameters, the default spelling adds no bytes to the id, and a
     /// nonsense mode dies as a case generation failure — never a run record.
@@ -656,7 +757,7 @@ mod tests {
     fn the_generated_flag_carries_the_fuel_axis() {
         let args = parse(&["--generated", "open:seed=1:fuel=tight"]);
         assert_eq!(args.generated, "open:seed=1:fuel=tight");
-        let corpus = load_corpus(&args.cases, &args.generated).expect("tight selection loads");
+        let corpus = load_corpus(&args.cases, &args.generated, "").expect("tight selection loads");
         let case =
             corpus.cases.iter().find(|c| c.case_id.starts_with("generated:")).expect("generated");
         assert_eq!(case.case_id, "generated:v1:open:seed=1:fuel=tight");
@@ -664,7 +765,7 @@ mod tests {
         assert_eq!(params["fuel"], "tight");
 
         // The default spelling is byte-identical to the pre-axis corpus.
-        let default = load_corpus("all", "open:seed=1").expect("default loads");
+        let default = load_corpus("all", "open:seed=1", "").expect("default loads");
         assert!(default.case_ids().contains(&"generated:v1:open:seed=1"));
         let case =
             default.cases.iter().find(|c| c.case_id.starts_with("generated:")).expect("generated");
@@ -674,7 +775,7 @@ mod tests {
         );
 
         // A nonsense mode is a selection-time generation failure.
-        let err = load_corpus("all", "open:seed=1:fuel=extreme").expect_err("bad mode");
+        let err = load_corpus("all", "open:seed=1:fuel=extreme", "").expect_err("bad mode");
         assert!(err.starts_with("case generation failure"), "{err}");
     }
 
@@ -682,11 +783,11 @@ mod tests {
     /// the bundled fixtures, so no existing evidence changes meaning.
     #[test]
     fn cases_all_still_means_the_bundled_fixtures_only() {
-        let fixtures_only = load_corpus("all", "").expect("bundled corpus loads");
+        let fixtures_only = load_corpus("all", "", "").expect("bundled corpus loads");
         assert_eq!(fixtures_only.len(), bundled_count());
         assert!(fixtures_only.case_ids().iter().all(|id| id.starts_with("fixture:")));
 
-        let mixed = load_corpus("all", "open:seed=1,road-heavy:seed=7").expect("mixed loads");
+        let mixed = load_corpus("all", "open:seed=1,road-heavy:seed=7", "").expect("mixed loads");
         assert_eq!(mixed.len(), bundled_count() + 2);
         // Fixtures first, generated appended — order is stable per selection.
         assert_eq!(mixed.case_ids()[0], "fixture:openapi-sample");
@@ -698,8 +799,8 @@ mod tests {
     /// exact case set, which is what keeps comparisons on one case axis.
     #[test]
     fn one_selection_is_one_shared_case_set() {
-        let corpus =
-            load_corpus("all", "many-series:seed=3,road-heavy:seed=3").expect("selection loads");
+        let corpus = load_corpus("all", "many-series:seed=3,road-heavy:seed=3", "")
+            .expect("selection loads");
         let ids = corpus.case_ids();
         let mut unique = ids.clone();
         unique.sort_unstable();
@@ -716,14 +817,14 @@ mod tests {
     /// candidate failing.
     #[test]
     fn a_bad_generated_selection_is_a_case_generation_failure() {
-        let err = load_corpus("all", "open").expect_err("seed= is required");
+        let err = load_corpus("all", "open", "").expect_err("seed= is required");
         assert!(err.starts_with("case generation failure"), "{err}");
         assert!(err.contains("seed= is required"), "{err}");
 
-        let err = load_corpus("all", "bogus:seed=1").expect_err("unknown archetype");
+        let err = load_corpus("all", "bogus:seed=1", "").expect_err("unknown archetype");
         assert!(err.starts_with("case generation failure"), "{err}");
 
-        let err = load_corpus("all", "open:seed=1,open:seed=1").expect_err("duplicate ids");
+        let err = load_corpus("all", "open:seed=1,open:seed=1", "").expect_err("duplicate ids");
         assert!(err.starts_with("case generation failure"), "{err}");
         assert!(err.contains("duplicate"), "{err}");
     }

@@ -639,3 +639,18 @@ baseline 完走、multi-day）、
 ```bash
 cargo test -p bench --locked
 ```
+
+## 非公式 arena との二段構成（Issue #179）
+
+この evaluator が canonical なのは **offline 評価**であり、
+大量探索・parameter sweep は必ずここで行います。
+上位に選抜した candidate のみを非公式練習場
+（`https://procon37arena.online`）で外部検証するのが Issue #179 の役割です:
+
+- 実行手順・安全規律・evidence schema → [`docs/contest/arena.md`](./contest/arena.md)
+- arena で負けた同一盤面は `procon arena import-case` で `CaseSpec` に取り込み、
+  `procon-eval --case-files` でこの evaluator 上に**同じ corpus として**載せて再実行できます。
+- arena の結果は `target/arena/runs.jsonl`（`record_kind: "arena-run"`）に別 schema で
+  記録され、この evaluator の `runs.jsonl`（score tuple）と合算・再集計されることはありません。
+
+つまり: **順位も選抜も offline が正、arena は selected candidate の外部検証のみ。**

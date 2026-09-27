@@ -1011,6 +1011,84 @@ mod tests {
         }
     }
 
+    /// Issue #179: the arena profile, cadence wait, candidate selection and
+    /// evidence path all parse — and only under explicit flags.
+    #[test]
+    fn parses_arena_coordinator_flags() {
+        let cli = Cli::try_parse_from([
+            "procon",
+            "coordinator",
+            "--arena",
+            "--next",
+            "--candidate",
+            "multiloop:kmeans=4:seed=42",
+            "--arena-evidence",
+            "/tmp/arena-runs.jsonl",
+        ])
+        .expect("arena invocation parses");
+        match cli.cmd {
+            Cmd::Coordinator { arena, next, candidate, arena_evidence, .. } => {
+                assert!(arena, "--arena");
+                assert!(next, "--next");
+                assert_eq!(candidate.as_deref(), Some("multiloop:kmeans=4:seed=42"));
+                assert_eq!(arena_evidence, Some(PathBuf::from("/tmp/arena-runs.jsonl")));
+            }
+            _ => panic!("expected Coordinator variant"),
+        }
+    }
+
+    /// Offline isolation (AC): every arena behaviour is opt-in. A plain
+    /// `procon coordinator` parses with the arena flags at their inert
+    /// defaults, so the default path cannot have changed meaning.
+    #[test]
+    fn arena_flags_are_opt_in() {
+        let cli = Cli::try_parse_from(["procon", "coordinator"]).expect("parses");
+        match cli.cmd {
+            Cmd::Coordinator { arena, next, candidate, arena_evidence, .. } => {
+                assert!(!arena, "arena must be off by default");
+                assert!(!next, "--next must be off by default");
+                assert!(candidate.is_none(), "no candidate implied");
+                assert!(arena_evidence.is_none(), "evidence path only in arena mode");
+            }
+            _ => panic!("expected Coordinator variant"),
+        }
+    }
+
+    /// Token hygiene (AC): `PROCON_ARENA_TOKEN` is read from the
+    /// environment in code — there is no flag that could carry it (the
+    /// standard flow never prints or types a token).
+    #[test]
+    fn no_flag_carries_the_arena_token() {
+        let err = Cli::try_parse_from(["procon", "coordinator", "--arena-token", "shhh"])
+            .expect_err("there is deliberately no --arena-token flag");
+        assert!(err.to_string().contains("arena-token"), "{err}");
+    }
+
+    /// The import hook is an offline subcommand of `procon arena`.
+    #[test]
+    fn parses_arena_import_case() {
+        let cli = Cli::try_parse_from([
+            "procon",
+            "arena",
+            "import-case",
+            "--input",
+            "replay.json",
+            "--output",
+            "case.json",
+            "--name",
+            "loss-001",
+        ])
+        .expect("import-case parses");
+        match cli.cmd {
+            Cmd::Arena(ArenaCmd::ImportCase { input, output, name }) => {
+                assert_eq!(input, PathBuf::from("replay.json"));
+                assert_eq!(output, PathBuf::from("case.json"));
+                assert_eq!(name.as_deref(), Some("loss-001"));
+            }
+            _ => panic!("expected Arena(ImportCase)"),
+        }
+    }
+
     /// Feed `--loop-initial-strategy <label>` to `tournament` and return the
     /// parsed strategy, or the (clap-wrapped) parser error text.
     fn tournament_initial_label(label: &str) -> Result<InitialStrategy, String> {

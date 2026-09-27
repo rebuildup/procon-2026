@@ -133,6 +133,27 @@ eval-quiet:
         --quiet
 
 # ----------------------------------------------------------------
+# Arena — unofficial practice server (Issue #179)
+# See docs/contest/arena.md. The token is NEVER passed as an argument:
+# inject it from Infisical as PROCON_ARENA_TOKEN, e.g.
+#   infisical run --env=dev -- just arena-next --candidate 'multiloop:kmeans=4:seed=42'
+# ----------------------------------------------------------------
+
+# Wait for the next :00/:15/:30/:45 match, register inside the pre-match
+# window, play exactly one match through the canonical coordinator, append
+# evidence to target/arena/runs.jsonl, and exit. Extra flags are forwarded
+# verbatim to `procon coordinator --arena --next` (e.g. `--candidate`,
+# `--solver`), so keep values whitespace-free.
+arena-next *args:
+    PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" cargo run -q --release --bin procon -- coordinator --arena --next {{args}}
+
+# Convert the arena's same-board replay JSON into an offline CaseSpec.
+# Re-run it through the evaluator with:
+#   cargo run -q -p bench --bin procon-eval -- --case-files <output> ...
+arena-import input output:
+    cargo run -q --bin procon -- arena import-case --input "{{input}}" --output "{{output}}"
+
+# ----------------------------------------------------------------
 # Protocol drift
 # ----------------------------------------------------------------
 

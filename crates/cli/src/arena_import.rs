@@ -218,6 +218,17 @@ mod tests {
     }
 
     #[test]
+    fn emitted_case_deserializes_for_procon_eval_case_files() {
+        // The offline re-run half (`procon-eval --case-files`) parses the
+        // emitted file with plain `serde_json::from_str::<CaseSpec>` — the
+        // round trip has to survive that, including the `source` tag shape.
+        let case = case_from_replay(SAMPLE.as_bytes(), None).expect("converts");
+        let json = serde_json::to_string(&case).expect("serialise");
+        let back: CaseSpec = serde_json::from_str(&json).expect("evaluator can parse it");
+        assert_eq!(back, case);
+    }
+
+    #[test]
     fn html_shell_fails_closed() {
         let html = b"<!DOCTYPE html><html><title>arena</title></html>";
         let err = case_from_replay(html, None).expect_err("HTML must not convert");
