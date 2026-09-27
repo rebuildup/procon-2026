@@ -12,12 +12,17 @@ import {
 import type { HexCell, HexMap, TerrainKind } from '@/types/map';
 import '@/styles/live.css';
 
-/** Map `protocol::match_config::CellType` integers to the viewer's terrain labels. */
+/**
+ * Map `protocol::match_config::CellType` integers to the viewer's terrain labels.
+ *
+ * Official table (Issue #226, `試合設定JSONについて.md` §「cells の地形タイプ」):
+ * 0=平地, 1=道路, 2=山地, 3=池.
+ */
 const CELL_TYPE_TO_TERRAIN: Readonly<Record<number, TerrainKind>> = {
   0: 'plain',
-  1: 'mountain',
-  2: 'water',
-  3: 'road',
+  1: 'road',
+  2: 'mountain',
+  3: 'water',
 };
 
 /**

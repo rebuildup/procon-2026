@@ -20,9 +20,9 @@ mod tests {
 
     fn wire_setting() -> WireSetting {
         let mut cells = vec![vec![CellType::TYPE_0; 8]; 8];
-        cells[3][4] = CellType::TYPE_2; // pond
-        cells[0][7] = CellType::TYPE_1; // mountain
-        cells[7][0] = CellType::TYPE_3; // road
+        cells[3][4] = CellType::TYPE_3; // pond (official: 3 = 池)
+        cells[0][7] = CellType::TYPE_2; // mountain (official: 2 = 山地)
+        cells[7][0] = CellType::TYPE_1; // road (official: 1 = 道路)
         WireSetting {
             starts_at: 1_700_000_000,
             day_seconds: vec![60],

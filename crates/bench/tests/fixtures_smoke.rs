@@ -150,11 +150,13 @@ fn series_few_fixtures_have_at_most_one_brand() {
 fn road_heavy_fixtures_have_above_average_road_share() {
     for fx in every_bundled_fixture() {
         if matches!(fx.category, FixtureCategory::RoadHeavy) {
-            // TYPE_3 = Road. (This assertion used to read TYPE_2 = *Pond*,
-            // so the pre-#187 `road-heavy` — Road 4/256 — passed a "road
-            // share" gate it never satisfied. Issue #187 fixed the cell code
-            // and moved the same 15% floor into `validate_category`.)
-            let road_cells = fx.cell_type_count(protocol::match_config::CellType::TYPE_3);
+            // TYPE_1 = Road under the official table (Issue #226:
+            // 0=平地, 1=道路, 2=山地, 3=池). (Before #187 this assertion read
+            // `TYPE_2` — the *Pond* code under the pre-#226 table — so the
+            // pre-#187 `road-heavy` — Road 4/256 — passed a "road share"
+            // gate it never satisfied. Issue #187 fixed the cell code and
+            // moved the same 15% floor into `validate_category`.)
+            let road_cells = fx.cell_type_count(protocol::match_config::CellType::TYPE_1);
             let total_cells = u64::try_from(fx.cell_count()).expect("cell count is non-negative");
             assert!(
                 u64::try_from(road_cells).expect("road cell count fits in u64") * 100
@@ -170,7 +172,7 @@ fn road_heavy_fixtures_have_above_average_road_share() {
 fn mountain_heavy_fixtures_have_above_average_mountain_share() {
     for fx in every_bundled_fixture() {
         if matches!(fx.category, FixtureCategory::MountainHeavy) {
-            let mountain_cells = fx.cell_type_count(protocol::match_config::CellType::TYPE_1);
+            let mountain_cells = fx.cell_type_count(protocol::match_config::CellType::TYPE_2);
             let total_cells = u64::try_from(fx.cell_count()).expect("cell count is non-negative");
             assert!(
                 u64::try_from(mountain_cells).expect("mountain cell count fits in u64") * 100

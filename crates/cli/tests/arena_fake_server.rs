@@ -103,7 +103,7 @@ impl FakeArena {
 /// 3..=8 team rule), one spot off the agent cells, two days.
 fn setting_body() -> Value {
     let mut cells = vec![vec![0_u32; 8]; 8];
-    cells[0][4] = 3; // road under the traffic bookkeeping
+    cells[0][4] = 1; // road under the traffic bookkeeping (official: 1 = 道路)
     json!({
         "startsAt": 1,
         "daySeconds": [30, 30],

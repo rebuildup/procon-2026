@@ -1167,7 +1167,7 @@ fn paint_open(cells: &mut [Vec<CellType>], rng: &mut Rng) {
     let total = cells.len() * cells.len();
     let mountains = (total / 64).max(1);
     for idx in rng.sample_distinct(total, mountains) {
-        set_cell(cells, idx, CellType::TYPE_1);
+        set_cell(cells, idx, CellType::TYPE_2);
     }
 }
 
@@ -1177,7 +1177,7 @@ fn paint_open(cells: &mut [Vec<CellType>], rng: &mut Rng) {
 fn paint_mountain_heavy(cells: &mut [Vec<CellType>], rng: &mut Rng, edge: usize) {
     for row in cells.iter_mut() {
         for cell in row.iter_mut() {
-            *cell = CellType::TYPE_1;
+            *cell = CellType::TYPE_2;
         }
     }
     let cross = carve_cross(cells, edge);
@@ -1202,9 +1202,9 @@ fn paint_pond_obstacle(cells: &mut [Vec<CellType>], rng: &mut Rng, edge: usize) 
         }
     }
     for &idx in &centers {
-        set_cell(cells, idx, CellType::TYPE_2);
+        set_cell(cells, idx, CellType::TYPE_3);
     }
-    grow_region(cells, &centers, target_pond, CellType::TYPE_2, &skip, rng);
+    grow_region(cells, &centers, target_pond, CellType::TYPE_3, &skip, rng);
     // A little terrain texture so routing is not a pure obstacle course.
     paint_scatter(cells, rng, 64);
 }
@@ -1216,7 +1216,7 @@ fn paint_road_heavy(cells: &mut [Vec<CellType>], rng: &mut Rng) {
     for (r, row) in cells.iter_mut().enumerate() {
         for (c, cell) in row.iter_mut().enumerate() {
             if r % 8 == 0 || c % 8 == 0 {
-                *cell = CellType::TYPE_3;
+                *cell = CellType::TYPE_1;
             }
         }
     }
@@ -1237,12 +1237,12 @@ fn paint_few_series(cells: &mut [Vec<CellType>], edge: usize) {
     for offset in 0..2 {
         if let Some(row) = cells.get_mut(wall_row + offset) {
             for cell in row.iter_mut() {
-                *cell = CellType::TYPE_1;
+                *cell = CellType::TYPE_2;
             }
         }
         for row in cells.iter_mut() {
             if let Some(cell) = row.get_mut(wall_col + offset) {
-                *cell = CellType::TYPE_1;
+                *cell = CellType::TYPE_2;
             }
         }
     }
@@ -1267,7 +1267,7 @@ fn paint_scatter_on(cells: &mut [Vec<CellType>], rng: &mut Rng, count: usize, sk
         .collect();
     rng.shuffle(&mut pool);
     for idx in pool.into_iter().take(count) {
-        set_cell(cells, idx, CellType::TYPE_1);
+        set_cell(cells, idx, CellType::TYPE_2);
     }
 }
 
@@ -1400,7 +1400,7 @@ fn place_agents(
     let mut plain = Vec::new();
     let mut other = Vec::new();
     for (idx, cell) in cells.iter().flatten().enumerate() {
-        if *cell == CellType::TYPE_2 || occupied.contains(&idx) {
+        if *cell == CellType::TYPE_3 || occupied.contains(&idx) {
             continue;
         }
         if cross.contains(&idx) {
@@ -2040,7 +2040,7 @@ mod tests {
             .iter()
             .flatten()
             .enumerate()
-            .find(|(_, c)| **c == CellType::TYPE_2)
+            .find(|(_, c)| **c == CellType::TYPE_3)
             .map(|(i, _)| i)
             .expect("pond-obstacle has a pond");
         let pond = i32::try_from(pond).expect("index fits the wire field");
@@ -2067,8 +2067,8 @@ mod tests {
         let total = case.setting.map.cells.len() * case.setting.map.cells[0].len();
         let plain = terrain_count(&case, CellType::TYPE_0);
         assert!(plain * 10 >= total * 9, "open must be >= 90% plain, got {plain}/{total}");
-        assert_eq!(terrain_count(&case, CellType::TYPE_2), 0, "open has no ponds");
-        assert_eq!(terrain_count(&case, CellType::TYPE_3), 0, "open has no roads");
+        assert_eq!(terrain_count(&case, CellType::TYPE_3), 0, "open has no ponds");
+        assert_eq!(terrain_count(&case, CellType::TYPE_1), 0, "open has no roads");
     }
 
     #[test]
@@ -2078,7 +2078,7 @@ mod tests {
             params.size = size;
             let case = generate_ok(&params);
             let total = case.setting.map.cells.len() * case.setting.map.cells[0].len();
-            let mountains = terrain_count(&case, CellType::TYPE_1);
+            let mountains = terrain_count(&case, CellType::TYPE_2);
             assert!(
                 mountains * 2 >= total,
                 "{size:?}: mountain-heavy must be >= 50% mountain, got {mountains}/{total}"
@@ -2090,7 +2090,7 @@ mod tests {
     fn pond_obstacle_is_a_real_obstacle_course() {
         let case = generate_ok(&GenerationParams::new(Archetype::PondObstacle, 11));
         let total = case.setting.map.cells.len() * case.setting.map.cells[0].len();
-        let ponds = terrain_count(&case, CellType::TYPE_2);
+        let ponds = terrain_count(&case, CellType::TYPE_3);
         assert!(ponds * 10 >= total, "pond-obstacle must be >= 10% pond, got {ponds}/{total}");
     }
 
@@ -2102,7 +2102,7 @@ mod tests {
             let case = generate_ok(&params);
             let edge = usize::try_from(case.setting.map.width).expect("width fits usize");
             let total = edge * edge;
-            let roads = terrain_count(&case, CellType::TYPE_3);
+            let roads = terrain_count(&case, CellType::TYPE_1);
             assert!(
                 roads * 100 >= total * 15,
                 "{size:?}: road-heavy must be >= 15% road, got {roads}/{total}"
@@ -2111,8 +2111,8 @@ mod tests {
             // One dominant connected component — a lattice, not scattered
             // stubs — so routing really can choose road vs plain.
             let biggest = (0..edge * edge)
-                .filter(|&i| get_cell(&case.setting.map.cells, i) == Some(CellType::TYPE_3))
-                .map(|i| component_size(&case.setting.map.cells, i, CellType::TYPE_3))
+                .filter(|&i| get_cell(&case.setting.map.cells, i) == Some(CellType::TYPE_1))
+                .map(|i| component_size(&case.setting.map.cells, i, CellType::TYPE_1))
                 .max()
                 .unwrap_or(0);
             assert!(

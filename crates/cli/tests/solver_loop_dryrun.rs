@@ -31,21 +31,25 @@ use protocol::match_config::{
     CellType, Map as WireMap, MatchSetting as WireSetting, Spot as WireSpot,
 };
 
-/// Build a wire [`WireSetting`] that mirrors `quick.json` — 10x10 map
-/// with mountains and roads, four spots, three agents starting on plain
-/// cells. The shape and values come from `.reference/procon37/quick.json`
-/// / `match-config.example.json`; the wire form (flat `Map`, etc.) is
-/// reconstructed here because the on-disk file uses the *problem*
-/// schema, not the wire schema.
+/// Build a wire [`WireSetting`] that mirrors the quick-like 10x10 map —
+/// mountain border, road accents, four spots, three agents starting on
+/// passable cells. The wire form (flat `Map`, etc.) is reconstructed here
+/// because the on-disk official example uses the *problem* schema, not the
+/// wire schema.
+///
+/// Cell codes follow the official table (Issue #226:
+/// `試合設定JSONについて.md` §「cells の地形タイプ」: 0=平地, 1=道路, 2=山地,
+/// 3=池). The authored values were permuted (`1`→`2` mountain,
+/// `3`→`1` road) when the table was corrected, so this map keeps the
+/// mountain/road layout it was written for and still contains no pond.
 fn build_quick_like_wire_setting() -> WireSetting {
-    // `quick.json` cells[y][x]:
-    //   row 0: 0 1 1 1 1 1 1 1 1 0
-    //   row 1: 1 0 0 0 0 0 0 0 0 1
-    //   row 2: 1 0 3 0 0 0 0 3 0 1
+    // cells[y][x], official table:
+    //   row 0: 0 2 2 2 2 2 2 2 2 0   (mountain rim, roads inside)
+    //   row 2: 2 0 1 0 0 0 0 1 0 2
     //   ...
     // The exact terrain distribution is not load-bearing — we only need
     // *some* mountains and roads so the map-aware solver has to
-    // navigate around them. The values below match the quick fixture.
+    // navigate around them.
     let cells_row = |row: &[i32]| -> Vec<CellType> {
         row.iter()
             .copied()
@@ -58,16 +62,16 @@ fn build_quick_like_wire_setting() -> WireSetting {
             .collect()
     };
     let cells = vec![
-        cells_row(&[0, 1, 1, 1, 1, 1, 1, 1, 1, 0]),
-        cells_row(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
-        cells_row(&[1, 0, 3, 0, 0, 0, 0, 3, 0, 1]),
-        cells_row(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
-        cells_row(&[1, 0, 0, 0, 3, 0, 0, 0, 0, 1]),
-        cells_row(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
-        cells_row(&[1, 0, 3, 0, 0, 0, 0, 3, 0, 1]),
-        cells_row(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
-        cells_row(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
-        cells_row(&[0, 1, 1, 1, 1, 1, 1, 1, 1, 0]),
+        cells_row(&[0, 2, 2, 2, 2, 2, 2, 2, 2, 0]),
+        cells_row(&[2, 0, 0, 0, 0, 0, 0, 0, 0, 2]),
+        cells_row(&[2, 0, 1, 0, 0, 0, 0, 1, 0, 2]),
+        cells_row(&[2, 0, 0, 0, 0, 0, 0, 0, 0, 2]),
+        cells_row(&[2, 0, 0, 0, 1, 0, 0, 0, 0, 2]),
+        cells_row(&[2, 0, 0, 0, 0, 0, 0, 0, 0, 2]),
+        cells_row(&[2, 0, 1, 0, 0, 0, 0, 1, 0, 2]),
+        cells_row(&[2, 0, 0, 0, 0, 0, 0, 0, 0, 2]),
+        cells_row(&[2, 0, 0, 0, 0, 0, 0, 0, 0, 2]),
+        cells_row(&[0, 2, 2, 2, 2, 2, 2, 2, 2, 0]),
     ];
     WireSetting {
         starts_at: 1,
@@ -89,11 +93,14 @@ fn build_quick_like_wire_setting() -> WireSetting {
 }
 
 /// Convert a wire [`CellType`] into the matching [`Terrain`].
+///
+/// Mirrors `engine::from_wire::cell_type_to_terrain` against the official
+/// table (Issue #226): 0=平地, 1=道路, 2=山地, 3=池.
 fn wire_terrain(c: CellType) -> Terrain {
     match c.value() {
-        1 => Terrain::Mountain,
-        2 => Terrain::Pond,
-        3 => Terrain::Road(TrafficState::Smooth),
+        1 => Terrain::Road(TrafficState::Smooth),
+        2 => Terrain::Mountain,
+        3 => Terrain::Pond,
         _ => Terrain::Plain,
     }
 }
@@ -400,13 +407,14 @@ fn is_legal_move_rejects_pond_and_out_of_bounds() {
 #[test]
 fn wire_terrain_mapping_matches_protocol_to_engine() {
     // Every wire cell type must map to a traversable engine terrain
-    // except `TYPE_2` (Pond). The map-aware adapter relies on this
-    // contract — if it ever breaks, `assert_all_moves_valid` will
+    // except `TYPE_3` (Pond) — the official table (Issue #226:
+    // 0=平地, 1=道路, 2=山地, 3=池). The map-aware adapter relies on
+    // this contract — if it ever breaks, `assert_all_moves_valid` will
     // start failing on otherwise-valid plans.
     assert_eq!(wire_terrain(CellType::TYPE_0), Terrain::Plain);
-    assert_eq!(wire_terrain(CellType::TYPE_1), Terrain::Mountain);
-    assert_eq!(wire_terrain(CellType::TYPE_2), Terrain::Pond);
-    assert_eq!(wire_terrain(CellType::TYPE_3), Terrain::Road(TrafficState::Smooth));
+    assert_eq!(wire_terrain(CellType::TYPE_1), Terrain::Road(TrafficState::Smooth));
+    assert_eq!(wire_terrain(CellType::TYPE_2), Terrain::Mountain);
+    assert_eq!(wire_terrain(CellType::TYPE_3), Terrain::Pond);
     assert!(Terrain::Plain.traversable());
     assert!(!Terrain::Pond.traversable());
 }

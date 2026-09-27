@@ -293,8 +293,8 @@ mod tests {
         const SIDE: usize = 8;
         let mut cells = vec![vec![CellType::TYPE_0; SIDE]; SIDE];
         // A road at index 4 (row 0, col 4) so the traffic overlay has
-        // something to actually change.
-        cells[0][4] = CellType::TYPE_3;
+        // something to actually change. Official table (Issue #226): 1 = road.
+        cells[0][4] = CellType::TYPE_1;
         protocol::match_config::MatchSetting {
             starts_at: 1,
             day_seconds: vec![30, 30],

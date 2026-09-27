@@ -299,7 +299,8 @@ impl MatchFixture {
             let Ok(idx) = usize::try_from(*p) else { continue };
             let cell =
                 self.setting.map.cells.get(idx / w).and_then(|row| row.get(idx % w)).copied();
-            if cell == Some(CellType::TYPE_2) {
+            if cell == Some(CellType::TYPE_3) {
+                // Official table (Issue #226): 3 = 池 (impassable).
                 return Err(FixtureError::Invalid {
                     name: self.name.clone(),
                     reason: format!("agent #{i} starts on impassable terrain Pond ({p})"),
@@ -335,7 +336,7 @@ impl MatchFixture {
             (FixtureCategory::RoadHeavy, _) => {
                 let total = self.cell_count();
                 let road =
-                    i64::try_from(self.cell_type_count(CellType::TYPE_3)).unwrap_or(i64::MAX); // TYPE_3 = Road
+                    i64::try_from(self.cell_type_count(CellType::TYPE_1)).unwrap_or(i64::MAX); // TYPE_1 = Road (official)
                 if total > 0 && road * 100 < total * MIN_ROAD_SHARE_PCT {
                     return Err(FixtureError::Invalid {
                         name: self.name.clone(),
@@ -556,7 +557,7 @@ mod tests {
     #[test]
     fn reject_agent_on_impassable_terrain() {
         let mut cells = vec![vec![0_i32; 8]; 8];
-        cells[2][3] = 2; // Pond
+        cells[2][3] = 3; // Pond (official: 3 = 池)
         let raw = serde_json::json!({
             "name": "ponded",
             "category": "small",
@@ -585,8 +586,8 @@ mod tests {
     #[test]
     fn accept_agent_on_passable_terrain() {
         let mut cells = vec![vec![0_i32; 8]; 8];
-        cells[2][3] = 2; // Pond, but no agent stands on it
-        cells[4][4] = 1; // Mountain is traversable
+        cells[2][3] = 3; // Pond (official: 3 = 池), but no agent stands on it
+        cells[4][4] = 2; // Mountain (official: 2 = 山地) is traversable
         let raw = serde_json::json!({
             "name": "ok-terrain",
             "category": "small",
@@ -644,9 +645,9 @@ mod tests {
     #[test]
     fn accept_road_heavy_with_genuine_network() {
         let mut cells = vec![vec![0_i32; 8]; 8];
-        cells[3].fill(3); // road avenue
+        cells[3].fill(1); // road avenue (official: 1 = 道路)
         for row in &mut cells {
-            row[3] = 3; // road spur (crossing cell counted once)
+            row[3] = 1; // road spur (crossing cell counted once)
         }
         let raw = serde_json::json!({
             "name": "real_roads",
@@ -667,7 +668,7 @@ mod tests {
             "jammedThreshold": 2
         });
         let fx = MatchFixtureLoader::new().parse(raw.to_string().as_bytes()).expect("accepts");
-        assert_eq!(fx.cell_type_count(CellType::TYPE_3), 15);
+        assert_eq!(fx.cell_type_count(CellType::TYPE_1), 15); // TYPE_1 = Road
     }
 
     #[test]
