@@ -381,8 +381,14 @@ struct LobbyRegistration {
 
 /// Parse the arena's lobby confirmation out of an `AccessTimeError`
 /// message, e.g.
-/// `lobby: you are registered for match 469 departing at 1790001234`
-/// (shape observed in the live recon, Issue #222).
+/// `lobby: you are registered for match 469 departing at 1790001234`.
+///
+/// This wording shape is spec, not a guess: the official arena guide
+/// (`https://procon37arena.online/arena/guide`) states that a tokened GET
+/// at an official endpoint during reception is the entry, answered with
+/// the same pre-match `403 AccessTimeError` whose message carries
+/// 「lobby: you are registered …」 — and the live recon captured a full
+/// sample (Issue #222).
 ///
 /// `None` for anything else: a plain "not yet" 403 keeps the bounded
 /// retry, and an unrecognised wording fails towards today's
@@ -491,6 +497,10 @@ pub async fn wait_for_registration(
 
     match answer {
         RegistrationAnswer::Lobby(registered) => {
+            // Entry is first-come-first-served (arena guide): this one
+            // lobby `GET /setting` already consumed the slot, so return
+            // immediately — never retry and re-register once confirmed.
+            //
             // The arena's own departure time is authoritative: it becomes
             // the recorded window start (evidence `window_starts_at_unix`).
             let starts_at = DateTime::<Utc>::from_timestamp(registered.departing_at_unix, 0)
