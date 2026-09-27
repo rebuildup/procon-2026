@@ -239,9 +239,7 @@ fn terrain_histograms_match_the_old_world_constants() {
         let road = fx.cell_type_count(protocol::match_config::CellType::TYPE_1);
         let mountain = fx.cell_type_count(protocol::match_config::CellType::TYPE_2);
         let pond = fx.cell_type_count(protocol::match_config::CellType::TYPE_3);
-        let got = [
-            plain as u64, mountain as u64, pond as u64, road as u64,
-        ];
+        let got = [plain as u64, mountain as u64, pond as u64, road as u64];
         assert_eq!(
             got, *want,
             "{name}: terrain histogram drifted from the pre-#226 world \

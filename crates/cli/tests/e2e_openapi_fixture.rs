@@ -205,15 +205,12 @@ async fn e2e_openapi_fixture_completes_four_days() {
         .with_header("content-type", "application/json")
         .with_body_from_request(move |req| {
             let day = sd.fetch_add(1, Ordering::SeqCst);
-            let budget = day_budgets
-                .get(usize::try_from(day).unwrap_or(0))
-                .copied()
-                .unwrap_or(20);
+            let budget = day_budgets.get(usize::try_from(day).unwrap_or(0)).copied().unwrap_or(20);
             let accepted = req
                 .body()
                 .ok()
                 .and_then(|raw| serde_json::from_slice::<Vec<Vec<i32>>>(raw).ok())
-                .map_or(false, |body| {
+                .is_some_and(|body| {
                     body.iter().enumerate().all(|(idx, plan)| {
                         vs.agents.get(idx).is_some_and(|agent| {
                             engine::wire_plan::validate_agent_plan(

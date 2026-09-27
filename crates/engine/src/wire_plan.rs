@@ -109,7 +109,7 @@ pub fn validate_agent_plan(
 
     for (i, &code) in actions.iter().enumerate() {
         if code <= -1 {
-            let wait = u32::from(code.unsigned_abs());
+            let wait = code.unsigned_abs();
             used = used
                 .checked_add(wait)
                 .ok_or_else(|| format!("action {i}: wait sum overflows the budget"))?;
@@ -158,7 +158,12 @@ pub fn validate_agent_plan(
 /// Waits are truncated to the remaining budget rather than dropped: a wait
 /// run that no longer fits contributes its fitting part and ends the day.
 #[must_use]
-pub fn normalize_agent_plan(agent: &Agent, map: &MapGrid, day_steps: u32, actions: &[i32]) -> Vec<i32> {
+pub fn normalize_agent_plan(
+    agent: &Agent,
+    map: &MapGrid,
+    day_steps: u32,
+    actions: &[i32],
+) -> Vec<i32> {
     let mut out = Vec::with_capacity(actions.len());
     let mut shadow = vec![agent.clone()];
     let mut moves = Vec::new();
@@ -170,7 +175,7 @@ pub fn normalize_agent_plan(agent: &Agent, map: &MapGrid, day_steps: u32, action
             break;
         }
         if code <= -1 {
-            let wait = u32::from(code.unsigned_abs());
+            let wait = code.unsigned_abs();
             let take = wait.min(day_steps - used);
             if take > 0 {
                 let encoded = i32::try_from(take).unwrap_or(i32::MAX);
@@ -299,7 +304,7 @@ mod tests {
         let mut used = 0;
         for &code in actions {
             if code <= -1 {
-                used += u32::from(code.unsigned_abs());
+                used += code.unsigned_abs();
                 continue;
             }
             let dir = direction_for_wire(code).expect("legal code");
@@ -510,8 +515,7 @@ mod tests {
         let setting = setting_with(map, 6);
         let state = MatchState::new(setting).expect("state");
 
-        let body: ActionPlanBody =
-            vec![vec![2, 2, 2, 2, -2], vec![-6], vec![2, 2, -3]];
+        let body: ActionPlanBody = vec![vec![2, 2, 2, 2, -2], vec![-6], vec![2, 2, -3]];
         let normalized =
             normalize_day_plan(&state.setting.map, &state.agents, &[0, 1, 2], 6, &body)
                 .expect("body normalizes");
@@ -577,9 +581,7 @@ mod tests {
             let actions = crate::model::AgentActions::new(
                 ids.iter()
                     .enumerate()
-                    .map(|(idx, id)| {
-                        if idx == 0 { agent0_action } else { Action::wait(*id) }
-                    })
+                    .map(|(idx, id)| if idx == 0 { agent0_action } else { Action::wait(*id) })
                     .collect(),
             );
             let _ = sim.step(state, &actions);

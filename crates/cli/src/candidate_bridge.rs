@@ -177,31 +177,32 @@ impl Solver for CandidateBridge {
 /// (agent-count mismatch, out-of-board cell index, negative fuel) — the
 /// caller degrades to `wait_all` rather than guessing.
 fn apply_live_state(state: &mut ModelMatchState, wire: &WireMatchState) -> Result<(), String> {
-    apply_live_agents(&mut state.setting, wire)?;
+    apply_live_agents(&mut state.agents, state.setting.map.size, wire)?;
     apply_live_traffic(&mut state.setting.map, wire)
 }
 
-/// Overlay the live agent positions / fuel onto a setting's agents (strict
-/// count check — see [`apply_live_state`]).
+/// Overlay the live agent positions / fuel onto an agent list (strict count
+/// check — see [`apply_live_state`]).
 ///
 /// Split out so the submission-boundary normalizer
 /// (`engine::wire_plan::normalize_day_plan` via `coordinator_loop`) can
 /// rebuild the same live view from a bare `MatchSetting` — without paying
 /// for (or being rejected by) `MatchState::new`'s full validation.
 pub(crate) fn apply_live_agents(
-    setting: &mut engine::model::MatchSetting,
+    agents: &mut [engine::model::Agent],
+    size: engine::model::MapSize,
     wire: &WireMatchState,
 ) -> Result<(), String> {
-    if wire.agents.len() != setting.agents.len() {
+    if wire.agents.len() != agents.len() {
         return Err(format!(
             "server reports {} agents but the setting declared {}",
             wire.agents.len(),
-            setting.agents.len()
+            agents.len()
         ));
     }
-    let width = i32::from(setting.map.size.width);
-    let height = i32::from(setting.map.size.height);
-    for (agent, live) in setting.agents.iter_mut().zip(&wire.agents) {
+    let width = i32::from(size.width);
+    let height = i32::from(size.height);
+    for (agent, live) in agents.iter_mut().zip(&wire.agents) {
         agent.pos = cell_index(live.pos, width, height)?;
         agent.fuel = u32::try_from(live.fuel)
             .map_err(|_| format!("negative fuel {} for agent {}", live.fuel, agent.id))?;

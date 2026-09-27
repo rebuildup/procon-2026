@@ -701,9 +701,11 @@ fn normalize_submission(
     // 3..=8 agent rule still normalize — the plan rules themselves live in
     // `engine::wire_plan`.
     let mut setting = engine_setting.clone();
-    apply_live_traffic(&mut setting.map, wire_state).map_err(|e| format!("traffic overlay: {e}"))?;
+    apply_live_traffic(&mut setting.map, wire_state)
+        .map_err(|e| format!("traffic overlay: {e}"))?;
     if wire_state.agents.len() == setting.agents.len() {
-        apply_live_agents(&mut setting, wire_state).map_err(|e| format!("agent overlay: {e}"))?;
+        apply_live_agents(&mut setting.agents, setting.map.size, wire_state)
+            .map_err(|e| format!("agent overlay: {e}"))?;
     } else {
         tracing::debug!(
             declared = setting.agents.len(),

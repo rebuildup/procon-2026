@@ -314,12 +314,8 @@ mod tests {
     fn official_table_equals_old_table_through_inverse_permutation() {
         // The pre-#226 (wrong) table this issue fixed, spelled out so the
         // comparison is against the historical world, not a re-derivation.
-        const OLD_TABLE: [Terrain; 4] = [
-            Terrain::Plain,
-            Terrain::Mountain,
-            Terrain::Pond,
-            Terrain::Road(TrafficState::Smooth),
-        ];
+        const OLD_TABLE: [Terrain; 4] =
+            [Terrain::Plain, Terrain::Mountain, Terrain::Pond, Terrain::Road(TrafficState::Smooth)];
         // Inverse of `0→0, 1→2, 2→3, 3→1`.
         const INVERSE_PERMUTE: [usize; 4] = [0, 3, 1, 2];
         const CODES: [CellType; 4] =
