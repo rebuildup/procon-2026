@@ -290,6 +290,35 @@ async fn registration_gives_up_within_the_window_budget() {
     assert_eq!(err.status(), ArenaRunStatus::RegistrationFailed);
 }
 
+/// `--next` before the window opens: sleep until `opens_at`, then
+/// register — never poll during the wait (that would be sub-cadence spam).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn registration_sleeps_until_the_window_opens_without_polling() {
+    let arena = FakeArena::new(vec![registered_200("m-sleep")]);
+    let url = spawn(arena.clone()).await;
+    let now = Utc::now();
+    let window = MatchWindow {
+        opens_at: now + chrono::TimeDelta::milliseconds(150),
+        starts_at: now + chrono::TimeDelta::seconds(5),
+    };
+    let started = std::time::Instant::now();
+    let outcome =
+        arena::wait_for_registration(&client(&url), &profile(url), &options(window, 10), now)
+            .await
+            .expect("registers once the window opens");
+    assert!(
+        started.elapsed() >= Duration::from_millis(120),
+        "must wait for opens_at first, took {:?}",
+        started.elapsed()
+    );
+    assert_eq!(outcome.attempts, 1);
+    assert_eq!(
+        arena.settings_hits.load(Ordering::SeqCst),
+        1,
+        "no request may be sent before the window opens"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // 4. Registration + full match + durable evidence (library level).
 // ---------------------------------------------------------------------------

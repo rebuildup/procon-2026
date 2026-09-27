@@ -161,8 +161,66 @@ fn dry_run_reports_only_a_boolean_never_the_token() {
 // Errors and logs
 // ---------------------------------------------------------------------------
 
+/// Shared in-memory `tracing` writer for this test binary.
+#[derive(Clone, Default)]
+struct LogSink(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogSink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("log lock").extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogSink {
+    type Writer = LogSink;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+impl LogSink {
+    fn contents(&self) -> String {
+        String::from_utf8(self.0.lock().expect("log lock").clone()).expect("utf8 logs")
+    }
+}
+
+/// Install **one process-wide** capture subscriber before any registration
+/// runs, and return the sink it writes to.
+///
+/// Why global: `tracing` caches per-callsite interest from whichever
+/// dispatcher evaluates a callsite first. These tests exercise the same
+/// callsites concurrently; letting one of them run against the default
+/// (no-op) dispatcher can cache "never" and silently swallow the very
+/// events this audit needs to read. A single global default — installed
+/// through `OnceLock` before *any* registration starts — removes the race
+/// and captures every test's logs in this binary (they are all token-free
+/// by construction, which is exactly what we assert).
+fn global_capture() -> LogSink {
+    static SINK: std::sync::OnceLock<LogSink> = std::sync::OnceLock::new();
+    SINK.get_or_init(|| {
+        let sink = LogSink::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_ansi(false)
+            .with_writer(sink.clone())
+            .finish();
+        // Nothing else in this binary installs a global default; a failure
+        // here would simply mean someone else's subscriber owns the logs.
+        let _ = tracing::subscriber::set_global_default(subscriber);
+        sink.clone()
+    })
+    .clone()
+}
+
 #[test]
 fn a_server_that_echoes_the_token_gets_redacted_error_messages() {
+    // First thing: pin the global capture so no callsite in this binary is
+    // ever evaluated against the no-op dispatcher (see `global_capture`).
+    let _capture = global_capture();
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("rt");
     rt.block_on(async {
         let url = spawn("auth-echo").await;
@@ -181,54 +239,26 @@ fn a_server_that_echoes_the_token_gets_redacted_error_messages() {
     });
 }
 
-/// Capture everything `tracing` emits during a registration and grep it.
-/// The subscriber is installed for the current execution context only, so
-/// concurrently running tests are unaffected.
+/// Run a registration and read back everything `tracing` emitted — for the
+/// presence of the registration log itself (proof the capture is live) and
+/// for the absence of the sentinel token (the actual hygiene property).
 #[test]
 fn tracing_output_during_registration_never_contains_the_token() {
-    #[derive(Clone, Default)]
-    struct LogSink(Arc<Mutex<Vec<u8>>>);
-
-    impl std::io::Write for LogSink {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().expect("log lock").extend_from_slice(buf);
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogSink {
-        type Writer = LogSink;
-        fn make_writer(&'a self) -> Self::Writer {
-            self.clone()
-        }
-    }
-
-    let sink = LogSink::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_ansi(false)
-        .with_writer(sink.clone())
-        .finish();
-
+    let sink = global_capture();
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("rt");
-    let result = tracing::subscriber::with_default(subscriber, || {
-        rt.block_on(async {
-            let url = spawn("register").await;
-            arena::wait_for_registration(
-                &client(&url),
-                &profile(url),
-                &open_options(),
-                chrono::Utc::now(),
-            )
-            .await
-        })
+    rt.block_on(async {
+        let url = spawn("register").await;
+        arena::wait_for_registration(
+            &client(&url),
+            &profile(url),
+            &open_options(),
+            chrono::Utc::now(),
+        )
+        .await
+        .expect("registration succeeds");
     });
 
-    result.expect("registration succeeds");
-    let logs = String::from_utf8(sink.0.lock().expect("log lock").clone()).expect("utf8 logs");
+    let logs = sink.contents();
     assert!(
         logs.contains("registering for the arena match"),
         "the capture must actually have seen the registration log: {logs}"
