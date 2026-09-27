@@ -99,6 +99,13 @@ pub enum HttpClientError {
     /// The server returned a body we could not decode.
     #[error("failed to decode response body: {0}")]
     Decode(#[from] serde_json::Error),
+    /// The endpoint returned a non-JSON body where the protocol promises
+    /// JSON — typically an HTML SPA shell served with HTTP 200 (the
+    /// unofficial arena answers unauthenticated requests that way). Never
+    /// retried and never re-shaped: the client fails closed so a drifted
+    /// API cannot be papered over with a guessed request/response shape.
+    #[error("API drift on {path}: {detail}")]
+    ApiDrift { path: String, detail: String },
     /// The underlying transport failed (timeout, connect, DNS, ...).
     #[error("transport error: {0}")]
     Transport(#[from] reqwest::Error),
@@ -224,15 +231,33 @@ impl MatchClient {
         Self::decode_action_accepted(response).await
     }
 
+    /// Fetch an arbitrary protocol path and decode its body as `T`.
+    ///
+    /// Used by the arena registration phase (`GET /settings` before the
+    /// match window opens), which is not part of the official 4-endpoint
+    /// protocol but shares the same client, token header, retry policy and
+    /// error classification. The response body must be JSON: an HTML shell
+    /// (the arena's SPA fallback for unauthenticated / unknown paths) is
+    /// reported as [`HttpClientError::ApiDrift`] and never retried.
+    ///
+    /// # Errors
+    ///
+    /// See [`HttpClientError`]; in particular [`HttpClientError::ApiDrift`]
+    /// when the endpoint answers with a non-JSON body.
+    pub async fn get_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<T, HttpClientError> {
+        let url = self.endpoint(path)?;
+        let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
+        Self::decode_success_json(response, path).await
+    }
+
     /// Decode a `MatchSetting` from a successful response.
     async fn decode_setting_response(
         response: reqwest::Response,
     ) -> Result<MatchSetting, HttpClientError> {
-        let status = response.status();
-        if !status.is_success() {
-            return Err(classify_error(status, response).await);
-        }
-        Ok(response.json::<MatchSetting>().await?)
+        Self::decode_success_json(response, "/setting").await
     }
 
     /// Decode an `ActionAccepted` from a `POST /` response.
@@ -245,14 +270,10 @@ impl MatchClient {
     async fn decode_action_accepted(
         response: reqwest::Response,
     ) -> Result<ActionAccepted, HttpClientError> {
-        let status = response.status();
-        if !status.is_success() {
-            return Err(classify_error(status, response).await);
-        }
-        let accepted: ActionAccepted = response.json().await?;
+        let accepted: ActionAccepted = Self::decode_success_json(response, "POST /").await?;
         if accepted.revision < 0 {
             return Err(HttpClientError::Http {
-                status: status.as_u16(),
+                status: 200,
                 message: format!("rejected: revision={}", accepted.revision),
             });
         }
@@ -263,11 +284,61 @@ impl MatchClient {
     async fn decode_match_state(
         response: reqwest::Response,
     ) -> Result<MatchState, HttpClientError> {
+        Self::decode_success_json(response, "/").await
+    }
+
+    /// Decode a JSON body from a successful response, **failing closed** on
+    /// anything that is not the JSON document the protocol promises.
+    ///
+    /// Status codes alone are not trusted (the unofficial arena serves the
+    /// SPA HTML shell with HTTP 200), so two checks run before the serde
+    /// decode:
+    ///
+    /// 1. a present `Content-Type` that does not mention JSON ⇒
+    ///    [`HttpClientError::ApiDrift`];
+    /// 2. a body whose first byte is not a JSON value starter (after
+    ///    trimming whitespace) — the classic HTML shell served without a
+    ///    content type — ⇒ [`HttpClientError::ApiDrift`].
+    ///
+    /// Non-success statuses keep the existing classification path
+    /// ([`classify_error`]). The drift detail is truncated to one short
+    /// line so it is safe to persist into state snapshots and evidence.
+    async fn decode_success_json<T: serde::de::DeserializeOwned>(
+        response: reqwest::Response,
+        path: &str,
+    ) -> Result<T, HttpClientError> {
         let status = response.status();
         if !status.is_success() {
             return Err(classify_error(status, response).await);
         }
-        Ok(response.json::<MatchState>().await?)
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !content_type.is_empty() && !content_type.contains("json") {
+            return Err(HttpClientError::ApiDrift {
+                path: path.to_owned(),
+                detail: format!("expected JSON, got content-type {content_type}"),
+            });
+        }
+        let body = response.bytes().await?;
+        let trimmed = trim_ascii_start(&body);
+        let json_starter = matches!(
+            trimmed.first().copied(),
+            Some(b'{' | b'[' | b'"' | b't' | b'f' | b'n' | b'-' | b'0'..=b'9')
+        );
+        if !json_starter {
+            return Err(HttpClientError::ApiDrift {
+                path: path.to_owned(),
+                detail: format!(
+                    "expected JSON, got a non-JSON body starting with {:?}",
+                    snippet(trimmed)
+                ),
+            });
+        }
+        serde_json::from_slice(&body).map_err(HttpClientError::Decode)
     }
 
     /// Compute the full URL for an endpoint path.
@@ -341,6 +412,30 @@ impl MatchClient {
         let code = status.as_u16();
         matches!(code, 408 | 425 | 429) || (500..600).contains(&code)
     }
+}
+
+/// Leading ASCII whitespace of `bytes`, without allocation.
+fn trim_ascii_start(bytes: &[u8]) -> &[u8] {
+    let mut out = bytes;
+    while let Some((&first, rest)) = out.split_first() {
+        if first.is_ascii_whitespace() {
+            out = rest;
+        } else {
+            break;
+        }
+    }
+    out
+}
+
+/// A short, single-line excerpt of a response body, safe to embed in an
+/// error message (and therefore in state snapshots / evidence records).
+fn snippet(bytes: &[u8]) -> String {
+    let head: String = bytes
+        .iter()
+        .take(64)
+        .map(|&b| if b.is_ascii_graphic() || b == b' ' { char::from(b) } else { '?' })
+        .collect();
+    format!("{head}…")
 }
 
 /// Translate an error response into the typed [`HttpClientError`] variant.
