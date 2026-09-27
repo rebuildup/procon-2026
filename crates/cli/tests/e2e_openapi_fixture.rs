@@ -2,8 +2,11 @@
 //!
 //! Verifies that `run_coordinator_loop` from `crates/cli` drives a full match
 //! of `match-config.example.json`'s `daySeconds.len()` days using a
-//! mockito-backed `MatchClient`, with each `POST /` body carrying inner step
-//! sums equal to `day_steps[day]` and final `revision >= 0`.
+//! mockito-backed `MatchClient`, with each `POST /` body satisfying the
+//! **official terrain-weighted step rule** (Issue #226: origin-cell step
+//! costs plus waits `== day_steps[day]`; the mock rejects
+//! element-count-only plans with `revision: -1`, exactly like the real
+//! server) and final `revision >= 0`.
 //!
 //! To inject the mockito URL into the binary instead, see the
 //! `--server http://127.0.0.1:NNNN` flag on `procon coordinator`.
@@ -112,9 +115,20 @@ async fn e2e_openapi_fixture_completes_four_days() {
     // ----- 2. Build mockito mock with day counter -----
     let mut server = Server::new_async().await;
 
+    let synthesized = synthesized_setting(&day_seconds, &day_steps);
+
+    // The mock validates `POST /` with the engine's own official-rule
+    // implementation (`engine::wire_plan`, Issue #226): an element-count-only
+    // plan is rejected here exactly like the real server rejects it, so this
+    // E2E proves submission-boundary conformance, not just wire shape.
+    let validation_setting = cli::protocol_to_engine::protocol_setting_to_engine(
+        &synthesized,
+        domain::PlayerId::new("mock-validator").expect("valid team id"),
+    )
+    .expect("synthesized setting converts");
+
     // GET /setting -> static MatchSetting built from fixture data.
-    let setting_body = serde_json::to_value(synthesized_setting(&day_seconds, &day_steps))
-        .expect("serialise setting");
+    let setting_body = serde_json::to_value(&synthesized).expect("serialise setting");
     let m_setting = server
         .mock("GET", "/setting")
         .with_status(200)
@@ -170,6 +184,14 @@ async fn e2e_openapi_fixture_completes_four_days() {
     let cb = captured_bodies.clone();
     let revision_counter = Arc::new(AtomicI32::new(1));
     let rc = revision_counter.clone();
+    // Official-rule gate (Issue #226): reject with `revision: -1` whatever
+    // fails `engine::wire_plan::validate_agent_plan` — terrain-weighted sum
+    // exact and every move legal — so the mock cannot be satisfied by an
+    // element-count-only plan.
+    let submission_day = Arc::new(AtomicI32::new(0));
+    let sd = submission_day.clone();
+    let vs = validation_setting.clone();
+    let day_budgets = Arc::new(day_steps.clone());
     let m_actions = server
         .mock("POST", "/")
         .match_request(move |req| {
@@ -182,9 +204,32 @@ async fn e2e_openapi_fixture_completes_four_days() {
         })
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body_from_request(move |_req| {
-            let r = rc.fetch_add(1, Ordering::SeqCst);
-            json!({ "revision": r }).to_string().into_bytes()
+        .with_body_from_request(move |req| {
+            let day = sd.fetch_add(1, Ordering::SeqCst);
+            let budget = day_budgets.get(usize::try_from(day).unwrap_or(0)).copied().unwrap_or(20);
+            let accepted = req
+                .body()
+                .ok()
+                .and_then(|raw| serde_json::from_slice::<Vec<Vec<i32>>>(raw).ok())
+                .is_some_and(|body| {
+                    body.iter().enumerate().all(|(idx, plan)| {
+                        vs.agents.get(idx).is_some_and(|agent| {
+                            engine::wire_plan::validate_agent_plan(
+                                agent,
+                                &vs.map,
+                                u32::try_from(budget).unwrap_or(0),
+                                plan,
+                            )
+                            .is_ok()
+                        })
+                    })
+                });
+            let body = if accepted {
+                json!({ "revision": rc.fetch_add(1, Ordering::SeqCst) })
+            } else {
+                json!({ "revision": -1 })
+            };
+            body.to_string().into_bytes()
         })
         .expect_at_least(day_count)
         .create_async()
@@ -226,15 +271,14 @@ async fn e2e_openapi_fixture_completes_four_days() {
         outcome.revisions
     );
 
-    // ----- 4. POST / body assertion: each inner Vec<i32>'s **step sum**
-    //         equals `day_steps[day]`. The wire is run-length encoded:
-    //         `-N` (N > 0) = wait N steps; `0..=5` = one move step in
-    //         that direction. So the step sum is `sum(-x if x<0 else 1)`
-    //         — NOT the absolute sum, because a move direction 0..=5 is
-    //         one step, not five. `EngineLoopAdapter` emits a mix of
-    //         moves and waits (unlike `WaitSolver`, which collapses to
-    //         a single `[-N]`), so we additionally require at least one
-    //         move >= 0 to prove the planner is not just waiting.
+    // ----- 4. POST / body assertion: each inner Vec<i32> satisfies the
+    //         official terrain-weighted rule (Issue #226). Replaying the
+    //         plan from the agent's start cell, each move's **origin**
+    //         cell step cost (平地 2 / 山 3 / 道路 1-2-4) plus waits must
+    //         equal `day_steps[day]` exactly — an element sum alone is NOT
+    //         the contract (probe evidence: `[2, -19]` rejected,
+    //         `[2, -18]` accepted). `EngineLoopAdapter` must still emit at
+    //         least one move, proving the planner is not just waiting.
     //
     // Drop the guard before any `.await` calls below to satisfy
     // `clippy::await_holding_lock`.
@@ -244,11 +288,22 @@ async fn e2e_openapi_fixture_completes_four_days() {
         let mut saw_move = false;
         for (day, body) in bodies.iter().enumerate() {
             assert!(!body.is_empty(), "day {day}: at least one inner list");
+            let budget = u32::try_from(day_steps[day]).expect("day budget fits u32");
             for (agent_index, inner) in body.iter().enumerate() {
-                let step_sum: i32 = inner.iter().map(|&x| if x < 0 { -x } else { 1 }).sum();
+                let agent = validation_setting
+                    .agents
+                    .get(agent_index)
+                    .unwrap_or_else(|| panic!("day {day}: agent {agent_index} missing"));
+                let weighted = engine::wire_plan::validate_agent_plan(
+                    agent,
+                    &validation_setting.map,
+                    budget,
+                    inner,
+                )
+                .unwrap_or_else(|e| panic!("day {day} agent {agent_index}: {e}"));
                 assert_eq!(
-                    step_sum, day_steps[day],
-                    "day {day} agent {agent_index}: inner step sum mismatch"
+                    weighted, budget,
+                    "day {day} agent {agent_index}: weighted step sum must be exactly day_steps"
                 );
                 if inner.iter().any(|&x| x >= 0) {
                     saw_move = true;

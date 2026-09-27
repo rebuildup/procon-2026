@@ -22,7 +22,7 @@
 //!    generations with `serde_json`
 //!    (`same_params_and_seed_regenerate_byte_identical`).
 //! 2. **Traceable identity** — `case_id` embeds generator version, archetype
-//!    and seed: `generated:v1:road-heavy:seed=7`, with `:size=` / `:days=` /
+//!    and seed: `generated:v2:road-heavy:seed=7`, with `:size=` / `:days=` /
 //!    `:fuel=` appended when they differ from the archetype default (the fuel
 //!    mode is appended only for the non-default `fuel=tight`, so every
 //!    pre-existing id stays byte-identical). `seed`,
@@ -153,7 +153,17 @@ use crate::fixture::{FixtureCategory, MatchFixture};
 /// `(archetype, seed, size, days)` tuple — it is part of the `case_id`
 /// (`generated:v<N>:…`) and of `generation_parameters`, so old evidence can
 /// never be re-read as new.
-pub const GENERATOR_VERSION: u32 = 1;
+///
+/// **v1 → v2 (Issue #226):** the wire cell codes changed. The cell-type
+/// table was corrected to the official one (0=平地, 1=道路, 2=山地, 3=池)
+/// and every authored cell source — this generator's paint code included —
+/// was identity-permuted `0→0, 1→2, 2→3, 3→1`, so the same
+/// `(params, seed)` now yields the same *terrain* under different raw codes
+/// than v1 did. `generated:v2:…` records therefore stay pinned to the
+/// old-terrain-table world (historical evidence, re-baseline #206); v2 ids
+/// are the corrected-table world. The fuel axis (#204) did not change
+/// output bytes, which is why it never bumped the version.
+pub const GENERATOR_VERSION: u32 = 2;
 
 /// Inclusive upper bound on the number of days a generated case may declare.
 ///
@@ -512,10 +522,10 @@ impl GenerationParams {
     ///
     /// `:size=` / `:days=` appear only when they differ from the archetype
     /// default, and `:fuel=` only for the non-default `fuel=tight`, so the
-    /// common screening id stays short (`generated:v1:road-heavy:seed=7`) —
-    /// byte-identical to every id written before the fuel axis existed — while
-    /// two specs that differ in size, day count or fuel mode can never collide
-    /// inside one `Corpus`.
+    /// common screening id stays short (`generated:v2:road-heavy:seed=7`) —
+    /// identical in shape to every id written before the fuel axis existed —
+    /// while two specs that differ in size, day count or fuel mode can never
+    /// collide inside one `Corpus`.
     #[must_use]
     pub fn case_id(&self) -> String {
         let mut id = format!(
@@ -1167,7 +1177,7 @@ fn paint_open(cells: &mut [Vec<CellType>], rng: &mut Rng) {
     let total = cells.len() * cells.len();
     let mountains = (total / 64).max(1);
     for idx in rng.sample_distinct(total, mountains) {
-        set_cell(cells, idx, CellType::TYPE_1);
+        set_cell(cells, idx, CellType::TYPE_2);
     }
 }
 
@@ -1177,7 +1187,7 @@ fn paint_open(cells: &mut [Vec<CellType>], rng: &mut Rng) {
 fn paint_mountain_heavy(cells: &mut [Vec<CellType>], rng: &mut Rng, edge: usize) {
     for row in cells.iter_mut() {
         for cell in row.iter_mut() {
-            *cell = CellType::TYPE_1;
+            *cell = CellType::TYPE_2;
         }
     }
     let cross = carve_cross(cells, edge);
@@ -1202,9 +1212,9 @@ fn paint_pond_obstacle(cells: &mut [Vec<CellType>], rng: &mut Rng, edge: usize) 
         }
     }
     for &idx in &centers {
-        set_cell(cells, idx, CellType::TYPE_2);
+        set_cell(cells, idx, CellType::TYPE_3);
     }
-    grow_region(cells, &centers, target_pond, CellType::TYPE_2, &skip, rng);
+    grow_region(cells, &centers, target_pond, CellType::TYPE_3, &skip, rng);
     // A little terrain texture so routing is not a pure obstacle course.
     paint_scatter(cells, rng, 64);
 }
@@ -1216,7 +1226,7 @@ fn paint_road_heavy(cells: &mut [Vec<CellType>], rng: &mut Rng) {
     for (r, row) in cells.iter_mut().enumerate() {
         for (c, cell) in row.iter_mut().enumerate() {
             if r % 8 == 0 || c % 8 == 0 {
-                *cell = CellType::TYPE_3;
+                *cell = CellType::TYPE_1;
             }
         }
     }
@@ -1237,12 +1247,12 @@ fn paint_few_series(cells: &mut [Vec<CellType>], edge: usize) {
     for offset in 0..2 {
         if let Some(row) = cells.get_mut(wall_row + offset) {
             for cell in row.iter_mut() {
-                *cell = CellType::TYPE_1;
+                *cell = CellType::TYPE_2;
             }
         }
         for row in cells.iter_mut() {
             if let Some(cell) = row.get_mut(wall_col + offset) {
-                *cell = CellType::TYPE_1;
+                *cell = CellType::TYPE_2;
             }
         }
     }
@@ -1267,7 +1277,7 @@ fn paint_scatter_on(cells: &mut [Vec<CellType>], rng: &mut Rng, count: usize, sk
         .collect();
     rng.shuffle(&mut pool);
     for idx in pool.into_iter().take(count) {
-        set_cell(cells, idx, CellType::TYPE_1);
+        set_cell(cells, idx, CellType::TYPE_2);
     }
 }
 
@@ -1400,7 +1410,7 @@ fn place_agents(
     let mut plain = Vec::new();
     let mut other = Vec::new();
     for (idx, cell) in cells.iter().flatten().enumerate() {
-        if *cell == CellType::TYPE_2 || occupied.contains(&idx) {
+        if *cell == CellType::TYPE_3 || occupied.contains(&idx) {
             continue;
         }
         if cross.contains(&idx) {
@@ -1706,7 +1716,7 @@ mod tests {
         // The fuel mode is part of the durable identity, so seed-set evidence
         // can always tell which axis a record was generated under (Issue #204).
         assert_eq!(params["fuel"], "comfortable");
-        assert!(case.case_id.starts_with("generated:v1:"));
+        assert!(case.case_id.starts_with("generated:v2:"));
 
         // …and a tight record says so, in both slots.
         let mut tight = GenerationParams::new(Archetype::Open, 3);
@@ -1714,7 +1724,7 @@ mod tests {
         let case = generate_ok(&tight);
         let params = case.generation_parameters.as_ref().expect("generated case carries params");
         assert_eq!(params["fuel"], "tight");
-        assert_eq!(case.case_id, "generated:v1:open:seed=3:fuel=tight");
+        assert_eq!(case.case_id, "generated:v2:open:seed=3:fuel=tight");
     }
 
     // -- identity -----------------------------------------------------------
@@ -1722,12 +1732,12 @@ mod tests {
     #[test]
     fn case_ids_are_traceable_to_version_archetype_and_seed() {
         let base = GenerationParams::new(Archetype::RoadHeavy, 7);
-        assert_eq!(base.case_id(), "generated:v1:road-heavy:seed=7");
+        assert_eq!(base.case_id(), "generated:v2:road-heavy:seed=7");
 
         let mut spaced = GenerationParams::new(Archetype::RoadHeavy, 7);
         spaced.size = SizeClass::Small;
         spaced.days = 1;
-        assert_eq!(spaced.case_id(), "generated:v1:road-heavy:seed=7:size=small:days=1");
+        assert_eq!(spaced.case_id(), "generated:v2:road-heavy:seed=7:size=small:days=1");
 
         // Defaults are implied, so an explicit-but-default spec collides with
         // the short form — the two really are the same case. This includes the
@@ -1742,14 +1752,14 @@ mod tests {
         // The non-default mode appends `:fuel=tight`, last of the segments.
         let mut tight = GenerationParams::new(Archetype::RoadHeavy, 7);
         tight.fuel = FuelMode::Tight;
-        assert_eq!(tight.case_id(), "generated:v1:road-heavy:seed=7:fuel=tight");
+        assert_eq!(tight.case_id(), "generated:v2:road-heavy:seed=7:fuel=tight");
         let mut tight_spaced = GenerationParams::new(Archetype::RoadHeavy, 7);
         tight_spaced.size = SizeClass::Small;
         tight_spaced.days = 1;
         tight_spaced.fuel = FuelMode::Tight;
         assert_eq!(
             tight_spaced.case_id(),
-            "generated:v1:road-heavy:seed=7:size=small:days=1:fuel=tight"
+            "generated:v2:road-heavy:seed=7:size=small:days=1:fuel=tight"
         );
 
         // Different seeds (and different overrides) are distinct ids. The
@@ -2040,7 +2050,7 @@ mod tests {
             .iter()
             .flatten()
             .enumerate()
-            .find(|(_, c)| **c == CellType::TYPE_2)
+            .find(|(_, c)| **c == CellType::TYPE_3)
             .map(|(i, _)| i)
             .expect("pond-obstacle has a pond");
         let pond = i32::try_from(pond).expect("index fits the wire field");
@@ -2067,8 +2077,8 @@ mod tests {
         let total = case.setting.map.cells.len() * case.setting.map.cells[0].len();
         let plain = terrain_count(&case, CellType::TYPE_0);
         assert!(plain * 10 >= total * 9, "open must be >= 90% plain, got {plain}/{total}");
-        assert_eq!(terrain_count(&case, CellType::TYPE_2), 0, "open has no ponds");
-        assert_eq!(terrain_count(&case, CellType::TYPE_3), 0, "open has no roads");
+        assert_eq!(terrain_count(&case, CellType::TYPE_3), 0, "open has no ponds");
+        assert_eq!(terrain_count(&case, CellType::TYPE_1), 0, "open has no roads");
     }
 
     #[test]
@@ -2078,7 +2088,7 @@ mod tests {
             params.size = size;
             let case = generate_ok(&params);
             let total = case.setting.map.cells.len() * case.setting.map.cells[0].len();
-            let mountains = terrain_count(&case, CellType::TYPE_1);
+            let mountains = terrain_count(&case, CellType::TYPE_2);
             assert!(
                 mountains * 2 >= total,
                 "{size:?}: mountain-heavy must be >= 50% mountain, got {mountains}/{total}"
@@ -2090,7 +2100,7 @@ mod tests {
     fn pond_obstacle_is_a_real_obstacle_course() {
         let case = generate_ok(&GenerationParams::new(Archetype::PondObstacle, 11));
         let total = case.setting.map.cells.len() * case.setting.map.cells[0].len();
-        let ponds = terrain_count(&case, CellType::TYPE_2);
+        let ponds = terrain_count(&case, CellType::TYPE_3);
         assert!(ponds * 10 >= total, "pond-obstacle must be >= 10% pond, got {ponds}/{total}");
     }
 
@@ -2102,7 +2112,7 @@ mod tests {
             let case = generate_ok(&params);
             let edge = usize::try_from(case.setting.map.width).expect("width fits usize");
             let total = edge * edge;
-            let roads = terrain_count(&case, CellType::TYPE_3);
+            let roads = terrain_count(&case, CellType::TYPE_1);
             assert!(
                 roads * 100 >= total * 15,
                 "{size:?}: road-heavy must be >= 15% road, got {roads}/{total}"
@@ -2111,8 +2121,8 @@ mod tests {
             // One dominant connected component — a lattice, not scattered
             // stubs — so routing really can choose road vs plain.
             let biggest = (0..edge * edge)
-                .filter(|&i| get_cell(&case.setting.map.cells, i) == Some(CellType::TYPE_3))
-                .map(|i| component_size(&case.setting.map.cells, i, CellType::TYPE_3))
+                .filter(|&i| get_cell(&case.setting.map.cells, i) == Some(CellType::TYPE_1))
+                .map(|i| component_size(&case.setting.map.cells, i, CellType::TYPE_1))
                 .max()
                 .unwrap_or(0);
             assert!(
@@ -2189,22 +2199,22 @@ mod tests {
             .expect("valid selection parses");
         assert_eq!(sel.len(), 2);
         assert_eq!(sel[0], GenerationParams::new(Archetype::Open, 1));
-        assert_eq!(sel[0].case_id(), "generated:v1:open:seed=1");
+        assert_eq!(sel[0].case_id(), "generated:v2:open:seed=1");
         assert_eq!(sel[1].archetype, Archetype::RoadHeavy);
         assert_eq!(sel[1].size, SizeClass::Small);
         // `days=3` is road-heavy's default, so the id stays short — the
         // default is implied by generator version + archetype.
         assert_eq!(sel[1].days, 3);
-        assert_eq!(sel[1].case_id(), "generated:v1:road-heavy:seed=7:size=small");
+        assert_eq!(sel[1].case_id(), "generated:v2:road-heavy:seed=7:size=small");
 
         // `fuel=` follows the same `<kv>` grammar; the default is implied so
         // `fuel=comfortable` writes no bytes into the id (Issue #204).
         let sel = parse_selection("open:seed=1:fuel=comfortable,road-heavy:seed=1:fuel=tight")
             .expect("fuel modes parse");
         assert_eq!(sel[0], GenerationParams::new(Archetype::Open, 1));
-        assert_eq!(sel[0].case_id(), "generated:v1:open:seed=1");
+        assert_eq!(sel[0].case_id(), "generated:v2:open:seed=1");
         assert_eq!(sel[1].fuel, FuelMode::Tight);
-        assert_eq!(sel[1].case_id(), "generated:v1:road-heavy:seed=1:fuel=tight");
+        assert_eq!(sel[1].case_id(), "generated:v2:road-heavy:seed=1:fuel=tight");
 
         // An empty selection selects nothing (generated cases are opt-in).
         assert!(parse_selection("").expect("empty parses").is_empty());
@@ -2265,7 +2275,7 @@ mod tests {
         all.extend(generated.cases);
         let merged = Corpus::new(all).expect("fixtures and generated ids never collide");
         assert_eq!(merged.len(), fixtures + 2);
-        assert!(merged.case_ids().contains(&"generated:v1:open:seed=1"));
+        assert!(merged.case_ids().contains(&"generated:v2:open:seed=1"));
         assert!(merged.case_ids().contains(&"fixture:small-8x8"));
     }
 }

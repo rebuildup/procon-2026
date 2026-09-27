@@ -334,11 +334,13 @@ fn legacy_and_v2_cases_keep_distinct_identity() {
     assert!(matches!(legacy_fx.category, FixtureCategory::Medium), "legacy relabeled honestly");
     assert!(matches!(v2_fx.category, FixtureCategory::RoadHeavy), "v2 owns the category");
 
-    // The legacy body is untouched pre-#187 content: Road 4 / Pond 54 of 256.
-    assert_eq!(legacy_fx.cell_type_count(protocol::match_config::CellType::TYPE_3), 4);
-    assert_eq!(legacy_fx.cell_type_count(protocol::match_config::CellType::TYPE_2), 54);
+    // The legacy body is still pre-#187 content: Road 4 / Pond 54 of 256.
+    // Issue #226 identity-permuted its cell codes (1=road now), so the
+    // bytes changed but the terrain meaning did not.
+    assert_eq!(legacy_fx.cell_type_count(protocol::match_config::CellType::TYPE_1), 4);
+    assert_eq!(legacy_fx.cell_type_count(protocol::match_config::CellType::TYPE_3), 54);
     // ...while v2 is a genuine, validated road network (>= 15% floor).
-    let roads = v2_fx.cell_type_count(protocol::match_config::CellType::TYPE_3);
+    let roads = v2_fx.cell_type_count(protocol::match_config::CellType::TYPE_1);
     let total = u64::try_from(v2_fx.cell_count()).expect("cell count fits u64");
     assert!(
         u64::try_from(roads).expect("road count fits u64") * 100 >= total * 15,
@@ -362,14 +364,14 @@ fn road_heavy_v2_positions_avoid_impassable_terrain() {
     for (i, pos) in fx.setting.agents.iter().enumerate() {
         assert_ne!(
             terrain(*pos),
-            protocol::match_config::CellType::TYPE_2,
+            protocol::match_config::CellType::TYPE_3,
             "agent #{i} starts on impassable Pond"
         );
     }
     for (i, spot) in fx.setting.spots.iter().enumerate() {
         assert_ne!(
             terrain(spot.pos),
-            protocol::match_config::CellType::TYPE_2,
+            protocol::match_config::CellType::TYPE_3,
             "spot #{i} sits on impassable Pond"
         );
     }

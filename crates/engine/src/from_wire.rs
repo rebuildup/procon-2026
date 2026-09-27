@@ -7,14 +7,24 @@
 //! canonical evaluator both call it, so a fixture and a live server setting
 //! reach [`crate::MatchSim`] through exactly the same code.
 //!
-//! # Cell type mapping (matches `protocol::match_config::CellType`)
+//! # Cell type mapping (Issue #226 — official table)
 //!
 //! | Wire `CellType` | Engine `Terrain`        |
 //! |---------------:|-------------------------|
 //! | `0`            | `Plain`                 |
-//! | `1`            | `Mountain`              |
-//! | `2`            | `Pond`                  |
-//! | `3`            | `Road(Smooth)`          |
+//! | `1`            | `Road(Smooth)`          |
+//! | `2`            | `Mountain`              |
+//! | `3`            | `Pond`                  |
+//!
+//! Source of truth: the official `試合設定JSONについて.md` §「cells の地形タイプ」
+//! shipped inside `docs/pdf/回答システムに関する情報・簡易版の回答用サーバー_1.zip`
+//! (inner path `試合設定用JSONファイル/試合設定JSONについて.md`): `0`=平地,
+//! `1`=道路, `2`=山地, `3`=池. The vendored OpenAPI `CellType` only declares
+//! `enum: [0, 1, 2, 3]` with no per-value meaning, so that md is the only
+//! authoritative value table. Before Issue #226 this function used a
+//! permuted table (1=Mountain, 2=Pond, 3=Road), which made the engine walk
+//! into official ponds and every moving plan get `revision=-1` from the
+//! official server.
 //!
 //! Spot-bearing plains are modelled by `Cell::spot == Some(...)` rather than
 //! by a separate terrain variant; the adapter therefore overlays `p.spots`
@@ -233,9 +243,9 @@ pub fn protocol_setting_to_engine(p: &WireSetting, team: TeamId) -> Result<Engin
 fn cell_type_to_terrain(c: CellType) -> Result<Terrain, String> {
     match c.value() {
         0 => Ok(Terrain::Plain),
-        1 => Ok(Terrain::Mountain),
-        2 => Ok(Terrain::Pond),
-        3 => Ok(Terrain::Road(TrafficState::Smooth)),
+        1 => Ok(Terrain::Road(TrafficState::Smooth)),
+        2 => Ok(Terrain::Mountain),
+        3 => Ok(Terrain::Pond),
         other => Err(format!("unknown CellType value {other}")),
     }
 }
@@ -249,9 +259,9 @@ mod tests {
         // 8x8 plain grid; one plain cell carries a brand-0 spot; agents at
         // indices 0 and 1 (so even -> patrol, odd -> supply).
         let mut cells = vec![vec![CellType::TYPE_0; 8]; 8];
-        cells[3][4] = CellType::TYPE_2; // pond
-        cells[0][7] = CellType::TYPE_1; // mountain
-        cells[7][0] = CellType::TYPE_3; // road
+        cells[3][4] = CellType::TYPE_3; // pond (official: 3 = 池)
+        cells[0][7] = CellType::TYPE_2; // mountain (official: 2 = 山地)
+        cells[7][0] = CellType::TYPE_1; // road (official: 1 = 道路)
         WireSetting {
             starts_at: 1_700_000_000,
             day_seconds: vec![60],
@@ -266,15 +276,59 @@ mod tests {
         }
     }
 
+    /// Issue #226: the wire table is the official
+    /// `試合設定JSONについて.md` §「cells の地形タイプ」 (bundled inside
+    /// `docs/pdf/回答システムに関する情報・簡易版の回答用サーバー_1.zip`, inner
+    /// path `試合設定用JSONファイル/試合設定JSONについて.md`):
+    /// `0` = 平地, `1` = 道路, `2` = 山地, `3` = 池.
+    ///
+    /// Table-driven so a future re-permutation fails here with the raw wire
+    /// value in the message, not silently in a live match.
     #[test]
-    fn cell_type_mapping_is_stable() {
-        assert_eq!(cell_type_to_terrain(CellType::TYPE_0).unwrap(), Terrain::Plain);
-        assert_eq!(cell_type_to_terrain(CellType::TYPE_1).unwrap(), Terrain::Mountain);
-        assert_eq!(cell_type_to_terrain(CellType::TYPE_2).unwrap(), Terrain::Pond);
-        assert_eq!(
-            cell_type_to_terrain(CellType::TYPE_3).unwrap(),
-            Terrain::Road(TrafficState::Smooth)
-        );
+    fn cell_type_to_terrain_matches_official_md_table() {
+        let official: [(i32, CellType, Terrain); 4] = [
+            (0, CellType::TYPE_0, Terrain::Plain),
+            (1, CellType::TYPE_1, Terrain::Road(TrafficState::Smooth)),
+            (2, CellType::TYPE_2, Terrain::Mountain),
+            (3, CellType::TYPE_3, Terrain::Pond),
+        ];
+        for (raw, code, want) in official {
+            assert_eq!(code.value(), raw, "CellType constant must carry wire value {raw}");
+            assert_eq!(
+                cell_type_to_terrain(code).unwrap(),
+                want,
+                "wire cell type {raw} must decode per the official md table"
+            );
+        }
+    }
+
+    /// Issue #226 equivalence proof (machine-checked): the corrected table is
+    /// exactly the pre-#226 table read through the inverse of the identity
+    /// permutation that was applied to every authored cell source — so the
+    /// permutation preserved terrain meaning.
+    ///
+    /// Permutation P (authored content): `0→0, 1→2, 2→3, 3→1`.
+    /// Its inverse: `0→0, 1→3, 2→1, 3→2`.
+    /// Property: `new_table(v) == old_table(P⁻¹(v))` for all `v` in `0..=3`.
+    #[test]
+    fn official_table_equals_old_table_through_inverse_permutation() {
+        // The pre-#226 (wrong) table this issue fixed, spelled out so the
+        // comparison is against the historical world, not a re-derivation.
+        const OLD_TABLE: [Terrain; 4] =
+            [Terrain::Plain, Terrain::Mountain, Terrain::Pond, Terrain::Road(TrafficState::Smooth)];
+        // Inverse of `0→0, 1→2, 2→3, 3→1`.
+        const INVERSE_PERMUTE: [usize; 4] = [0, 3, 1, 2];
+        const CODES: [CellType; 4] =
+            [CellType::TYPE_0, CellType::TYPE_1, CellType::TYPE_2, CellType::TYPE_3];
+
+        for (v, code) in CODES.into_iter().enumerate() {
+            let new = cell_type_to_terrain(code).expect("0..=3 are all known");
+            let old = OLD_TABLE[INVERSE_PERMUTE[v]];
+            assert_eq!(
+                new, old,
+                "wire {v}: corrected table must equal old_table(inverse_permute({v}))"
+            );
+        }
     }
 
     #[test]

@@ -229,6 +229,6 @@ fn comfortable_and_tight_twins_coexist_in_one_corpus() {
     all.extend(tight.cases);
     let merged = bench::case::Corpus::new(all).expect("twin ids never collide");
     assert_eq!(merged.len(), 4);
-    assert!(merged.case_ids().contains(&"generated:v1:road-heavy:seed=1"));
-    assert!(merged.case_ids().contains(&"generated:v1:road-heavy:seed=1:fuel=tight"));
+    assert!(merged.case_ids().contains(&"generated:v2:road-heavy:seed=1"));
+    assert!(merged.case_ids().contains(&"generated:v2:road-heavy:seed=1:fuel=tight"));
 }

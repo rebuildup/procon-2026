@@ -39,6 +39,7 @@ solver の内部ヒューリスティック（例: `solver-loop` の `ScoreRepor
 | `daySteps` (per-day) | `MatchSetting::day_steps_by_day` に保持され、**`MatchSim::run_inner` が day loop 内で各日の値を読む**ので `daySteps=[16,24]` なら day1 は本当に24 step 実行する |
 | `daySeconds` (per-day) | **公式 validity として判定**。各日の回答時間 `daily_response_us[i]` が `day_budget_us()[i]` を超えていればその日は未受理と見なして `invalid` / `scored=false`。長さが `daySteps` と食い違う・非正なら from_wire が拒否 |
 | `busyThreshold` / `jammedThreshold` | `CaseSpec::sim_config()` → `SimConfig`。**`SimConfig::default()` (2/5) を使わない** — fixture は 1/2 なので別ゲームになる |
+| `daySteps` の**提出時**解釈（Issue #226） | 公式は **地形加重**で検証する: `Σ(**出発セル**の step cost: 平地2 / 山3 / 道路1・2・4) + Σ待機 == daySteps[day]`。element 数（move=1）でも進入セル基準でもない — localhost probe（`[2,-19]`/`[2,-18]` 平地→道路ペアと `[2,-17]` 平地→山地）で出発セル課金・等号判定を確定。候補（engine の element 時計で plan）は **wire 提出境界** `coordinator_loop` → `engine::wire_plan::normalize_day_plan` で行動 prefix を保ったまま truncate + 待機 pad してから `POST /` する。**候補本体・offline scoring は変更しない**（待機は `MatchSim` で状態不変、tail-wait 系 plan の前後同一性は `wire_plan` の property test で固定） |
 
 agent の種類（巡回/補給）は wire に無いため依然 index 交替の既定。種類の決定と燃料上限は別問題です。
 
@@ -385,16 +386,25 @@ case_id = generated:v<generator_version>:<archetype>:seed=<seed>[:size=<class>][
 
 `:size=` / `:days=` は archetype の既定と異なるときだけ、`:fuel=` は既定
 （`comfortable`）以外のときだけ付くので、既定なら
-`generated:v1:road-heavy:seed=7` のように短く — **fuel 軸追加前と byte 単位で同一** —
+`generated:v2:road-heavy:seed=7` のように短く —
 それでも (version, archetype, seed, size, days, fuel) は id から一意に復元できます。
 `generation_parameters` は `{generator_version, archetype, seed, size, days, fuel}` を
-JSON で保持し、`RunRecord` にそのまま保存されます（fuel 軸の追加は既定 params の
-出力を変えないため `GENERATOR_VERSION` は 1 のままです。v1 の既存 evidence は
-`fuel` キーなしで読めば `comfortable` と解釈されます）。
+JSON で保持し、`RunRecord` にそのまま保存されます。
 
 generator の出力は `GENERATOR_VERSION` に束縛されています。**出力が変わる変更を
 したら version を上げる**こと。v1 の (params, seed) を黙って書き換えると、
 過去の evidence が別物として読み替えられてしまいます。
+
+version 履歴:
+
+- **v1** — #185 の初版 + #204 の fuel 軸。fuel 軸は既定 params の出力を変えない
+  ため version は据え置き（`fuel` キーなしの v1 record は `comfortable` と解釈）。
+  **v1 = 旧（誤）地形表の world**: `cells` の wire コードが公式表と入れ替わっていた。
+- **v2** — #226。地形タブレットを公式表（0=平地/1=道路/2=山地/3=池）に修正し、
+  authored 出力の全セルを意味保存で permute（`0→0, 1→2, 2→3, 3→1`）したため、
+  同一 `(params, seed)` の raw bytes が変わる。terrain の意味は v1 と同一、
+  コードのみ異なる。**v1 の既存 evidence は historical（旧地形表 world）のまま
+  書き換えず、re-baseline は #206** で扱う。
 
 ### seed set をどう記録するか
 
@@ -472,14 +482,16 @@ fixture にして回帰を永続化します。
 3. **fixture JSON として書き出す** — `crates/bench/fixtures/maps/<新しい名前>.json` に、
    fixture スキーマ（`name` / `description` / `category` ヘッダ + `MatchSetting`）
    で保存します。素の `MatchSetting` ではありません。
-4. **新しい名前を付ける** — 生成時の id（`generated:v1:…`）は**使いません**。
+4. **新しい名前を付ける** — 生成時の id（`generated:v<N>:…`、現行は
+   `generated:v2:…` / 旧 evidence は `generated:v1:…`）は**使いません**。
    昇格後は `fixture:<新しい名前>` という**別 id** になります。古い evidence は
    `generated:…` のまま履史として残り、新しい fixture の結果と読み違えられません。
 5. **bundled 登録する** — `MatchFixtureLoader::bundled_fixtures()` に追加し、
    `category` を実態に合わせます。**これは `--cases all` の意味を 8 → 9 に変える**
    ので、専用 PR にして fixture corpus 全体の baseline evidence を作り直します。
 6. **generator を触らない** — 昇格で generator の出力を書き換えてはいけません。
-   v1 の (params, seed) は過去の evidence を指しているからです。generator 自体を
+   各 `GENERATOR_VERSION` の (params, seed) はその version の過去 evidence を
+   指しているからです（v1 = 旧地形表 world）。generator 自体を
    変える必要が出たときは `GENERATOR_VERSION` を上げ、新しい id 系として扱います。
 
 ## durable result

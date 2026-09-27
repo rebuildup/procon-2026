@@ -45,12 +45,13 @@ use chrono::Utc;
 use domain::{MatchId, PlayerId};
 use engine::model::MatchSetting as EngineSetting;
 use protocol::http_client::SubmitAck;
-use protocol::match_config::AgentKind;
+use protocol::match_config::{ActionPlanBody, AgentKind, MatchState as WireMatchState};
 use serde::Serialize;
 use thiserror::Error;
 
 use crate::action_adapter::{AdapterError, decision_to_actions};
 use crate::arena::Secret;
+use crate::candidate_bridge::{apply_live_agents, apply_live_traffic};
 use crate::protocol_to_engine::protocol_setting_to_engine;
 use crate::solver_adapter::{dummy_match_snapshot, match_state_to_snapshot};
 
@@ -624,6 +625,17 @@ where
         let actions = decision_to_actions(&decision, &ctx)
             .map_err(|source| CoordinatorLoopError::Adapter { day, source })?;
 
+        // Issue #226 — official conformance at the submission boundary.
+        // The server judges a *terrain-weighted* step sum
+        // (Σ origin-cell costs + waits == daySteps, see `engine::wire_plan`),
+        // while candidates and `decision_to_actions` speak the engine's
+        // element clock. Normalize here: both solver paths (CandidateBridge
+        // and EngineLoopAdapter) funnel through this single point, so the
+        // body we actually POST always fits the official budget — candidate
+        // output and offline scoring are untouched.
+        let actions = normalize_submission(&engine_setting, &state, day_steps, &actions)
+            .map_err(CoordinatorLoopError::Conversion)?;
+
         // Operator visibility: when DEBUG logging is on, dump the
         // exact wire payload we are about to send. Gated by the
         // `tracing::enabled!` check so the per-step formatting cost
@@ -663,6 +675,46 @@ where
     }
 
     Ok(CoordinatorOutcome { days_completed, revisions })
+}
+
+/// Normalize one day's answer body to the official terrain-weighted step
+/// budget (Issue #226).
+///
+/// Builds the live engine state the plan will be judged against: the static
+/// setting overlaid with the current `GET /` payload — road traffic always
+/// (it changes the step cost of a road cell), agent positions and fuel when
+/// the server reports them (the real server always does; some test doubles
+/// omit `agents`, in which case the match-start setting stands in).
+///
+/// This is the single choke point both solver paths flow through
+/// (`CandidateBridge::decide` and `EngineLoopAdapter` decisions both arrive
+/// here via [`decision_to_actions`]); see [`engine::wire_plan`] for the rule
+/// itself and the localhost probe evidence behind it.
+fn normalize_submission(
+    engine_setting: &EngineSetting,
+    wire_state: &WireMatchState,
+    day_steps: u32,
+    body: &ActionPlanBody,
+) -> Result<ActionPlanBody, String> {
+    // Live view: static setting + today's overlay. Built from the bare
+    // setting (no `MatchState::new`) so test-double settings that skip the
+    // 3..=8 agent rule still normalize — the plan rules themselves live in
+    // `engine::wire_plan`.
+    let mut setting = engine_setting.clone();
+    apply_live_traffic(&mut setting.map, wire_state)
+        .map_err(|e| format!("traffic overlay: {e}"))?;
+    if wire_state.agents.len() == setting.agents.len() {
+        apply_live_agents(&mut setting.agents, setting.map.size, wire_state)
+            .map_err(|e| format!("agent overlay: {e}"))?;
+    } else {
+        tracing::debug!(
+            declared = setting.agents.len(),
+            reported = wire_state.agents.len(),
+            "live state carries no agent entries; normalizing from match-start positions"
+        );
+    }
+    let ids = engine_setting.agent_ids();
+    engine::wire_plan::normalize_day_plan(&setting.map, &setting.agents, &ids, day_steps, body)
 }
 
 /// Submit the agent-kind vector to `POST /agent`, retrying on

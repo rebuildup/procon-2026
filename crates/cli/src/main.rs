@@ -135,6 +135,13 @@ enum Cmd {
         #[arg(long, value_name = "PATH", env = "PROCON_STATE_OUTPUT")]
         state_output: Option<PathBuf>,
 
+        /// Exit with status 0 as soon as the match completes instead of
+        /// idle-ticking after it (Issue #226 local repro, scripted runs).
+        /// The default keeps the post-match idle-tick so the container
+        /// stays healthy for ops to inspect.
+        #[arg(long, env = "PROCON_EXIT_AFTER_MATCH")]
+        exit_after_match: bool,
+
         /// Run against the unofficial practice arena (Issue #179).
         ///
         /// This is a **profile layer**, not a second coordinator: the same
@@ -351,6 +358,7 @@ async fn run(cli: Cli) -> Result<()> {
             loop_iterations,
             dry_run,
             state_output,
+            exit_after_match,
             arena,
             next,
             candidate,
@@ -364,6 +372,7 @@ async fn run(cli: Cli) -> Result<()> {
                 loop_iterations,
                 dry_run,
                 state_output,
+                exit_after_match,
                 ArenaFlags { arena, next, candidate, arena_evidence },
             )
             .await?;
@@ -469,7 +478,9 @@ struct ArenaFlags {
 ///   #178 candidate id is given — hand both to the wired-up
 ///   `run_coordinator_loop`, and idle-block on the per-day driver.
 ///   When the real loop completes, we idle-tick forever so the container
-///   stays healthy for ops to inspect.
+///   stays healthy for ops to inspect — unless `--exit-after-match`
+///   (Issue #226 local repro / scripted runs) is set, in which case the
+///   process returns `Ok(())` and exits 0.
 /// - `--arena`: the same path with an env-backed profile
 ///   (`PROCON_ARENA_SERVER` / `PROCON_ARENA_TOKEN`), a durable run record
 ///   appended to `target/arena/runs.jsonl`, and **exit after one match**
@@ -488,6 +499,7 @@ async fn cmd_coordinator(
     loop_iterations: u32,
     dry_run: bool,
     state_output: Option<PathBuf>,
+    exit_after_match: bool,
     arena_flags: ArenaFlags,
 ) -> Result<()> {
     let ArenaFlags { arena, next, candidate, arena_evidence } = arena_flags;
@@ -690,6 +702,16 @@ async fn cmd_coordinator(
         "coordinator loop wired in #135; full E2E driving comes in #136. \
          outcome: {outcome:?}"
     );
+    if exit_after_match {
+        // Issue #226 (and scripted runs generally): a completed match is a
+        // successful process. Without this the CLI idle-ticks forever and
+        // no wrapper can ever observe exit 0.
+        tracing::info!(
+            "--exit-after-match: {days} day(s) completed, exiting 0",
+            days = outcome.days_completed
+        );
+        return Ok(());
+    }
     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
     loop {
         ticker.tick().await;

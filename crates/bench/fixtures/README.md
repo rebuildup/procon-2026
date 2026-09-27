@@ -31,7 +31,8 @@ crates/bench/fixtures/
 ├── README.md                  # this file
 ├── example_match.json         # bench-runner smoke fixture (minimal)
 └── maps/                      # known-map fixtures loaded by MatchFixtureLoader
-    ├── openapi-sample.json    # official Procon 37 sample
+    ├── openapi-sample.json    # schema-derived name, project-authored warmup mirror
+    │                          # (NOT an official payload — see its section below)
     ├── small-8x8.json
     ├── medium-16x16.json
     ├── large-32x32.json
@@ -41,6 +42,41 @@ crates/bench/fixtures/
     ├── series-many.json
     └── series-few.json
 ```
+
+## Terrain cell codes (Issue #226)
+
+Every `cells` value here follows the **official** table —
+`試合設定JSONについて.md` §「cells の地形タイプ」, bundled inside
+`docs/pdf/回答システムに関する情報・簡易版の回答用サーバー_1.zip` (inner path
+`試合設定用JSONファイル/試合設定JSONについて.md`):
+
+| value | terrain |
+|------:|---------|
+| `0` | 平地 (Plain) |
+| `1` | 道路 (Road) |
+| `2` | 山地 (Mountain) |
+| `3` | 池 (Pond, impassable) |
+
+Until Issue #226 the engine decoded a **permuted** table (`1`=Mountain,
+`2`=Pond, `3`=Road), and everything authored against that table therefore
+carried permuted codes. #226 corrected `engine::from_wire` and applied the
+meaning-preserving permutation `0→0, 1→2, 2→3, 3→1` to authored content:
+
+- **permuted** — **all nine** bundled maps (`small-8x8`, `medium-16x16`,
+  `large-32x32`, `road-heavy`, `road-heavy-v2`, `mountain-heavy`,
+  `series-many`, `series-few`, `openapi-sample`), plus
+  `bench::generator`'s cell painting and the gates that count codes
+  (road floor `TYPE_1`, pond checks `TYPE_3`);
+- **not permuted** — nothing under `maps/` any more. Genuinely official /
+  vendored payloads stay raw and are read under the corrected table like
+  any wire payload: `.reference/procon37/match-config.example.json` (the
+  real official example), `crates/protocol/tests/fixtures/procon37-openapi*.json`
+  (schema), `crates/cli/tests/fixtures/arena/replay-sample.json` (arena
+  wire capture).
+
+Terrain *counts* in this README are terrain, not codes: they are unchanged
+by the permutation (each fixture's terrain histogram is pinned to the
+pre-#226 world by `fixtures_smoke.rs::terrain_histograms_match_the_old_world_constants`).
 
 ## Fixture catalog
 
@@ -59,10 +95,19 @@ crates/bench/fixtures/
 ## Per-fixture descriptions
 
 ### `maps/openapi-sample.json`
-`official_sample` — A minimal 8×8 map with a vertical mountain ridge and 4
-agents at the four corners. Mirrors the warmup default in
-`crates/cli/src/fixtures.rs`. Used to confirm the loader round-trips a
-file end-to-end before any custom solver runs.
+`official_sample` (category label kept for id stability) — a **project-
+authored** 8×8 warmup map: a vertical mountain ridge down the middle
+column and 4 agents at the four corners, mirroring the warmup default in
+`crates/cli/src/fixtures.rs`. Its *name* derives from the vendored
+OpenAPI schema (`schema-derived`), but the body is **not** an official
+payload — the real official example is
+`.reference/procon37/match-config.example.json` (`{problem, teams}`,
+10×10, 3 agents, `daySteps [20, 20, 20, 20]}`). Like every other bundled
+map its cell codes were identity-permuted by #226 (`1→2`, so the ridge
+stays *mountain*), and its terrain histogram
+(`Plain 56 / Mountain 8 / Pond 0 / Road 0`) is asserted against the
+pre-#226 constants in the smoke tests. Used to confirm the loader
+round-trips a file end-to-end before any custom solver runs.
 
 ### `maps/small-8x8.json`
 `small` — 8×8 warmup map: a single mountain ridge down the middle column
@@ -81,12 +126,14 @@ mountain ridge, and a pond cluster on the NW. Designed to stress solver
 memory and search.
 
 ### `maps/road-heavy.json`
-`medium` (legacy) — the **pre-#187** content of case `fixture:road-heavy`,
-whose map body is kept byte-identical so historical evaluation evidence
-stays reproducible: a pond-heavy 16×16 field (Plain 198 / Pond 54 /
-**Road 4**) with 5 agents and 10 spots across 2 brands. It never matched its old `road_heavy` tag,
+`medium` (legacy) — the **pre-#187** content of case `fixture:road-heavy`:
+a pond-heavy 16×16 field (Plain 198 / Pond 54 / **Road 4**) with 5 agents
+and 10 spots across 2 brands. #187 left the body untouched, and #226 only
+identity-permuted its cell *codes* — the terrain mix is unchanged (still
+Road 4 / Pond 54), so every terrain-based description of the historical
+evidence stays true. It never matched its old `road_heavy` tag,
 so #187 relabeled the category to `medium` (it is 16×16, which *is*
-honest) and left the map body untouched. Treat it as a general-purpose
+honest). Treat it as a general-purpose
 map; for road evidence use `road-heavy-v2`.
 
 ### `maps/road-heavy-v2.json`
@@ -164,7 +211,8 @@ The fixture must:
   caveat about legacy pond spots below.
 - Pass the `series_many` / `series_few` category-specific assertions, and
   for `road_heavy` the density floor in `validate_category`: road cells
-  (`CellType::TYPE_3`) ≥ 15% of the map (Issue #187).
+  (`CellType::TYPE_1`, the official road code) ≥ 15% of the map
+  (Issue #187 floor, re-coded by #226).
 - For traffic-threshold evidence, declare ≥ 2 days (`daySteps` /
   `daySeconds` of equal length) — see the multi-day caveat below.
 
@@ -178,18 +226,22 @@ an entire corpus column.
 The historical `maps/road-heavy.json` shipped as `road_heavy` while its
 actual cells were `Plain 198 / Pond 54 / Road 4` (1.6% roads): it did not
 exercise road-cost-aware pathing at all, and a "road share" smoke assertion
-that would have caught it was reading `CellType::TYPE_2` (*Pond*) instead of
-`TYPE_3` (*Road*). #187 fixed both and rebuilt the case as a genuine road
+that would have caught it was reading `CellType::TYPE_2` — which, under the
+pre-#226 (wrong) table, was the *Pond* code — instead of the road code
+(`TYPE_3` before #226, `TYPE_1` under the official table). #187 fixed both
+and rebuilt the case as a genuine road
 corpus entry, using **identity Option A** so old and new evidence can never
 be read as each other:
 
 1. **Legacy content kept, category relabeled.** `maps/road-heavy.json` keeps
-   its map body byte-identical (still Road 4 / Pond 54) and keeps the case id
+   its map body (still Road 4 / Pond 54 — #226 re-coded the cell values
+   without changing that mix) and keeps the case id
    `fixture:road-heavy`; only its `category` changed to `medium` (16×16 —
    honest) and its `description` was corrected. The loader now enforces a
    **road-density floor** for `road_heavy` fixtures in `validate_category`
    (road cells ≥ **15%** of the map — ≥ 39 of 256 on the 16×16 maps, vs the
-   defective 4), and the smoke test counts `TYPE_3`, so a road-light fixture
+   defective 4), and the smoke test counts `TYPE_1` (the official road
+   code), so a road-light fixture
    can never claim the category again.
 2. **New case, new id.** `maps/road-heavy-v2.json` (case id
    `fixture:road-heavy-v2`) carries the real 31%-road network, the
@@ -201,7 +253,10 @@ be read as each other:
 map above, formerly tagged `road_heavy`). It must not be re-read as, or
 aggregated with, the new `fixture:road-heavy-v2` case — different ids,
 different terrain, different category. Nothing was silently replaced under
-an unchanged id.
+an unchanged id. (Separately, #226 identity-permuted the cell *codes* of
+every authored fixture here: terrain-based statements about these ids stay
+valid, but a byte-level hash of a map body no longer matches a pre-#226
+copy of the file.)
 
 **Multi-day is required for traffic-threshold evidence.** All other bundled
 fixtures are single-day. `classify_traffic` combines *today's* and
@@ -240,9 +295,12 @@ place spots on plain cells — `road-heavy-v2` does, and its test
 
 - `example_match.json` — minimal bench-runner fixture from the upstream
   bench crate; documented in `crates/bench/src/lib.rs`.
-- `openapi-sample.json` — derived from the official Procon 37 OpenAPI
-  schema at `.reference/procon37/openapi.json`, mirrored in Rust at
-  `crates/protocol/src/match_config.rs`.
+- `openapi-sample.json` — **project-authored warmup mirror**; only its
+  *name* is schema-derived (from `.reference/procon37/openapi.json`,
+  mirrored in Rust at `crates/protocol/src/match_config.rs`). It is not
+  an official payload. The real official example is
+  `.reference/procon37/match-config.example.json` (problem schema:
+  `{problem, teams}`, 10×10, 3 agents, `daySteps [20, 20, 20, 20]`).
 - All other map fixtures — hand-authored for the v0.2.0 release. They are
   designed to exercise distinct solver characteristics, not to mimic any
   particular real contest map.
