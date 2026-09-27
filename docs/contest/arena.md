@@ -4,6 +4,11 @@
 > 使うための実行・安全・記録のガイドです。
 > 選抜方針と投入候補は Issue #179 の **shortlist comment**（supervisor 選抜 4 本）を参照。
 > offline 側の評価経路は [docs/evaluation.md](../evaluation.md)（Issue #178）が唯一の canonical です。
+>
+> **arena 側の仕様出典**: 公式ガイド
+> [`https://procon37arena.online/arena/guide`](https://procon37arena.online/arena/guide)
+> （client-rendered。受付＝`GET /setting` + lobby 確認メッセージ、token の二段渡し、
+> 参加受付の流れはこのガイドの記述が準拠。Issue #222 の supervisor 確認 2026-09-27）。
 
 **重要: 非公式 arena で成功しても公式互換性の完全な証明とは扱いません。**
 本ドキュメントの実行は「他チーム/他 solver が存在する実環境での継続評価」のためにあり、
@@ -28,6 +33,24 @@ online（本 Issue）
 - arena への投入も **既存の canonical coordinator 経路**
   （`protocol::MatchClient` + `run_coordinator_loop`）を使います。
   arena 専用の protocol client / duplicate coordinator は存在しません。
+
+## 仕様の出典（公式ガイド）
+
+操作仕様の正本は arena の公式ガイド
+**<https://procon37arena.online/arena/guide>**（SPA のため本文はクライアント側 JS に格納）。
+本実装が依拠する記述:
+
+- **参加表明**: 受付（lobby）中にトークン付きで公式プロトコルの任意 endpoint
+  （例 `GET /setting`）を叩くとその試合への参加表明。応答は本番同様の
+  `403 AccessTimeError` で、メッセージに `lobby: you are registered …` が入る。
+  **先着順**で参加チームが決まる（arena だけの仕組み）。
+- **token の渡し方**: 本番と同じ `?token=` または `Procon-Token` ヘッダ（双対応）。
+- **再接続ループ**: 試合終了でクライアントは切断し、次の受付中に再接続すれば次に参加。
+  クライアント側をループにしておくと放置で回る（= 本実装の `--next` 設計）。
+- **マップ/パラメータ**: マップは 16/24/32×32。日数・ステップ数・燃料積載量上限・
+  混雑/渋滞基準値は本選まで非公開で、**参考マップ相当の値と公式範囲内の乱数が半々**。
+  candidate は未知の日数・形状に耐えること（live では 10 日マッチを観測:
+  `daySeconds` 60×10、`daySteps` 最大146、24×24 map）。
 
 ## 標準手順（token は CLI 引数にしない）
 
@@ -64,10 +87,20 @@ infisical run --env=dev -- cargo run --release --bin procon -- coordinator \
      （`coordinator_loop::retry_on_access_time`、`POST /agent` / `GET /` と**同一**の helper）で再試行。
    - それ以外（401 / 5xx / transport）は即エラー。予算（window から算出、cap 60 発）が
      終わったら `registration_failed` として記録して終了。
+   - **参加表明は先着順**（ガイド記述）。受付中の 1 回の `GET /setting` がそのまま slot を
+     消費するので、成功後は poll を**必ず止める** — 成功後に再登録を試みる retry はしない
+     （実装: `arena::wait_for_registration` の lobby 成功 branch 即 return）。
 3. 登録後はいつもの coordinator フロー（`GET /setting` → `POST /agent` → per-day loop）で
    **1 試合だけ**プレイし、evidence を追記して**終了**（idle しません）。
+   - **再接続ループが公式の想定**（ガイド: 試合終了でクライアントは切断し、次の参加受付中に
+     再度接続すればそのまま次の試合へ）。本ドキュメントの `--next` 1 試合完走で終了する設計と
+     一致 — `just arena-next` を window ごとにループさせれば放置で回せる。
    - arena の match は **10-day**（live 観測 2026-09-27 20:30:01 JST: `daySeconds` 60×10、
      `daySteps` 最大 146、24×24 map）。offline corpus の small 盤とは**別物**として扱う。
+   - **パラメータは半々**: マップは 16 / 24 / 32×32、日数・ステップ数・燃料積載量上限・
+     混雑/渋滞基準値は本選まで非公開で、「参考マップ相当の値と公式範囲内の乱数を半々」
+     （ガイド記述）。つまり **day 数は実行ごとに不定**（live では 10-day を観測）—
+     candidate は未知の day 数に耐えること（`daySteps.len()` に依存した打ち切りをしない）。
 
 フラグ（`procon coordinator`）:
 
