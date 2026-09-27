@@ -90,3 +90,8 @@ strip = "debuginfo"
 opt-level = 1
 debug = 1
 incremental = true
+
+# Measurement (#218 / ADR-0024 §6): workspace crates keep line-tables-only
+# (debug = 1), dependencies drop debuginfo to cut target footprint.
+[profile.dev.package."*"]
+debug = false
