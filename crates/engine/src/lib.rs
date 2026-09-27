@@ -55,6 +55,7 @@ pub mod server;
 pub mod sim;
 pub mod solver;
 pub mod transitions;
+pub mod wire_plan;
 
 pub use match_table::{MatchTable, MatchTableError};
 pub use replay::{Replay, ReplayError};
