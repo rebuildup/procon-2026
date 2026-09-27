@@ -77,6 +77,22 @@ bun run build          # vite build (型チェックも走る)
 bun run dev            # vite dev server (127.0.0.1:5173)
 ```
 
+## worktree build cache / 容量（Issue #217）
+
+Cargo `target/` は **worktree-local** が default（共有 `CARGO_TARGET_DIR` / symlink / 複数
+worktree で同一 build-dir は禁止 — project-init ADR-0024）。本 host は **ext4・reflink 非対応**
+（`cp --reflink=always` → Operation not supported）のため、`.config/wt.toml` の
+`[step.copy-ignored] exclude = ["target/"]` が機械的に host gate を担保し、
+`wt step copy-ignored` は常に `--require-include` + `.worktreeinclude` allowlist 経由。
+
+- worker spawn contract: disposable worktree の cargo 実行は `CARGO_INCREMENTAL=0` prefix
+  （人間の primary checkout は cargo default を維持）
+- reflink probe / seeding / selective clean / evidence signal:
+  [`.claude/skills/worktree-workflow/SKILL.md`](../.claude/skills/worktree-workflow/SKILL.md)
+  の `Cache isolation` 節
+- 方針の出典: project-init `docs/adr/ADR-0024.md`（branch `84`）
+- sccache 導入・`debug` profile 減量は計測 Issue #218（本 Issue の non-scope）
+
 ## ディレクトリ早見表
 
 - `crates/domain` — domain types / invariants (no I/O)
