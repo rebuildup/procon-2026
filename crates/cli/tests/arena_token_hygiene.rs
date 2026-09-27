@@ -31,8 +31,10 @@ use protocol::http_client::{MatchClient, RetryPolicy};
 
 const SENTINEL: &str = "sentinel-arena-token-9f3c-never-log";
 
-/// Behaviour of the single-endpoint fake: what `/settings` (or `/setting`)
-/// answers on every request.
+/// Behaviour of the single-endpoint fake: what `/setting` (the official
+/// registration path, Issue #222) answers on every request. The plural
+/// `/settings` route is wired to the same handler so a path regression
+/// still exercises the same redaction logic.
 #[derive(Clone)]
 struct Mode {
     /// `register` — 200 JSON; `auth-echo` — 401 whose body echoes the

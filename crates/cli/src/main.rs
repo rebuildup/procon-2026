@@ -149,7 +149,7 @@ enum Cmd {
         arena: bool,
 
         /// Wait for the next arena match (`:00/:15/:30/:45` cadence),
-        /// register inside the pre-match window by polling `GET /settings`
+        /// register inside the pre-match window by polling `GET /setting`
         /// with the arena token (403 during the wait is not an error), then
         /// play exactly one match and exit after recording evidence.
         /// Requires `--arena`.
@@ -474,10 +474,10 @@ struct ArenaFlags {
 ///   (`PROCON_ARENA_SERVER` / `PROCON_ARENA_TOKEN`), a durable run record
 ///   appended to `target/arena/runs.jsonl`, and **exit after one match**
 ///   instead of idle-ticking. `--arena --next` additionally waits for the
-///   next cadence window and registers via `GET /settings` first
-///   (Issue #179). No arena-specific protocol client and no second
-///   coordinator — the profile only supplies the values the canonical
-///   path already takes.
+///   next cadence window and registers via `GET /setting` first
+///   (Issue #179, path corrected in Issue #222). No arena-specific
+///   protocol client and no second coordinator — the profile only
+///   supplies the values the canonical path already takes.
 #[allow(clippy::too_many_arguments, reason = "arena flags arrive as a bundle; see ArenaFlags")]
 #[allow(clippy::too_many_lines, reason = "one dispatcher, one behaviour matrix")]
 async fn cmd_coordinator(
@@ -494,7 +494,7 @@ async fn cmd_coordinator(
     if next && !arena {
         anyhow::bail!(
             "--next requires --arena: the :00/:15/:30/:45 cadence and the \
-             /settings pre-match registration are arena-specific"
+             /setting pre-match registration are arena-specific"
         );
     }
 
@@ -717,7 +717,10 @@ async fn run_arena_once(
     evidence_path: &std::path::Path,
 ) -> Result<()> {
     let team_id = loop_cfg.team_id.clone();
-    let source_commit_sha = bench::source_commit_sha();
+    // Env override → `git rev-parse HEAD` → "unknown": the live smoke ran
+    // `cargo run` without the `just`-injected env var and recorded
+    // "unknown" (Issue #222).
+    let source_commit_sha = arena::source_commit_sha();
 
     // Phase A: pre-match registration (only with `--next`; that is the
     // documented standard entry point `just arena-next`).

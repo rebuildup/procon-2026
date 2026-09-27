@@ -47,13 +47,27 @@ infisical run --env=dev -- cargo run --release --bin procon -- coordinator \
 挙動:
 
 1. `:00 / :15 / :30 / :45` の次の試合ウィンドウ（開始 3 分前 open）まで待機。
-2. window 内だけで `GET /settings`（token 付き）を **10 秒間隔**で poll して参加登録。
-   - `403 AccessTimeError` は「まだ登録できない」意味で、PR #165 の retry semantics
+2. window 内だけで `GET /setting`（token 付き・**単数形**）を **10 秒間隔**で poll して参加登録。
+   - **path の注記（Issue #222）**: #179 の案内要約は「`/settings` 等」と複数形で書いていたが、
+     複数形は arena SPA の fallback ルート（`text/html` を返すだけ）で、実 API は公式 OpenAPI
+     `ProconApi_getMatchSetting` の**単数 `/setting`**。live smoke（2026-09-27）で複数形に向いた
+     registration が HTML を受け、drift fail-closed が正しく `api_drift` として停止して根本原因を
+     検出した（token 漏れゼロ・1 request）。request shape は推測で変えず path のみ修正した。
+   - **成功条件は 2 種類**（live recon 2026-09-27 で確認）:
+     1. `403 AccessTimeError` の message が
+        `lobby: you are registered for match <id> departing at <unix>` の形なら
+        **登録済みの合図** — poll を止めて `registered_at` / `arena_match_id` /
+        departure unix（evidence では `window_starts_at_unix`）を記録し、match 開始を待つ。
+     2. `200` JSON なら従来どおり登録成功。
+   - 上記以外の `403 AccessTimeError`（まだ lobby に入れない）は「まだ登録できない」意味で、
+     PR #165 の retry semantics
      （`coordinator_loop::retry_on_access_time`、`POST /agent` / `GET /` と**同一**の helper）で再試行。
    - それ以外（401 / 5xx / transport）は即エラー。予算（window から算出、cap 60 発）が
      終わったら `registration_failed` として記録して終了。
 3. 登録後はいつもの coordinator フロー（`GET /setting` → `POST /agent` → per-day loop）で
    **1 試合だけ**プレイし、evidence を追記して**終了**（idle しません）。
+   - arena の match は **10-day**（live 観測 2026-09-27 20:30:01 JST: `daySeconds` 60×10、
+     `daySteps` 最大 146、24×24 map）。offline corpus の small 盤とは**別物**として扱う。
 
 フラグ（`procon coordinator`）:
 
@@ -89,8 +103,9 @@ infisical run --env=dev -- cargo run --release --bin procon -- coordinator \
 |---|---|
 | `candidate_id` | shortlist の candidate id（`--candidate` を verbatim、`--solver` 使用時は null） |
 | `solver` | 投入した solver configuration（mode / solver / loop 利みは knob または null） |
-| `source_commit_sha` | `PROCON_SOURCE_COMMIT_SHA`（`just arena-next` が git head を自動注入） |
-| `arena_server` / `team_id` | 投入先とチーム |
+| `source_commit_sha` | `PROCON_SOURCE_COMMIT_SHA`（`just arena-next` が git head を自動注入）。未設定時は `git rev-parse HEAD` にフォールバックするので、`cargo run` 直接起動でも `unknown` にならない（Issue #222） |
+| `arena_server` | 投入先 arena |
+| `team_id` | coordinator のローカル team id。既定は **`mvp-player`**（`PROCON_TEAM_ID` / `CoordinatorLoopConfig::default`）。arena は登録応答に team id を返さないため、登録前でもこの既定値が入る — arena 側のアカウント ID ではない |
 | `window_starts_at_unix` / `registration_attempts` / `registered_at_unix` / `arena_match_id` | 対象 match window と登録の事実 |
 | `status` | `completed` / `rejected` / `error` / `registration_failed` / `api_drift` |
 | `days_completed` / `revisions` | プロトコルから取れる result summary |
