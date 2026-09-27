@@ -5,8 +5,9 @@
 //! 1. **Wait** — missing or invalid actions are downgraded to `Wait`.
 //! 2. **Move** — apply every agent's `Move` action (bounds/terrain/fuel).
 //! 3. **Spawn** — at day boundaries, refill every spot to `max_stock`.
-//! 4. **Acquire** — agents on stocked spots pick up one ball (capped at 1
-//!    per agent per spot per day).
+//! 4. **Acquire** — **Patrol** agents on stocked spots pick up one ball
+//!    (capped at 1 per agent per spot per day). `AgentKind::Supply` cannot
+//!    collect 玉 and is skipped entirely (issue #234).
 //! 5. **Fuel** — deduct move costs from patrols. Supply agents are
 //!    unaffected.
 //! 6. **Traffic update** — at end of day, recompute every road cell's
@@ -136,7 +137,9 @@ impl MatchSim {
             }
         }
 
-        // 4. Acquire — agents on stocked spots pick up.
+        // 4. Acquire — Patrol agents on stocked spots pick up. `phase_acquire`
+        //    itself skips Supply (issue #234), so looping every agent here
+        //    keeps the call site simple and kind-agnostic.
         let agents_for_acquire = state.agents.clone();
         for agent in &agents_for_acquire {
             phase_acquire(agent, state, &mut events);

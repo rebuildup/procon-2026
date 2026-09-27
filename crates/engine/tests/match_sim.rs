@@ -285,3 +285,200 @@ fn scenario_phase_order_observable_through_final_state() {
         road_cell.terrain
     );
 }
+
+// ---------------------------------------------------------------------------
+// Issue #234 — Supply agents must never acquire (offline/live kind parity).
+//
+// `domain::AgentKind::Supply` is specified as "cannot collect 玉 but can
+// refuel Patrol". Before this issue `engine::transitions::phase_acquire`
+// ignored the kind, so offline every agent collected while live (where
+// `from_wire` alternates kinds: 5 agents -> 3 Patrol / 2 Supply) did not.
+//
+// Scenario: a 5-agent team in the live alternating shape (3 Patrol / 2
+// Supply) on an 8x8 plain map with two stocked spots. A Supply moves onto
+// the series-1 spot on step 0 and parks there for the whole day, next to a
+// Patrol that also parks there.
+// ---------------------------------------------------------------------------
+
+/// 8x8 plain map with two spots: series 1 at `(0,0)`, series 2 at `(7,7)`,
+/// both fully stocked with 5 balls (the team size).
+fn two_spot_5_stock_map() -> MapGrid {
+    let size = MapSize::new(8, 8).unwrap();
+    let mut cells = Vec::new();
+    for row in 0..i32::from(size.height) {
+        for col in 0..i32::from(size.width) {
+            let spot = if (col, row) == (0, 0) {
+                Some(Spot { series: 1, pos: HexCoord::new(0, 0), max_stock: 5, current_stock: 5 })
+            } else if (col, row) == (7, 7) {
+                Some(Spot { series: 2, pos: HexCoord::new(7, 7), max_stock: 5, current_stock: 5 })
+            } else {
+                None
+            };
+            cells.push(Cell { coord: HexCoord::new(col, row), terrain: Terrain::Plain, spot });
+        }
+    }
+    MapGrid::new(size, cells).unwrap()
+}
+
+/// Move each configured agent once on step 0, then wait for the rest of the
+/// day — so agents can *park* on a spot without generating illegal-move
+/// downgrades on later steps.
+struct ParkSolver {
+    directions: HashMap<u8, Direction>,
+}
+
+impl ParkSolver {
+    fn new(pairs: &[(u8, Direction)]) -> Self {
+        Self { directions: pairs.iter().copied().collect() }
+    }
+}
+
+impl Solver for ParkSolver {
+    fn name(&self) -> &'static str {
+        "park"
+    }
+    fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+        let mut actions = Vec::with_capacity(ctx.day_steps as usize * ctx.agent_ids.len());
+        for step in 0..ctx.day_steps {
+            for id in &ctx.agent_ids {
+                if step == 0 {
+                    if let Some(dir) = self.directions.get(id) {
+                        actions.push(Action::step(*id, *dir));
+                        continue;
+                    }
+                }
+                actions.push(Action::wait(*id));
+            }
+        }
+        AgentActions::new(actions)
+    }
+}
+
+#[test]
+fn scenario_supply_agent_never_acquires_on_a_stocked_spot() {
+    use engine::transitions::StepEvent;
+
+    let setting = MatchSetting {
+        match_id: match_id("issue234-supply-no-acquire"),
+        team: id("player-a"),
+        map: two_spot_5_stock_map(),
+        // Live `from_wire` alternation for a 5-agent team: even index ->
+        // Patrol, odd index -> Supply (3 Patrol / 2 Supply).
+        agents: vec![
+            Agent::patrol(0, HexCoord::new(1, 0), 4, 3),
+            Agent::supply(1, HexCoord::new(1, 1)),
+            Agent::patrol(2, HexCoord::new(6, 7), 4, 3),
+            Agent::supply(3, HexCoord::new(3, 3)),
+            Agent::patrol(4, HexCoord::new(4, 4), 4, 3),
+        ],
+        day_steps: 4,
+        num_days: 1,
+        day_steps_by_day: Vec::new(),
+    };
+    // Patrol 0 -> the series-1 spot at (0,0); Supply 1 -> the SAME cell
+    // (UpperLeft from (1,1) on an odd row lands on (0,0)); Patrol 2 -> the
+    // series-2 spot at (7,7). Supply 3 / Patrol 4 idle in place.
+    let solver =
+        ParkSolver::new(&[(0, Direction::Left), (1, Direction::UpperLeft), (2, Direction::Right)]);
+
+    // Drive the steps manually so the test can also assert on `StepEvent`s
+    // (`MatchSim::run` only returns the final state).
+    let mut state = engine::model::MatchState::new(setting).unwrap();
+    let sim = MatchSim::default();
+    let plan = solver.decide(&SolverContext::from_state(&state));
+    let agent_count = state.setting.agent_ids().len();
+    let step_count = usize::try_from(state.day_steps()).expect("day_steps fits usize");
+    let mut events = Vec::new();
+    for s in 0..step_count {
+        let start = s * agent_count;
+        let block = plan.actions[start..start + agent_count].to_vec();
+        events.extend(sim.step(&mut state, &AgentActions::new(block)));
+    }
+
+    let by_id = |id: u8| state.agents.iter().find(|a| a.id == id).expect("agent exists");
+
+    // (a) Supply inventory stays empty — both the parked Supply (1) and the
+    //     idle one (3).
+    for sid in [1u8, 3u8] {
+        let supply = by_id(sid);
+        assert_eq!(supply.kind, engine::AgentKind::Supply, "agent {sid} must be a Supply");
+        assert!(
+            supply.inventory.is_empty(),
+            "Supply {sid} must not collect, got inventory {:?}",
+            supply.inventory
+        );
+    }
+
+    // (b) Spot stock is only ever reduced by Patrol picks. Supply 1 stood on
+    //     the series-1 spot for the whole day; pre-#234 it would have taken
+    //     one ball (daily cap 1), leaving 3 instead of 4.
+    let spot_a = state
+        .setting
+        .map
+        .get(HexCoord::new(0, 0))
+        .and_then(|c| c.spot.as_ref())
+        .expect("series-1 spot");
+    assert_eq!(
+        spot_a.current_stock, 4,
+        "only Patrol 0's single capped pick may decrement the series-1 spot"
+    );
+    let spot_b = state
+        .setting
+        .map
+        .get(HexCoord::new(7, 7))
+        .and_then(|c| c.spot.as_ref())
+        .expect("series-2 spot");
+    assert_eq!(spot_b.current_stock, 4, "Patrol 2 picked exactly one from the series-2 spot");
+
+    // (c) `series_taken` / `series_acquired_by_day` reflect Patrol pickups only.
+    assert_eq!(
+        state.series_taken.iter().copied().collect::<Vec<_>>(),
+        vec![1, 2],
+        "series_taken must contain exactly the Patrol-picked series"
+    );
+    assert_eq!(
+        state.series_acquired_by_day.get(&0).map(|s| s.iter().copied().collect::<Vec<_>>()),
+        Some(vec![1, 2]),
+        "series_acquired_by_day[0] must contain exactly the Patrol-picked series"
+    );
+    assert_eq!(
+        state.series_first_taken_at.keys().copied().collect::<Vec<_>>(),
+        vec![1, 2],
+        "series_first_taken_at must not record a Supply pickup"
+    );
+
+    // (d) Patrol picking + daily cap behave as before: Patrol 0 held the
+    //     spot for 4 steps but the cap allows 1 ball per agent per spot per day.
+    assert_eq!(by_id(0).inventory.get(&1).copied(), Some(1), "Patrol 0 picks exactly once/day");
+    assert_eq!(by_id(2).inventory.get(&2).copied(), Some(1), "Patrol 2 picks exactly once/day");
+    assert!(
+        events.iter().any(|e| matches!(e, StepEvent::PickCapReached { agent_id: 0, .. })),
+        "the daily cap must still fire for the parking Patrol"
+    );
+
+    // Events: no `Picked` and no `PickCapReached` for either Supply.
+    for sid in [1u8, 3u8] {
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, StepEvent::Picked { agent_id, .. } if *agent_id == sid)),
+            "Supply {sid} must emit no Picked event, got {events:?}"
+        );
+        assert!(
+            !events.iter().any(
+                |e| matches!(e, StepEvent::PickCapReached { agent_id, .. } if *agent_id == sid)
+            ),
+            "Supply {sid} must emit no PickCapReached event, got {events:?}"
+        );
+    }
+
+    // Refuel is unaffected: Supply 1 shares (0,0) with Patrol 0, so Patrol 0
+    // ends the day at its fuel cap (the one move was deducted, then refilled).
+    let patrol = by_id(0);
+    assert_eq!(
+        patrol.fuel, patrol.fuel_cap,
+        "a Supply parked on a spot must still refuel the Patrol beside it"
+    );
+    assert_eq!(state.fuel_short_count, 0);
+    assert_eq!(state.illegal_action_count, 0, "the scenario must not generate illegal moves");
+}
