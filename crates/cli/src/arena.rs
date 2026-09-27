@@ -14,7 +14,10 @@
 //! procon coordinator --arena --next --candidate '<id>'
 //!   ├─ resolve profile     env PROCON_ARENA_SERVER / PROCON_ARENA_TOKEN
 //!   ├─ wait for window     next :00/:15/:30/:45 minus the pre-match lead
-//!   ├─ register            bounded `GET /settings` poll (403 = keep waiting)
+//!   ├─ register            bounded `GET /setting` poll
+//!   │                        403 plain = keep waiting
+//!   │                        403 lobby-registered = success (stop polling)
+//!   │                        200 JSON = success
 //!   ├─ run the loop        run_coordinator_loop (unchanged canonical path)
 //!   └─ append evidence     target/arena/runs.jsonl  (JSONL, no secrets)
 //! ```
@@ -28,7 +31,11 @@
 //! - **403 during the wait is not an error.** Registration reuses
 //!   [`crate::coordinator_loop::retry_on_access_time`], the same bounded
 //!   retry the coordinator already applies to `403 AccessTimeError`
-//!   (issues #156 / #164 / PR #165).
+//!   (issues #156 / #164 / PR #165). The one exception is the arena's
+//!   lobby confirmation — `403 … you are registered for match <id>
+//!   departing at <unix>` — which the live recon proved *is* the
+//!   registration success signal (Issue #222): it stops the poll and is
+//!   recorded, never retried.
 //! - **Fail closed on drift.** A non-JSON body (the arena's SPA HTML shell)
 //!   surfaces as [`ArenaError::ApiDrift`] after a single request — no
 //!   guessed request shapes, no retry storm.
@@ -55,6 +62,10 @@ pub const ARENA_MATCH_PERIOD_SECS: i64 = 15 * 60;
 
 /// Pre-match registration opens this long before each match start
 /// (arena notice: 「およそ試合3分前から token 付きで `/settings` 等を GET すると参加登録」).
+///
+/// The notice's plural `/settings` wording is the arena SPA's fallback
+/// route (it answers HTML); the endpoint that actually exists is the
+/// singular [`ARENA_REGISTRATION_PATH`] — see Issue #222.
 pub const ARENA_PRE_MATCH_LEAD_SECS: i64 = 3 * 60;
 
 /// Default poll interval while waiting inside the pre-match window. Well
@@ -65,9 +76,13 @@ pub const ARENA_POLL_INTERVAL: Duration = Duration::from_secs(10);
 /// Hard cap on registration attempts regardless of window length.
 pub const ARENA_REGISTRATION_MAX_ATTEMPTS: u32 = 60;
 
-/// Where a registration GET is sent. Arena-specific (the official protocol
-/// has no such endpoint); kept here so the path is one reviewable constant.
-pub const ARENA_REGISTRATION_PATH: &str = "/settings";
+/// Where a registration GET is sent: the **singular** `/setting`, the
+/// official `ProconApi_getMatchSetting` endpoint of the `OpenAPI` spec
+/// (`.reference/procon37/openapi.json`), polled inside the pre-match window
+/// to enrol. The arena notice's plural `/settings` is only the SPA fallback
+/// (HTML) — the live smoke hit it and failed closed (Issue #222). Kept here
+/// so the path is one reviewable constant.
+pub const ARENA_REGISTRATION_PATH: &str = "/setting";
 
 /// Default JSONL evidence path. Under `target/` (gitignored) so durable
 /// run records never enter the repository; summaries belong in Issues.
@@ -314,13 +329,16 @@ impl Default for RegistrationOptions {
 /// Result of a successful registration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegistrationOutcome {
-    /// Window that was targeted.
+    /// Window that was targeted. When the arena confirmed through the
+    /// lobby, `starts_at` carries its departure time instead of the local
+    /// cadence estimate.
     pub window: MatchWindow,
     /// When the arena acknowledged the registration.
     pub registered_at: DateTime<Utc>,
-    /// How many `GET /settings` requests it took (1 = first attempt).
+    /// How many `GET /setting` requests it took (1 = first attempt).
     pub attempts: u32,
-    /// Match identifier echoed by the arena, when it provides one.
+    /// Match identifier echoed by the arena (`matchId` in a 200 body, or
+    /// the lobby confirmation's `match <id>`), when it provides one.
     pub arena_match_id: Option<String>,
 }
 
@@ -342,8 +360,74 @@ pub fn registration_attempt_budget(
     fits.clamp(1, max_attempts.max(1))
 }
 
+/// What one `GET /setting` attempt answered during registration.
+enum RegistrationAnswer {
+    /// 200 JSON — the registration / match-setting payload.
+    Json(serde_json::Value),
+    /// `403 AccessTimeError` carrying the lobby's registration
+    /// confirmation (live recon 2026-09-27, Issue #222).
+    Lobby(LobbyRegistration),
+}
+
+/// A registration the arena lobby confirmed inside a `403 AccessTimeError`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LobbyRegistration {
+    /// Arena match id (`match <id>` in the lobby message).
+    match_id: String,
+    /// Match departure time (`departing at <unix>`) — the authoritative
+    /// match start, recorded as the evidence window.
+    departing_at_unix: i64,
+}
+
+/// Parse the arena's lobby confirmation out of an `AccessTimeError`
+/// message, e.g.
+/// `lobby: you are registered for match 469 departing at 1790001234`.
+///
+/// This wording shape is spec, not a guess: the official arena guide
+/// (`https://procon37arena.online/arena/guide`) states that a tokened GET
+/// at an official endpoint during reception is the entry, answered with
+/// the same pre-match `403 AccessTimeError` whose message carries
+/// 「lobby: you are registered …」 — and the live recon captured a full
+/// sample (Issue #222).
+///
+/// `None` for anything else: a plain "not yet" 403 keeps the bounded
+/// retry, and an unrecognised wording fails towards today's
+/// [`ArenaError::NotRegistered`] give-up rather than a guessed success.
+fn parse_lobby_registration(message: &str) -> Option<LobbyRegistration> {
+    let rest = message.split_once("you are registered for match ")?.1;
+    let (match_id, rest) = rest.split_once(" departing at ")?;
+    let match_id = match_id.trim();
+    let departing_at_unix = rest.trim().parse::<i64>().ok()?;
+    if match_id.is_empty() || departing_at_unix < 0 {
+        return None;
+    }
+    Some(LobbyRegistration { match_id: match_id.to_owned(), departing_at_unix })
+}
+
+/// One registration attempt against the official singular endpoint.
+///
+/// A `403 AccessTimeError` that parses as the lobby confirmation becomes
+/// [`RegistrationAnswer::Lobby`] — success, so the caller stops polling.
+/// Every other response (including a plain `403 AccessTimeError`) is
+/// handed back untouched, keeping the existing bounded retry semantics
+/// and the fail-closed drift / auth classification unchanged.
+async fn registration_attempt(
+    client: &protocol::MatchClient,
+) -> Result<RegistrationAnswer, protocol::HttpClientError> {
+    match client.get_json::<serde_json::Value>(ARENA_REGISTRATION_PATH).await {
+        Ok(body) => Ok(RegistrationAnswer::Json(body)),
+        Err(protocol::HttpClientError::AccessTime { message }) => {
+            match parse_lobby_registration(&message) {
+                Some(registered) => Ok(RegistrationAnswer::Lobby(registered)),
+                None => Err(protocol::HttpClientError::AccessTime { message }),
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// Wait for the pre-match window, then register by polling
-/// `GET /settings` with the arena token until the arena answers 200 JSON.
+/// `GET /setting` with the arena token until the arena confirms.
 ///
 /// Behaviour:
 ///
@@ -351,10 +435,18 @@ pub fn registration_attempt_budget(
 ///   yet (this is the `--next` cadence wait),
 /// - polls at [`RegistrationOptions::poll_interval`] until the match start,
 ///   never faster and never outside the window,
-/// - treats `403 AccessTimeError` as "not registered yet" and retries it
-///   with the coordinator's own bounded `AccessTime` retry semantics —
-///   the shared [`retry_on_access_time`] helper used by `POST /agent` and
-///   `GET /` since PR #165,
+/// - treats the arena's **lobby confirmation** — `403 AccessTimeError`
+///   whose message reads `lobby: you are registered for match <id>
+///   departing at <unix>` (live recon 2026-09-27, Issue #222) — as a
+///   successful registration: the poll stops, `arena_match_id` is
+///   recorded, and [`MatchWindow::starts_at`] is re-based on the
+///   departure time (the evidence's `window_starts_at_unix`),
+/// - succeeds on a 200 JSON body too, picking up `matchId` / `match_id` /
+///   `id` when present,
+/// - treats any other `403 AccessTimeError` as "not registered yet" and
+///   retries it with the coordinator's own bounded `AccessTime` retry
+///   semantics — the shared [`retry_on_access_time`] helper used by
+///   `POST /agent` and `GET /` since PR #165,
 /// - fails closed immediately on a non-JSON (HTML SPA shell) response via
 ///   [`ArenaError::ApiDrift`], on 401 via [`ArenaError::Auth`], and on any
 ///   other error via [`ArenaError::Http`] — no request-shape guessing, no
@@ -389,27 +481,57 @@ pub async fn wait_for_registration(
     );
 
     let calls = std::sync::atomic::AtomicU32::new(0);
-    let body: serde_json::Value = retry_on_access_time(
-        "GET /settings",
+    let answer: RegistrationAnswer = retry_on_access_time(
+        "GET /setting",
         attempts_budget,
         opts.poll_interval,
         "the pre-match registration window did not open within the retry budget",
         || {
             calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            client.get_json::<serde_json::Value>(ARENA_REGISTRATION_PATH)
+            registration_attempt(client)
         },
     )
     .await
     .map_err(|e| classify_registration_error(e, profile))?;
-
-    let arena_match_id = body
-        .get("matchId")
-        .or_else(|| body.get("match_id"))
-        .or_else(|| body.get("id"))
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned);
     let attempts = calls.load(std::sync::atomic::Ordering::Relaxed);
-    Ok(RegistrationOutcome { window, registered_at: Utc::now(), attempts, arena_match_id })
+
+    match answer {
+        RegistrationAnswer::Lobby(registered) => {
+            // Entry is first-come-first-served (arena guide): this one
+            // lobby `GET /setting` already consumed the slot, so return
+            // immediately — never retry and re-register once confirmed.
+            //
+            // The arena's own departure time is authoritative: it becomes
+            // the recorded window start (evidence `window_starts_at_unix`).
+            let starts_at = DateTime::<Utc>::from_timestamp(registered.departing_at_unix, 0)
+                .unwrap_or(window.starts_at);
+            let lead =
+                i64::try_from(opts.pre_match_lead.as_secs()).unwrap_or(ARENA_PRE_MATCH_LEAD_SECS);
+            let opens_at = DateTime::<Utc>::from_timestamp(starts_at.timestamp() - lead, 0)
+                .unwrap_or(window.opens_at);
+            tracing::info!(
+                attempts,
+                match_id = %registered.match_id,
+                departing_at_unix = registered.departing_at_unix,
+                "arena registration confirmed in the lobby"
+            );
+            Ok(RegistrationOutcome {
+                window: MatchWindow { opens_at, starts_at },
+                registered_at: Utc::now(),
+                attempts,
+                arena_match_id: Some(registered.match_id),
+            })
+        }
+        RegistrationAnswer::Json(body) => {
+            let arena_match_id = body
+                .get("matchId")
+                .or_else(|| body.get("match_id"))
+                .or_else(|| body.get("id"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
+            Ok(RegistrationOutcome { window, registered_at: Utc::now(), attempts, arena_match_id })
+        }
+    }
 }
 
 /// Map a transport-level registration failure onto a redacted
@@ -493,7 +615,8 @@ pub struct ArenaRunRecord {
     pub candidate_id: Option<String>,
     /// The submitted solver configuration.
     pub solver: ArenaSolverConfig,
-    /// Commit the run executed at (`PROCON_SOURCE_COMMIT_SHA`).
+    /// Commit the run executed at — see [`source_commit_sha`]
+    /// (`PROCON_SOURCE_COMMIT_SHA` → `git rev-parse HEAD` → `"unknown"`).
     pub source_commit_sha: String,
     /// Arena base URL the run targeted.
     pub arena_server: String,
@@ -501,7 +624,7 @@ pub struct ArenaRunRecord {
     pub team_id: String,
     /// Match start of the targeted window (UNIX seconds).
     pub window_starts_at_unix: i64,
-    /// `GET /settings` attempts used during registration, when it ran.
+    /// `GET /setting` attempts used during registration, when it ran.
     pub registration_attempts: Option<u32>,
     /// When registration succeeded (UNIX seconds), if registered here.
     pub registered_at_unix: Option<i64>,
@@ -531,7 +654,7 @@ pub struct ArenaRecordInput<'a> {
     pub solver: ArenaSolverConfig,
     /// Team id.
     pub team_id: &'a str,
-    /// Source commit SHA (from `PROCON_SOURCE_COMMIT_SHA`).
+    /// Source commit SHA — resolved by [`source_commit_sha`].
     pub source_commit_sha: String,
     /// Targeted match window start (UNIX seconds).
     pub window_starts_at_unix: i64,
@@ -608,6 +731,47 @@ pub fn append_evidence(path: &Path, record: &ArenaRunRecord) -> Result<(), Arena
 #[must_use]
 pub fn default_evidence_path() -> PathBuf {
     PathBuf::from(ARENA_EVIDENCE_DEFAULT_PATH)
+}
+
+/// Resolve the evidence `source_commit_sha` for an arena run.
+///
+/// Precedence:
+///
+/// 1. `PROCON_SOURCE_COMMIT_SHA` (exported by the `just` targets and by
+///    `procon-eval`; blank counts as unset),
+/// 2. `git rev-parse HEAD` in the process working directory — the pattern
+///    `procon-eval` already uses. The live smoke (Issue #222) ran
+///    `cargo run` directly, so the env var was absent and the evidence
+///    recorded `"unknown"`;
+/// 3. `"unknown"` as the last resort, so an ad-hoc run still writes a
+///    well-formed record.
+#[must_use]
+pub fn source_commit_sha() -> String {
+    resolve_source_commit_sha(std::env::var("PROCON_SOURCE_COMMIT_SHA").ok(), git_head())
+}
+
+/// Pure resolution core of [`source_commit_sha`] — `env` and `git` are
+/// injected so both branches are unit tested without mutating the process
+/// environment (edition 2024 makes `env::set_var` unsafe, and mutating it
+/// in parallel tests is racy).
+#[must_use]
+fn resolve_source_commit_sha(env: Option<String>, git: Option<String>) -> String {
+    env.filter(|v| !v.trim().is_empty())
+        .map(|v| v.trim().to_owned())
+        .or(git)
+        .unwrap_or_else(|| "unknown".to_owned())
+}
+
+/// `git rev-parse HEAD` in the process working directory. `None` when git
+/// is unavailable or the directory is not a worktree — same pattern as
+/// `bench/src/bin/procon-eval.rs::git_head`.
+fn git_head() -> Option<String> {
+    let out = std::process::Command::new("git").args(["rev-parse", "HEAD"]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let sha = String::from_utf8(out.stdout).ok()?.trim().to_owned();
+    (!sha.is_empty()).then_some(sha)
 }
 
 #[cfg(test)]
@@ -795,6 +959,9 @@ mod tests {
         assert_eq!(status, ArenaRunStatus::Rejected);
         assert!(err.unwrap().contains("revision=-1"));
 
+        // Synthetic drift on a *plural / unknown* path: the arena SPA
+        // fallback serves HTML there, and the classification must not care
+        // which path drifted (Issue #222 — `/settings` vs `/setting`).
         let drift = ArenaError::ApiDrift {
             path: "/settings".to_owned(),
             detail: "expected JSON, got content-type text/html".to_owned(),
@@ -802,6 +969,84 @@ mod tests {
         assert_eq!(drift.status(), ArenaRunStatus::ApiDrift);
         let reg = ArenaError::NotRegistered { message: "budget".to_owned() };
         assert_eq!(reg.status(), ArenaRunStatus::RegistrationFailed);
+    }
+
+    #[test]
+    fn registration_path_is_the_official_singular_setting() {
+        // The plural `/settings` is only the arena SPA fallback (HTML):
+        // registering there is exactly what the live smoke hit (Issue #222).
+        assert_eq!(ARENA_REGISTRATION_PATH, "/setting");
+    }
+
+    #[test]
+    fn lobby_registration_messages_parse_only_when_complete() {
+        // The exact live shape (recon 2026-09-27, Issue #222).
+        let parsed = parse_lobby_registration(
+            "lobby: you are registered for match 469 departing at 1790001234",
+        )
+        .expect("the live lobby confirmation parses");
+        assert_eq!(parsed.match_id, "469");
+        assert_eq!(parsed.departing_at_unix, 1_790_001_234);
+
+        // A plain "not yet" 403 keeps today's bounded retry.
+        assert!(parse_lobby_registration("試合がまだ開始されていません").is_none());
+
+        // Anything unrecognised fails towards `NotRegistered`, never
+        // towards a guessed success.
+        assert!(parse_lobby_registration("lobby: you are registered for match 469").is_none());
+        assert!(
+            parse_lobby_registration("you are registered for match  departing at 1790001234")
+                .is_none(),
+            "empty match id must not register"
+        );
+        assert!(
+            parse_lobby_registration("you are registered for match 469 departing at soon")
+                .is_none(),
+            "non-numeric departure must not register"
+        );
+        assert!(
+            parse_lobby_registration("you are registered for match 469 departing at -5").is_none(),
+            "negative departure must not register"
+        );
+        assert!(
+            parse_lobby_registration("registered for match 469 departing at 1790001234").is_none()
+        );
+    }
+
+    #[test]
+    fn source_commit_sha_prefers_the_env_override() {
+        assert_eq!(
+            resolve_source_commit_sha(Some("feedbeef-179".to_owned()), Some("git-sha".to_owned())),
+            "feedbeef-179"
+        );
+        // Blank / whitespace-only env counts as unset and falls through.
+        assert_eq!(
+            resolve_source_commit_sha(Some("  ".to_owned()), Some("git-sha".to_owned())),
+            "git-sha"
+        );
+    }
+
+    #[test]
+    fn source_commit_sha_falls_back_to_the_git_head_of_this_checkout() {
+        // Tests run inside the repository worktree, so `git rev-parse HEAD`
+        // resolves — the branch the live smoke missed (Issue #222).
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .expect("git available in the dev/CI environment");
+        assert!(out.status.success(), "tests must run inside the git worktree");
+        let expected = String::from_utf8(out.stdout).expect("utf8").trim().to_owned();
+
+        let sha = resolve_source_commit_sha(None, git_head());
+        assert_eq!(sha, expected, "env unset ⇒ evidence records the git head");
+        assert_ne!(sha, "unknown");
+        assert!(sha.chars().all(|c| c.is_ascii_hexdigit()), "not a sha: {sha}");
+    }
+
+    #[test]
+    fn source_commit_sha_is_unknown_only_when_nothing_is_available() {
+        assert_eq!(resolve_source_commit_sha(None, None), "unknown");
+        assert_eq!(resolve_source_commit_sha(Some(String::new()), None), "unknown");
     }
 
     #[test]

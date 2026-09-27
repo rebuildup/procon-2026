@@ -1,22 +1,37 @@
-//! Fake-arena end-to-end for Issue #179 — **no test here ever contacts
-//! `procon37arena.online`**. Everything runs against an in-process axum
-//! server on `127.0.0.1:<random>`.
+//! Fake-arena end-to-end for Issue #179 / #222 — **no test here ever
+//! contacts `procon37arena.online`**. Everything runs against an in-process
+//! axum server on `127.0.0.1:<random>`.
 //!
 //! Scenarios, each mapped to an AC:
 //!
 //! 1. registration waits through `403 AccessTimeError` and registers on the
 //!    first 200 (AC: 403 during the wait is not an error, reused PR #165
 //!    retry semantics; bounded by the window),
-//! 2. the SPA HTML shell fails closed after exactly one request
-//!    (AC: drift ⇒ fail closed, no retry storm),
+//! 2. the SPA HTML shell fails closed after exactly one request — on the
+//!    official `/setting` registration path **and** on the plural
+//!    `/settings` SPA fallback the live smoke hit (AC: drift ⇒ fail closed,
+//!    no retry storm; Issue #222),
 //! 3. an all-403 window gives up inside the attempt budget
 //!    (AC: no sub-cadence polling spam),
 //! 4. a full registration + coordinator match + evidence record
 //!    (AC: registration phase, durable evidence, candidate correspondence),
-//! 5. the `procon` binary itself runs `--arena` end to end, writes
+//! 5. the **live lobby state**: a confirming `403 AccessTimeError`
+//!    (`lobby: you are registered for match <id> departing at <unix>`)
+//!    stops the poll and records match id + departure time, then the 200
+//!    `GET /setting` hands over to the coordinator flow (AC: lobby-403 is
+//!    the registration success, Issue #222),
+//! 6. the `procon` binary itself runs `--arena` end to end, writes
 //!    evidence and exits, without leaking the injected token
 //!    (AC: standard entry + token hygiene + offline isolation of the
-//!    default path).
+//!    default path),
+//! 7. the same binary run **without** `PROCON_SOURCE_COMMIT_SHA` records
+//!    this checkout's git head instead of `"unknown"` (AC: evidence
+//!    `source_commit_sha` fix, Issue #222).
+//!
+//! Registration targets `GET /setting` (singular — the official endpoint,
+//! Issue #222). The fake still serves the plural `/settings` route with the
+//! arena's HTML SPA shell, because that is what the real arena answers
+//! there: a regression that reintroduces the plural path fails closed.
 //!
 //! The default (non-arena) coordinator path is proven unchanged by the
 //! pre-existing suites (`e2e_openapi_fixture`, `e2e_real_server`,
@@ -46,7 +61,7 @@ use protocol::http_client::{MatchClient, RetryPolicy};
 /// evidence — asserted explicitly wherever output is observable.
 const SENTINEL: &str = "sentinel-arena-token-9f3c-never-log";
 
-/// One scripted `GET /settings` answer. The last entry repeats forever.
+/// One scripted `GET /setting` answer. The last entry repeats forever.
 #[derive(Clone)]
 struct Scripted {
     status: u16,
@@ -66,6 +81,24 @@ fn access_time_403() -> Scripted {
     )
 }
 
+/// The **live lobby state** (recon 2026-09-27, Issue #222): a
+/// `403 AccessTimeError` whose message confirms the registration. This 403
+/// IS the success signal — the poll must stop and record match id +
+/// departure time.
+fn lobby_registered(match_id: &str, departing_at_unix: i64) -> Scripted {
+    status(
+        403,
+        "application/json",
+        json!({
+            "code": "AccessTimeError",
+            "message": format!(
+                "lobby: you are registered for match {match_id} departing at {departing_at_unix}"
+            ),
+        })
+        .to_string(),
+    )
+}
+
 fn registered_200(match_id: &str) -> Scripted {
     status(200, "application/json", json!({"matchId": match_id}).to_string())
 }
@@ -78,10 +111,30 @@ fn html_shell() -> Scripted {
     )
 }
 
+/// The game setting on its own — what the coordinator loop expects from
+/// `GET /setting` once registration is over (or never happened).
+fn setting_200() -> Scripted {
+    status(200, "application/json", setting_body().to_string())
+}
+
+/// One answer that satisfies **both** consumers of `GET /setting`: the
+/// registration poll (200 JSON, `matchId` picked up when present) and the
+/// coordinator's `MatchSetting` parse (the extra field is ignored — the
+/// schema does not deny unknown fields). Mirrors the live shape: the
+/// official endpoint really is the singular `/setting` (Issue #222).
+fn setting_with_match_id(match_id: &str) -> Scripted {
+    let mut body = setting_body();
+    body["matchId"] = json!(match_id);
+    status(200, "application/json", body.to_string())
+}
+
 #[derive(Clone)]
 struct FakeArena {
-    settings_script: Arc<Mutex<Vec<Scripted>>>,
-    settings_hits: Arc<AtomicU32>,
+    setting_script: Arc<Mutex<Vec<Scripted>>>,
+    setting_hits: Arc<AtomicU32>,
+    /// Hits on the plural `/settings` SPA-fallback route (live recon 2026-09-27:
+    /// the arena answers HTML there, token or not).
+    spa_fallback_hits: Arc<AtomicU32>,
     saw_sentinel_token: Arc<AtomicBool>,
     day: Arc<AtomicU32>,
     revision: Arc<AtomicU32>,
@@ -90,8 +143,9 @@ struct FakeArena {
 impl FakeArena {
     fn new(script: Vec<Scripted>) -> Self {
         Self {
-            settings_script: Arc::new(Mutex::new(script)),
-            settings_hits: Arc::new(AtomicU32::new(0)),
+            setting_script: Arc::new(Mutex::new(script)),
+            setting_hits: Arc::new(AtomicU32::new(0)),
+            spa_fallback_hits: Arc::new(AtomicU32::new(0)),
             saw_sentinel_token: Arc::new(AtomicBool::new(false)),
             day: Arc::new(AtomicU32::new(0)),
             revision: Arc::new(AtomicU32::new(0)),
@@ -118,22 +172,32 @@ fn setting_body() -> Value {
     })
 }
 
-async fn serve_settings(State(arena): State<FakeArena>, headers: HeaderMap) -> Response {
-    arena.settings_hits.fetch_add(1, Ordering::SeqCst);
-    if headers.get("Procon-Token").and_then(|v| v.to_str().ok()) == Some(SENTINEL) {
-        arena.saw_sentinel_token.store(true, Ordering::SeqCst);
-    }
-    let scripted = {
-        let mut script = arena.settings_script.lock().expect("script lock");
-        if script.len() > 1 { Some(script.remove(0)) } else { script.first().cloned() }
-    };
-    let scripted = scripted.unwrap_or_else(|| registered_200("m-default"));
+fn render(scripted: Scripted) -> Response {
     let status = StatusCode::from_u16(scripted.status).expect("valid status");
     ([(header::CONTENT_TYPE, scripted.content_type)], (status, scripted.body)).into_response()
 }
 
-async fn serve_setting() -> Json<Value> {
-    Json(setting_body())
+/// Scripted `GET /setting` (singular) — registration and the coordinator's
+/// setting probe share this one official endpoint (Issue #222). The last
+/// script entry repeats forever.
+async fn serve_setting_script(State(arena): State<FakeArena>, headers: HeaderMap) -> Response {
+    arena.setting_hits.fetch_add(1, Ordering::SeqCst);
+    if headers.get("Procon-Token").and_then(|v| v.to_str().ok()) == Some(SENTINEL) {
+        arena.saw_sentinel_token.store(true, Ordering::SeqCst);
+    }
+    let scripted = {
+        let mut script = arena.setting_script.lock().expect("script lock");
+        if script.len() > 1 { Some(script.remove(0)) } else { script.first().cloned() }
+    };
+    render(scripted.unwrap_or_else(|| registered_200("m-default")))
+}
+
+/// The plural `/settings`: always the SPA HTML shell, token or not — the
+/// live arena's fallback route, confirmed by the Issue #222 recon
+/// (`GET /settings` → `200 text/html` even with `Procon-Token`).
+async fn serve_spa_fallback(State(arena): State<FakeArena>) -> Response {
+    arena.spa_fallback_hits.fetch_add(1, Ordering::SeqCst);
+    render(html_shell())
 }
 
 async fn serve_agent() -> StatusCode {
@@ -164,8 +228,10 @@ async fn serve_action(State(arena): State<FakeArena>) -> Json<Value> {
 
 async fn spawn(arena: FakeArena) -> String {
     let app = Router::new()
-        .route("/settings", get(serve_settings))
-        .route("/setting", get(serve_setting))
+        // Official singular endpoint: registration + setting probe.
+        .route("/setting", get(serve_setting_script))
+        // Plural SPA fallback — HTML on the live arena, HTML here too.
+        .route("/settings", get(serve_spa_fallback))
         .route("/agent", post(serve_agent))
         .route("/", get(serve_state).post(serve_action))
         .with_state(arena);
@@ -228,13 +294,15 @@ async fn registration_waits_through_403_and_registers_on_the_first_200() {
         assert_eq!(outcome.attempts, 3, "two 403s then the registering 200");
         assert_eq!(outcome.arena_match_id.as_deref(), Some("m-42"));
         assert!(arena.saw_sentinel_token.load(Ordering::SeqCst), "token header sent");
-        arena.settings_hits.load(Ordering::SeqCst)
+        arena.setting_hits.load(Ordering::SeqCst)
     };
     assert_eq!(hits, 3, "exactly one request per attempt — no hidden polling");
 }
 
 // ---------------------------------------------------------------------------
-// 2. Drift: SPA HTML shell with HTTP 200 ⇒ fail closed after one request.
+// 2. Drift: SPA HTML shell with HTTP 200 ⇒ fail closed after one request —
+//    on the official `/setting` registration path *and* on the plural
+//    `/settings` SPA fallback (the path the live smoke hit, Issue #222).
 // ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -243,7 +311,7 @@ async fn registration_fails_closed_on_the_spa_html_shell_after_a_single_request(
     let url = spawn(arena.clone()).await;
     let err = arena::wait_for_registration(
         &client(&url),
-        &profile(url),
+        &profile(url.clone()),
         &options(open_window(5_000), 10),
         Utc::now(),
     )
@@ -251,17 +319,41 @@ async fn registration_fails_closed_on_the_spa_html_shell_after_a_single_request(
     .expect_err("HTML where JSON was promised must fail");
     match &err {
         arena::ArenaError::ApiDrift { path, detail } => {
+            // The official singular endpoint — registering on the plural
+            // SPA fallback is what broke the live smoke (Issue #222).
+            assert_eq!(path, "/setting");
+            assert_eq!(path, arena::ARENA_REGISTRATION_PATH);
+            assert!(detail.contains("text/html"), "{detail}");
+        }
+        other => panic!("expected ApiDrift, got {other:?}"),
+    }
+    assert_eq!(
+        arena.setting_hits.load(Ordering::SeqCst),
+        1,
+        "drift must stop immediately — no retry storm, no re-shaped request"
+    );
+    assert_eq!(err.status(), ArenaRunStatus::ApiDrift);
+
+    // The plural fallback keeps its own fail-closed coverage: the live
+    // recon saw `GET /settings` answer `200 text/html` even with a token
+    // attached, so any request that lands there must be rejected as drift
+    // too — and only after that single request.
+    let err = client(&url)
+        .get_json::<serde_json::Value>("/settings")
+        .await
+        .expect_err("the plural SPA fallback must never decode as JSON");
+    match &err {
+        protocol::HttpClientError::ApiDrift { path, detail } => {
             assert_eq!(path, "/settings");
             assert!(detail.contains("text/html"), "{detail}");
         }
         other => panic!("expected ApiDrift, got {other:?}"),
     }
     assert_eq!(
-        arena.settings_hits.load(Ordering::SeqCst),
+        arena.spa_fallback_hits.load(Ordering::SeqCst),
         1,
-        "drift must stop immediately — no retry storm, no re-shaped request"
+        "drift on the plural path must also stop after one request"
     );
-    assert_eq!(err.status(), ArenaRunStatus::ApiDrift);
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +374,7 @@ async fn registration_gives_up_within_the_window_budget() {
     .await
     .expect_err("window closes before the arena admits us");
     assert!(matches!(err, arena::ArenaError::NotRegistered { .. }), "got {err:?}");
-    let hits = arena.settings_hits.load(Ordering::SeqCst);
+    let hits = arena.setting_hits.load(Ordering::SeqCst);
     assert!(
         (2..=15).contains(&hits),
         "polling must stay bounded by the window, got {hits} requests"
@@ -313,7 +405,7 @@ async fn registration_sleeps_until_the_window_opens_without_polling() {
     );
     assert_eq!(outcome.attempts, 1);
     assert_eq!(
-        arena.settings_hits.load(Ordering::SeqCst),
+        arena.setting_hits.load(Ordering::SeqCst),
         1,
         "no request may be sent before the window opens"
     );
@@ -331,7 +423,10 @@ fn registration_match_and_evidence_record_form_one_coherent_run() {
         .build()
         .expect("rt");
     rt.block_on(async {
-        let fake = FakeArena::new(vec![registered_200("m-full")]);
+        // One official `GET /setting` answer serves both phases: it
+        // registers (the `matchId` is picked up) and then drives the
+        // coordinator's setting probe (the extra field is ignored there).
+        let fake = FakeArena::new(vec![setting_with_match_id("m-full")]);
         let url = spawn(fake.clone()).await;
         let profile = profile(url.clone());
         let client = client(&url);
@@ -408,7 +503,99 @@ fn registration_match_and_evidence_record_form_one_coherent_run() {
 }
 
 // ---------------------------------------------------------------------------
-// 5. The binary itself: `coordinator --arena …` end to end.
+// 5. Live lobby state: the confirming 403 IS the registration success —
+//    the poll stops, match id + departure time land in the evidence, and
+//    a 200 `GET /setting` then hands over to the coordinator flow.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn lobby_403_registration_stops_the_poll_and_records_match_and_departure() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("rt");
+    rt.block_on(async {
+        let departing = 1_790_001_000_i64;
+        // Script: plain 403 (the "not yet" retry path), then the lobby
+        // confirmation (registration success), then the game setting the
+        // coordinator needs. The last entry repeats forever.
+        let fake = FakeArena::new(vec![
+            access_time_403(),
+            lobby_registered("469", departing),
+            setting_200(),
+        ]);
+        let url = spawn(fake.clone()).await;
+        let profile = profile(url.clone());
+        let client = client(&url);
+
+        // Phase A: register — one plain 403, then the confirming 403.
+        let registration = arena::wait_for_registration(
+            &client,
+            &profile,
+            &options(open_window(5_000), 10),
+            Utc::now(),
+        )
+        .await
+        .expect("the lobby confirmation is a successful registration");
+        assert_eq!(registration.attempts, 2, "plain 403 first, then the confirming 403");
+        assert_eq!(registration.arena_match_id.as_deref(), Some("469"));
+        assert_eq!(
+            registration.window.starts_at.timestamp(),
+            departing,
+            "the arena's departure time re-bases the window"
+        );
+        assert_eq!(
+            fake.setting_hits.load(Ordering::SeqCst),
+            2,
+            "polling must stop at the confirmation — a further request would \
+             just repeat the lobby 403"
+        );
+
+        // Phase B: at match time `GET /setting` answers 200 ⇒ the
+        // unchanged canonical coordinator flow takes over (supervisor
+        // recon 2026-09-27: the same endpoint serves the MatchSetting).
+        let cfg = CoordinatorLoopConfig {
+            team_id: "arena-team".to_owned(),
+            setting_poll_interval: Duration::from_millis(20),
+            solver_name: "wait".to_owned(),
+            server_url: Some(url.clone()),
+            ..CoordinatorLoopConfig::default()
+        };
+        let outcome =
+            run_coordinator_loop(client, Box::new(WaitSolver), cfg).await.expect("match completes");
+        assert_eq!(outcome.days_completed, 2);
+
+        // Phase C: the evidence fields the AC calls out.
+        let (status, error) = arena::classify_loop_result(&Ok(outcome.clone()));
+        let record = ArenaRunRecord::build(arena::ArenaRecordInput {
+            profile: &profile,
+            candidate_id: Some("wait"),
+            solver: arena::ArenaSolverConfig {
+                mode: "candidate".to_owned(),
+                solver: "wait".to_owned(),
+                loop_initial_strategy: None,
+                loop_iterations: None,
+            },
+            team_id: "arena-team",
+            source_commit_sha: "lobby-sha".to_owned(),
+            window_starts_at_unix: registration.window.starts_at.timestamp(),
+            registration: Some(&registration),
+            outcome: Some(&outcome),
+            status,
+            error,
+        });
+        assert_eq!(record.status, ArenaRunStatus::Completed);
+        assert_eq!(record.registration_attempts, Some(2));
+        assert!(record.registered_at_unix.is_some(), "registered_at must be recorded");
+        assert_eq!(record.arena_match_id.as_deref(), Some("469"));
+        assert_eq!(record.window_starts_at_unix, departing, "departure unix recorded");
+        assert_eq!(record.days_completed, 2);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// 6. The binary itself: `coordinator --arena …` end to end.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -419,7 +606,7 @@ fn binary_arena_run_records_evidence_and_exits_without_leaking_the_token() {
         .build()
         .expect("rt");
     let (evidence, state_output, url, dir) = rt.block_on(async {
-        let fake = FakeArena::new(vec![registered_200("m-bin")]);
+        let fake = FakeArena::new(vec![setting_200()]);
         let url = spawn(fake).await;
         let dir = std::env::temp_dir().join(format!("procon-arena-bin-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -468,6 +655,70 @@ fn binary_arena_run_records_evidence_and_exits_without_leaking_the_token() {
     // The state snapshot (a durable artifact) is token-free too.
     let state = std::fs::read_to_string(&state_output).expect("snapshot written");
     assert!(!state.contains(SENTINEL), "token in state snapshot: {state}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The `source_commit_sha` half of the fix: without the `just`-injected
+/// `PROCON_SOURCE_COMMIT_SHA` (the live smoke ran `cargo run` directly and
+/// recorded `"unknown"`, Issue #222) the evidence carries this checkout's
+/// git head instead.
+#[test]
+fn binary_arena_evidence_falls_back_to_the_git_head_without_the_env_var() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("rt");
+    let (evidence, state_output, url, dir) = rt.block_on(async {
+        let fake = FakeArena::new(vec![setting_200()]);
+        let url = spawn(fake).await;
+        let dir = std::env::temp_dir().join(format!("procon-arena-sha-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        (dir.join("runs.jsonl"), dir.join("state.json"), url, dir)
+    });
+
+    // The expected head, resolved exactly the way the binary resolves it:
+    // `git rev-parse HEAD` from the crate directory inside the worktree.
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("git available in the dev/CI environment");
+    assert!(out.status.success(), "tests must run inside the git worktree");
+    let expected = String::from_utf8(out.stdout).expect("utf8").trim().to_owned();
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_procon"))
+        .args([
+            "coordinator",
+            "--arena",
+            "--server",
+            &url,
+            "--candidate",
+            "wait",
+            "--arena-evidence",
+            evidence.to_str().expect("utf8 evidence path"),
+            "--state-output",
+            state_output.to_str().expect("utf8 state path"),
+        ])
+        .env("PROCON_ARENA_TOKEN", SENTINEL)
+        // Deliberately absent: the git fallback must supply the sha.
+        .env_remove("PROCON_SOURCE_COMMIT_SHA")
+        .env_remove("PROCON_TOKEN")
+        .env_remove("PROCON_SERVER")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("spawn procon");
+
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(output.status.success(), "arena run must succeed\nstderr: {stderr}");
+
+    let text = std::fs::read_to_string(&evidence).expect("evidence written");
+    let record: ArenaRunRecord = serde_json::from_str(text.trim()).expect("parses");
+    assert_eq!(record.source_commit_sha, expected, "evidence must record the git head");
+    assert_ne!(record.source_commit_sha, "unknown");
+    assert!(!text.contains(SENTINEL), "token in evidence: {text}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -233,12 +233,13 @@ impl MatchClient {
 
     /// Fetch an arbitrary protocol path and decode its body as `T`.
     ///
-    /// Used by the arena registration phase (`GET /settings` before the
-    /// match window opens), which is not part of the official 4-endpoint
-    /// protocol but shares the same client, token header, retry policy and
-    /// error classification. The response body must be JSON: an HTML shell
-    /// (the arena's SPA fallback for unauthenticated / unknown paths) is
-    /// reported as [`HttpClientError::ApiDrift`] and never retried.
+    /// Used by the arena registration phase (`GET /setting` polled inside
+    /// the pre-match window — Issue #222; the arena notice's plural
+    /// `/settings` is only the SPA fallback), which shares the same client,
+    /// token header, retry policy and error classification with
+    /// [`Self::get_match_setting`]. The response body must be JSON: an HTML
+    /// shell (the arena's SPA fallback for unauthenticated / unknown paths)
+    /// is reported as [`HttpClientError::ApiDrift`] and never retried.
     ///
     /// # Errors
     ///
