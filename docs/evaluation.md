@@ -39,7 +39,7 @@ solver の内部ヒューリスティック（例: `solver-loop` の `ScoreRepor
 | `daySteps` (per-day) | `MatchSetting::day_steps_by_day` に保持され、**`MatchSim::run_inner` が day loop 内で各日の値を読む**ので `daySteps=[16,24]` なら day1 は本当に24 step 実行する |
 | `daySeconds` (per-day) | **公式 validity として判定**。各日の回答時間 `daily_response_us[i]` が `day_budget_us()[i]` を超えていればその日は未受理と見なして `invalid` / `scored=false`。長さが `daySteps` と食い違う・非正なら from_wire が拒否 |
 | `busyThreshold` / `jammedThreshold` | `CaseSpec::sim_config()` → `SimConfig`。**`SimConfig::default()` (2/5) を使わない** — fixture は 1/2 なので別ゲームになる |
-| `daySteps` の**提出時**解釈（Issue #226） | 公式は **地形加重**で検証する: `Σ(進入セルの step cost: 平地2 / 山3 / 道路1・2・4) + Σ待機 == daySteps[day]`。element 数（move=1）ではない — localhost probe で `[2,-19]`（加重21）は拒否、`[2,-18]`（加重20）は受理。候補（engine の element 時計で plan）は **wire 提出境界** `coordinator_loop` → `engine::wire_plan::normalize_day_plan` で行動 prefix を保ったまま truncate + 待機 pad してから `POST /` する。**候補本体・offline scoring は変更しない**（待機は `MatchSim` で状態不変、tail-wait 系 plan の前後同一性は `wire_plan` の property test で固定） |
+| `daySteps` の**提出時**解釈（Issue #226） | 公式は **地形加重**で検証する: `Σ(**出発セル**の step cost: 平地2 / 山3 / 道路1・2・4) + Σ待機 == daySteps[day]`。element 数（move=1）でも進入セル基準でもない — localhost probe（`[2,-19]`/`[2,-18]` 平地→道路ペアと `[2,-17]` 平地→山地）で出発セル課金・等号判定を確定。候補（engine の element 時計で plan）は **wire 提出境界** `coordinator_loop` → `engine::wire_plan::normalize_day_plan` で行動 prefix を保ったまま truncate + 待機 pad してから `POST /` する。**候補本体・offline scoring は変更しない**（待機は `MatchSim` で状態不変、tail-wait 系 plan の前後同一性は `wire_plan` の property test で固定） |
 
 agent の種類（巡回/補給）は wire に無いため依然 index 交替の既定。種類の決定と燃料上限は別問題です。
 

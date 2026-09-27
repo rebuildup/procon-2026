@@ -3,9 +3,10 @@
 //! Verifies that `run_coordinator_loop` from `crates/cli` drives a full match
 //! of `match-config.example.json`'s `daySeconds.len()` days using a
 //! mockito-backed `MatchClient`, with each `POST /` body satisfying the
-//! **official terrain-weighted step rule** (Issue #226: Σ enter-costs + waits
-//! `== day_steps[day]`; the mock rejects element-count-only plans with
-//! `revision: -1`, exactly like the real server) and final `revision >= 0`.
+//! **official terrain-weighted step rule** (Issue #226: origin-cell step
+//! costs plus waits `== day_steps[day]`; the mock rejects
+//! element-count-only plans with `revision: -1`, exactly like the real
+//! server) and final `revision >= 0`.
 //!
 //! To inject the mockito URL into the binary instead, see the
 //! `--server http://127.0.0.1:NNNN` flag on `procon coordinator`.
@@ -272,13 +273,12 @@ async fn e2e_openapi_fixture_completes_four_days() {
 
     // ----- 4. POST / body assertion: each inner Vec<i32> satisfies the
     //         official terrain-weighted rule (Issue #226). Replaying the
-    //         plan from the agent's start cell, every entered cell's step
-    //         cost (平地 2 / 山 3 / 道路 1-2-4) plus waits must equal
-    //         `day_steps[day]` exactly — an element sum alone is NOT the
-    //         contract (probe evidence: `[2, -19]` element-20 rejected,
-    //         `[2, -18]` weighted-20 accepted). `EngineLoopAdapter` must
-    //         still emit at least one move, proving the planner is not
-    //         just waiting.
+    //         plan from the agent's start cell, each move's **origin**
+    //         cell step cost (平地 2 / 山 3 / 道路 1-2-4) plus waits must
+    //         equal `day_steps[day]` exactly — an element sum alone is NOT
+    //         the contract (probe evidence: `[2, -19]` rejected,
+    //         `[2, -18]` accepted). `EngineLoopAdapter` must still emit at
+    //         least one move, proving the planner is not just waiting.
     //
     // Drop the guard before any `.await` calls below to satisfy
     // `clippy::await_holding_lock`.

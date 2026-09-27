@@ -627,7 +627,7 @@ where
 
         // Issue #226 — official conformance at the submission boundary.
         // The server judges a *terrain-weighted* step sum
-        // (Σ enter-costs + waits == daySteps, see `engine::wire_plan`),
+        // (Σ origin-cell costs + waits == daySteps, see `engine::wire_plan`),
         // while candidates and `decision_to_actions` speak the engine's
         // element clock. Normalize here: both solver paths (CandidateBridge
         // and EngineLoopAdapter) funnel through this single point, so the

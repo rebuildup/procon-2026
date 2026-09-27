@@ -58,7 +58,9 @@ infisical run --env=dev -- cargo run --release --bin procon -- coordinator \
 ### daySteps は地形加重ステップ予算（Issue #226）
 
 公式サーバは `POST /` を **地形加重**で検証する:
-`Σ(進入セルの step cost: 平地 2 / 山 3 / 道路 順調1・混雑2・渋滞4) + Σ待機 == daySteps[day]`。
+`Σ(**出発セル**の step cost: 平地 2 / 山 3 / 道路 順調1・混雑2・渋滞4) + Σ待機 == daySteps[day]`。
+（コストが課されるのは **移動元のセル** — 平地→道路の `[2,-19]`=加重21 で拒否 / `[2,-18]`=20 で受理、
+平地→山地の `[2,-17]`=加重19 で拒否（進入セル基準なら20で受理されるはず）の3本 probe で確定。）
 element 数（move = 1 ステップ）基準ではない（localhost probe: `[2,-19]` = 加重 21 → 拒否、
 `[2,-18]` = 加重 20 → 受理）。候補は engine の element 時計で plan を組むため、
 提出直前に `coordinator_loop`（`CandidateBridge` / `EngineLoopAdapter` の両 path が

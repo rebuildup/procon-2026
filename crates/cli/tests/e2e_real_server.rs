@@ -510,7 +510,7 @@ async fn transient_500_retries_then_succeeds() {
 /// Per-day action plan: the production `EngineLoopAdapter` drives the
 /// loop solver, so every `POST /` body must contain one inner `Vec<i32>`
 /// per controlled agent that satisfies the **official terrain-weighted
-/// step rule** (Issue #226: Σ enter-costs + waits `== day_steps[day]`;
+/// step rule** (Issue #226: Σ origin-cell costs + waits `== day_steps[day]`;
 /// element sums alone are not the contract — the submission boundary
 /// normalizes whatever the planner produced). We also assert at least
 /// one Move action (i.e. a non-negative token) to prove the planner is

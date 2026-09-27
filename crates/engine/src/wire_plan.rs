@@ -6,26 +6,37 @@
 //! budget, not against the number of elements in the answer array:
 //!
 //! ```text
-//! Σ(step cost of every entered cell) + Σ(wait runs) == daySteps[day]
+//! Σ(step cost of the cell each move *departs*) + Σ(wait runs) == daySteps[day]
 //! ```
 //!
-//! Step cost of entering a cell (募集要項 表1, Q&A Q11 — the same table as
-//! `domain::cell::MOVE_STEPS`): `Plain 2`, `Mountain 3`,
-//! `Road(Smooth) 1 / Road(Busy) 2 / Road(Jammed) 4`; `Pond` is impassable.
-//! A move is additionally rejected when it leaves the board, enters
-//! impassable terrain, or a patrol cannot pay its fuel
-//! (`engine::rules::fuel_cost`, Q&A Q11); **one illegal action invalidates
-//! the whole day's plan** (`revision = -1`).
+//! The step-cost table (募集要項 表1, Q&A Q11 — the same values as
+//! `domain::cell::MOVE_STEPS`) is `Plain 2`, `Mountain 3`,
+//! `Road(Smooth) 1 / Road(Busy) 2 / Road(Jammed) 4`; `Pond` is impassable
+//! and a move into it is illegal. Which cell the cost is charged for is
+//! **the origin — the cell the agent stands on when it departs** — that is
+//! what the localhost probes below pin down (an entered-cell reading would
+//! predict the opposite verdict on the last three rows). A move is also
+//! rejected when it leaves the board, enters impassable terrain, or a
+//! patrol cannot pay its fuel (`engine::rules::fuel_cost`, Q&A Q11);
+//! **one illegal action invalidates the whole day's plan**
+//! (`revision = -1`).
 //!
 //! Probed against the official binary on localhost (Issue #226 evidence):
-//! day 0 of `cfg/example.json` (`daySteps = 20`), kinds `[0, 1, 0]`,
-//! agents 1/2 all-wait:
+//! day 0 of `cfg/example.json` (`daySteps = 20`), one moving agent, the
+//! others all-wait, kinds `[0, 1, 0]`:
 //!
-//! | plan (agent 0) | element sum | weighted sum | result |
-//! |---|---:|---:|---|
-//! | `[2, -19]` (one Right onto 平地 + 19 waits) | 20 | 21 | **rejected** (`revision: -1`) |
-//! | `[2, -18]` (same move + 18 waits) | 19 | 20 | **accepted** (`revision: 1`) |
-//! | `[-20]` (wait only, control) | 20 | 20 | accepted |
+//! | plan (agent, start) | element sum | origin-weighted sum | entered-weighted sum | result |
+//! |---|---:|---:|---:|---|
+//! | agent0 `[2, -19]` (starts on 平地) | 20 | 21 | 21 | **rejected** |
+//! | agent0 `[2, -18]` | 19 | 20 | 20 | **accepted** (`revision: 1`) |
+//! | agent1 `[2, -19]` (平地 → 道路) | 20 | 21 | **20** | **rejected** |
+//! | agent1 `[2, -18]` (平地 → 道路) | 19 | **20** | 19 | **accepted** (`revision: 1`) |
+//! | agent2 `[2, -17]` (平地 → 山地) | 18 | **19** | 20 | **rejected** |
+//! | all agents `[-20]` (wait control) | 20 | 20 | 20 | accepted |
+//!
+//! (Bold = the value the official server's verdict is consistent with.
+//! Rule shape: exact equality — the 平地→山地 probe sums to 19 under the
+//! origin table and is rejected, so the check is `==`, not `<=`.)
 //!
 //! # Why normalization lives here
 //!
@@ -59,7 +70,8 @@ use protocol::match_config::ActionPlanBody;
 use crate::model::{Action, Agent, Direction, MapGrid, Terrain};
 use crate::transitions::{MoveOutcome, phase_fuel, try_move};
 
-/// Terrain / traffic step cost of *entering* a cell.
+/// Terrain / traffic step cost charged when a move *departs* this cell
+/// (the official budget bills the origin cell — see the module table).
 ///
 /// `None` marks impassable terrain (`Pond`). Road costs follow the live
 /// traffic state (`TrafficState::step_cost`: `1 / 2 / 4`).
@@ -118,11 +130,15 @@ pub fn validate_agent_plan(
         let dir = direction_for_wire(code)
             .ok_or_else(|| format!("action {i}: {code} is not a legal wire action code"))?;
         let agent_id = shadow[0].id;
+        // Budget: the **origin** cell's step cost (see the module table —
+        // the plain→mountain probe `[2,-17]` is rejected although an
+        // entered-based sum would be exactly 20, and the plain→road pair
+        // `[2,-19]` / `[2,-18]` splits on the origin 平地 cost 2).
+        let origin = map.get(shadow[0].pos).ok_or_else(|| format!("action {i}: off the board"))?;
+        let step = terrain_step_cost(origin.terrain)
+            .ok_or_else(|| format!("action {i}: standing on impassable terrain"))?;
         match try_move(&shadow[0], Action::step(agent_id, dir), map, &mut moves, &mut events) {
             MoveOutcome::Moved { to, cost } => {
-                let dest = map.get(to).ok_or_else(|| format!("action {i}: off the board"))?;
-                let step = terrain_step_cost(dest.terrain)
-                    .ok_or_else(|| format!("action {i}: destination is impassable"))?;
                 used = used
                     .checked_add(step)
                     .ok_or_else(|| format!("action {i}: step sum overflows"))?;
@@ -186,16 +202,18 @@ pub fn normalize_agent_plan(
         }
         let Some(dir) = direction_for_wire(code) else { break };
         let agent_id = shadow[0].id;
+        // Budget: the **origin** cell's step cost (module table). Legality
+        // (bounds / impassable destination / fuel) stays with `try_move`.
+        let Some(origin) = map.get(shadow[0].pos) else { break };
+        let Some(step) = terrain_step_cost(origin.terrain) else { break };
+        if used.saturating_add(step) > day_steps {
+            break; // budget: keep the prefix, pad below
+        }
         let outcome =
             try_move(&shadow[0], Action::step(agent_id, dir), map, &mut moves, &mut events);
         let MoveOutcome::Moved { to, cost } = outcome else {
             break; // the official server would reject this move: keep the prefix
         };
-        let Some(dest) = map.get(to) else { break };
-        let Some(step) = terrain_step_cost(dest.terrain) else { break };
-        if used.saturating_add(step) > day_steps {
-            break; // budget: keep the prefix, pad below
-        }
         out.push(code);
         used += step;
         phase_fuel(&mut shadow, &[(agent_id, cost)], &mut events);
@@ -308,9 +326,10 @@ mod tests {
                 continue;
             }
             let dir = direction_for_wire(code).expect("legal code");
-            pos = dir.step(pos);
+            // Origin cell is billed (official rule, module table).
             let cell = map.get(pos).expect("in bounds");
             used += terrain_step_cost(cell.terrain).expect("passable");
+            pos = dir.step(pos);
         }
         used
     }
@@ -329,11 +348,12 @@ mod tests {
             ('b', 6, &[2, -9], &[2, -4]),
             // wait first, then a move that fills the day exactly.
             ('b', 6, &[-4, 2, 2, 2, 2], &[-4, 2]),
-            // mountain leg: entering 山地 costs 3 -> 3 + 2 + 1 wait = 6.
+            // mountain leg: the second move departs 山地 (3) -> 2 + 3 + 1 = 6.
             ('m', 6, &[2, 2, -3], &[2, 2, -1]),
-            // smooth road leg: entering 道路 costs 1 -> 1 + 2 + 3 waits = 6.
+            // road leg: the second move departs smooth 道路 (1) -> 2 + 1 + 3 = 6.
             ('r', 6, &[2, 2, -5], &[2, 2, -3]),
-            // busy road costs 2 (the traffic overlay changes the budget).
+            // the second move departs a busy road (2, the traffic overlay
+            // changes the budget) -> 2 + 2 + 2 = 6.
             ('B', 6, &[2, 2, -3], &[2, 2, -2]),
             // move into a pond is dropped (the official server would reject
             // the whole plan) and the day is padded with waits.
@@ -401,8 +421,9 @@ mod tests {
 
         // With a full tank the road move is affordable: 1 (road) + 5 waits.
         let funded = patrol_at(0, 0, 20);
+        // Budget now bills the origin 平地 (2) + 4 waits = 6.
         let normalized = normalize_agent_plan(&funded, &map, 6, &[2, -5]);
-        assert_eq!(normalized.as_slice(), &[2, -5]);
+        assert_eq!(normalized.as_slice(), &[2, -4]);
         validate_agent_plan(&funded, &map, 6, &normalized).expect("road plan validates");
     }
 
