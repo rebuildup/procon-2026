@@ -22,7 +22,7 @@
 //!    generations with `serde_json`
 //!    (`same_params_and_seed_regenerate_byte_identical`).
 //! 2. **Traceable identity** — `case_id` embeds generator version, archetype
-//!    and seed: `generated:v1:road-heavy:seed=7`, with `:size=` / `:days=` /
+//!    and seed: `generated:v2:road-heavy:seed=7`, with `:size=` / `:days=` /
 //!    `:fuel=` appended when they differ from the archetype default (the fuel
 //!    mode is appended only for the non-default `fuel=tight`, so every
 //!    pre-existing id stays byte-identical). `seed`,
@@ -153,7 +153,17 @@ use crate::fixture::{FixtureCategory, MatchFixture};
 /// `(archetype, seed, size, days)` tuple — it is part of the `case_id`
 /// (`generated:v<N>:…`) and of `generation_parameters`, so old evidence can
 /// never be re-read as new.
-pub const GENERATOR_VERSION: u32 = 1;
+///
+/// **v1 → v2 (Issue #226):** the wire cell codes changed. The cell-type
+/// table was corrected to the official one (0=平地, 1=道路, 2=山地, 3=池)
+/// and every authored cell source — this generator's paint code included —
+/// was identity-permuted `0→0, 1→2, 2→3, 3→1`, so the same
+/// `(params, seed)` now yields the same *terrain* under different raw codes
+/// than v1 did. `generated:v2:…` records therefore stay pinned to the
+/// old-terrain-table world (historical evidence, re-baseline #206); v2 ids
+/// are the corrected-table world. The fuel axis (#204) did not change
+/// output bytes, which is why it never bumped the version.
+pub const GENERATOR_VERSION: u32 = 2;
 
 /// Inclusive upper bound on the number of days a generated case may declare.
 ///
@@ -512,10 +522,10 @@ impl GenerationParams {
     ///
     /// `:size=` / `:days=` appear only when they differ from the archetype
     /// default, and `:fuel=` only for the non-default `fuel=tight`, so the
-    /// common screening id stays short (`generated:v1:road-heavy:seed=7`) —
-    /// byte-identical to every id written before the fuel axis existed — while
-    /// two specs that differ in size, day count or fuel mode can never collide
-    /// inside one `Corpus`.
+    /// common screening id stays short (`generated:v2:road-heavy:seed=7`) —
+    /// identical in shape to every id written before the fuel axis existed —
+    /// while two specs that differ in size, day count or fuel mode can never
+    /// collide inside one `Corpus`.
     #[must_use]
     pub fn case_id(&self) -> String {
         let mut id = format!(
@@ -1706,7 +1716,7 @@ mod tests {
         // The fuel mode is part of the durable identity, so seed-set evidence
         // can always tell which axis a record was generated under (Issue #204).
         assert_eq!(params["fuel"], "comfortable");
-        assert!(case.case_id.starts_with("generated:v1:"));
+        assert!(case.case_id.starts_with("generated:v2:"));
 
         // …and a tight record says so, in both slots.
         let mut tight = GenerationParams::new(Archetype::Open, 3);
@@ -1714,7 +1724,7 @@ mod tests {
         let case = generate_ok(&tight);
         let params = case.generation_parameters.as_ref().expect("generated case carries params");
         assert_eq!(params["fuel"], "tight");
-        assert_eq!(case.case_id, "generated:v1:open:seed=3:fuel=tight");
+        assert_eq!(case.case_id, "generated:v2:open:seed=3:fuel=tight");
     }
 
     // -- identity -----------------------------------------------------------
@@ -1722,12 +1732,12 @@ mod tests {
     #[test]
     fn case_ids_are_traceable_to_version_archetype_and_seed() {
         let base = GenerationParams::new(Archetype::RoadHeavy, 7);
-        assert_eq!(base.case_id(), "generated:v1:road-heavy:seed=7");
+        assert_eq!(base.case_id(), "generated:v2:road-heavy:seed=7");
 
         let mut spaced = GenerationParams::new(Archetype::RoadHeavy, 7);
         spaced.size = SizeClass::Small;
         spaced.days = 1;
-        assert_eq!(spaced.case_id(), "generated:v1:road-heavy:seed=7:size=small:days=1");
+        assert_eq!(spaced.case_id(), "generated:v2:road-heavy:seed=7:size=small:days=1");
 
         // Defaults are implied, so an explicit-but-default spec collides with
         // the short form — the two really are the same case. This includes the
@@ -1742,14 +1752,14 @@ mod tests {
         // The non-default mode appends `:fuel=tight`, last of the segments.
         let mut tight = GenerationParams::new(Archetype::RoadHeavy, 7);
         tight.fuel = FuelMode::Tight;
-        assert_eq!(tight.case_id(), "generated:v1:road-heavy:seed=7:fuel=tight");
+        assert_eq!(tight.case_id(), "generated:v2:road-heavy:seed=7:fuel=tight");
         let mut tight_spaced = GenerationParams::new(Archetype::RoadHeavy, 7);
         tight_spaced.size = SizeClass::Small;
         tight_spaced.days = 1;
         tight_spaced.fuel = FuelMode::Tight;
         assert_eq!(
             tight_spaced.case_id(),
-            "generated:v1:road-heavy:seed=7:size=small:days=1:fuel=tight"
+            "generated:v2:road-heavy:seed=7:size=small:days=1:fuel=tight"
         );
 
         // Different seeds (and different overrides) are distinct ids. The
@@ -2189,22 +2199,22 @@ mod tests {
             .expect("valid selection parses");
         assert_eq!(sel.len(), 2);
         assert_eq!(sel[0], GenerationParams::new(Archetype::Open, 1));
-        assert_eq!(sel[0].case_id(), "generated:v1:open:seed=1");
+        assert_eq!(sel[0].case_id(), "generated:v2:open:seed=1");
         assert_eq!(sel[1].archetype, Archetype::RoadHeavy);
         assert_eq!(sel[1].size, SizeClass::Small);
         // `days=3` is road-heavy's default, so the id stays short — the
         // default is implied by generator version + archetype.
         assert_eq!(sel[1].days, 3);
-        assert_eq!(sel[1].case_id(), "generated:v1:road-heavy:seed=7:size=small");
+        assert_eq!(sel[1].case_id(), "generated:v2:road-heavy:seed=7:size=small");
 
         // `fuel=` follows the same `<kv>` grammar; the default is implied so
         // `fuel=comfortable` writes no bytes into the id (Issue #204).
         let sel = parse_selection("open:seed=1:fuel=comfortable,road-heavy:seed=1:fuel=tight")
             .expect("fuel modes parse");
         assert_eq!(sel[0], GenerationParams::new(Archetype::Open, 1));
-        assert_eq!(sel[0].case_id(), "generated:v1:open:seed=1");
+        assert_eq!(sel[0].case_id(), "generated:v2:open:seed=1");
         assert_eq!(sel[1].fuel, FuelMode::Tight);
-        assert_eq!(sel[1].case_id(), "generated:v1:road-heavy:seed=1:fuel=tight");
+        assert_eq!(sel[1].case_id(), "generated:v2:road-heavy:seed=1:fuel=tight");
 
         // An empty selection selects nothing (generated cases are opt-in).
         assert!(parse_selection("").expect("empty parses").is_empty());
@@ -2265,7 +2275,7 @@ mod tests {
         all.extend(generated.cases);
         let merged = Corpus::new(all).expect("fixtures and generated ids never collide");
         assert_eq!(merged.len(), fixtures + 2);
-        assert!(merged.case_ids().contains(&"generated:v1:open:seed=1"));
+        assert!(merged.case_ids().contains(&"generated:v2:open:seed=1"));
         assert!(merged.case_ids().contains(&"fixture:small-8x8"));
     }
 }

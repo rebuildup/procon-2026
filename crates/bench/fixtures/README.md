@@ -31,7 +31,8 @@ crates/bench/fixtures/
 ├── README.md                  # this file
 ├── example_match.json         # bench-runner smoke fixture (minimal)
 └── maps/                      # known-map fixtures loaded by MatchFixtureLoader
-    ├── openapi-sample.json    # official Procon 37 sample
+    ├── openapi-sample.json    # schema-derived name, project-authored warmup mirror
+    │                          # (NOT an official payload — see its section below)
     ├── small-8x8.json
     ├── medium-16x16.json
     ├── large-32x32.json
@@ -61,17 +62,21 @@ Until Issue #226 the engine decoded a **permuted** table (`1`=Mountain,
 carried permuted codes. #226 corrected `engine::from_wire` and applied the
 meaning-preserving permutation `0→0, 1→2, 2→3, 3→1` to authored content:
 
-- **permuted** — the authored maps `small-8x8`, `medium-16x16`,
+- **permuted** — **all nine** bundled maps (`small-8x8`, `medium-16x16`,
   `large-32x32`, `road-heavy`, `road-heavy-v2`, `mountain-heavy`,
-  `series-many`, `series-few`, plus `bench::generator`'s cell painting and
-  the gates that count codes (road floor `TYPE_1`, pond checks `TYPE_3`);
-- **kept as-is** — `maps/openapi-sample.json`: no permutation is applied to
-  it, so its codes are read exactly like a raw wire payload under the
-  corrected table (its code-`1` column is therefore a *road*, not a
-  mountain — see the description below).
+  `series-many`, `series-few`, `openapi-sample`), plus
+  `bench::generator`'s cell painting and the gates that count codes
+  (road floor `TYPE_1`, pond checks `TYPE_3`);
+- **not permuted** — nothing under `maps/` any more. Genuinely official /
+  vendored payloads stay raw and are read under the corrected table like
+  any wire payload: `.reference/procon37/match-config.example.json` (the
+  real official example), `crates/protocol/tests/fixtures/procon37-openapi*.json`
+  (schema), `crates/cli/tests/fixtures/arena/replay-sample.json` (arena
+  wire capture).
 
 Terrain *counts* in this README are terrain, not codes: they are unchanged
-by the permutation.
+by the permutation (each fixture's terrain histogram is pinned to the
+pre-#226 world by `fixtures_smoke.rs::terrain_histograms_match_the_old_world_constants`).
 
 ## Fixture catalog
 
@@ -90,12 +95,19 @@ by the permutation.
 ## Per-fixture descriptions
 
 ### `maps/openapi-sample.json`
-`official_sample` — A minimal 8×8 map whose cell codes were **not**
-permuted by #226 (see the terrain-code section above): under the official
-table the vertical line of `1`s down the middle column is a **road**, and
-4 agents sit at the four corners (all on plain). Mirrors the warmup default
-in `crates/cli/src/fixtures.rs`. Used to confirm the loader round-trips a
-file end-to-end before any custom solver runs.
+`official_sample` (category label kept for id stability) — a **project-
+authored** 8×8 warmup map: a vertical mountain ridge down the middle
+column and 4 agents at the four corners, mirroring the warmup default in
+`crates/cli/src/fixtures.rs`. Its *name* derives from the vendored
+OpenAPI schema (`schema-derived`), but the body is **not** an official
+payload — the real official example is
+`.reference/procon37/match-config.example.json` (`{problem, teams}`,
+10×10, 3 agents, `daySteps [20, 20, 20, 20]}`). Like every other bundled
+map its cell codes were identity-permuted by #226 (`1→2`, so the ridge
+stays *mountain*), and its terrain histogram
+(`Plain 56 / Mountain 8 / Pond 0 / Road 0`) is asserted against the
+pre-#226 constants in the smoke tests. Used to confirm the loader
+round-trips a file end-to-end before any custom solver runs.
 
 ### `maps/small-8x8.json`
 `small` — 8×8 warmup map: a single mountain ridge down the middle column
@@ -283,9 +295,12 @@ place spots on plain cells — `road-heavy-v2` does, and its test
 
 - `example_match.json` — minimal bench-runner fixture from the upstream
   bench crate; documented in `crates/bench/src/lib.rs`.
-- `openapi-sample.json` — derived from the official Procon 37 OpenAPI
-  schema at `.reference/procon37/openapi.json`, mirrored in Rust at
-  `crates/protocol/src/match_config.rs`.
+- `openapi-sample.json` — **project-authored warmup mirror**; only its
+  *name* is schema-derived (from `.reference/procon37/openapi.json`,
+  mirrored in Rust at `crates/protocol/src/match_config.rs`). It is not
+  an official payload. The real official example is
+  `.reference/procon37/match-config.example.json` (problem schema:
+  `{problem, teams}`, 10×10, 3 agents, `daySteps [20, 20, 20, 20]`).
 - All other map fixtures — hand-authored for the v0.2.0 release. They are
   designed to exercise distinct solver characteristics, not to mimic any
   particular real contest map.

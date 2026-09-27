@@ -272,7 +272,9 @@ fn walk_astar_re_solves_every_day_across_the_param_matrix() {
     }
 }
 
-/// The Issue #213 baseline-zero case (`generated:v1:few-series:seed=1`) has
+/// The Issue #213 baseline-zero case (`generated:v1:few-series:seed=1` at the
+/// time; the same archetype + seed builds as `generated:v2:…` since #226 —
+/// same terrain, re-coded cells) has
 /// to stay runnable under `walk=astar` — success, scored, zero illegal and
 /// zero fuel-short. Whether the score actually leaves zero is evaluation
 /// evidence (Issue #215 comment), not something this gate asserts.

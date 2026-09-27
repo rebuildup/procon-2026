@@ -238,7 +238,7 @@ fn a_generation_failure_and_a_candidate_failure_are_distinct_classes() {
     // (b) An `invalid` record is a *judged run*, not a rejected case: it
     //     carries numbers and a candidate id, whereas GenerationError carries
     //     archetype + seed and no record at all.
-    assert_eq!(ok.case_id, "generated:v1:open:seed=1");
+    assert_eq!(ok.case_id, "generated:v2:open:seed=1");
     assert_ne!(msg, ok.status_detail.clone().unwrap_or_default());
 }
 

@@ -302,6 +302,39 @@ mod tests {
         }
     }
 
+    /// Issue #226 equivalence proof (machine-checked): the corrected table is
+    /// exactly the pre-#226 table read through the inverse of the identity
+    /// permutation that was applied to every authored cell source — so the
+    /// permutation preserved terrain meaning.
+    ///
+    /// Permutation P (authored content): `0→0, 1→2, 2→3, 3→1`.
+    /// Its inverse: `0→0, 1→3, 2→1, 3→2`.
+    /// Property: `new_table(v) == old_table(P⁻¹(v))` for all `v` in `0..=3`.
+    #[test]
+    fn official_table_equals_old_table_through_inverse_permutation() {
+        // The pre-#226 (wrong) table this issue fixed, spelled out so the
+        // comparison is against the historical world, not a re-derivation.
+        const OLD_TABLE: [Terrain; 4] = [
+            Terrain::Plain,
+            Terrain::Mountain,
+            Terrain::Pond,
+            Terrain::Road(TrafficState::Smooth),
+        ];
+        // Inverse of `0→0, 1→2, 2→3, 3→1`.
+        const INVERSE_PERMUTE: [usize; 4] = [0, 3, 1, 2];
+        const CODES: [CellType; 4] =
+            [CellType::TYPE_0, CellType::TYPE_1, CellType::TYPE_2, CellType::TYPE_3];
+
+        for (v, code) in CODES.into_iter().enumerate() {
+            let new = cell_type_to_terrain(code).expect("0..=3 are all known");
+            let old = OLD_TABLE[INVERSE_PERMUTE[v]];
+            assert_eq!(
+                new, old,
+                "wire {v}: corrected table must equal old_table(inverse_permute({v}))"
+            );
+        }
+    }
+
     #[test]
     fn round_trip_setting() {
         let team = TeamId::new("player-a").unwrap();

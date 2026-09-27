@@ -681,8 +681,8 @@ mod tests {
         // `--cases small-8x8` (the parse helper's default) + 2 generated.
         assert_eq!(corpus.len(), 3);
         assert!(corpus.case_ids().contains(&"fixture:small-8x8"));
-        assert!(corpus.case_ids().contains(&"generated:v1:open:seed=1"));
-        assert!(corpus.case_ids().contains(&"generated:v1:road-heavy:seed=7:size=small:days=2"));
+        assert!(corpus.case_ids().contains(&"generated:v2:open:seed=1"));
+        assert!(corpus.case_ids().contains(&"generated:v2:road-heavy:seed=7:size=small:days=2"));
 
         // The generated cases carry full provenance into the records' source.
         for case in &corpus.cases {
@@ -760,13 +760,13 @@ mod tests {
         let corpus = load_corpus(&args.cases, &args.generated, "").expect("tight selection loads");
         let case =
             corpus.cases.iter().find(|c| c.case_id.starts_with("generated:")).expect("generated");
-        assert_eq!(case.case_id, "generated:v1:open:seed=1:fuel=tight");
+        assert_eq!(case.case_id, "generated:v2:open:seed=1:fuel=tight");
         let params = case.generation_parameters.as_ref().expect("params recorded");
         assert_eq!(params["fuel"], "tight");
 
         // The default spelling is byte-identical to the pre-axis corpus.
         let default = load_corpus("all", "open:seed=1", "").expect("default loads");
-        assert!(default.case_ids().contains(&"generated:v1:open:seed=1"));
+        assert!(default.case_ids().contains(&"generated:v2:open:seed=1"));
         let case =
             default.cases.iter().find(|c| c.case_id.starts_with("generated:")).expect("generated");
         assert_eq!(
@@ -791,8 +791,8 @@ mod tests {
         assert_eq!(mixed.len(), bundled_count() + 2);
         // Fixtures first, generated appended — order is stable per selection.
         assert_eq!(mixed.case_ids()[0], "fixture:openapi-sample");
-        assert_eq!(mixed.case_ids()[bundled_count()], "generated:v1:open:seed=1");
-        assert_eq!(mixed.case_ids()[bundled_count() + 1], "generated:v1:road-heavy:seed=7");
+        assert_eq!(mixed.case_ids()[bundled_count()], "generated:v2:open:seed=1");
+        assert_eq!(mixed.case_ids()[bundled_count() + 1], "generated:v2:road-heavy:seed=7");
     }
 
     /// One corpus object per batch: every sibling candidate runs against this
@@ -808,8 +808,8 @@ mod tests {
         assert_eq!(unique.len(), ids.len(), "case ids must be unique");
         // The two generated siblings share one seed per archetype: comparing
         // candidates on this corpus varies the candidate, never the cases.
-        assert!(ids.contains(&"generated:v1:many-series:seed=3"));
-        assert!(ids.contains(&"generated:v1:road-heavy:seed=3"));
+        assert!(ids.contains(&"generated:v2:many-series:seed=3"));
+        assert!(ids.contains(&"generated:v2:road-heavy:seed=3"));
     }
 
     /// A rejected selection surfaces as a *case generation failure* — a
