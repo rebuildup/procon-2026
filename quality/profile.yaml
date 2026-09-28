@@ -44,7 +44,7 @@ test_taxonomy:
   unit:
     scope: single component / module behavior
     rust_command: "cargo test --workspace --locked"
-    frontend_command: "(cd packages/frontend && bun test)"
+    frontend_command: "(cd packages/frontend && bun run test)"
     examples: [pure/domain logic, parser, validator, state transition]
   smoke:
     scope: process startup + minimal CLI wiring
@@ -53,11 +53,11 @@ test_taxonomy:
   integration:
     scope: real cross-component boundary + replay determinism
     rust_command: "cargo test --workspace --locked -- --ignored --nocapture"
-    frontend_command: "(cd packages/frontend && bun test)"
+    frontend_command: "(cd packages/frontend && bun run test)"
   contract:
     scope: protocol wire format round-trip + frontend mirror
     rust_command: "cargo test --workspace --locked -- --ignored --nocapture"
-    frontend_command: "(cd packages/frontend && bun test)"
+    frontend_command: "(cd packages/frontend && bun run test)"
   protocol_consistency:
     scope: PROTOCOL_VERSION一致 across crates
     command: "bash scripts/check-protocol-consistency.sh"
@@ -98,7 +98,7 @@ worker_gate:
     - "cargo test --workspace --locked"
     - "(cd packages/frontend && bun run check)"
     - "(cd packages/frontend && bun run lint)"
-    - "(cd packages/frontend && bun test)"
+    - "(cd packages/frontend && bun run test)"
 
 ticket_integration_gate:
   description: clean candidate with full applicable verification
@@ -128,7 +128,7 @@ release_gate:
     - "cargo build --workspace --release --locked"
     - "cargo test --workspace --release --locked"
     - "(cd packages/frontend && bun run build)"
-    - "(cd packages/frontend && bun test)"
+    - "(cd packages/frontend && bun run test)"
     - "bash scripts/check-protocol-consistency.sh"
     - "manual WebGPU browser smoke"
 
