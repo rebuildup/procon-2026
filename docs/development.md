@@ -48,7 +48,7 @@ cargo run -q --bin procon -- warmup        # pre-match solver timing
 just --list             # 利用可能な recipe
 just fmt                # cargo fmt + bun format
 just check              # fmt --check + clippy + lint + typecheck
-just test               # cargo test + bun test
+just test               # cargo test + frontend bun run test
 just test-integration   # integration layer
 just ci                 # ローカル CI と同じフル検証
 ```
@@ -72,7 +72,7 @@ cargo build --release --workspace
 bun run check          # tsc --noEmit
 bun run lint           # ESLint
 bun run format:check   # Prettier
-bun test               # bun test runner
+bun run test           # bun test --conditions=browser
 bun run build          # vite build (型チェックも走る)
 bun run dev            # vite dev server (127.0.0.1:5173)
 ```

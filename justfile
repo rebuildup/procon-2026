@@ -45,7 +45,7 @@ test: test-fast test-integration
 test-fast:
     cargo test --workspace --locked
     @echo "--- frontend unit ---"
-    cd packages/frontend && bun test
+    cd packages/frontend && bun run test
 
 test-integration:
     @echo "--- protocol round-trip + replay determinism ---"
