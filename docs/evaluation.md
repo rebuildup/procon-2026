@@ -41,7 +41,23 @@ solver の内部ヒューリスティック（例: `solver-loop` の `ScoreRepor
 | `busyThreshold` / `jammedThreshold` | `CaseSpec::sim_config()` → `SimConfig`。**`SimConfig::default()` (2/5) を使わない** — fixture は 1/2 なので別ゲームになる |
 | `daySteps` の**提出時**解釈（Issue #226） | 公式は **地形加重**で検証する: `Σ(**出発セル**の step cost: 平地2 / 山3 / 道路1・2・4) + Σ待機 == daySteps[day]`。element 数（move=1）でも進入セル基準でもない — localhost probe（`[2,-19]`/`[2,-18]` 平地→道路ペアと `[2,-17]` 平地→山地）で出発セル課金・等号判定を確定。候補（engine の element 時計で plan）は **wire 提出境界** `coordinator_loop` → `engine::wire_plan::normalize_day_plan` で行動 prefix を保ったまま truncate + 待機 pad してから `POST /` する。**候補本体・offline scoring は変更しない**（待機は `MatchSim` で状態不変、tail-wait 系 plan の前後同一性は `wire_plan` の property test で固定） |
 
-agent の種類（巡回/補給）は wire に無いため依然 index 交替の既定。種類の決定と燃料上限は別問題です。
+agent の種類（巡回/補給）は wire に無いため依然 index 交替の既定（5 台なら 3 巡回 / 2 補給）。種類の決定と燃料上限は別問題です。
+
+### kind semantics: Supply は玉を取得しない（Issue #234）
+
+`domain::AgentKind::Supply` の仕様は「cannot collect 玉 but can refuel Patrol」
+（`crates/domain/src/agent.rs`）。engine の `transitions::phase_acquire` は
+**Supply を最初に完全スキップ**するため、補給車がスポットに立ち続けても:
+
+- `spot.current_stock` は減らない（巡回車の分を消費しない）
+- `inventory` / `series_taken` / `series_first_taken_at` / `series_acquired_by_day` は不変
+- `Picked` も `PickCapReached` も**イベントが出ない**
+
+すなわち **採点対象は Patrol のみ**で、`from_wire` の index 交替で組んだ live 布陣と
+offline の挙動が一致します。給油（同一セルの Supply が Patrol を満タンに戻す）は
+種類を問わず従来どおりで、Supply がスポットに立っていても給油は成立します。
+`series_*` と `inventory` の変更は `phase_acquire` にしか存在しないため、
+kind 対応漏れはこの1関数に閉じます（engine 内を grep して確認済み）。
 
 ## スコアと順位
 
@@ -228,6 +244,14 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
 
 `procon-eval` は「rankable な run が 1 件でも無い」場合に **exit 1** を返します
 （records は先に書かれるので evidence と failure signal が両立します)。
+
+> **Issue #234 より前の performance evidence は historical / inflated。**
+> `phase_acquire` が Supply の取得も採点していた期間（全 agent が collector の
+> 「5 collector world」）に録画された数値 — #188 の新世界 baseline、Stage A/B/C、
+> #206 の 25-case leaderboard、landed candidates の順位 — は kind parity 修正後の
+> re-baseline で置き換えるまで **current proof として使わない**。
+> `runs.jsonl` の `source_commit_sha` がこの修正以前なら historical 扱いです
+> （`MixedCommits` により新旧を同一集計には混ぜられません）。
 
 `target/eval/report.md` を開くか、`target/eval/aggregate.json` を機械処理してください:
 
