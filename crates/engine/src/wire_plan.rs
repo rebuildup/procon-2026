@@ -21,6 +21,44 @@
 //! **one illegal action invalidates the whole day's plan**
 //! (`revision = -1`).
 //!
+//! # Fuel is billed on the departed cell too (Issue #245)
+//!
+//! The official server charges a move's **fuel** from the cell the agent
+//! leaves — the same cell that bills the step cost — not from the cell it
+//! enters, which is what [`crate::transitions::try_move`] (and therefore
+//! the offline simulator) does. Probed against the official binary on
+//! localhost with match550's board (`busyThreshold 1`,
+//! `jammedThreshold 3`, 9 days, 7 agents, `--kinds P`,
+//! `loop:iterations=32:initial=greedy:lookahead=crossday:walk=astar`):
+//!
+//! | run | teams configured / submitting | rejected day | offending action |
+//! |---|---|---|---|
+//! | A | 7 / 1 (the rest never answer ⇒ no day-end traffic update) | 8 | agent0 `pos 113` = 道路, `fuel 1`, step `0` onto 平地: departing the road needs 2 fuel |
+//! | B | 1 / 1 (traffic recomputed every day) | **4** (the same day as live match550) | agent2 `pos 732` = 道路(渋滞), `fuel 1`, step `5` onto 平地: departing costs 2 fuel |
+//!
+//! Replaying every submitted body of both runs under each candidate rule
+//! separates them cleanly over the 14 played days (12 accepted + the two
+//! rejections above):
+//!
+//! | fuel rule | run A | run B |
+//! |---|---|---|
+//! | billed on the **entered** cell (the pre-#245 rule) | wrong (day 8 predicted accepted) | wrong (day 4 predicted accepted) |
+//! | billed on the **departed** cell | correct | correct |
+//! | must afford **both** cells, billed on the departed one | correct | correct |
+//! | must afford `max(origin, entered)`, billed on that | wrong (days 6/7 predicted rejected) | correct |
+//! | strict `fuel > cost` | wrong (day 7 predicted rejected) | correct |
+//!
+//! The two surviving readings are indistinguishable from acceptance data
+//! alone, so this boundary enforces their **intersection**: a move must
+//! afford the fuel of both the departed and the entered cell, and the
+//! replay deducts the departed cell's cost. That is never weaker than the
+//! pre-#245 rule (it only adds the departed-cell check) and it rejects
+//! exactly the two observed cases. The step budget was never the problem:
+//! every day of both runs summed to `daySteps` exactly under the traffic
+//! `GET /` reported — the payload carries **all** road cells (246 entries
+//! for a 246-road map, every day of both runs), so the overlay has no
+//! "unlisted" case to guess at on this binary.
+//!
 //! Probed against the official binary on localhost (Issue #226 evidence):
 //! day 0 of `cfg/example.json` (`daySteps = 20`), one moving agent, the
 //! others all-wait, kinds `[0, 1, 0]`:
@@ -45,10 +83,9 @@
 //! element sum. That clock is *not* the official budget, so a
 //! straight-through submission is rejected whenever any move costs more
 //! than 1 step (every move that is not onto a smooth road). This module
-//! replays a plan through the engine's own day-consumption rules
-//! ([`crate::transitions::try_move`] for bounds / terrain / fuel and
-//! [`terrain_step_cost`] for the step budget) and rewrites it into a plan
-//! that is exactly `day_steps` weighted steps:
+//! replays a plan through the official rules — [`official_move`] for bounds
+//! / terrain / fuel and [`terrain_step_cost`] for the step budget — and
+//! rewrites it into a plan that is exactly `day_steps` weighted steps:
 //!
 //! 1. consume the agent's actions in order while they stay legal and fit
 //!    the remaining budget (movement prefix preserved),
@@ -67,8 +104,44 @@
 
 use protocol::match_config::ActionPlanBody;
 
-use crate::model::{Action, Agent, Direction, MapGrid, Terrain};
-use crate::transitions::{MoveOutcome, phase_fuel, try_move};
+use crate::model::{Agent, AgentKind, Cell, Direction, HexCoord, MapGrid, Terrain};
+use crate::rules::fuel_cost;
+use crate::transitions::phase_fuel;
+
+/// One wire move judged by the official rules: `(destination, step cost,
+/// fuel cost)`.
+///
+/// The cell the agent **departs** bills both the step budget (module table)
+/// and the fuel deduction; the move also has to afford the fuel of the cell
+/// it **enters**, which keeps this boundary at least as strict as it was
+/// before Issue #245 while adding the departed-cell check that the two
+/// localhost rejections needed. `Err` carries the reason the official
+/// server reports when it rejects the whole day for one illegal action.
+///
+/// An agent standing off the board is the caller's error path (a corrupted
+/// live state, not a bad action); an agent standing on a pond falls out of
+/// the same [`terrain_step_cost`] guard the caller uses.
+fn official_move(
+    agent: &Agent,
+    origin: &Cell,
+    dir: Direction,
+    map: &MapGrid,
+) -> Result<(HexCoord, u32, u32), &'static str> {
+    let step = terrain_step_cost(origin.terrain).ok_or("standing on impassable terrain")?;
+    let to = dir.step(agent.pos);
+    let target = map.get(to).ok_or("leaves the board")?;
+    if !target.terrain.traversable() {
+        return Err("impassable destination");
+    }
+    let origin_fuel = fuel_cost(origin.terrain);
+    if agent.kind != AgentKind::Supply {
+        let need = origin_fuel.max(fuel_cost(target.terrain));
+        if !agent.can_afford(need) {
+            return Err("fuel short");
+        }
+    }
+    Ok((to, step, origin_fuel))
+}
 
 /// Terrain / traffic step cost charged when a move *departs* this cell
 /// (the official budget bills the origin cell — see the module table).
@@ -96,7 +169,7 @@ fn direction_for_wire(code: i32) -> Option<Direction> {
 }
 
 /// Official validation of one agent's day plan: every action must be legal
-/// (bounds / terrain / fuel — the same rules `MatchSim` applies) and the
+/// (bounds / terrain / fuel under [`official_move`], Issue #245) and the
 /// terrain-weighted step sum must equal `day_steps` exactly.
 ///
 /// Returns the validated weighted sum on success. Used by tests and by the
@@ -115,7 +188,6 @@ pub fn validate_agent_plan(
     // Shadow agent: fuel is consumed as moves replay, exactly like the
     // simulator's fuel phase (`phase_fuel` skips supply agents).
     let mut shadow = vec![agent.clone()];
-    let mut moves = Vec::new();
     let mut events = Vec::new();
     let mut used: u32 = 0;
 
@@ -137,24 +209,17 @@ pub fn validate_agent_plan(
         let origin = map.get(shadow[0].pos).ok_or_else(|| format!("action {i}: off the board"))?;
         let step = terrain_step_cost(origin.terrain)
             .ok_or_else(|| format!("action {i}: standing on impassable terrain"))?;
-        match try_move(&shadow[0], Action::step(agent_id, dir), map, &mut moves, &mut events) {
-            MoveOutcome::Moved { to, cost } => {
-                used = used
-                    .checked_add(step)
-                    .ok_or_else(|| format!("action {i}: step sum overflows"))?;
-                if used > day_steps {
-                    return Err(format!(
-                        "action {i}: weighted step sum would reach {used}, \
-                         over the {day_steps} budget"
-                    ));
-                }
-                phase_fuel(&mut shadow, &[(agent_id, cost)], &mut events);
-                shadow[0].pos = to; // `try_move` is pure; the sim's apply_moves does this
-            }
-            MoveOutcome::Wait { reason } => {
-                return Err(format!("action {i}: official rules reject this move ({reason})"));
-            }
+        let (to, _, fuel) = official_move(&shadow[0], origin, dir, map)
+            .map_err(|reason| format!("action {i}: official rules reject this move ({reason})"))?;
+        used = used.checked_add(step).ok_or_else(|| format!("action {i}: step sum overflows"))?;
+        if used > day_steps {
+            return Err(format!(
+                "action {i}: weighted step sum would reach {used}, \
+                 over the {day_steps} budget"
+            ));
         }
+        phase_fuel(&mut shadow, &[(agent_id, fuel)], &mut events);
+        shadow[0].pos = to;
     }
 
     if used != day_steps {
@@ -182,7 +247,6 @@ pub fn normalize_agent_plan(
 ) -> Vec<i32> {
     let mut out = Vec::with_capacity(actions.len());
     let mut shadow = vec![agent.clone()];
-    let mut moves = Vec::new();
     let mut events = Vec::new();
     let mut used: u32 = 0;
 
@@ -202,22 +266,20 @@ pub fn normalize_agent_plan(
         }
         let Some(dir) = direction_for_wire(code) else { break };
         let agent_id = shadow[0].id;
-        // Budget: the **origin** cell's step cost (module table). Legality
-        // (bounds / impassable destination / fuel) stays with `try_move`.
+        // Budget: the **origin** cell's step cost (module table).
         let Some(origin) = map.get(shadow[0].pos) else { break };
         let Some(step) = terrain_step_cost(origin.terrain) else { break };
         if used.saturating_add(step) > day_steps {
             break; // budget: keep the prefix, pad below
         }
-        let outcome =
-            try_move(&shadow[0], Action::step(agent_id, dir), map, &mut moves, &mut events);
-        let MoveOutcome::Moved { to, cost } = outcome else {
-            break; // the official server would reject this move: keep the prefix
-        };
+        // Legality (bounds / impassable destination / official fuel, Issue
+        // #245): the server would reject the whole day, so stop the prefix
+        // here instead of submitting an action it refuses to judge.
+        let Ok((to, _, fuel)) = official_move(&shadow[0], origin, dir, map) else { break };
         out.push(code);
         used += step;
-        phase_fuel(&mut shadow, &[(agent_id, cost)], &mut events);
-        shadow[0].pos = to; // `try_move` is pure; the sim's apply_moves does this
+        phase_fuel(&mut shadow, &[(agent_id, fuel)], &mut events);
+        shadow[0].pos = to;
     }
 
     if used < day_steps {
@@ -267,7 +329,9 @@ pub fn normalize_day_plan(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Cell, HexCoord, MapGrid, MapSize, MatchSetting, MatchState, TrafficState};
+    use crate::model::{
+        Action, Cell, HexCoord, MapGrid, MapSize, MatchSetting, MatchState, TrafficState,
+    };
     use crate::solver::TeamId;
     use crate::{MatchSim, SimConfig, rules::fuel_cost};
 
@@ -425,6 +489,50 @@ mod tests {
         let normalized = normalize_agent_plan(&funded, &map, 6, &[2, -5]);
         assert_eq!(normalized.as_slice(), &[2, -4]);
         validate_agent_plan(&funded, &map, 6, &normalized).expect("road plan validates");
+    }
+
+    /// Issue #245 — the official server bills a move's fuel on the cell the
+    /// agent **leaves**. An agent parked on a 道路 with 1 fuel cannot step
+    /// off it (road fuel 2) even though the 平地 it enters costs 1: the
+    /// pre-#245 boundary kept that move and the server rejected the whole
+    /// day (match550 day 4 locally, 7-team run day 8).
+    #[test]
+    fn fuel_short_on_the_departed_cell_is_dropped_not_submitted() {
+        let map = map_with('r'); // (1,0) is the road, everything else plain
+        let broke = patrol_at(1, 0, 1);
+        // The weighted budget itself is fine (road 1 + 5 waits = 6); only
+        // the departed cell's fuel bill is not.
+        validate_agent_plan(&broke, &map, 6, &[5, -5])
+            .expect_err("departing a road costs 2 fuel, this patrol carries 1");
+        let normalized = normalize_agent_plan(&broke, &map, 6, &[5, -5]);
+        assert_eq!(normalized.as_slice(), &[-6], "the unaffordable step must not be submitted");
+        validate_agent_plan(&broke, &map, 6, &normalized).expect("padded plan validates");
+
+        // Exactly the road's fuel budget keeps the step: the threshold sits
+        // on `>=`, not on a strict `>` (day 7 of the 7-team run was
+        // accepted with a `fuel == cost` step).
+        let funded = patrol_at(1, 0, 2);
+        assert_eq!(normalize_agent_plan(&funded, &map, 6, &[5, -5]), vec![5, -5]);
+        validate_agent_plan(&funded, &map, 6, &[5, -5]).expect("affordable step validates");
+    }
+
+    /// The shadow tank deducts the **departed** cell's fuel, so it tracks
+    /// the official one move for move — the third step here would still be
+    /// affordable under the old entered-cell deduction (4 − 1 − 1 = 2) but
+    /// not under the official one (4 − 2 − 1 = 1, and entering the road at
+    /// `(3, 0)` costs 2).
+    #[test]
+    fn fuel_is_deducted_from_the_departed_cell() {
+        let row = "rbbrbbbb";
+        let map = grid(&[row; 8]);
+        let agent = patrol_at(0, 0, 4); // standing on the road at (0, 0)
+        let normalized = normalize_agent_plan(&agent, &map, 6, &[2, 2, 2, -3]);
+        assert_eq!(
+            normalized.as_slice(),
+            &[2, 2, -3],
+            "the tank runs dry before the road at (3,0): 1 + 2 + 3 waits = 6"
+        );
+        validate_agent_plan(&agent, &map, 6, &normalized).expect("padded plan validates");
     }
 
     /// AC (b): for plans that end in waits — what the walk/loop candidates

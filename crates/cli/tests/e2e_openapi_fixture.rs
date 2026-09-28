@@ -499,3 +499,296 @@ async fn kinds_composition_reaches_the_wire_and_the_outcome() {
         "an explicit --kinds wins for every solver, wait included"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Issue #245 — low thresholds, 7 agents, multi-day traffic accumulation.
+// ---------------------------------------------------------------------------
+
+/// Fixed, step-major plan for the Issue #245 regression. Agent 0 steps off
+/// the road it is parked on (the move the official *departed-cell* fuel
+/// rule refuses while the tank holds 1), agent 1 walks onto a road cell and
+/// steps back (so the day-start state stays self-consistent across days)
+/// while the daily traffic flips those cells between smooth / busy / jammed,
+/// and everyone else waits.
+struct RoadWalkerSolver;
+
+impl engine::solver::Solver for RoadWalkerSolver {
+    fn name(&self) -> &'static str {
+        "road-walker"
+    }
+
+    fn decide(&self, ctx: &engine::solver::SolverContext) -> engine::solver::SolverDecision {
+        use engine::solver::{Action, Direction};
+        let mut actions = Vec::with_capacity(ctx.expected_action_count());
+        for step in 0..ctx.day_steps {
+            for (idx, id) in ctx.my_agent_ids.iter().enumerate() {
+                actions.push(match (step, idx) {
+                    (0, 1) => Action::step(*id, Direction::Right),
+                    // agent 0 leaves the road it parks on; agent 1 walks
+                    // onto a road cell and steps straight back, so the
+                    // day-start state repeats itself across days.
+                    (0, 0) | (1, 1) => Action::step(*id, Direction::Left),
+                    _ => Action::wait(*id),
+                });
+            }
+        }
+        engine::solver::SolverDecision::new(actions)
+    }
+}
+
+/// Issue #245: `busyThreshold 1`, 7 agents, 4 days, and a road segment whose
+/// status walks smooth → busy → jammed must be accepted on **every** day.
+///
+/// The double reports exactly what the official localhost binary reports —
+/// one `traffics` entry per road cell, all four of them, every day — and
+/// validates each `POST /` against the same day-start map/agents it just
+/// handed out (`engine::wire_plan::validate_agent_plan`, Issue #226). Two
+/// things are pinned:
+///
+/// 1. the traffic overlay keeps the weighted budget exact as a road flips
+///    from 1 to 2 to 4 steps, and
+/// 2. agent 0 — parked on a 道路 with `fuel 1` — must **not** ship the step
+///    off it: leaving a road costs 2 fuel, so the official server rejects
+///    the whole day for that one action (match550 day 4, #245).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[allow(clippy::too_many_lines)]
+async fn low_threshold_traffic_and_departed_cell_fuel_accept_every_day() {
+    const DAYS: usize = 4;
+    const BUDGET: i32 = 16;
+    /// Wire positions of the road segment on row 2, columns 4..=7.
+    const ROAD_POS: [i32; 4] = [20, 21, 22, 23];
+
+    // Day-start status of those roads: 0 smooth, 1 busy, 2 jammed. With
+    // `busyThreshold 1 / jammedThreshold 3` the official day-end traffic
+    // update walks a heavily used cell through smooth → busy → jammed, i.e.
+    // step cost 1 → 2 → 4 for a departure from it.
+    let traffic_by_day: [[i32; 4]; DAYS] = [[0, 0, 0, 0], [0, 1, 1, 0], [0, 2, 1, 0], [0, 2, 2, 1]];
+    // Agent 1 pays road fuel 2 twice a day (right, then back), so its tank
+    // falls by 4 per day — the same timeline a real server would report.
+    let walker_fuel: [u32; DAYS] = [30, 26, 22, 18];
+
+    let mut cells = vec![vec![CellType::TYPE_0; 8]; 8];
+    for cell in cells[2].iter_mut().skip(4) {
+        *cell = CellType::TYPE_1;
+    }
+    let setting = MatchSetting {
+        starts_at: 1,
+        day_seconds: vec![30; DAYS],
+        day_steps: vec![BUDGET; DAYS],
+        map: Map { height: 8, width: 8, cells },
+        spots: vec![],
+        agents: vec![20, 21, 32, 33, 34, 35, 36],
+        fuel_limits: 30,
+        players: 2,
+        busy_threshold: 1,
+        jammed_threshold: 3,
+    };
+    let base = cli::protocol_to_engine::protocol_setting_to_engine(
+        &setting,
+        domain::PlayerId::new("low-threshold").expect("valid team id"),
+    )
+    .expect("setting converts");
+
+    // The validator's per-day view: the same map and agents `GET /` serves.
+    let mut day_maps = Vec::with_capacity(DAYS);
+    let mut day_agents = Vec::with_capacity(DAYS);
+    let mut day_states = Vec::with_capacity(DAYS);
+    for (day, statuses) in traffic_by_day.iter().enumerate() {
+        let mut map = base.map.clone();
+        for (&pos, &status) in ROAD_POS.iter().zip(statuses) {
+            let coord = engine::model::HexCoord::new(pos % 8, pos / 8);
+            let state = match status {
+                1 => engine::model::TrafficState::Busy,
+                2 => engine::model::TrafficState::Jammed,
+                _ => engine::model::TrafficState::Smooth,
+            };
+            map.get_mut(coord).expect("road cell").terrain = engine::model::Terrain::Road(state);
+        }
+        let mut agents = base.agents.clone();
+        agents[0].fuel = 1; // cannot pay the 2 fuel a road departure costs
+        agents[1].fuel = walker_fuel[day];
+        for agent in agents.iter_mut().skip(2) {
+            agent.fuel = 30;
+        }
+        let traffics: Vec<serde_json::Value> = ROAD_POS
+            .iter()
+            .zip(statuses)
+            .map(|(&pos, &status)| json!({ "pos": pos, "status": status }))
+            .collect();
+        day_states.push(json!({
+            "endsAt": 0_i64,
+            "day": i64::try_from(day).unwrap_or(0),
+            "agents": [
+                { "kind": 0, "pos": 20, "fuel": 1 },
+                { "kind": 0, "pos": 21, "fuel": walker_fuel[day] },
+                { "kind": 0, "pos": 32, "fuel": 30 },
+                { "kind": 0, "pos": 33, "fuel": 30 },
+                { "kind": 0, "pos": 34, "fuel": 30 },
+                { "kind": 0, "pos": 35, "fuel": 30 },
+                { "kind": 0, "pos": 36, "fuel": 30 },
+            ],
+            "others": [],
+            "traffics": traffics,
+        }));
+        day_maps.push(map);
+        day_agents.push(agents);
+    }
+    let day_states = Arc::new(day_states);
+    let day_maps = Arc::new(day_maps);
+    let day_agents = Arc::new(day_agents);
+
+    let mut server = Server::new_async().await;
+    let setting_body = serde_json::to_value(&setting).expect("serialise setting");
+    let m_setting = server
+        .mock("GET", "/setting")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(setting_body.to_string())
+        .expect_at_least(1)
+        .create_async()
+        .await;
+    let m_agent = server
+        .mock("POST", "/agent")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("")
+        .expect_at_least(1)
+        .create_async()
+        .await;
+
+    // `endsAt` in the past skips the between-day sleep. The day the last
+    // `GET /` served is remembered so `POST /` validates against exactly
+    // the map/agents it was handed.
+    let day_counter = Arc::new(AtomicUsize::new(0));
+    let current_day = Arc::new(AtomicUsize::new(0));
+    let dc = day_counter.clone();
+    let cd = current_day.clone();
+    let ds = day_states.clone();
+    let m_state = server
+        .mock("GET", "/")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body_from_request(move |_req| {
+            let d = dc.fetch_add(1, Ordering::SeqCst);
+            cd.store(d, Ordering::SeqCst);
+            ds.get(d).or_else(|| ds.last()).expect("day state").to_string().into_bytes()
+        })
+        .expect_at_least(DAYS)
+        .create_async()
+        .await;
+
+    let captured_bodies: Arc<Mutex<Vec<Vec<Vec<i32>>>>> =
+        Arc::new(Mutex::new(Vec::with_capacity(DAYS)));
+    let cb = captured_bodies.clone();
+    let cd_for_post = current_day.clone();
+    let maps = day_maps.clone();
+    let agents = day_agents.clone();
+    let revision_counter = Arc::new(AtomicI32::new(1));
+    let rc = revision_counter.clone();
+    // Official-rule gate (Issue #226 + #245): reject with `revision: -1`
+    // whatever fails `engine::wire_plan::validate_agent_plan` — weighted
+    // budget exact, every move legal under the official fuel rule.
+    let m_actions = server
+        .mock("POST", "/")
+        .match_request(move |req| {
+            if let Ok(body) = req.body() {
+                if let Ok(parsed) = serde_json::from_slice::<Vec<Vec<i32>>>(body) {
+                    cb.lock().expect("captured_bodies lock poisoned").push(parsed);
+                }
+            }
+            true
+        })
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body_from_request(move |req| {
+            let day = cd_for_post.load(Ordering::SeqCst).min(maps.len() - 1);
+            let map = &maps[day];
+            let day_agents = &agents[day];
+            let budget = u32::try_from(BUDGET).unwrap_or(0);
+            let accepted = req
+                .body()
+                .ok()
+                .and_then(|raw| serde_json::from_slice::<Vec<Vec<i32>>>(raw).ok())
+                .is_some_and(|body| {
+                    body.len() == day_agents.len()
+                        && body.iter().enumerate().all(|(idx, plan)| {
+                            engine::wire_plan::validate_agent_plan(
+                                &day_agents[idx],
+                                map,
+                                budget,
+                                plan,
+                            )
+                            .is_ok()
+                        })
+                });
+            let body = if accepted {
+                json!({ "revision": rc.fetch_add(1, Ordering::SeqCst) })
+            } else {
+                json!({ "revision": -1 })
+            };
+            body.to_string().into_bytes()
+        })
+        .expect_at_least(DAYS)
+        .create_async()
+        .await;
+
+    let client = MatchClient::builder(server.url(), "low-threshold-token")
+        .retry_policy(RetryPolicy { max_retries: 0, backoff_millis: &[] })
+        .request_timeout(Duration::from_secs(5))
+        .build()
+        .expect("match client builds");
+    let cfg = CoordinatorLoopConfig {
+        team_id: "low-threshold".to_owned(),
+        setting_poll_interval: Duration::from_millis(20),
+        solver_name: "road-walker".to_owned(),
+        agent_kinds: Some(vec![engine::model::AgentKind::Patrol; 7]),
+        ..CoordinatorLoopConfig::default()
+    };
+    let outcome: CoordinatorOutcome = run_coordinator_loop(client, Box::new(RoadWalkerSolver), cfg)
+        .await
+        .expect("every day of the low-threshold match must be accepted");
+
+    assert_eq!(outcome.days_completed, DAYS, "all days completed");
+    assert!(outcome.revisions.iter().all(|&r| r >= 0), "revisions: {:?}", outcome.revisions);
+
+    {
+        let bodies = captured_bodies.lock().expect("captured_bodies lock poisoned");
+        assert_eq!(bodies.len(), DAYS, "one POST / body per day");
+        let budget = u32::try_from(BUDGET).expect("budget fits u32");
+        for (day, body) in bodies.iter().enumerate() {
+            assert_eq!(body.len(), 7, "day {day}: one inner list per agent");
+            // Issue #245: agent 0 stands on a 道路 with `fuel 1`, and
+            // leaving a road costs 2 fuel. The official server rejects the
+            // whole day for that one action, so the boundary must drop the
+            // step and pad with waits instead of shipping it.
+            assert!(
+                body[0].iter().all(|&code| code < 0),
+                "day {day}: the unaffordable road departure must be dropped, got {:?}",
+                body[0]
+            );
+            // Agent 1's two road steps must fit the day's traffic-weighted
+            // budget exactly — the mock already enforced it, this pins the
+            // value and the failure message.
+            let weighted = engine::wire_plan::validate_agent_plan(
+                &day_agents[day][1],
+                &day_maps[day],
+                budget,
+                &body[1],
+            )
+            .unwrap_or_else(|e| panic!("day {day} agent 1: {e}"));
+            assert_eq!(weighted, budget, "day {day}: agent 1 weighted sum");
+            assert!(
+                body[1].iter().any(|&code| code >= 0),
+                "day {day}: agent 1 must keep its road walk"
+            );
+        }
+        // Accumulated traffic must actually move the plan: a busy road bills
+        // 2 steps and a jammed one 4, so day 1 and day 2 cannot share a body.
+        assert_ne!(bodies[1][1], bodies[2][1], "busy vs jammed roads must split agent 1's plan");
+    }
+
+    m_setting.assert_async().await;
+    m_agent.assert_async().await;
+    m_state.assert_async().await;
+    m_actions.assert_async().await;
+}
