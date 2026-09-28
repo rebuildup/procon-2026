@@ -64,6 +64,7 @@ pub mod case;
 pub mod evaluate;
 pub mod fixture;
 pub mod generator;
+pub mod kinds;
 pub mod report;
 pub mod tournament;
 

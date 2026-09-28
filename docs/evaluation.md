@@ -41,7 +41,8 @@ solver の内部ヒューリスティック（例: `solver-loop` の `ScoreRepor
 | `busyThreshold` / `jammedThreshold` | `CaseSpec::sim_config()` → `SimConfig`。**`SimConfig::default()` (2/5) を使わない** — fixture は 1/2 なので別ゲームになる |
 | `daySteps` の**提出時**解釈（Issue #226） | 公式は **地形加重**で検証する: `Σ(**出発セル**の step cost: 平地2 / 山3 / 道路1・2・4) + Σ待機 == daySteps[day]`。element 数（move=1）でも進入セル基準でもない — localhost probe（`[2,-19]`/`[2,-18]` 平地→道路ペアと `[2,-17]` 平地→山地）で出発セル課金・等号判定を確定。候補（engine の element 時計で plan）は **wire 提出境界** `coordinator_loop` → `engine::wire_plan::normalize_day_plan` で行動 prefix を保ったまま truncate + 待機 pad してから `POST /` する。**候補本体・offline scoring は変更しない**（待機は `MatchSim` で状態不変、tail-wait 系 plan の前後同一性は `wire_plan` の property test で固定） |
 
-agent の種類（巡回/補給）は wire に無いため依然 index 交替の既定（5 台なら 3 巡回 / 2 補給）。種類の決定と燃料上限は別問題です。
+agent の種類（巡回/補給）は wire に無いため、**既定は index 交替**（5 台なら 3 巡回 / 2 補給）。
+種類そのものは `--kinds` で評価軸にできる（Issue #235、下参照）。
 
 ### kind semantics: Supply は玉を取得しない（Issue #234）
 
@@ -58,6 +59,41 @@ offline の挙動が一致します。給油（同一セルの Supply が Patrol
 種類を問わず従来どおりで、Supply がスポットに立っていても給油は成立します。
 `series_*` と `inventory` の変更は `phase_acquire` にしか存在しないため、
 kind 対応漏れはこの1関数に閉じます（engine 内を grep して確認済み）。
+
+### kind 混成の評価軸: `--kinds` と `assign=`（Issue #235）
+
+wire は agent の**開始セルしか持たない**ため、種別の決定は wire 以外の問題です。
+offline の評価器はそれを batch 単位の knob にしました。
+
+```bash
+# 既定（flag 省略）= P,S = 従来の index 交替と byte-identical
+# 5 台の case では 3P2S / 4P1S / 5P0S に対応
+procon-eval --cases all --generated '…' \
+  --candidates '…' --baseline 'loop:iterations=32:initial=greedy' \
+  --kinds 'P,S'        \
+  --output-dir target/eval
+```
+
+| 項目 | 内容 |
+|---|---|
+| 文法 | `--kinds <pattern>` = `kind ("," kind)*`、`kind` は `P` / `S`（`patrol` / `supply` も可、大小無視） |
+| 適用 | **スロット循環**: slot `i` = `pattern[i % len]`。corpus のチームが 3..=8 台と混在するため 1 パターンで全 case を賭ける |
+| 既定 | 省略（または空）= `P,S` — `engine::from_wire` の従来の交互と **byte-identical** |
+| 記録 | `RunRecord.agent_kinds`。**flag ではなくシミュレーション後の** `final_state.setting.agents[].kind` を読む。旧 `runs.jsonl` は `None`（`#[serde(default)]`） |
+| 合法範囲 | **任意の比率が合法**（公式 `POST /agent` は要素数 = エージェント数しか要求しない、`MatchSetting::validate` も kind 比を検査しない）。拒否は「空 / P,S 以外のトークン / 8 スロット超」のみ |
+| 実装 | `crates/bench/src/kinds.rs` → `CaseSpec::to_engine_setting_with_kinds` → `engine::from_wire::protocol_setting_to_engine_with_kinds` |
+| process isolation | 親は `--kinds` を子に転送するだけ（`kinds_survive_process_isolation` が pin） |
+
+**`assign=agents | patrol`（`loop` / `multiloop` の candidate param）** — 誰に tour を割り当てるか:
+
+- `agents`（既定、canonical 末尾に追記）= 現行の全台 tour と **byte-identical**。
+- `patrol` = `ctx.state.agents[].kind == Supply` の agent に target を割り当てない
+  （空 target list = 全日 wait）。**escort / rendezvous は次 Issue**。
+- 未知の値は `validate_spec` で `InvalidParameter`（build 不可）。
+
+> **解釈上の注意**: comfortable corpus は `fuel >= 2 x sum(daySteps)` の不変条件を持つため
+> fuel が枯渇せず、`assign=patrol` の tier1-3 への効果は **0/25/0（引き分け）** に留まる。
+> kind-aware assignment の真価は fuel-tight / multi-day で見る必要がある。
 
 ## スコアと順位
 
@@ -122,8 +158,8 @@ just eval-list
 登録済み:
 
 ```text
-loop                                  iterations / initial / seed / operators / lookahead / walk
-multiloop                             grid / kmeans / seed / refine / walk
+loop                                  iterations / initial / seed / operators / lookahead / walk / assign
+multiloop                             grid / kmeans / seed / refine / walk / assign
 greedy
 nearest
 astar                                 policy
@@ -140,8 +176,10 @@ loop:initial=sweep-row
 loop:initial=sweep-col
 loop:iterations=32:initial=greedy:operators=extended
 loop:iterations=32:initial=greedy:lookahead=crossday
+loop:iterations=32:initial=greedy:assign=patrol
 multiloop:grid=2x2
 multiloop:kmeans=4:seed=42
+multiloop:kmeans=4:seed=42:walk=astar:assign=patrol
 greedy
 nearest
 astar:policy=step
@@ -184,6 +222,15 @@ solver が day-start に決めた **target list の歩き方** を選びます�
 `step_towards` 単独歩行へ degrade し、それも進まなければ待機します。
 パラメータは id の末尾に追記され、既存 canonical ID の形は変わりません。
 
+`assign` の候補（`loop` / `multiloop` 共通、Issue #235）: `agents`（既定）/ `patrol` —
+**誰に tour target を割り当てるか**を選びます（`walk` が「決めた target をどう歩くか」なのに対し）。
+`agents` は全 agent に割り当てて従来の挙動そのままで、`patrol` は
+`SolverContext` → `MatchState.agents[].kind` が `Supply` の agent の target list を
+空にします（空 list = 全日待機）。`Supply` は #234 の通りそもそも玉を取得しないので、
+comfortable corpus ではスコア差になりません（tier1-3 は 0/25/0）。escort / rendezvous
+（補給車が巡回車に追随する）は**次 Issue**。
+未知の値は `validate_spec` で拒否され、パラメータは id の末尾に追記されます。
+
 `multiloop` は `solver-loop::MultiLoopComposer` を evaluator に接続した
 領域分割候補（Issue #190）。**`grid` と `kmeans` のどちらか一方だけ**を指定します。
 
@@ -194,6 +241,7 @@ solver が day-start に決めた **target list の歩き方** を選びます�
 | `seed` | u64 | `kmeans` が在る時 **必須**、`grid` の時 **拒否**（`loop` の `initial=random` と同じ規則） |
 | `refine` | `true` / `false` | region 毎の 2-opt refinement。省略時の既定は composer 自身の既定どおり `true` |
 | `walk` | `greedy` / `astar` | target list の歩き方（`loop` と同一、Issue #215）。省略時の既定は `greedy`（従来の `plan_walk`） |
+| `assign` | `agents` / `patrol` | 誰に target を割り当てるか（`loop` と同一、Issue #235）。省略時の既定は `agents`（従来の全台 tour） |
 
 offline の `initial=` と live CLI の `--loop-initial-strategy` の対応は
 [`docs/development.md`](development.md)（Issue #170 の節）と

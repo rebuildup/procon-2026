@@ -47,6 +47,7 @@ fn evaluator() -> Evaluator {
         team: team(),
         harness_deadline: HarnessDeadline::default(),
         isolation: Isolation::Thread,
+        kinds: None,
     })
 }
 

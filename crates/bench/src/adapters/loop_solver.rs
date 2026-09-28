@@ -26,6 +26,13 @@
 //! A*-planned legs (Issue #215) — see [`super::astar_walk`]. It is likewise
 //! appended last in [`PARAMS`], after `operators`.
 //!
+//! `assign` (Issue #235) selects who the tour is *for*: `assign=agents`
+//! (the default) is every agent, exactly as before; `assign=patrol` withholds
+//! the target list from Supply agents so they wait instead of walking spots
+//! they cannot collect from (Issue #234 made that explicit). The parameter is
+//! appended last in [`PARAMS`], so every pre-existing canonical id keeps its
+//! bytes and its meaning.
+//!
 //! Every `initial=` value here has exactly one live-CLI counterpart
 //! (`procon tournament|coordinator --loop-initial-strategy <label>`); the
 //! correspondence table lives in `crates/cli/src/initial_strategy.rs`.
@@ -79,7 +86,7 @@ use solver_loop::{
     Series as LoopSeries, SolveProblem, Solver as _, Spot as LoopSpot,
 };
 
-use super::walk::{WalkMode, parse_walk, plan_walk_with, step_towards};
+use super::walk::{AssignMode, WalkMode, parse_assign, parse_walk, plan_walk_with, step_towards};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
 /// Parameter schema, in canonical id order.
@@ -119,6 +126,12 @@ pub const PARAMS: &[ParamSpec] = &[
         required: false,
         doc: "day walk over the solved target list: greedy (default; today's plan_walk) | \
               astar (visit the list in order with A* legs, Issue #215)",
+    },
+    ParamSpec {
+        key: "assign",
+        required: false,
+        doc: "who receives a tour target: agents (default; every agent, pre-#235) | \
+              patrol (Supply agents get no target and wait, Issue #235)",
     },
 ];
 
@@ -188,6 +201,8 @@ pub struct LoopCandidate {
     lookahead: Lookahead,
     /// How the solved target lists are walked ([`super::walk::WalkMode`]).
     walk: WalkMode,
+    /// Which agents receive a target list at all ([`super::walk::AssignMode`]).
+    assign: AssignMode,
 }
 
 impl LoopCandidate {
@@ -198,11 +213,13 @@ impl LoopCandidate {
         let operators = parse_operators(spec)?;
         let lookahead = parse_lookahead(spec)?;
         let walk = parse_walk(spec)?;
+        let assign = parse_assign(spec)?;
         Ok(Self {
             inner: LoopSolver::with_operators(initial, iterations, operators),
             id: spec.id(),
             lookahead,
             walk,
+            assign,
         })
     }
 
@@ -261,7 +278,10 @@ impl Solver for LoopCandidate {
 
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         match self.day_targets(ctx) {
-            Ok(targets) => plan_walk_with(ctx, &targets, self.walk),
+            // `assign` filters the finished target lists, so it composes with
+            // every `lookahead` / `operators` / `walk` combination without any
+            // of them having to know kinds exist (Issue #235).
+            Ok(targets) => plan_walk_with(ctx, &self.assign.apply(ctx, targets), self.walk),
             Err(err) => {
                 tracing::debug!(candidate = %self.id, error = %err, "loop solve failed; waiting");
                 AgentActions::wait_all(&ctx.agent_ids, ctx.day_steps)
@@ -668,7 +688,8 @@ impl CandidateFactory for LoopFactory {
     fn describe(&self) -> &'static str {
         "Iterative-improvement loop tour (2-opt / 3-opt) over the day's spots, \
          then walk the visit order. Supports initial=, iterations=, operators=, \
-         lookahead= and walk= sweeps (lookahead=crossday plans the remaining days)."
+         lookahead=, walk= and assign= sweeps (lookahead=crossday plans the \
+         remaining days; assign=patrol withholds the tour from Supply agents)."
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {
@@ -676,6 +697,7 @@ impl CandidateFactory for LoopFactory {
         parse_operators(spec)?;
         parse_lookahead(spec)?;
         parse_walk(spec)?;
+        parse_assign(spec)?;
         Ok(())
     }
 
@@ -1121,7 +1143,12 @@ mod tests {
         let cat = reg.catalog();
         let entry = cat.algorithms.iter().find(|a| a.algorithm == "loop").expect("loop listed");
         let keys: Vec<&str> = entry.params.iter().map(|p| p.key.as_str()).collect();
-        assert_eq!(keys, ["iterations", "initial", "seed", "operators", "lookahead", "walk"]);
+        // `assign` (#235) is appended after `walk` (#215): every older
+        // canonical id keeps its exact shape.
+        assert_eq!(
+            keys,
+            ["iterations", "initial", "seed", "operators", "lookahead", "walk", "assign"]
+        );
     }
 
     // ------------------------------------------------------------------

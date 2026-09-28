@@ -30,22 +30,34 @@
 //! by a separate terrain variant; the adapter therefore overlays `p.spots`
 //! onto the plain cells after the base terrain pass.
 //!
-//! # Agent composition (MVP)
+//! # Agent composition
 //!
 //! The wire exposes only initial cell indices (`MatchSetting.agents`); the
-//! engine needs `(id, kind, pos, fuel_cap, inventory)`. The MVP rule is the
-//! simplest legal alternation that satisfies the team-composition validator:
+//! engine needs `(id, kind, pos, fuel_cap, inventory)`. The default rule is
+//! the simplest legal alternation that satisfies the team-composition
+//! validator:
 //!
-//! - even index -> `Agent::patrol(id, pos, day_steps, 3)`,
+//! - even index -> `Agent::patrol_with_fuel(id, pos, fuelLimits)`,
 //! - odd index  -> `Agent::supply(id, pos)` (fuel uncapped).
 //!
-//! The 3x multiplier is the canonical patrol cap from [`crate::model`]; real
-//! kinds come from `POST /agent` on the live path (the solver picks them, the
-//! coordinator just stores them).
+//! Real kinds come from `POST /agent` on the live path (the solver picks
+//! them, the coordinator just stores them).
 //!
 //! This alternation is **deterministic given the wire setting**, so two runs
 //! of the same fixture always field the same team composition. That is what
 //! makes cross-candidate comparison on a fixed corpus meaningful.
+//!
+//! [`protocol_setting_to_engine_with_kinds`] takes an explicit per-agent
+//! composition instead, which is how the evaluator's `--kinds` knob (Issue
+//! #235) plays "the same board, a different team". `None` — and therefore
+//! [`protocol_setting_to_engine`] — keeps the alternation above
+//! byte-for-byte, so every pre-existing piece of evidence keeps its meaning.
+//! The composition is *not* constrained to contain both kinds: the official
+//! `POST /agent` schema only requires `AgentKind[]` of the agent count (see
+//! the module docs' spec sources), and [`crate::model::MatchSetting::validate`]
+//! checks no kind ratio either. Only the length is checked, because a
+//! composition that does not cover every agent describes a team the wire
+//! never asked for.
 //!
 //! # Day parameters
 //!
@@ -78,7 +90,9 @@
 //! [`protocol_setting_to_engine`] only builds the match setting.
 
 use crate::model::MatchSetting as EngineSetting;
-use crate::model::{Agent, Cell, HexCoord, MapGrid, MapSize, Spot, Terrain, TrafficState};
+use crate::model::{
+    Agent, AgentKind, Cell, HexCoord, MapGrid, MapSize, Spot, Terrain, TrafficState,
+};
 use crate::rules::TrafficThresholds;
 use crate::solver::TeamId;
 use crate::{MatchSim, SimConfig};
@@ -111,8 +125,22 @@ pub fn match_sim_for_wire(p: &WireSetting) -> Result<MatchSim, String> {
     Ok(MatchSim::new(sim_config_from_wire(p)?))
 }
 
+/// The default team composition: even agent slot -> [`AgentKind::Patrol`],
+/// odd slot -> [`AgentKind::Supply`].
+///
+/// This is the alternation [`protocol_setting_to_engine`] has always used,
+/// factored out so a caller (and a regression test) can name it: passing
+/// `Some(&default_agent_kinds(n))` must produce exactly what passing `None`
+/// does.
+#[must_use]
+pub fn default_agent_kinds(n_agents: usize) -> Vec<AgentKind> {
+    (0..n_agents)
+        .map(|idx| if idx % 2 == 0 { AgentKind::Patrol } else { AgentKind::Supply })
+        .collect()
+}
+
 /// Convert a wire [`WireSetting`] into an [`EngineSetting`] ready for
-/// [`crate::MatchSim`].
+/// [`crate::MatchSim`], fielding [`default_agent_kinds`].
 ///
 /// # Errors
 ///
@@ -120,6 +148,36 @@ pub fn match_sim_for_wire(p: &WireSetting) -> Result<MatchSim, String> {
 /// in a way the engine cannot recover from (out-of-bounds `CellType`,
 /// row-major index that does not fit the map, mismatched cell count, …).
 pub fn protocol_setting_to_engine(p: &WireSetting, team: TeamId) -> Result<EngineSetting, String> {
+    protocol_setting_to_engine_with_kinds(p, team, None)
+}
+
+/// [`protocol_setting_to_engine`] with an explicit per-slot kind composition.
+///
+/// `kinds` indexes the wire agent slots in order: `kinds[i]` becomes the kind
+/// of agent `i`, so a different composition changes *who* patrols without
+/// touching the board, the budgets or the fuel cap. `None` selects
+/// [`default_agent_kinds`] — the historical alternation — and is exactly what
+/// [`protocol_setting_to_engine`] passes.
+///
+/// # Legality
+///
+/// Only the **length** is constrained: a composition must name a kind for
+/// every agent the wire declares. Any ratio of patrol to supply is legal —
+/// the official `POST /agent` schema requires an `AgentKind[]` whose element
+/// count equals the agent count and nothing more (OpenAPI
+/// `ProconApi_submitAgentKinds`, vendored in
+/// `docs/pdf/回答システムに関する情報・簡易版の回答用サーバー_1.zip`), and
+/// [`crate::model::MatchSetting::validate`] checks no kind ratio either.
+///
+/// # Errors
+///
+/// [`protocol_setting_to_engine`]'s errors, plus
+/// `kinds.len() != p.agents.len()`.
+pub fn protocol_setting_to_engine_with_kinds(
+    p: &WireSetting,
+    team: TeamId,
+    kinds: Option<&[AgentKind]>,
+) -> Result<EngineSetting, String> {
     let width = u8::try_from(p.map.width).map_err(|_| "map.width out of u8 range")?;
     let height = u8::try_from(p.map.height).map_err(|_| "map.height out of u8 range")?;
     let size = MapSize::new(width, height)?;
@@ -204,6 +262,25 @@ pub fn protocol_setting_to_engine(p: &WireSetting, team: TeamId) -> Result<Engin
     if fuel_cap == 0 {
         return Err("fuelLimits must be >= 1".to_owned());
     }
+    // Kind composition: an explicit list, or the historical alternation.
+    // The length check runs before any agent is built so a half-applied
+    // composition can never reach `MatchState::new`.
+    let fallback_kinds;
+    let kinds: &[AgentKind] = match kinds {
+        Some(explicit) => explicit,
+        None => {
+            fallback_kinds = default_agent_kinds(p.agents.len());
+            fallback_kinds.as_slice()
+        }
+    };
+    if kinds.len() != p.agents.len() {
+        return Err(format!(
+            "agent kind composition has {} entries but the setting has {} agents",
+            kinds.len(),
+            p.agents.len()
+        ));
+    }
+
     let mut agents = Vec::with_capacity(p.agents.len());
     for (idx, wire_pos) in p.agents.iter().enumerate() {
         let pos_idx = usize::try_from(*wire_pos)
@@ -215,10 +292,9 @@ pub fn protocol_setting_to_engine(p: &WireSetting, team: TeamId) -> Result<Engin
             i32::try_from(row).map_err(|_| "agent row out of i32 range")?,
         );
         let id = u8::try_from(idx).map_err(|_| format!("agent index {idx} out of u8 range"))?;
-        let agent = if idx % 2 == 0 {
-            Agent::patrol_with_fuel(id, coord, fuel_cap)
-        } else {
-            Agent::supply(id, coord)
+        let agent = match kinds[idx] {
+            AgentKind::Patrol => Agent::patrol_with_fuel(id, coord, fuel_cap),
+            AgentKind::Supply => Agent::supply(id, coord),
         };
         agents.push(agent);
     }
@@ -384,5 +460,97 @@ mod tests {
         let a = protocol_setting_to_engine(&wire_setting(), team.clone()).unwrap();
         let b = protocol_setting_to_engine(&wire_setting(), team).unwrap();
         assert_eq!(a, b);
+    }
+
+    /// [`wire_setting`] with `n` agent start cells on plain, spot-free cells
+    /// (row 0, columns 0..8 — the only spot sits at row 4).
+    fn wire_setting_n(n: usize) -> WireSetting {
+        let mut wire = wire_setting();
+        wire.agents = (0..n).map(|col| i32::try_from(col).expect("n <= 8 fits in i32")).collect();
+        wire
+    }
+
+    /// Issue #235 — the default must stay the historical alternation. Both
+    /// spellings (`None` and the explicit default list) produce the same
+    /// setting, and that setting is even-slot patrol / odd-slot supply.
+    #[test]
+    fn default_kinds_are_exactly_the_historical_alternation() {
+        for n in 3..=8 {
+            let team = TeamId::new("player-a").unwrap();
+            let implicit = protocol_setting_to_engine(&wire_setting_n(n), team.clone()).unwrap();
+            let explicit = protocol_setting_to_engine_with_kinds(
+                &wire_setting_n(n),
+                team.clone(),
+                Some(&default_agent_kinds(n)),
+            )
+            .unwrap();
+            assert_eq!(implicit, explicit, "n={n}: None must equal Some(default)");
+            assert_eq!(default_agent_kinds(n).len(), n);
+            for (idx, agent) in implicit.agents.iter().enumerate() {
+                let want = if idx % 2 == 0 { AgentKind::Patrol } else { AgentKind::Supply };
+                assert_eq!(agent.kind, want, "n={n} slot {idx}");
+            }
+        }
+    }
+
+    /// Issue #235 — an explicit composition overrides the alternation for
+    /// every slot, without touching positions or the fuel cap.
+    #[test]
+    fn explicit_kinds_override_the_alternation() {
+        let team = TeamId::new("player-a").unwrap();
+        let composition = [AgentKind::Supply, AgentKind::Patrol];
+        let setting =
+            protocol_setting_to_engine_with_kinds(&wire_setting(), team, Some(&composition))
+                .unwrap();
+        assert_eq!(setting.agents[0].kind, AgentKind::Supply);
+        assert_eq!(setting.agents[1].kind, AgentKind::Patrol);
+        // The supply agent keeps its uncapped fuel, the patrol agent keeps
+        // the wire's `fuelLimits` — kind changes role, not the budget.
+        assert_eq!(setting.agents[0].fuel_cap, u32::MAX);
+        assert_eq!(setting.agents[1].fuel_cap, 30);
+    }
+
+    /// Issue #235 — a composition that does not cover every agent describes a
+    /// team the wire never asked for, so it is rejected before `MatchState::new`.
+    #[test]
+    fn a_composition_of_the_wrong_length_is_rejected() {
+        let team = TeamId::new("player-a").unwrap();
+        let short = [AgentKind::Patrol];
+        let err =
+            protocol_setting_to_engine_with_kinds(&wire_setting(), team.clone(), Some(&short))
+                .expect_err("1 entry cannot cover 2 agents");
+        assert!(err.contains("kind composition"), "{err}");
+
+        let long = [AgentKind::Patrol; 8];
+        let err = protocol_setting_to_engine_with_kinds(&wire_setting_n(3), team, Some(&long))
+            .expect_err("8 entries cannot cover 3 agents");
+        assert!(err.contains("kind composition"), "{err}");
+    }
+
+    /// Issue #235 legality finding — **no official rule requires both kinds**.
+    ///
+    /// The official `POST /agent` schema only demands an `AgentKind[]` whose
+    /// length equals the agent count (OpenAPI `ProconApi_submitAgentKinds`),
+    /// and `MatchSetting::validate` checks no kind ratio. An all-patrol team
+    /// therefore converts and validates, and so does an all-supply one.
+    #[test]
+    fn single_kind_teams_are_legal() {
+        let team = TeamId::new("player-a").unwrap();
+        let all_patrol = [AgentKind::Patrol; 5];
+        let setting = protocol_setting_to_engine_with_kinds(
+            &wire_setting_n(5),
+            team.clone(),
+            Some(&all_patrol),
+        )
+        .expect("5P0S is legal");
+        assert!(setting.agents.iter().all(|a| a.kind == AgentKind::Patrol));
+        setting.validate().expect("the validator accepts it too");
+
+        let all_supply = [AgentKind::Supply; 5];
+        let setting =
+            protocol_setting_to_engine_with_kinds(&wire_setting_n(5), team, Some(&all_supply))
+                .expect("0P5S is legal");
+        assert!(setting.agents.iter().all(|a| a.kind == AgentKind::Supply));
+        setting.validate().expect("the validator accepts it too");
     }
 }

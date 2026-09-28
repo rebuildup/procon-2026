@@ -33,13 +33,14 @@
 //! `astar` is [`super::astar_walk::plan_walk_astar`] (Issue #215). The
 //! adapter reuses the loop adapter's `problem_from_state` / `agent_targets`
 //! helpers so the two candidates differ only in tour construction (and, with
-//! `walk=`, in how the resulting lists are walked).
+//! `walk=`, in how the resulting lists are walked, and with `assign=`, in who
+//! receives a list at all — Issue #235, see [`super::walk::AssignMode`]).
 
 use engine::model::{AgentActions, Solver, SolverContext};
 use solver_loop::{ClusteringStrategy, MultiLoopComposer, Solver as _};
 
 use super::loop_solver::{agent_targets, problem_from_state};
-use super::walk::{WalkMode, parse_walk, plan_walk_with};
+use super::walk::{AssignMode, WalkMode, parse_assign, parse_walk, plan_walk_with};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
 /// Parameter schema, in canonical id order.
@@ -73,6 +74,12 @@ pub const PARAMS: &[ParamSpec] = &[
         doc: "day walk over the solved target lists: greedy (default; today's plan_walk) | \
               astar (visit each list in order with A* legs, Issue #215)",
     },
+    ParamSpec {
+        key: "assign",
+        required: false,
+        doc: "who receives a tour target: agents (default; every agent, pre-#235) | \
+              patrol (Supply agents get no target and wait, Issue #235)",
+    },
 ];
 
 /// Widest accepted grid dimension: the contest map is at most
@@ -105,6 +112,8 @@ pub struct MultiLoopCandidate {
     /// How the solved per-agent target lists are walked
     /// ([`super::walk::WalkMode`]).
     walk: WalkMode,
+    /// Which agents receive a target list at all ([`super::walk::AssignMode`]).
+    assign: AssignMode,
 }
 
 impl MultiLoopCandidate {
@@ -114,12 +123,13 @@ impl MultiLoopCandidate {
         let (num_regions, clustering) = clustering_from_spec(spec)?;
         let refine = parse_refine(spec)?;
         let walk = parse_walk(spec)?;
+        let assign = parse_assign(spec)?;
         let inner = if refine {
             MultiLoopComposer::new(num_regions, clustering)
         } else {
             MultiLoopComposer::without_refinement(num_regions, clustering)
         };
-        Ok(Self { inner, id: spec.id(), walk })
+        Ok(Self { inner, id: spec.id(), walk, assign })
     }
 }
 
@@ -135,7 +145,7 @@ impl Solver for MultiLoopCandidate {
         match self.inner.solve(&problem) {
             Ok(outcome) => {
                 let per_agent = agent_targets(ctx, &outcome);
-                plan_walk_with(ctx, &per_agent, self.walk)
+                plan_walk_with(ctx, &self.assign.apply(ctx, per_agent), self.walk)
             }
             Err(err) => {
                 tracing::debug!(candidate = %self.id, error = %err, "multiloop solve failed; waiting");
@@ -315,13 +325,15 @@ impl CandidateFactory for MultiLoopFactory {
     fn describe(&self) -> &'static str {
         "Region-clustering tour: partition spots (grid or k-means), build one tour per \
          region, hand regions to agents round-robin. A different mechanism from `loop`. \
-         Supports refine= and walk= sweeps."
+         Supports refine=, walk= and assign= sweeps (assign=patrol withholds the tour \
+         from Supply agents, Issue #235)."
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {
         clustering_from_spec(spec)?;
         parse_refine(spec)?;
         parse_walk(spec)?;
+        parse_assign(spec)?;
         Ok(())
     }
 
@@ -362,7 +374,9 @@ mod tests {
             cat.algorithms.iter().find(|a| a.algorithm == "multiloop").expect("multiloop listed");
         let keys: Vec<&str> = entry.params.iter().map(|p| p.key.as_str()).collect();
         // `walk` is appended last (Issue #215) so pre-existing ids keep shape.
-        assert_eq!(keys, ["grid", "kmeans", "seed", "refine", "walk"]);
+        // `assign` (#235) is appended after `walk` (#215), so older
+        // canonical ids keep their exact shape.
+        assert_eq!(keys, ["grid", "kmeans", "seed", "refine", "walk", "assign"]);
     }
 
     #[test]

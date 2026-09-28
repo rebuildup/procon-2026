@@ -423,6 +423,7 @@ mod tests {
             day_budget_exceeded_days: Vec::new(),
             daily_response_us: vec![rt],
             daily_varieties: vec![d],
+            agent_kinds: None,
         }
     }
 

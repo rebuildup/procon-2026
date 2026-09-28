@@ -737,9 +737,13 @@ mod tests {
         let loop_entry =
             cat.algorithms.iter().find(|a| a.algorithm == "loop").expect("loop in catalog");
         let keys: Vec<_> = loop_entry.params.iter().map(|p| p.key.as_str()).collect();
-        // Canonical id order: `operators` (#191), `lookahead` (#193), then
-        // `walk` (#215) appended last — older ids keep their exact shape.
-        assert_eq!(keys, vec!["iterations", "initial", "seed", "operators", "lookahead", "walk"]);
+        // Canonical id order: `operators` (#191), `lookahead` (#193), `walk`
+        // (#215), then `assign` (#235) appended last — older ids keep their
+        // exact shape.
+        assert_eq!(
+            keys,
+            vec!["iterations", "initial", "seed", "operators", "lookahead", "walk", "assign"]
+        );
         let json = serde_json::to_string_pretty(&cat).unwrap();
         assert!(json.contains("sweep-row"));
         // `reverse` ships in the `initial` value list (Issue #170).
