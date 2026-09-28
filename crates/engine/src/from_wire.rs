@@ -114,7 +114,10 @@ pub fn sim_config_from_wire(p: &WireSetting) -> Result<SimConfig, String> {
     let jammed =
         u32::try_from(p.jammed_threshold).map_err(|_| "jammedThreshold out of range".to_owned())?;
     let traffic_thresholds = TrafficThresholds::new(busy, jammed)?;
-    Ok(SimConfig { traffic_thresholds })
+    // `oracle_refill` is a counterfactual (Issue #243) and never derivable
+    // from the wire: the official setting has no such knob, so a case parsed
+    // here always plays by the real refuel rule.
+    Ok(SimConfig { traffic_thresholds, oracle_refill: false })
 }
 
 /// Convenience: the [`MatchSim`] configured for this wire setting.

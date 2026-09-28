@@ -424,6 +424,8 @@ mod tests {
             daily_response_us: vec![rt],
             daily_varieties: vec![d],
             agent_kinds: None,
+            agent_ball_counts: None,
+            oracle_refill: false,
         }
     }
 

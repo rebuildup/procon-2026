@@ -39,6 +39,7 @@ fn config() -> EvalConfig {
         harness_deadline: HarnessDeadline::default(),
         isolation: Isolation::Thread,
         kinds: None,
+        oracle_refill: false,
     }
 }
 

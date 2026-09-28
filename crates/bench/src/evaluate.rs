@@ -206,6 +206,25 @@ pub struct RunRecord {
     /// composition is read back from the simulated setting, not from the flag.
     #[serde(default)]
     pub agent_kinds: Option<Vec<engine::model::AgentKind>>,
+    /// Balls each agent slot finished with, one entry per agent in
+    /// `ctx.agent_ids` order (Issue #243).
+    ///
+    /// `None` only on records written before this axis existed and on runs
+    /// that never produced a final state. Its job is the Issue #243 ablation
+    /// metric that `total_balls` cannot express: **how many agents reached
+    /// the board at all** (a `0` entry = that agent never collected a ball).
+    #[serde(default)]
+    pub agent_ball_counts: Option<Vec<u32>>,
+    /// True when this run simulated the `oracle_refill` counterfactual
+    /// (Issue #243): Patrol tanks refilled to cap at each day boundary.
+    ///
+    /// `false` (the default, `#[serde(default)]` for records written before
+    /// the axis existed) is the official refuel rule. Recorded because the
+    /// counterfactual lives in `SimConfig`, which the final state does not
+    /// retain — without this field a later re-aggregation could not tell a
+    /// counterfactual run apart from evidence.
+    #[serde(default)]
+    pub oracle_refill: bool,
 }
 
 impl RunRecord {
@@ -281,6 +300,9 @@ impl RunRecord {
             // No final state was reached, so there is no team to report —
             // `None` rather than a composition that was never observed.
             agent_kinds: None,
+            agent_ball_counts: None,
+            // No run happened, so no counterfactual was simulated.
+            oracle_refill: false,
         }
     }
 }
@@ -312,6 +334,16 @@ pub struct EvalConfig {
     /// is a *pattern* expanded per case with [`crate::kinds::resolve_kinds`],
     /// because the corpus fields teams of 3, 4, 5, 6 and 8 agents.
     pub kinds: Option<Vec<engine::model::AgentKind>>,
+    /// Counterfactual: top every Patrol tank up to `fuel_cap` at each day
+    /// boundary (Issue #243's `oracle_refill`).
+    ///
+    /// **Default `false` — byte-identical, and never a default evidence
+    /// path.** The official rule refuels only on supply contact, so this
+    /// knob exists solely to measure how much a result is explained by fuel
+    /// exhaustion versus the absence of supply rendezvous (an ablation axis,
+    /// not a strategy). The flag travels to the `--worker` child so process
+    /// isolation cannot silently drop it.
+    pub oracle_refill: bool,
 }
 
 /// How the harness deadline for one run is chosen.
@@ -386,7 +418,18 @@ impl EvalConfig {
             harness_deadline,
             isolation: Isolation::Thread,
             kinds: None,
+            oracle_refill: false,
         }
+    }
+
+    /// Enable the `oracle_refill` counterfactual (Issue #243).
+    ///
+    /// Off by default; call this only from an analysis invocation that is
+    /// deliberately measuring the fuel axis.
+    #[must_use]
+    pub fn with_oracle_refill(mut self, oracle_refill: bool) -> Self {
+        self.oracle_refill = oracle_refill;
+        self
     }
 
     /// Set the agent-kind composition pattern (Issue #235's `--kinds` axis).
@@ -609,6 +652,10 @@ impl Evaluator {
             .arg(self.config.kinds.as_ref().map_or_else(String::new, |p| render_kinds(p)))
             .arg("--harness-timeout-ms")
             .arg(deadline_ms.to_string())
+            // Analysis-only counterfactual (Issue #243): forwarded explicitly
+            // so a batch that asked for `oracle_refill` does not silently
+            // fall back to the official refuel rule under process isolation.
+            .args(self.config.oracle_refill.then_some("--oracle-refill"))
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
@@ -658,7 +705,7 @@ impl Evaluator {
         // Traffic thresholds are a property of the *case*. Taking them from
         // `SimConfig::default()` instead would evaluate the case under a
         // different promotion/jamming schedule than it declares.
-        let sim_config = match case.sim_config() {
+        let mut sim_config = match case.sim_config() {
             Ok(c) => c,
             Err(err) => {
                 return RunRecord::unscored(
@@ -671,6 +718,11 @@ impl Evaluator {
                 );
             }
         };
+        // The counterfactual rides on the batch config, never on the case: a
+        // case file is a board, and `oracle_refill` is an analysis axis
+        // (Issue #243). With the default `false`, `sim_config` stays exactly
+        // as the case declared it.
+        sim_config.oracle_refill = self.config.oracle_refill;
 
         self.run_isolated(candidate_id, case, solver, setting, sim_config)
     }
@@ -853,8 +905,27 @@ impl Evaluator {
             agent_kinds: Some(
                 run.final_state.setting.agents.iter().map(|a| a.kind).collect::<Vec<_>>(),
             ),
+            // Per-agent ball tallies (Issue #243's "zero-arrival" axis):
+            // read back from the final inventories, one entry per agent in
+            // `ctx.agent_ids` order (ascending id, matching `agent_kinds`).
+            agent_ball_counts: Some(agent_ball_counts(&run.final_state)),
+            // The config that actually built *this* run's `SimConfig` — the
+            // child's own config under process isolation, so a dropped
+            // `--oracle-refill` flag shows up as `false` here instead of
+            // being masked by the parent's claim.
+            oracle_refill: self.config.oracle_refill,
         }
     }
+}
+
+/// Balls finished by each agent, in ascending agent-id order.
+///
+/// `total_balls` is the sum of this vector; the vector is what shows *which*
+/// agents never reached a ball (Issue #243's zero-arrival metric).
+fn agent_ball_counts(state: &engine::model::MatchState) -> Vec<u32> {
+    let mut agents: Vec<&engine::model::Agent> = state.agents.iter().collect();
+    agents.sort_by_key(|a| a.id);
+    agents.iter().map(|a| a.total_inventory()).collect()
 }
 
 /// Per-run timing and contract-compliance evidence.
@@ -1016,6 +1087,7 @@ mod tests {
             harness_deadline: HarnessDeadline::default(),
             isolation: Isolation::Thread,
             kinds: None,
+            oracle_refill: false,
         });
 
         // Pretend a worker came back with its own (wrong) identity.
@@ -1056,6 +1128,7 @@ mod tests {
             harness_deadline: HarnessDeadline::default(),
             isolation: Isolation::Thread,
             kinds: None,
+            oracle_refill: false,
         });
 
         // Pretend a worker came back spelling the id its own way.
@@ -1117,6 +1190,55 @@ mod tests {
         assert_eq!(record.total_balls, 0);
         // But the run was real: days were simulated and timed.
         assert!(!record.daily_response_us.is_empty() || record.elapsed_us > 0);
+    }
+
+    /// Issue #243 — `oracle_refill` defaults to OFF end to end: an
+    /// `EvalConfig::new` batch must produce records that say `false`, and
+    /// only an explicit opt-in records `true`. The recorded flag is what
+    /// keeps a counterfactual run distinguishable from evidence in
+    /// `runs.jsonl`.
+    #[test]
+    fn oracle_refill_defaults_off_and_is_recorded_on_the_run() {
+        assert!(!config().oracle_refill, "the counterfactual must default to off");
+
+        let reg = registry();
+        let candidate = reg.build("wait").unwrap();
+        let case = CaseSpec::from_bundled_fixture("small-8x8").unwrap();
+
+        let default_run = Evaluator::new(config()).evaluate_one(&candidate, &case);
+        assert!(!default_run.oracle_refill, "a default batch must not record the counterfactual");
+
+        let counterfactual = config().with_oracle_refill(true);
+        assert!(counterfactual.oracle_refill, "with_oracle_refill(true) must flip the knob");
+        let flagged_run = Evaluator::new(counterfactual).evaluate_one(&candidate, &case);
+        assert!(flagged_run.oracle_refill, "the opt-in must reach the record");
+    }
+
+    /// Issue #243 — `agent_ball_counts` is the zero-arrival axis: one entry
+    /// per agent, summing to `total_balls`, so "how many agents never
+    /// collected" is readable straight off the record.
+    #[test]
+    fn agent_ball_counts_has_one_entry_per_agent_and_sums_to_total_balls() {
+        let reg = registry();
+        let candidate = reg.build("loop:iterations=2:initial=greedy").unwrap();
+        let case = CaseSpec::from_bundled_fixture("small-8x8").unwrap();
+        let record = Evaluator::new(config()).evaluate_one(&candidate, &case);
+        assert_eq!(
+            record.status,
+            RunStatus::Success,
+            "{}",
+            record.status_detail.unwrap_or_default()
+        );
+
+        let counts = record.agent_ball_counts.expect("scored runs carry per-agent tallies");
+        assert_eq!(counts.len(), 3, "small-8x8 fields 3 agents");
+        assert_eq!(
+            counts.iter().sum::<u32>(),
+            record.total_balls,
+            "the per-agent tallies must add up to tier 3"
+        );
+        // `wait` would be all zeros — prove the vector is not vacuous.
+        assert!(counts.iter().sum::<u32>() > 0, "the greedy loop must collect at least one ball");
     }
 
     #[test]

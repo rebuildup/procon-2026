@@ -29,19 +29,29 @@ use std::collections::HashMap;
 use crate::model::{AgentActions, MatchSetting, MatchState, RunResult, Solver, SolverContext};
 use crate::rules::TrafficThresholds;
 use crate::transitions::{
-    MoveOutcome, StepEvent, apply_moves, begin_day, phase_acquire, phase_fuel, phase_spawn,
-    phase_traffic_update, phase_wait, record_traversal, refill_fuel_if_supply_present,
+    MoveOutcome, StepEvent, apply_moves, begin_day, phase_acquire, phase_fuel, phase_oracle_refill,
+    phase_spawn, phase_traffic_update, phase_wait, record_traversal, refill_fuel_if_supply_present,
 };
 
 /// Configuration for [`MatchSim`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SimConfig {
     pub traffic_thresholds: TrafficThresholds,
+    /// Counterfactual day-boundary tank refill (Issue #243, `oracle_refill`).
+    ///
+    /// `false` (the default) is the official rule and must stay
+    /// byte-identical: the only thing that ever refuels a Patrol tank in a
+    /// real match is supply contact ([`crate::transitions::
+    /// refill_fuel_if_supply_present`]). `true` additionally restores every
+    /// Patrol tank to its cap at each day boundary — an **analysis-only**
+    /// counterfactual used to measure how much of a result fuel exhaustion
+    /// explains, never a default evidence path.
+    pub oracle_refill: bool,
 }
 
 impl Default for SimConfig {
     fn default() -> Self {
-        Self { traffic_thresholds: TrafficThresholds::default() }
+        Self { traffic_thresholds: TrafficThresholds::default(), oracle_refill: false }
     }
 }
 
@@ -89,6 +99,12 @@ impl MatchSim {
         //    so this only fires from day 1 onwards.
         if state.day_step == 0 && state.day > 0 && state.day < state.num_days() {
             phase_spawn(&mut state.setting.map, &mut events);
+            // Counterfactual (Issue #243): only under `oracle_refill`, also
+            // top every Patrol tank up to its cap at the same boundary. Gated
+            // on the flag so the default path is untouched, byte for byte.
+            if self.config.oracle_refill {
+                phase_oracle_refill(&mut state.agents, &mut events);
+            }
         }
 
         // 1. Wait — filter unknown / duplicate ids.
@@ -410,6 +426,55 @@ mod tests {
         assert_eq!(state.agents[0].pos, HexCoord::new(6, 7));
         assert_eq!(state.agents[0].fuel, 5 * 3 - 1);
         assert_eq!(state.day_step, 1);
+    }
+
+    /// Issue #243 — the `oracle_refill` counterfactual, both halves:
+    ///
+    /// 1. **Default is byte-identical** — `SimConfig::default()` carries the
+    ///    flag off, and an explicit `oracle_refill: false` config drives the
+    ///    exact same fuel trajectory (fuel carries across the day boundary
+    ///    unchanged, the official rule).
+    /// 2. **`true` refills at the day boundary** — the same steps with the
+    ///    flag on end day 1 with a full tank.
+    #[test]
+    fn oracle_refill_defaults_off_and_refills_patrol_tanks_at_the_day_boundary() {
+        // Drive one identical mini-match and report agent 0's fuel at the
+        // start of day 1 (after the boundary fired).
+        let fuel_at_day1_start = |config: SimConfig| -> u32 {
+            let map = one_spot_map();
+            // Patrol cap = day_steps(2) x multiplier(2) = 4.
+            let setting =
+                setting_with(map, vec![Agent::patrol(0, HexCoord::new(1, 0), 2, 2)], 2, 2);
+            let mut state = MatchState::new(setting).unwrap();
+            let sim = MatchSim::new(config);
+            let left = AgentActions::new(vec![
+                Action::step(0, Direction::Left),
+                Action::wait(1),
+                Action::wait(2),
+            ]);
+            let wait = AgentActions::wait_all(&[0, 1, 2], 1);
+
+            // Day 0 step 0: step onto the spot (plain, cost 1) -> 4 - 1 = 3.
+            sim.step(&mut state, &left);
+            // Day 0 step 1: wait out the rest of the day -> rollover to day 1.
+            sim.step(&mut state, &wait);
+            assert_eq!(state.day, 1, "the match must have crossed a day boundary");
+            // Day 1 step 0: spawn + (only if enabled) oracle refill, then wait.
+            sim.step(&mut state, &wait);
+            state.agents[0].fuel
+        };
+
+        // Half 1 — the default and an explicit off are the same trajectory.
+        assert!(!SimConfig::default().oracle_refill, "the counterfactual must default to off");
+        let off = fuel_at_day1_start(SimConfig::default());
+        let explicit_off =
+            fuel_at_day1_start(SimConfig { oracle_refill: false, ..SimConfig::default() });
+        assert_eq!(off, explicit_off, "default must be byte-identical to an explicit `false`");
+        assert_eq!(off, 3, "official rule: the day boundary does NOT refill a Patrol tank");
+
+        // Half 2 — the counterfactual refills to cap at the same boundary.
+        let on = fuel_at_day1_start(SimConfig { oracle_refill: true, ..SimConfig::default() });
+        assert_eq!(on, 4, "oracle_refill=true must restore the tank to cap at the day boundary");
     }
 
     #[test]
