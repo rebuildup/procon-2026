@@ -25,7 +25,7 @@ use serde_json::json;
 
 use cli::coordinator_loop::{CoordinatorLoopConfig, CoordinatorOutcome, run_coordinator_loop};
 use cli::openapi_fixture::OpenApiFixture;
-use cli::solver_adapter::EngineLoopAdapter;
+use cli::solver_adapter::{EngineLoopAdapter, WaitSolver};
 use protocol::http_client::{MatchClient, RetryPolicy};
 use protocol::match_config::{CellType, Map, MatchSetting};
 
@@ -141,8 +141,15 @@ async fn e2e_openapi_fixture_completes_four_days() {
     // POST /agent -> 200 with empty body. The official `OpenAPI` schema
     // declares a 200 response with no body schema; the client only checks
     // the HTTP status code on this endpoint.
+    //
+    // The body is pinned too (Issues #238/#243): one agent, the `loop`
+    // solver and **no** `--kinds` flag must POST exactly what the
+    // coordinator has always POSTed — `[0]`, i.e. even slot -> patrol. A
+    // regression to the default composition makes this mock unmatched and
+    // the loop fails instead of passing silently.
     let m_agent = server
         .mock("POST", "/agent")
+        .match_body(mockito::Matcher::Json(json!([0])))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body("")
@@ -344,4 +351,151 @@ async fn e2e_openapi_fixture_completes_four_days() {
     m_agent.assert_async().await;
     m_state.assert_async().await;
     m_actions.assert_async().await;
+}
+
+// ---------------------------------------------------------------------------
+// Issues #238 / #243 — the live `--kinds` composition, on the wire.
+// ---------------------------------------------------------------------------
+
+/// Drive a 2-agent, 2-day match against a fresh mock server and return the
+/// outcome. The mock answers `POST /agent` **only** when the body equals
+/// `expect_agent_body`, so a composition that never reached the server
+/// fails the run (mockito 501s unmatched requests) instead of passing
+/// silently.
+///
+/// The solver object is always `WaitSolver`: `solver_name` is what selects
+/// the kinds rule (exactly as in the CLI), which keeps these runs about the
+/// composition and independent of any planner.
+///
+/// # Panics
+/// When the loop, or the wire assertion, does not hold.
+async fn run_two_agent_match(
+    agent_kinds: Option<Vec<engine::model::AgentKind>>,
+    solver_name: &str,
+    expect_agent_body: serde_json::Value,
+) -> CoordinatorOutcome {
+    let mut server = Server::new_async().await;
+
+    // Two agents so the default alternation (`[0, 1]`), the `wait`
+    // placeholder (`[0, 0]`) and an explicit pattern (`[1, 1]`) are all
+    // distinguishable in the request body.
+    let mut synthesized = synthesized_setting(&[30, 30], &[20, 20]);
+    synthesized.agents = vec![0, 1];
+    let setting_body = serde_json::to_value(&synthesized).expect("serialise setting");
+    let m_setting = server
+        .mock("GET", "/setting")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(setting_body.to_string())
+        .expect_at_least(1)
+        .create_async()
+        .await;
+
+    let m_agent = server
+        .mock("POST", "/agent")
+        .match_body(mockito::Matcher::Json(expect_agent_body))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("")
+        .expect_at_least(1)
+        .create_async()
+        .await;
+
+    // `endsAt` in the past skips the between-day sleep; the day counter
+    // makes every `GET /` hand back the next day.
+    let day_counter = Arc::new(AtomicUsize::new(0));
+    let dc = day_counter.clone();
+    let m_state = server
+        .mock("GET", "/")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body_from_request(move |_req| {
+            let d = dc.fetch_add(1, Ordering::SeqCst);
+            json!({
+                "endsAt": 0_i64,
+                "day": i64::try_from(d).unwrap_or(0),
+                "agents": [],
+                "others": [],
+                "traffics": [],
+            })
+            .to_string()
+            .into_bytes()
+        })
+        .expect_at_least(2)
+        .create_async()
+        .await;
+
+    let revision_counter = Arc::new(AtomicI32::new(0));
+    let rc = revision_counter.clone();
+    let m_actions = server
+        .mock("POST", "/")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body_from_request(move |_req| {
+            json!({ "revision": rc.fetch_add(1, Ordering::SeqCst) }).to_string().into_bytes()
+        })
+        .expect_at_least(2)
+        .create_async()
+        .await;
+
+    let client = MatchClient::builder(server.url(), "mvp-test-token")
+        .retry_policy(RetryPolicy { max_retries: 0, backoff_millis: &[] })
+        .request_timeout(Duration::from_secs(5))
+        .build()
+        .expect("match client builds");
+
+    let cfg = CoordinatorLoopConfig {
+        solver_name: solver_name.to_owned(),
+        agent_kinds,
+        setting_poll_interval: Duration::from_millis(20),
+        ..CoordinatorLoopConfig::default()
+    };
+
+    let outcome = run_coordinator_loop(client, Box::new(WaitSolver), cfg)
+        .await
+        .expect("loop should complete");
+
+    m_setting.assert_async().await;
+    m_agent.assert_async().await;
+    m_state.assert_async().await;
+    m_actions.assert_async().await;
+    outcome
+}
+
+/// The three compositions the live `--kinds` flag has to tell apart,
+/// asserted on the actual `POST /agent` body (Issues #238/#243):
+///
+/// 1. flag omitted + real solver → today's alternation, byte for byte;
+/// 2. flag omitted + `wait`      → today's all-`KIND_0` placeholder;
+/// 3. `--kinds S` + `wait`       → the explicit pattern wins over the
+///    `wait` special case.
+///
+/// Each run also checks [`CoordinatorOutcome::kinds`] — the field the arena
+/// evidence record copies — because the composition has to be *visible*, not
+/// just submitted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn kinds_composition_reaches_the_wire_and_the_outcome() {
+    use engine::model::AgentKind;
+
+    let outcome = run_two_agent_match(None, "loop", json!([0, 1])).await;
+    assert_eq!(
+        outcome.kinds,
+        vec![AgentKind::Patrol, AgentKind::Supply],
+        "omitted --kinds must keep the historical alternation"
+    );
+    assert_eq!(outcome.days_completed, 2, "the match itself must still run");
+
+    let outcome = run_two_agent_match(None, "wait", json!([0, 0])).await;
+    assert_eq!(
+        outcome.kinds,
+        vec![AgentKind::Patrol, AgentKind::Patrol],
+        "wait keeps its all-KIND_0 placeholder when --kinds is omitted"
+    );
+
+    let outcome = run_two_agent_match(Some(vec![AgentKind::Supply]), "wait", json!([1, 1])).await;
+    assert_eq!(
+        outcome.kinds,
+        vec![AgentKind::Supply, AgentKind::Supply],
+        "an explicit --kinds wins for every solver, wait included"
+    );
 }

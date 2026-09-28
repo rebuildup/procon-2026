@@ -49,6 +49,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+// The submitted `POST /agent` composition (Issues #238/#243) is recorded in
+// engine spelling — `Patrol` / `Supply` — so an arena line and the offline
+// `RunRecord.agent_kinds` that selected its candidate read the same values.
+use engine::model::AgentKind;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -664,6 +668,17 @@ pub struct ArenaRunRecord {
     /// number of small fields (see the size-guard test in `tests`).
     #[serde(default)]
     pub days: Vec<DaySummary>,
+    /// The agent-kind composition the run declared in `POST /agent`, one
+    /// entry per agent slot (Issues #238/#243) — e.g.
+    /// `["Patrol","Patrol","Patrol","Patrol","Supply"]` for `--kinds
+    /// P,P,P,P,S` on a 5-agent team.
+    ///
+    /// Same type and spelling as the offline `RunRecord.agent_kinds`, so an
+    /// arena line and the offline ablation that selected its candidate
+    /// compare without a translation step. `[]` when the run never reached
+    /// the kind submission (registration failure, early error).
+    #[serde(default)]
+    pub kinds: Vec<AgentKind>,
     /// Arena result URL / identifier, when the arena exposes one.
     pub result_ref: Option<String>,
     /// Redacted error text for non-completed runs.
@@ -721,6 +736,7 @@ impl ArenaRunRecord {
             day_steps: outcome.map_or_else(Vec::new, |o| o.day_steps.clone()),
             day_seconds: outcome.map_or_else(Vec::new, |o| o.day_seconds.clone()),
             days: outcome.map_or_else(Vec::new, |o| o.days.clone()),
+            kinds: outcome.map_or_else(Vec::new, |o| o.kinds.clone()),
             result_ref: None,
             error: input.error.map(|e| input.profile.token.redact(&e)),
             recorded_at_unix: Utc::now().timestamp(),
@@ -1093,7 +1109,9 @@ mod tests {
     /// *shape* of the schema rather than the luck of a digit.
     fn record_with_days(days: usize, agents: usize) -> ArenaRunRecord {
         use crate::coordinator_loop::{DayAgentState, DayMovement};
-        use protocol::match_config::AgentKind;
+        // Per-day agent state is the wire spelling (`0 | 1`); the record's
+        // top-level `kinds` uses the engine spelling imported above.
+        use protocol::match_config::AgentKind as WireAgentKind;
 
         let profile = ArenaProfile {
             server_url: ARENA_SERVER_DEFAULT.to_owned(),
@@ -1104,7 +1122,11 @@ mod tests {
                 day: u32::try_from(d).unwrap_or(0),
                 agents: (0..agents)
                     .map(|a| DayAgentState {
-                        kind: if a % 2 == 0 { AgentKind::KIND_0 } else { AgentKind::KIND_1 },
+                        kind: if a % 2 == 0 {
+                            WireAgentKind::KIND_0
+                        } else {
+                            WireAgentKind::KIND_1
+                        },
                         pos: 40 + i32::try_from(a).unwrap_or(0) * 3,
                         fuel: 900 - i32::try_from(a).unwrap_or(0) * 7,
                     })
@@ -1125,6 +1147,11 @@ mod tests {
             day_steps: vec![100; days],
             day_seconds: vec![60; days],
             days: summaries,
+            // Constant across the size-guard's three records, so the linear
+            // growth assertion keeps measuring days only.
+            kinds: (0..agents)
+                .map(|a| if a % 2 == 0 { AgentKind::Patrol } else { AgentKind::Supply })
+                .collect(),
         };
         ArenaRunRecord::build(ArenaRecordInput {
             profile: &profile,

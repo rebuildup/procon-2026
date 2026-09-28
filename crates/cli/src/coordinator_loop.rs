@@ -12,12 +12,20 @@
 //!    A `403 AccessTimeError` envelope is treated the same as a setting
 //!    with `starts_at == 0`: we back off and retry.
 //! 2. **Agent submit.** `POST /agent` with retry-on-`AccessTime`. The
-//!    kinds vector is chosen from [`CoordinatorLoopConfig::solver_name`]:
-//!    real solvers (`"loop"`, `"mcts"`, anything other than the
-//!    debug-only `"wait"`) alternate `KIND_0` / `KIND_1` so half the
-//!    agents patrol and half supply, which gives a richer test of the
-//!    full protocol than the MVP's all-`KIND_0` placeholder.
+//!    kinds vector is chosen by [`agent_kinds_for`]: an explicit
+//!    [`CoordinatorLoopConfig::agent_kinds`] pattern (the live
+//!    `--kinds` flag, Issue #238/#243) is expanded over the team's
+//!    slots and wins for **every** solver; when it is `None` the
+//!    historical rule from `solver_name` applies unchanged — real
+//!    solvers (`"loop"`, `"mcts"`, anything other than the debug-only
+//!    `"wait"`) alternate `KIND_0` / `KIND_1` so half the agents
+//!    patrol and half supply, which gives a richer test of the full
+//!    protocol than the MVP's all-`KIND_0` placeholder.
 //! 3. **Wire -> engine.** Convert the setting, build team + match ids.
+//!    With an explicit `--kinds` the composition that was just posted is
+//!    handed to `protocol_setting_to_engine_with_kinds`, so the planning
+//!    model (patrol fuel caps included) describes the team the server was
+//!    told about; without the flag the historical conversion is unchanged.
 //! 4. **Start wait.** Re-poll `GET /setting` until `starts_at > 0`.
 //! 5. **Per-day loop.** `GET /` -> `solver.decide(&ctx)` -> adapter ->
 //!    `POST /`. If `revision < 0`, return [`CoordinatorLoopError::Rejected`]
@@ -43,6 +51,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use domain::{MatchId, PlayerId};
+use engine::model::AgentKind as EngineAgentKind;
 use engine::model::MatchSetting as EngineSetting;
 use protocol::http_client::SubmitAck;
 use protocol::match_config::{
@@ -54,7 +63,9 @@ use thiserror::Error;
 use crate::action_adapter::{AdapterError, decision_to_actions};
 use crate::arena::Secret;
 use crate::candidate_bridge::{apply_live_agents, apply_live_traffic};
-use crate::protocol_to_engine::protocol_setting_to_engine;
+use crate::protocol_to_engine::{
+    protocol_setting_to_engine, protocol_setting_to_engine_with_kinds,
+};
 use crate::solver_adapter::{dummy_match_snapshot, match_state_to_snapshot};
 
 /// Behavioural knobs for the coordinator loop. Server URL is carried by the
@@ -68,7 +79,8 @@ pub struct CoordinatorLoopConfig {
     /// Sleep between `GET /setting` polls while `starts_at == 0`.
     pub setting_poll_interval: Duration,
     /// Stable identifier of the solver the CLI wired up. Used only to
-    /// decide what `POST /agent` kinds vector to send: real solvers
+    /// decide what `POST /agent` kinds vector to send **when
+    /// [`agent_kinds`](Self::agent_kinds) is `None`**: real solvers
     /// (`"loop"`, `"mcts"`, anything other than `"wait"`) alternate
     /// `KIND_0` / `KIND_1`; the debug `WaitSolver` sticks to all `KIND_0`
     /// to keep its degenerate contract observable on the wire.
@@ -76,6 +88,20 @@ pub struct CoordinatorLoopConfig {
     /// Defaults to `"loop"` so the production path matches the documented
     /// Phase 2 strategy (`docs/contest/strategy.md`).
     pub solver_name: String,
+    /// Explicit agent-kind composition (live `--kinds <pattern>`,
+    /// Issues #238/#243): the parsed pattern, one kind per pattern slot,
+    /// cycled over the team's `n` agent slots by [`agent_kinds_for`].
+    ///
+    /// `None` (the default, i.e. the flag was omitted) keeps today's
+    /// rule exactly — `solver_name` decides, byte for byte as before.
+    /// `Some` wins for **every** solver, including the debug `wait` /
+    /// `wait-mvp` pair: the operator asked for a composition, so the
+    /// composition is what gets submitted.
+    ///
+    /// The parsed pattern is what [`bench::kinds::parse_kinds`] produces,
+    /// so the live flag and the offline `procon-eval --kinds` axis share
+    /// one grammar and one rejection set.
+    pub agent_kinds: Option<Vec<EngineAgentKind>>,
     /// Maximum number of `POST /agent` attempts before giving up. Each
     /// attempt that returns `403 AccessTimeError` (kind window not yet
     /// open, or already closed) is retried up to this many times before
@@ -160,6 +186,7 @@ impl Default for CoordinatorLoopConfig {
             team_id: "mvp-player".to_owned(),
             setting_poll_interval: Duration::from_secs(2),
             solver_name: "loop".to_owned(),
+            agent_kinds: None,
             kind_submit_max_attempts: 30,
             kind_submit_backoff: Duration::from_millis(500),
             match_state_max_attempts: 30,
@@ -201,6 +228,9 @@ impl CoordinatorLoopConfig {
             team_id,
             setting_poll_interval: Duration::from_secs(2),
             solver_name: "loop".to_owned(),
+            // No env override for the composition: `--kinds` is a CLI flag
+            // so an invocation records exactly what it asked for.
+            agent_kinds: None,
             // Use the documented defaults: 30 attempts × 500ms = 15s of
             // retry budget on `POST /agent`, which covers the official
             // 5s/60s `kind-deadline` plus poll jitter. Tweakable later via
@@ -243,6 +273,15 @@ pub struct CoordinatorOutcome {
     pub day_seconds: Vec<i32>,
     /// One [`DaySummary`] per completed day (Issue #236).
     pub days: Vec<DaySummary>,
+    /// The agent-kind composition this run actually declared in
+    /// `POST /agent`, one entry per agent slot (Issue #243): what the
+    /// server was told, expanded — so an arena evidence line can be
+    /// compared with the offline `RunRecord.agent_kinds` that selected
+    /// the candidate without replaying the match.
+    ///
+    /// Empty only when the run never reached Phase 2 (the match loop
+    /// failed before `POST /agent`).
+    pub kinds: Vec<EngineAgentKind>,
 }
 
 /// Day-start state of one of our agents, taken verbatim from the wire
@@ -620,10 +659,12 @@ where
     // Phase 2 (kinds accepted) below.
     snap.days_total = u32::try_from(wire_setting.day_steps.len()).unwrap_or(0);
 
-    // Phase 2: declare agent kinds. Real solvers alternate KIND_0 / KIND_1
-    // so half the agents patrol and half supply; the debug `WaitSolver`
-    // keeps the MVP's all-`KIND_0` placeholder so the wire shape stays
-    // degenerate and trivially debuggable.
+    // Phase 2: declare agent kinds. An explicit `--kinds` composition
+    // (`cfg.agent_kinds`) is submitted verbatim for **every** solver;
+    // without one the historical rule applies — real solvers alternate
+    // KIND_0 / KIND_1 so half the agents patrol and half supply, and the
+    // debug `WaitSolver` keeps the MVP's all-`KIND_0` placeholder so the
+    // wire shape stays degenerate and trivially debuggable.
     //
     // We submit DURING the kind window (right after Phase 1 succeeds)
     // rather than waiting for `starts_at > 0`, because `starts_at` flips
@@ -634,9 +675,24 @@ where
     // window between "server became responsive" and "server flipped
     // starts_at", which is exactly the open kind window.
     let n_agents = wire_setting.agents.len();
-    let kinds = agent_kinds_for(n_agents, &cfg.solver_name);
-    submit_agent_with_retry(&client, kinds, cfg.kind_submit_max_attempts, cfg.kind_submit_backoff)
-        .await?;
+    let submitted_kinds = agent_kinds_for(n_agents, &cfg.solver_name, cfg.agent_kinds.as_deref());
+    // Evidence (Issue #243): log the composition being declared in the same
+    // `P,S,…` spelling `--kinds` takes, so a run log and the flag that
+    // produced it read the same words. Agent kinds are game state, never
+    // secrets — no token material reaches this line.
+    tracing::info!(
+        n_agents,
+        kinds = %bench::kinds::render_kinds(&submitted_kinds),
+        solver = %cfg.solver_name,
+        "agent kinds selected for POST /agent"
+    );
+    submit_agent_with_retry(
+        &client,
+        to_wire_kinds(&submitted_kinds),
+        cfg.kind_submit_max_attempts,
+        cfg.kind_submit_backoff,
+    )
+    .await?;
 
     // Kinds accepted -> Running snapshot. `day` stays `None` because
     // we have not yet entered the per-day driver.
@@ -646,10 +702,27 @@ where
     write_snapshot(&cfg, snap);
 
     // Phase 3: convert wire -> engine setting, build team + match ids.
+    //
+    // An explicit `--kinds` feeds the composition just declared into the
+    // conversion: the planning model (patrol fuel caps above all) must
+    // describe the team the server was told about, so the flag changes
+    // `POST /agent` and the solver's world together. Without the flag this
+    // is the historical call, verbatim — including its `wait` quirk, where
+    // `POST /agent` sends all patrol while the local model keeps the
+    // alternation; `WaitSolver` never plans against that model.
     let team = PlayerId::new(&cfg.team_id)
         .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
-    let engine_setting = protocol_setting_to_engine(&wire_setting, team.clone())
-        .map_err(CoordinatorLoopError::Conversion)?;
+    let engine_setting = if cfg.agent_kinds.is_some() {
+        protocol_setting_to_engine_with_kinds(
+            &wire_setting,
+            team.clone(),
+            Some(submitted_kinds.as_slice()),
+        )
+        .map_err(CoordinatorLoopError::Conversion)?
+    } else {
+        protocol_setting_to_engine(&wire_setting, team.clone())
+            .map_err(CoordinatorLoopError::Conversion)?
+    };
     let agent_ids: Vec<u8> = engine_setting.agent_ids();
 
     // Hand the parsed engine setting (real map + agent positions) to any
@@ -795,6 +868,7 @@ where
         day_steps: wire_setting.day_steps.clone(),
         day_seconds: wire_setting.day_seconds.clone(),
         days: day_summaries,
+        kinds: submitted_kinds,
     })
 }
 
@@ -941,65 +1015,206 @@ async fn fetch_state_with_retry(
     .map_err(CoordinatorLoopError::State)
 }
 
-/// Build the `POST /agent` kinds vector for a given solver name.
+/// Resolve the `POST /agent` composition for a team of `n_agents`.
 ///
-/// - `"wait"` / `"wait-mvp"` → all `KIND_0` (degenerate MVP placeholder).
-/// - anything else (including the default `"loop"`) → alternating
-///   `KIND_0` / `KIND_1` so half the agents patrol and half supply. This
-///   exercises a wider surface of the contest server than the all-`KIND_0`
-///   placeholder, catching kind-handling bugs early.
-fn agent_kinds_for(n_agents: usize, solver_name: &str) -> Vec<AgentKind> {
-    if solver_name == "wait" || solver_name == "wait-mvp" {
-        return vec![AgentKind::KIND_0; n_agents];
+/// The result is in engine spelling ([`EngineAgentKind`]); pass it through
+/// [`to_wire_kinds`] to get the `0 | 1` body the server accepts.
+///
+/// - **Explicit pattern** (live `--kinds <pattern>`, Issues #238/#243):
+///   the pattern wins for **every** solver — `wait` / `wait-mvp`
+///   included — cycled over the agent slots by
+///   [`bench::kinds::resolve_kinds`], exactly like the offline
+///   `procon-eval --kinds` axis. The operator asked for a composition, so
+///   the composition is what goes on the wire.
+/// - **No pattern** (flag omitted): today's rule, byte for byte —
+///   `"wait"` / `"wait-mvp"` submit all patrol so the debug solver's
+///   degenerate contract stays observable, and anything else (including
+///   the default `"loop"`) alternates patrol/supply. The alternation comes
+///   from [`engine::from_wire::default_agent_kinds`], the same function
+///   the offline evaluator's default expands through, so the two defaults
+///   cannot drift.
+///
+/// The `wait` special case is therefore *only* a no-`--kinds` behaviour;
+/// an explicit pattern overrides it (documented on
+/// [`CoordinatorLoopConfig::agent_kinds`] and in the `--kinds` flag help).
+fn agent_kinds_for(
+    n_agents: usize,
+    solver_name: &str,
+    pattern: Option<&[EngineAgentKind]>,
+) -> Vec<EngineAgentKind> {
+    match pattern {
+        Some(pattern) if !pattern.is_empty() => {
+            bench::kinds::resolve_kinds(Some(pattern), n_agents)
+        }
+        _ => {
+            if solver_name == "wait" || solver_name == "wait-mvp" {
+                vec![EngineAgentKind::Patrol; n_agents]
+            } else {
+                engine::from_wire::default_agent_kinds(n_agents)
+            }
+        }
     }
-    (0..n_agents).map(|i| if i % 2 == 0 { AgentKind::KIND_0 } else { AgentKind::KIND_1 }).collect()
+}
+
+/// Map a resolved composition onto the wire's `0 | 1` spelling for
+/// `POST /agent`: `Patrol` → `KIND_0`, `Supply` → `KIND_1`.
+///
+/// This is the mapping the coordinator has always used implicitly (even
+/// slot → `KIND_0` → patrol, the `OpenAPI` `[0, 1, 0, 1]` example), and it
+/// is what makes the omitted `--kinds` byte-identical to today's body —
+/// pinned by `default_is_the_historical_alternation_for_every_team_size`.
+fn to_wire_kinds(kinds: &[EngineAgentKind]) -> Vec<AgentKind> {
+    kinds
+        .iter()
+        .map(|&kind| match kind {
+            EngineAgentKind::Patrol => AgentKind::KIND_0,
+            EngineAgentKind::Supply => AgentKind::KIND_1,
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The wire body for one team size, spelled out the way the pre-#243
+    /// coordinator did: even slot `KIND_0`, odd slot `KIND_1`.
+    fn historical_alternation(n: usize) -> Vec<AgentKind> {
+        (0..n).map(|i| if i % 2 == 0 { AgentKind::KIND_0 } else { AgentKind::KIND_1 }).collect()
+    }
+
+    fn pattern(spec: &str) -> Vec<EngineAgentKind> {
+        bench::kinds::parse_kinds(spec).unwrap_or_else(|e| panic!("{spec}: {e}"))
+    }
+
     #[test]
-    fn wait_solver_name_yields_all_kind_0() {
-        let kinds = agent_kinds_for(5, "wait");
+    fn wait_solver_name_yields_all_kind_0_without_an_explicit_pattern() {
+        let kinds = to_wire_kinds(&agent_kinds_for(5, "wait", None));
         assert_eq!(kinds, vec![AgentKind::KIND_0; 5]);
-        let kinds = agent_kinds_for(3, "wait-mvp");
+        let kinds = to_wire_kinds(&agent_kinds_for(3, "wait-mvp", None));
         assert_eq!(kinds, vec![AgentKind::KIND_0; 3]);
+    }
+
+    /// The AC of Issues #238/#243: an omitted `--kinds` must POST exactly
+    /// the body today's coordinator posts, for every official team size —
+    /// both on the wire (`0 | 1`) and in the engine view the solver plans
+    /// against.
+    #[test]
+    fn default_is_the_historical_alternation_for_every_team_size() {
+        for n in 3..=8 {
+            assert_eq!(
+                to_wire_kinds(&agent_kinds_for(n, "loop", None)),
+                historical_alternation(n),
+                "n={n}: the omitted flag must be byte-identical to today's POST body"
+            );
+            assert_eq!(
+                agent_kinds_for(n, "loop", None),
+                engine::from_wire::default_agent_kinds(n),
+                "n={n}: the live default must equal the offline default"
+            );
+            // Spelling the default out explicitly changes nothing.
+            assert_eq!(
+                agent_kinds_for(n, "loop", Some(&pattern(bench::kinds::DEFAULT_KINDS_PATTERN))),
+                engine::from_wire::default_agent_kinds(n),
+                "n={n}: `--kinds P,S` must equal the omitted flag"
+            );
+            // An unknown solver keeps the same default (no special case).
+            assert_eq!(
+                agent_kinds_for(n, "mcts", None),
+                engine::from_wire::default_agent_kinds(n),
+                "n={n}: unknown solver names stay on the alternating default"
+            );
+        }
     }
 
     #[test]
     fn loop_solver_name_alternates_kind_0_and_kind_1() {
-        let kinds = agent_kinds_for(4, "loop");
-        assert_eq!(
-            kinds,
-            vec![AgentKind::KIND_0, AgentKind::KIND_1, AgentKind::KIND_0, AgentKind::KIND_1,]
-        );
+        assert_eq!(to_wire_kinds(&agent_kinds_for(4, "loop", None)), historical_alternation(4));
         // Odd count: last agent is KIND_0.
-        let kinds = agent_kinds_for(5, "loop");
-        assert_eq!(
-            kinds,
-            vec![
-                AgentKind::KIND_0,
-                AgentKind::KIND_1,
-                AgentKind::KIND_0,
-                AgentKind::KIND_1,
-                AgentKind::KIND_0,
-            ]
-        );
+        assert_eq!(to_wire_kinds(&agent_kinds_for(5, "loop", None)), historical_alternation(5));
     }
 
     #[test]
     fn unknown_solver_name_treated_as_real_solver() {
         // Anything other than "wait"/"wait-mvp" gets the alternating vector
         // so a future solver can ship without touching this helper.
-        let kinds = agent_kinds_for(2, "mcts");
+        let kinds = to_wire_kinds(&agent_kinds_for(2, "mcts", None));
         assert_eq!(kinds, vec![AgentKind::KIND_0, AgentKind::KIND_1]);
     }
 
     #[test]
     fn zero_agents_yields_empty_kinds() {
-        let kinds = agent_kinds_for(0, "loop");
-        assert!(kinds.is_empty());
+        assert!(agent_kinds_for(0, "loop", None).is_empty());
+        assert!(agent_kinds_for(0, "loop", Some(&pattern("P,S"))).is_empty());
+    }
+
+    /// Issue #238's composition AC, live: `P,P,P,P,S` fields 4 patrol +
+    /// 1 supply on a 5-agent team, and — unlike the offline axis — it wins
+    /// for **every** solver, `wait` included.
+    #[test]
+    fn an_explicit_pattern_wins_for_every_solver() {
+        let pat = pattern("P,P,P,P,S");
+        let expected = vec![
+            EngineAgentKind::Patrol,
+            EngineAgentKind::Patrol,
+            EngineAgentKind::Patrol,
+            EngineAgentKind::Patrol,
+            EngineAgentKind::Supply,
+        ];
+        for solver in ["loop", "wait", "wait-mvp", "mcts", "candidate:loop:seed=1"] {
+            assert_eq!(
+                agent_kinds_for(5, solver, Some(&pat)),
+                expected,
+                "an explicit --kinds must override the wait special case ({solver})"
+            );
+        }
+        assert_eq!(
+            to_wire_kinds(&agent_kinds_for(5, "wait", Some(&pat))),
+            vec![
+                AgentKind::KIND_0,
+                AgentKind::KIND_0,
+                AgentKind::KIND_0,
+                AgentKind::KIND_0,
+                AgentKind::KIND_1,
+            ]
+        );
+    }
+
+    /// Slot cycling + the two single-kind extremes, at the live boundary.
+    #[test]
+    fn patterns_cycle_over_agent_slots() {
+        // `P` → all patrol (the official deadline-miss default is legal).
+        let all_patrol = agent_kinds_for(5, "loop", Some(&pattern("P")));
+        assert_eq!(all_patrol, vec![EngineAgentKind::Patrol; 5]);
+        // `S` → all supply.
+        let all_supply = agent_kinds_for(5, "loop", Some(&pattern("supply")));
+        assert_eq!(all_supply, vec![EngineAgentKind::Supply; 5]);
+        // `P,S` cycles: 3 agents → P,S,P (an odd team stays patrol-heavy).
+        assert_eq!(
+            agent_kinds_for(3, "loop", Some(&pattern("P,S"))),
+            vec![EngineAgentKind::Patrol, EngineAgentKind::Supply, EngineAgentKind::Patrol]
+        );
+        // A pattern longer than the team is its prefix.
+        assert_eq!(
+            agent_kinds_for(3, "loop", Some(&pattern("P,P,P,P,S"))),
+            vec![EngineAgentKind::Patrol; 3]
+        );
+    }
+
+    /// Grammar parity with `procon-eval --kinds` (Issue #238): the live
+    /// flag parses through `bench::kinds`, so a typo here is rejected with
+    /// the offline parser's message rather than a second, drifting parser.
+    #[test]
+    fn the_live_flag_uses_the_offline_grammar() {
+        for ok in ["P,S", "p, S ,Patrol,supply", "P,P,P,P,S", "P"] {
+            assert!(bench::kinds::parse_kinds(ok).is_ok(), "{ok} must parse");
+        }
+        for bad in ["", "3p2s", "X", "P,S,", ",P", "patroll", "P,S,P,S,P,S,P,S,P"] {
+            match bench::kinds::parse_kinds(bad) {
+                Ok(ok) => panic!("{bad} must be rejected, got {ok:?}"),
+                Err(err) => assert!(err.contains("--kinds"), "{bad} → {err}"),
+            }
+        }
     }
 
     // ------------------------------------------------------------------

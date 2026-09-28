@@ -34,6 +34,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use domain::{MatchId, PlayerId};
+use engine::model::AgentKind as EngineAgentKind;
 use engine::replay::Replay;
 use engine::{EngineServer, EngineServerConfig};
 use protocol::{HttpClientError, MatchClient, RetryPolicy};
@@ -122,6 +123,23 @@ enum Cmd {
         /// `tournament --loop-iterations`). Ignored by `--solver wait`.
         #[arg(long, default_value_t = 32)]
         loop_iterations: u32,
+
+        /// Agent-kind composition submitted in `POST /agent` (Issues #238 /
+        /// #243). Same grammar and same parser as the offline
+        /// `procon-eval --kinds`: a comma-separated cycle over agent slots
+        /// of `P` / `patrol` and `S` / `supply` (case-insensitive), so
+        /// `P,P,P,P,S` fields 4 patrol + 1 supply on a 5-agent team and `P`
+        /// fields an all-patrol team (legal — the official `POST /agent`
+        /// schema constrains only the element count). Slot `i` gets
+        /// `pattern[i % len]`.
+        ///
+        /// Omitted: byte-identical to today's behaviour — `--solver wait`
+        /// posts all patrol, every other solver alternates patrol/supply
+        /// (the offline default `P,S`). Given: the pattern wins for **every**
+        /// solver, `wait` included. An unknown token is a flag error, never
+        /// a silent fallback to the default.
+        #[arg(long, value_name = "PATTERN", value_parser = parse_kinds_pattern)]
+        kinds: Option<KindsPattern>,
 
         /// Only resolve config + print it. Do not actually start the loop.
         #[arg(long)]
@@ -225,6 +243,14 @@ enum Cmd {
         /// Iteration cap for the `loop` solver's local search.
         #[arg(long, default_value_t = 32)]
         loop_iterations: u32,
+        /// Agent-kind composition submitted in `POST /agent` for **every**
+        /// solver in the run (Issues #238 / #243) — same grammar, same
+        /// parser and same default as `coordinator --kinds`
+        /// (`P|S|patrol|supply`, comma-separated, slot-cycled; omitted =
+        /// today's per-solver default, i.e. `wait` all patrol and the rest
+        /// alternating). An unknown token is a flag error.
+        #[arg(long, value_name = "PATTERN", value_parser = parse_kinds_pattern)]
+        kinds: Option<KindsPattern>,
         /// Team id baked into the coordinator loop config.
         #[arg(long, default_value = "team-p0")]
         team_id: String,
@@ -356,6 +382,7 @@ async fn run(cli: Cli) -> Result<()> {
             solver,
             loop_initial_strategy,
             loop_iterations,
+            kinds,
             dry_run,
             state_output,
             exit_after_match,
@@ -370,6 +397,7 @@ async fn run(cli: Cli) -> Result<()> {
                 solver,
                 loop_initial_strategy,
                 loop_iterations,
+                kinds.map(KindsPattern::into_vec),
                 dry_run,
                 state_output,
                 exit_after_match,
@@ -400,6 +428,7 @@ async fn run(cli: Cli) -> Result<()> {
             token,
             loop_initial_strategy,
             loop_iterations,
+            kinds,
             team_id,
             state_output_dir,
             auto_restart_server,
@@ -410,6 +439,7 @@ async fn run(cli: Cli) -> Result<()> {
                 token,
                 loop_initial_strategy,
                 loop_iterations,
+                kinds.map(KindsPattern::into_vec),
                 team_id,
                 state_output_dir,
                 auto_restart_server,
@@ -461,6 +491,62 @@ struct ArenaFlags {
     arena_evidence: Option<PathBuf>,
 }
 
+/// One `--kinds` pattern, parsed once by [`parse_kinds_pattern`] while clap
+/// reads the flags (Issues #238/#243).
+///
+/// It is a newtype rather than a bare `Vec<AgentKind>` for a clap reason:
+/// the derive parses `Option<Vec<T>>` one **element** per flag value, so a
+/// comma-separated pattern would have to be a single stored value — which
+/// `Option<KindsPattern>` (one value, `ArgAction::Set`) is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KindsPattern(Vec<EngineAgentKind>);
+
+impl KindsPattern {
+    /// The pattern's slots, in flag order.
+    #[must_use]
+    pub fn into_vec(self) -> Vec<EngineAgentKind> {
+        self.0
+    }
+}
+
+/// `--kinds` value parser: validate through the **offline** grammar so a
+/// malformed pattern is a clap error before the command starts — there is
+/// no path that falls back to the default composition (Issue #238).
+///
+/// One grammar, one parser: `bench::kinds::parse_kinds` is what
+/// `procon-eval --kinds` runs, so live and offline accept and reject the
+/// same spellings by construction.
+///
+/// # Errors
+/// Whatever [`bench::kinds::parse_kinds`] rejects: an empty pattern, a
+/// token that is not `P`/`S`/`patrol`/`supply`, or more slots than the
+/// official 8-agent maximum.
+fn parse_kinds_pattern(value: &str) -> Result<KindsPattern, String> {
+    bench::kinds::parse_kinds(value).map(KindsPattern)
+}
+
+/// `--kinds` echo for the startup log: the pattern this run will cycle over
+/// the team's agent slots, in the same `P,S,…` spelling the flag takes
+/// (Issues #238/#243).
+///
+/// `Some(pattern)` renders verbatim. `None` (the flag was omitted) reports
+/// the rule that then applies — `P` for the debug `wait` solver (all
+/// patrol), `P,S` for everything else (alternation) — so the line never
+/// claims a composition the run will not field. The loop logs the expanded
+/// per-team vector at Phase 2, once `GET /setting` has revealed `n`.
+fn kinds_pattern_label(pattern: Option<&[EngineAgentKind]>, solver_name: &str) -> String {
+    pattern.map_or_else(
+        || {
+            if solver_name == "wait" || solver_name == "wait-mvp" {
+                "P".to_owned()
+            } else {
+                bench::kinds::DEFAULT_KINDS_PATTERN.to_owned()
+            }
+        },
+        bench::kinds::render_kinds,
+    )
+}
+
 /// `coordinator` subcommand dispatcher.
 ///
 /// Behaviour matrix:
@@ -497,6 +583,7 @@ async fn cmd_coordinator(
     solver: String,
     loop_initial_strategy: InitialStrategy,
     loop_iterations: u32,
+    kinds: Option<Vec<EngineAgentKind>>,
     dry_run: bool,
     state_output: Option<PathBuf>,
     exit_after_match: bool,
@@ -509,6 +596,16 @@ async fn cmd_coordinator(
              /setting pre-match registration are arena-specific"
         );
     }
+
+    // Evidence (Issues #238/#243): echo the composition this run will
+    // declare, in the same `P,S,…` spelling the flag takes, before any
+    // network traffic. The loop logs the expanded per-team vector again at
+    // Phase 2 once `GET /setting` has revealed `n` agents. Agent kinds are
+    // game state, never secrets — no token material reaches this line.
+    tracing::info!(
+        kinds = %kinds_pattern_label(kinds.as_deref(), &solver),
+        "agent kind composition selected"
+    );
 
     // Arena profile: env-backed defaults for server/token. Resolved before
     // `--dry-run` so a dry run reports exactly what a real run would use.
@@ -657,6 +754,12 @@ async fn cmd_coordinator(
         state_output_path: state_output.clone(),
         engine_setting_slot,
         live_state_slot,
+        // `--kinds` composition (`None` = the omitted flag, i.e. today's
+        // per-solver rule). Given a flag, this one expansion feeds both the
+        // `POST /agent` body and the wire→engine conversion, so the
+        // planning model (patrol fuel caps) matches the team the server
+        // was told about.
+        agent_kinds: kinds,
         secret_redaction: profile.as_ref().map(|p| p.token.clone()),
         ..Default::default()
     };
@@ -863,6 +966,7 @@ async fn cmd_tournament(
     token: Option<String>,
     loop_initial_strategy: InitialStrategy,
     loop_iterations: u32,
+    kinds: Option<Vec<EngineAgentKind>>,
     team_id: String,
     state_output_dir: Option<PathBuf>,
     auto_restart_server: Option<String>,
@@ -879,10 +983,22 @@ async fn cmd_tournament(
         solvers,
         loop_initial_strategy,
         loop_iterations,
+        kinds,
         team_id,
         state_output_dir,
         auto_restart_server,
     };
+    // Evidence (Issues #238/#243): one composition for the whole run when
+    // `--kinds` was given; otherwise each solver keeps today's default
+    // (`wait` → all patrol, the rest alternate), which the loop logs per
+    // match at Phase 2. No secrets on this line.
+    tracing::info!(
+        kinds = %cfg.kinds.as_deref().map_or_else(
+            || "default (wait → P, others → P,S)".to_owned(),
+            bench::kinds::render_kinds
+        ),
+        "tournament agent kind composition selected"
+    );
     tracing::info!(
         strategy = %initial_strategy::initial_strategy_label(cfg.loop_initial_strategy),
         iterations = cfg.loop_iterations,
@@ -1232,5 +1348,122 @@ mod tests {
         };
         assert_eq!(cfg.loop_initial_strategy, InitialStrategy::Reverse);
         assert_eq!(initial_strategy::initial_strategy_label(cfg.loop_initial_strategy), "reverse");
+    }
+
+    // ------------------------------------------------------------------
+    // Issues #238 / #243 — the live `--kinds` composition flag.
+    // ------------------------------------------------------------------
+
+    /// Feed `--kinds <pattern>` to `coordinator` and return the composition
+    /// as the flag stores it, or the (clap-wrapped) parser error text.
+    fn coordinator_kinds(pattern: &str) -> Result<Option<Vec<EngineAgentKind>>, String> {
+        Cli::try_parse_from(["procon", "coordinator", "--kinds", pattern])
+            .map_err(|e| e.to_string())
+            .map(|cli| match cli.cmd {
+                Cmd::Coordinator { kinds, .. } => kinds.map(KindsPattern::into_vec),
+                other => panic!("expected Coordinator, got {other:?}"),
+            })
+    }
+
+    /// Same for `tournament` — the two subcommands share one parser.
+    fn tournament_kinds(pattern: &str) -> Result<Option<Vec<EngineAgentKind>>, String> {
+        Cli::try_parse_from(["procon", "tournament", "--kinds", pattern])
+            .map_err(|e| e.to_string())
+            .map(|cli| match cli.cmd {
+                Cmd::Tournament { kinds, .. } => kinds.map(KindsPattern::into_vec),
+                other => panic!("expected Tournament, got {other:?}"),
+            })
+    }
+
+    /// Both subcommands accept the offline `procon-eval --kinds` grammar
+    /// (Issue #238): comma list of `P | S | patrol | supply`,
+    /// case-insensitive, parsed by `bench::kinds::parse_kinds`.
+    #[test]
+    fn both_subcommands_parse_the_kinds_flag() {
+        use EngineAgentKind::{Patrol, Supply};
+
+        let four_p_one_s = vec![Patrol, Patrol, Patrol, Patrol, Supply];
+        assert_eq!(coordinator_kinds("P,P,P,P,S"), Ok(Some(four_p_one_s.clone())));
+        assert_eq!(tournament_kinds("P,P,P,P,S"), Ok(Some(four_p_one_s)));
+        // Case-insensitive, full words and stray spaces accepted — the same
+        // matrix `bench::kinds` pins for the offline flag.
+        assert_eq!(
+            coordinator_kinds("p, S ,Patrol,supply"),
+            Ok(Some(vec![Patrol, Supply, Patrol, Supply]))
+        );
+        assert_eq!(tournament_kinds("P"), Ok(Some(vec![Patrol])));
+        assert_eq!(coordinator_kinds("supply"), Ok(Some(vec![Supply])));
+    }
+
+    /// Omitted `--kinds` must mean "today's default", not "all patrol" or
+    /// any other silent choice — on both subcommands.
+    #[test]
+    fn kinds_flags_default_to_none() {
+        let cli = Cli::try_parse_from(["procon", "coordinator"]).expect("parses");
+        match cli.cmd {
+            Cmd::Coordinator { kinds, .. } => assert_eq!(kinds, None),
+            other => panic!("expected Coordinator, got {other:?}"),
+        }
+        let cli = Cli::try_parse_from(["procon", "tournament"]).expect("parses");
+        match cli.cmd {
+            Cmd::Tournament { kinds, .. } => assert_eq!(kinds, None),
+            other => panic!("expected Tournament, got {other:?}"),
+        }
+    }
+
+    /// A malformed pattern is a **clap** error on both subcommands — the
+    /// command never starts, so there is no path that silently falls back
+    /// to the default composition (Issue #238's no-silent-fallback AC).
+    #[test]
+    fn both_subcommands_reject_an_invalid_kinds_pattern() {
+        for bad in ["3p2s", "X", "P,S,", ",P", "patroll", "P,S,P,S,P,S,P,S,P", ""] {
+            for (side, err) in [
+                ("coordinator", coordinator_kinds(bad).expect_err("must be rejected")),
+                ("tournament", tournament_kinds(bad).expect_err("must be rejected")),
+            ] {
+                assert!(err.contains("--kinds"), "{side} {bad:?}: {err}");
+                assert!(err.contains("invalid value"), "{side} {bad:?}: {err}");
+                // The offline parser's wording names the grammar it wanted.
+                assert!(
+                    err.contains("patrol") || err.contains("at most 8"),
+                    "{side} {bad:?}: {err}"
+                );
+            }
+        }
+    }
+
+    /// The flag value reaches the structures that submit it: the tournament
+    /// config field (which copies into every solver's loop config) and the
+    /// `--kinds` pattern label the startup log prints.
+    #[test]
+    fn the_kinds_flag_reaches_the_run_configuration() {
+        use EngineAgentKind::{Patrol, Supply};
+
+        let cli =
+            Cli::try_parse_from(["procon", "tournament", "--kinds", "P,P,P,P,S"]).expect("parses");
+        let Cmd::Tournament { kinds, .. } = cli.cmd else { panic!("expected Tournament") };
+        let cfg = tournament::TournamentConfig {
+            kinds: kinds.map(KindsPattern::into_vec),
+            ..tournament::TournamentConfig::default()
+        };
+        assert_eq!(
+            cfg.kinds,
+            Some(vec![Patrol, Patrol, Patrol, Patrol, Supply]),
+            "--kinds must reach TournamentConfig, which forwards it to every CoordinatorLoopConfig"
+        );
+        assert_eq!(
+            kinds_pattern_label(cfg.kinds.as_deref(), "loop"),
+            "P,P,P,P,S",
+            "the startup log must echo the pattern the flag spelled"
+        );
+        // The omitted flag reports the rule that applies, so the log never
+        // claims a composition the run will not field.
+        assert_eq!(kinds_pattern_label(None, "loop"), "P,S");
+        assert_eq!(kinds_pattern_label(None, "wait"), "P");
+        assert_eq!(
+            kinds_pattern_label(Some(&[Patrol, Supply]), "loop"),
+            "P,S",
+            "an explicit pattern is rendered verbatim, solver or not"
+        );
     }
 }
