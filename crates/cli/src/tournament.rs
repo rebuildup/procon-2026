@@ -435,13 +435,21 @@ mod tests {
 
     #[test]
     fn protocol_progress_is_days_times_100_plus_sum_revisions() {
-        let outcome = CoordinatorOutcome { days_completed: 4, revisions: vec![1, 2, 3, 4] };
+        let outcome = CoordinatorOutcome {
+            days_completed: 4,
+            revisions: vec![1, 2, 3, 4],
+            ..CoordinatorOutcome::default()
+        };
         assert_eq!(compute_protocol_progress(&outcome), 4 * 100 + 10);
     }
 
     #[test]
     fn protocol_progress_clamps_negative_revisions_to_zero() {
-        let outcome = CoordinatorOutcome { days_completed: 2, revisions: vec![-1, 5] };
+        let outcome = CoordinatorOutcome {
+            days_completed: 2,
+            revisions: vec![-1, 5],
+            ..CoordinatorOutcome::default()
+        };
         assert_eq!(compute_protocol_progress(&outcome), 2 * 100 + 5);
     }
 
@@ -493,13 +501,21 @@ mod tests {
             entries: vec![
                 TournamentEntry {
                     solver: "wait".to_owned(),
-                    outcome: CoordinatorOutcome { days_completed: 4, revisions: vec![1, 2, 3, 4] },
+                    outcome: CoordinatorOutcome {
+                        days_completed: 4,
+                        revisions: vec![1, 2, 3, 4],
+                        ..CoordinatorOutcome::default()
+                    },
                     elapsed_ms: 100,
                     protocol_progress: 410,
                 },
                 TournamentEntry {
                     solver: "loop".to_owned(),
-                    outcome: CoordinatorOutcome { days_completed: 4, revisions: vec![1, 2, 3, 4] },
+                    outcome: CoordinatorOutcome {
+                        days_completed: 4,
+                        revisions: vec![1, 2, 3, 4],
+                        ..CoordinatorOutcome::default()
+                    },
                     elapsed_ms: 200,
                     protocol_progress: 410,
                 },

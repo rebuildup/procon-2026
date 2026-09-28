@@ -52,7 +52,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::coordinator_loop::{CoordinatorLoopError, CoordinatorOutcome, retry_on_access_time};
+// `DaySummary` (Issue #236 per-day evidence) is produced by the coordinator
+// loop and embedded verbatim in [`ArenaRunRecord::days`] — one type, one
+// wire shape, no arena-specific copy to drift out of sync.
+use crate::coordinator_loop::{
+    CoordinatorLoopError, CoordinatorOutcome, DaySummary, retry_on_access_time,
+};
 
 /// Default arena endpoint. Not a secret — the endpoint is public.
 pub const ARENA_SERVER_DEFAULT: &str = "https://procon37arena.online";
@@ -604,6 +609,10 @@ pub struct ArenaSolverConfig {
 /// intentionally separate so an arena result can never be re-aggregated
 /// into an offline score. **No token, email, or account field exists in
 /// this type.**
+///
+/// Additive evolution: fields added later (`day_steps`, `day_seconds`,
+/// `days` — Issue #236) are `#[serde(default)]`, so evidence lines written
+/// before them still parse and the record stays one JSONL line either way.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ArenaRunRecord {
     /// Wire-stable schema version (see [`ARENA_RECORD_SCHEMA_VERSION`]).
@@ -636,6 +645,25 @@ pub struct ArenaRunRecord {
     pub days_completed: usize,
     /// Per-day revisions returned by `POST /`.
     pub revisions: Vec<i32>,
+    /// `GET /setting`'s `daySteps` — the per-day step budget, recorded once
+    /// so every entry of [`days`](Self::days) can be read against its
+    /// budget without a replay-JSON download (Issue #236).
+    #[serde(default)]
+    pub day_steps: Vec<i32>,
+    /// `GET /setting`'s `daySeconds` — the per-day answer window, recorded
+    /// once alongside [`day_steps`](Self::day_steps).
+    #[serde(default)]
+    pub day_seconds: Vec<i32>,
+    /// Per-day evidence (Issue #236): one entry per played day carrying the
+    /// day-start `kind / pos / fuel` of our agents (wire `GET /` state) and
+    /// a **movement summary** of the plan we submitted — move/wait counts
+    /// and a direction histogram, never the raw answer body. This is what
+    /// makes a loss diagnosable without downloading replay JSON (#233 方針5).
+    ///
+    /// Bounded by construction: entries are one per day, each entry a fixed
+    /// number of small fields (see the size-guard test in `tests`).
+    #[serde(default)]
+    pub days: Vec<DaySummary>,
     /// Arena result URL / identifier, when the arena exposes one.
     pub result_ref: Option<String>,
     /// Redacted error text for non-completed runs.
@@ -690,6 +718,9 @@ impl ArenaRunRecord {
             status: input.status,
             days_completed: outcome.map_or(0, |o| o.days_completed),
             revisions: outcome.map_or_else(Vec::new, |o| o.revisions.clone()),
+            day_steps: outcome.map_or_else(Vec::new, |o| o.day_steps.clone()),
+            day_seconds: outcome.map_or_else(Vec::new, |o| o.day_seconds.clone()),
+            days: outcome.map_or_else(Vec::new, |o| o.days.clone()),
             result_ref: None,
             error: input.error.map(|e| input.profile.token.redact(&e)),
             recorded_at_unix: Utc::now().timestamp(),
@@ -913,7 +944,11 @@ mod tests {
             attempts: 3,
             arena_match_id: Some("m-1234".to_owned()),
         };
-        let outcome = CoordinatorOutcome { days_completed: 4, revisions: vec![0, 1, 2, 3] };
+        let outcome = CoordinatorOutcome {
+            days_completed: 4,
+            revisions: vec![0, 1, 2, 3],
+            ..CoordinatorOutcome::default()
+        };
         let record = ArenaRunRecord::build(ArenaRecordInput {
             profile: &profile,
             candidate_id: Some("multiloop:kmeans=4:seed=42"),
@@ -949,8 +984,11 @@ mod tests {
 
     #[test]
     fn loop_results_classify_into_arena_statuses() {
-        let ok: Result<CoordinatorOutcome, CoordinatorLoopError> =
-            Ok(CoordinatorOutcome { days_completed: 1, revisions: vec![0] });
+        let ok: Result<CoordinatorOutcome, CoordinatorLoopError> = Ok(CoordinatorOutcome {
+            days_completed: 1,
+            revisions: vec![0],
+            ..CoordinatorOutcome::default()
+        });
         assert_eq!(classify_loop_result(&ok).0, ArenaRunStatus::Completed);
 
         let rejected: Result<CoordinatorOutcome, CoordinatorLoopError> =
@@ -1047,6 +1085,133 @@ mod tests {
     fn source_commit_sha_is_unknown_only_when_nothing_is_available() {
         assert_eq!(resolve_source_commit_sha(None, None), "unknown");
         assert_eq!(resolve_source_commit_sha(Some(String::new()), None), "unknown");
+    }
+
+    /// Build a synthetic `days`-day record with `agents` agents per day
+    /// (the official team maximum), sized so every per-day value keeps a
+    /// constant digit width — the growth assertions below then measure the
+    /// *shape* of the schema rather than the luck of a digit.
+    fn record_with_days(days: usize, agents: usize) -> ArenaRunRecord {
+        use crate::coordinator_loop::{DayAgentState, DayMovement};
+        use protocol::match_config::AgentKind;
+
+        let profile = ArenaProfile {
+            server_url: ARENA_SERVER_DEFAULT.to_owned(),
+            token: Secret::new(SENTINEL.to_owned()),
+        };
+        let summaries: Vec<DaySummary> = (0..days)
+            .map(|d| DaySummary {
+                day: u32::try_from(d).unwrap_or(0),
+                agents: (0..agents)
+                    .map(|a| DayAgentState {
+                        kind: if a % 2 == 0 { AgentKind::KIND_0 } else { AgentKind::KIND_1 },
+                        pos: 40 + i32::try_from(a).unwrap_or(0) * 3,
+                        fuel: 900 - i32::try_from(a).unwrap_or(0) * 7,
+                    })
+                    .collect(),
+                movement: (0..agents)
+                    .map(|a| DayMovement {
+                        moves: u32::try_from(4 + a).unwrap_or(0),
+                        waits: u32::try_from(20_usize.saturating_sub(a)).unwrap_or(0),
+                        runs: u32::try_from(1 + a % 3).unwrap_or(0),
+                        dirs: [1, 0, 2, 0, 1, 0],
+                    })
+                    .collect(),
+            })
+            .collect();
+        let outcome = CoordinatorOutcome {
+            days_completed: days,
+            revisions: vec![7; days],
+            day_steps: vec![100; days],
+            day_seconds: vec![60; days],
+            days: summaries,
+        };
+        ArenaRunRecord::build(ArenaRecordInput {
+            profile: &profile,
+            candidate_id: Some("multiloop:kmeans=4:seed=42"),
+            solver: ArenaSolverConfig {
+                mode: "candidate".to_owned(),
+                solver: "multiloop".to_owned(),
+                loop_initial_strategy: None,
+                loop_iterations: None,
+            },
+            team_id: "mvp-player",
+            source_commit_sha: "deadbeef".to_owned(),
+            window_starts_at_unix: 1_790_000_100,
+            registration: None,
+            outcome: Some(&outcome),
+            status: ArenaRunStatus::Completed,
+            error: None,
+        })
+    }
+
+    /// Size guard (Issue #236 AC): a synthetic **9-day** record with the
+    /// official 8-agent maximum must stay one modest JSONL line, each day
+    /// entry must cost a bounded number of bytes, and the growth must be
+    /// exactly linear in the day count — i.e. the schema's field count
+    /// scales with days only (no raw plans, no per-step arrays).
+    #[test]
+    fn nine_day_record_stays_one_modest_jsonl_line() {
+        use serde_json::Value;
+
+        const AGENTS: usize = 8;
+        const SIZE_CAP: usize = 16 * 1024;
+        /// Ceiling for a single day's entry: 8 agents × (state + movement)
+        /// at tens of bytes each, with headroom for digit width.
+        const PER_DAY_CAP: usize = 1024;
+
+        let record = record_with_days(9, AGENTS);
+        assert_eq!(record.days.len(), 9, "one summary per played day");
+        assert_eq!(record.day_steps.len(), 9, "budget recorded once, per day");
+        assert_eq!(record.day_seconds.len(), 9);
+
+        let json = serde_json::to_string(&record).expect("serialises");
+        assert!(json.len() < SIZE_CAP, "9-day record is {} bytes, cap is {SIZE_CAP}", json.len());
+        // Still exactly one JSONL line.
+        assert!(!json.contains('\n'), "one record must be one line");
+
+        // Fixed field counts: a day entry is `day` / `agents` / `movement`,
+        // an agent state is `kind` / `pos` / `fuel`, a movement summary is
+        // `moves` / `waits` / `runs` / `dirs`. Nothing grows with plan
+        // length or day index.
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parses");
+        let days = value.get("days").and_then(Value::as_array).expect("days array");
+        for (idx, day) in days.iter().enumerate() {
+            let entry = day.as_object().expect("day entry is an object");
+            assert_eq!(entry.len(), 3, "day entry fields: {entry:?}");
+            let agents = entry.get("agents").and_then(Value::as_array).expect("agents");
+            let movement = entry.get("movement").and_then(Value::as_array).expect("movement");
+            assert_eq!(agents.len(), AGENTS);
+            assert_eq!(movement.len(), AGENTS);
+            for a in agents {
+                assert_eq!(a.as_object().expect("agent is an object").len(), 3, "kind/pos/fuel");
+            }
+            for m in movement {
+                assert_eq!(
+                    m.as_object().expect("movement is an object").len(),
+                    4,
+                    "moves/waits/runs/dirs"
+                );
+            }
+            let bytes = serde_json::to_vec(day).expect("serialises");
+            assert!(
+                bytes.len() < PER_DAY_CAP,
+                "day {idx} entry is {} bytes, cap {PER_DAY_CAP}",
+                bytes.len()
+            );
+        }
+
+        // Exactly linear in days: 9 days cost 8× the (2 − 1) day delta.
+        let one = serde_json::to_string(&record_with_days(1, AGENTS)).expect("serialises").len();
+        let two = serde_json::to_string(&record_with_days(2, AGENTS)).expect("serialises").len();
+        let nine = json.len();
+        let per_extra_day = two - one;
+        assert!(per_extra_day > 0, "each day must add bytes");
+        assert_eq!(
+            nine - one,
+            per_extra_day * 8,
+            "growth must scale with days only: {one} → {two} → {nine}"
+        );
     }
 
     #[test]
