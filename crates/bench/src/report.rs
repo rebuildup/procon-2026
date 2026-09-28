@@ -181,6 +181,7 @@ mod tests {
             day_budget_exceeded_days: Vec::new(),
             daily_response_us: vec![600, 634],
             daily_varieties: vec![2, 3],
+            agent_kinds: None,
         }
     }
 

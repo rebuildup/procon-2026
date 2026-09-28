@@ -274,6 +274,25 @@ impl CaseSpec {
         engine::from_wire::protocol_setting_to_engine(&self.setting, team.clone())
             .map_err(CaseError::Invalid)
     }
+
+    /// [`Self::to_engine_setting`] with an explicit per-slot kind composition
+    /// (Issue #235's `--kinds` axis).
+    ///
+    /// `kinds` must already be resolved to exactly `self.setting.agents.len()`
+    /// slots — see [`crate::kinds::resolve_kinds`]. `None` is
+    /// [`Self::to_engine_setting`], unchanged.
+    ///
+    /// # Errors
+    /// [`Self::to_engine_setting`]'s errors, plus the length mismatch
+    /// `engine::from_wire` reports.
+    pub fn to_engine_setting_with_kinds(
+        &self,
+        team: &PlayerId,
+        kinds: Option<&[engine::model::AgentKind]>,
+    ) -> Result<EngineSetting, CaseError> {
+        engine::from_wire::protocol_setting_to_engine_with_kinds(&self.setting, team.clone(), kinds)
+            .map_err(CaseError::Invalid)
+    }
 }
 
 impl Display for CaseSpec {

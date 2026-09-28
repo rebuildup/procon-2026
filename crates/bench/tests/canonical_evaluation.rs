@@ -61,6 +61,7 @@ fn config(harness_deadline: HarnessDeadline, isolation: Isolation) -> EvalConfig
         team: team(),
         harness_deadline,
         isolation,
+        kinds: None,
     }
 }
 
@@ -508,6 +509,33 @@ fn worker_reports_the_team_it_was_given() {
     assert_eq!(raw.team, "raw-team", "the worker must read `--team`, not a flag nothing sends");
 }
 
+/// Issue #235 — the kind composition has to survive **process isolation**:
+/// the parent expands nothing itself, it forwards `--kinds` and the child
+/// reports back what it fielded. A batch run with process isolation (the
+/// default for a real `procon-eval`) would otherwise silently fall back to
+/// the historical alternation while the operator believed they had changed it.
+#[test]
+fn kinds_survive_process_isolation() {
+    use engine::model::AgentKind;
+
+    let evaluator = Evaluator::new(
+        config(HarnessDeadline::default(), Isolation::Thread)
+            .with_process_isolation(worker_exe())
+            .with_kinds(Some(bench::kinds::parse_kinds("S").expect("pattern parses"))),
+    );
+    let case = CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+    let registry = CandidateRegistry::builtin();
+    let candidate = registry.build("wait").expect("wait is builtin");
+
+    let record = evaluator.evaluate_one(&candidate, &case);
+    assert_eq!(record.status, RunStatus::Success, "{}", record.status_detail.unwrap_or_default());
+    assert_eq!(
+        record.agent_kinds,
+        Some(vec![AgentKind::Supply; 3]),
+        "small-8x8 fields 3 agents; `--kinds S` must reach the child and come back all-supply"
+    );
+}
+
 #[test]
 fn harness_deadline_is_derived_from_the_cases_official_window() {
     // `daySeconds = [60,60,60]` is 180 s of legal answering time. The flat
@@ -659,6 +687,7 @@ fn record_fixture(candidate_id: &str) -> RunRecord {
         day_budget_exceeded_days: Vec::new(),
         daily_response_us: vec![100],
         daily_varieties: vec![1],
+        agent_kinds: None,
     }
 }
 

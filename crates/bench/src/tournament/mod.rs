@@ -73,6 +73,13 @@ pub struct TournamentConfig {
     /// `PROCON_EVAL_WORKER` or the running executable. Setting it makes a
     /// batch deterministic about *how* a timeout is isolated.
     pub worker_exe: Option<PathBuf>,
+    /// Agent-kind composition pattern for the whole batch (Issue #235's
+    /// `--kinds`). `None` is the historical alternation.
+    ///
+    /// `serde(default)` keeps a config persisted before this axis existed
+    /// deserialising as "the old default" rather than failing.
+    #[serde(default)]
+    pub kinds: Option<Vec<engine::model::AgentKind>>,
 }
 
 impl TournamentConfig {
@@ -93,7 +100,15 @@ impl TournamentConfig {
             harness_margin_ms: DEFAULT_HARNESS_MARGIN_MS,
             output_dir: None,
             worker_exe: None,
+            kinds: None,
         }
+    }
+
+    /// Set the agent-kind composition pattern (Issue #235).
+    #[must_use]
+    pub fn with_kinds(mut self, kinds: Option<Vec<engine::model::AgentKind>>) -> Self {
+        self.kinds = kinds;
+        self
     }
 
     /// Override the derived harness deadline with an absolute one.
@@ -295,6 +310,9 @@ impl TournamentRunner {
             team,
             harness_deadline: self.harness_deadline(),
             isolation: Isolation::Thread,
+            // `--kinds` for every case in this batch; `None` keeps the
+            // historical alternation (Issue #235).
+            kinds: self.config.kinds.clone(),
         };
         if let Some(exe) = self.config.worker_exe.clone().or_else(worker_executable) {
             eval_config = eval_config.with_process_isolation(exe);

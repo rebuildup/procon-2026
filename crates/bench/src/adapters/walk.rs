@@ -13,6 +13,14 @@
 //! [`engine::MatchSim`] still downgrades anything illegal to a `Wait`, so an
 //! imperfect plan degrades instead of aborting the match.
 //!
+//! # Who gets a target (`assign=`)
+//!
+//! The same question, one level up: [`AssignMode`] decides *which* agents
+//! receive a target list at all. `assign=agents` (default) is everyone, the
+//! pre-#235 behaviour; `assign=patrol` withholds the tour from
+//! [`AgentKind::Supply`] agents so they wait instead of walking a spot they
+//! could never collect from (Issue #235).
+//!
 //! # Walk modes (`walk=`)
 //!
 //! [`plan_walk`] is the `greedy` mode — the only one that existed before
@@ -23,7 +31,7 @@
 //! parameter with [`parse_walk`], so the assignment half of a tour candidate
 //! is untouched by the choice.
 
-use engine::model::{Action, AgentActions, Direction, HexCoord, MapGrid, SolverContext};
+use engine::model::{Action, AgentActions, AgentKind, Direction, HexCoord, MapGrid, SolverContext};
 
 use crate::candidate::{CandidateError, CandidateSpec};
 
@@ -173,6 +181,82 @@ pub fn plan_walk_with(
     }
 }
 
+/// Which controlled agents a tour candidate hands target spots to (the
+/// `assign=` parameter, Issue #235).
+///
+/// Every tour candidate built before #235 gave **all** of its agents a tour,
+/// including the Supply tankers — which cannot collect 玉 at all (Issue
+/// #234), so the tour a Supply agent walks is pure waste and, worse, it is
+/// planned from an agent that could instead be following a Patrol to refuel
+/// it. `assign` makes that choice explicit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AssignMode {
+    /// `assign=agents` (default): every controlled agent gets a target list —
+    /// the pre-#235 behaviour, byte for byte, so existing canonical ids keep
+    /// both their shape and their meaning.
+    #[default]
+    Agents,
+    /// `assign=patrol`: [`AgentKind::Supply`] agents get an empty target list
+    /// and therefore wait the whole day ([`plan_walk`]'s documented empty-list
+    /// behaviour). Patrol agents are untouched.
+    ///
+    /// Escort / rendezvous (following a Patrol to refuel it) is deliberately
+    /// *not* what this mode does — waiting in place is the minimal "stop
+    /// wasting the tour" switch the Issue asks for.
+    Patrol,
+}
+
+impl AssignMode {
+    /// Drop the target lists of Supply agents, in `ctx.agent_ids` order.
+    ///
+    /// Reads the kind through `ctx.state.agents[].kind`, which is the same
+    /// visibility path every candidate has (Issue #235 Deliverable 2). When
+    /// `self` is [`Self::Agents`] the vector is returned untouched, so the
+    /// default path never re-allocates or re-orders anything.
+    #[must_use]
+    pub fn apply(
+        self,
+        ctx: &SolverContext<'_>,
+        mut targets: Vec<Vec<HexCoord>>,
+    ) -> Vec<Vec<HexCoord>> {
+        if self == Self::Agents {
+            return targets;
+        }
+        for (index, id) in ctx.agent_ids.iter().enumerate() {
+            let is_supply =
+                ctx.state.agents.iter().any(|a| a.id == *id && a.kind == AgentKind::Supply);
+            if is_supply {
+                if let Some(list) = targets.get_mut(index) {
+                    list.clear();
+                }
+            }
+        }
+        targets
+    }
+}
+
+/// Parse the `assign` parameter into an [`AssignMode`].
+///
+/// Omitted means [`AssignMode::Agents`]: every pre-#235 id keeps its exact
+/// behaviour, and `assign=agents` is the explicit spelling of the same
+/// default (the parameter is appended last in each factory's `PARAMS`, so
+/// existing canonical ids keep their shape).
+///
+/// # Errors
+/// [`CandidateError::InvalidParameter`] for any value other than
+/// `agents` / `patrol`.
+pub(crate) fn parse_assign(spec: &CandidateSpec) -> Result<AssignMode, CandidateError> {
+    match spec.param("assign") {
+        None | Some("agents") => Ok(AssignMode::Agents),
+        Some("patrol") => Ok(AssignMode::Patrol),
+        Some(other) => Err(CandidateError::InvalidParameter {
+            key: "assign".to_owned(),
+            value: other.to_owned(),
+            reason: "expected agents | patrol".to_owned(),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,6 +375,55 @@ mod tests {
                 "{id} must be rejected as an invalid walk value"
             );
         }
+    }
+
+    /// Issue #235 — `assign` is a schema-gated value: omitted and `agents`
+    /// select today's all-agents assignment, `patrol` withholds the tour from
+    /// Supply agents, anything else is an `InvalidParameter` at parse time.
+    #[test]
+    fn assign_param_parses_agents_and_patrol_and_rejects_anything_else() {
+        let parse = |id: &str| parse_assign(&CandidateSpec::parse(id).expect("id parses"));
+        assert_eq!(parse("loop"), Ok(AssignMode::Agents));
+        assert_eq!(parse("loop:assign=agents"), Ok(AssignMode::Agents));
+        assert_eq!(parse("loop:assign=patrol"), Ok(AssignMode::Patrol));
+        assert_eq!(
+            parse("multiloop:kmeans=4:seed=42:walk=astar:assign=patrol"),
+            Ok(AssignMode::Patrol)
+        );
+        assert_eq!(parse("loop"), Ok(AssignMode::default()), "the default is agents");
+        for id in ["loop:assign=Patrol", "loop:assign=escort", "loop:assign=1", "loop:assign=tour"]
+        {
+            assert!(
+                matches!(parse(id), Err(CandidateError::InvalidParameter { key, .. }) if key == "assign"),
+                "{id} must be rejected as an invalid assign value"
+            );
+        }
+    }
+
+    /// Issue #235 AC — `assign=patrol` is the "Supply gets no spot tour"
+    /// switch: it reads the kind through `SolverContext` and empties exactly
+    /// those agents' target lists. `assign=agents` must not touch anything.
+    #[test]
+    fn assign_patrol_withholds_tours_from_supply_agents_only() {
+        let st = state();
+        let ctx = SolverContext::from_state(&st);
+        // The fixture state is [Patrol, Supply, Supply].
+        assert_eq!(ctx.state.agents[0].kind, AgentKind::Patrol);
+        assert_eq!(ctx.state.agents[1].kind, AgentKind::Supply);
+        assert_eq!(ctx.state.agents[2].kind, AgentKind::Supply);
+
+        let targets =
+            vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(3, 3)], vec![HexCoord::new(4, 4)]];
+
+        let untouched = AssignMode::Agents.apply(&ctx, targets.clone());
+        assert_eq!(untouched, targets, "assign=agents must be a no-op");
+
+        let filtered = AssignMode::Patrol.apply(&ctx, targets);
+        assert_eq!(
+            filtered,
+            vec![vec![HexCoord::new(2, 0)], Vec::new(), Vec::new()],
+            "the patrol keeps its tour; both supply agents wait"
+        );
     }
 
     /// Issue #215 AC — default equivalence: selecting `greedy` explicitly is

@@ -60,6 +60,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::candidate::Candidate;
 use crate::case::CaseSpec;
+use crate::kinds::render_kinds;
 
 /// What happened to one `(candidate, case)` evaluation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -195,6 +196,16 @@ pub struct RunRecord {
     /// breakdown lets a later re-aggregation change the policy without
     /// re-running the batch.
     pub daily_varieties: Vec<u32>,
+    /// The team composition this run actually fielded, one entry per agent
+    /// slot in `ctx.agent_ids` order (Issue #235).
+    ///
+    /// `None` only on records written before the `--kinds` axis existed and
+    /// on runs that never produced a final state (timeout / panic) — every
+    /// scored record from this commit on carries `Some`. This is what makes
+    /// `--kinds` auditable evidence rather than a claim about the batch: the
+    /// composition is read back from the simulated setting, not from the flag.
+    #[serde(default)]
+    pub agent_kinds: Option<Vec<engine::model::AgentKind>>,
 }
 
 impl RunRecord {
@@ -267,6 +278,9 @@ impl RunRecord {
             day_budget_exceeded_days: Vec::new(),
             daily_response_us: Vec::new(),
             daily_varieties: Vec::new(),
+            // No final state was reached, so there is no team to report —
+            // `None` rather than a composition that was never observed.
+            agent_kinds: None,
         }
     }
 }
@@ -290,6 +304,14 @@ pub struct EvalConfig {
     pub harness_deadline: HarnessDeadline,
     /// How a run is executed when the deadline expires.
     pub isolation: Isolation,
+    /// Agent-kind composition pattern for every run in the batch
+    /// (Issue #235's `--kinds`).
+    ///
+    /// `None` is the default: [`engine::from_wire`]'s historical
+    /// even-slot-patrol / odd-slot-supply alternation, byte-for-byte. A value
+    /// is a *pattern* expanded per case with [`crate::kinds::resolve_kinds`],
+    /// because the corpus fields teams of 3, 4, 5, 6 and 8 agents.
+    pub kinds: Option<Vec<engine::model::AgentKind>>,
 }
 
 /// How the harness deadline for one run is chosen.
@@ -363,7 +385,22 @@ impl EvalConfig {
             team,
             harness_deadline,
             isolation: Isolation::Thread,
+            kinds: None,
         }
+    }
+
+    /// Set the agent-kind composition pattern (Issue #235's `--kinds` axis).
+    #[must_use]
+    pub fn with_kinds(mut self, kinds: Option<Vec<engine::model::AgentKind>>) -> Self {
+        self.kinds = kinds;
+        self
+    }
+
+    /// The kind composition this config fields for a team of `n_agents`
+    /// slots: the expanded pattern, or [`engine::from_wire::default_agent_kinds`].
+    #[must_use]
+    pub fn kinds_for(&self, n_agents: usize) -> Vec<engine::model::AgentKind> {
+        crate::kinds::resolve_kinds(self.kinds.as_deref(), n_agents)
     }
 
     /// Same as [`Self::new`], but each run executes in a child `procon-eval`
@@ -566,6 +603,10 @@ impl Evaluator {
             .arg(self.config.team.as_str())
             .arg("--source-commit-sha")
             .arg(&self.config.source_commit_sha)
+            // The kind composition travels as the pattern the batch declared,
+            // so the child expands it against the very same case body.
+            .arg("--kinds")
+            .arg(self.config.kinds.as_ref().map_or_else(String::new, |p| render_kinds(p)))
             .arg("--harness-timeout-ms")
             .arg(deadline_ms.to_string())
             .stdin(std::process::Stdio::null())
@@ -596,7 +637,11 @@ impl Evaluator {
             }
         };
 
-        let setting = match case.to_engine_setting(&self.config.team) {
+        // Expand the batch's `--kinds` pattern for *this* case's team size
+        // before converting: the pattern is what the batch declared, this is
+        // what the board actually fields.
+        let kinds = self.config.kinds_for(case.setting.agents.len());
+        let setting = match case.to_engine_setting_with_kinds(&self.config.team, Some(&kinds)) {
             Ok(s) => s,
             Err(err) => {
                 return RunRecord::unscored(
@@ -803,6 +848,11 @@ impl Evaluator {
             day_budget_exceeded_days,
             daily_response_us: timings.daily_response_us,
             daily_varieties,
+            // Read back from the simulated setting, not from the flag: what
+            // the engine actually fielded is the evidence (Issue #235).
+            agent_kinds: Some(
+                run.final_state.setting.agents.iter().map(|a| a.kind).collect::<Vec<_>>(),
+            ),
         }
     }
 }
@@ -965,6 +1015,7 @@ mod tests {
             team: PlayerId::new("parent-team").expect("valid team"),
             harness_deadline: HarnessDeadline::default(),
             isolation: Isolation::Thread,
+            kinds: None,
         });
 
         // Pretend a worker came back with its own (wrong) identity.
@@ -1004,6 +1055,7 @@ mod tests {
             team: PlayerId::new("parent-team").expect("valid team"),
             harness_deadline: HarnessDeadline::default(),
             isolation: Isolation::Thread,
+            kinds: None,
         });
 
         // Pretend a worker came back spelling the id its own way.

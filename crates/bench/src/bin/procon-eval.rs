@@ -96,6 +96,22 @@ struct Args {
     #[arg(long, default_value = "")]
     case_files: String,
 
+    /// Agent-kind composition pattern (Issue #235): a comma-separated cycle
+    /// over agent slots, `P` = patrol and `S` = supply, e.g. `P,S,P,S,P`.
+    ///
+    /// Slot `i` gets `pattern[i % len]`, so one pattern serves the whole
+    /// corpus even though its teams field 3, 4, 5, 6 and 8 agents. Omitted
+    /// (or empty) means `P,S` — the historical even-patrol / odd-supply
+    /// alternation, byte-for-byte, so pre-#235 evidence keeps its meaning.
+    /// The composition each run actually fielded is recorded in
+    /// `RunRecord.agent_kinds`.
+    ///
+    /// Every ratio is legal (the official `POST /agent` schema constrains
+    /// only the element count); only a non-kind token, an empty pattern or a
+    /// pattern longer than the official 8-agent maximum are rejected.
+    #[arg(long, default_value = "")]
+    kinds: String,
+
     /// Comma-separated candidate ids, e.g.
     /// `loop:iterations=32:initial=greedy,greedy,wait`.
     #[arg(long)]
@@ -193,6 +209,13 @@ fn run() -> Exit {
             "--candidates is required (or use --list-candidates to see what is available)"
                 .to_owned(),
         );
+    }
+
+    // A malformed `--kinds` is a pure flag error: reject it before anything
+    // is loaded, so the user never waits on corpus construction to be told
+    // their pattern has a typo in it.
+    if let Err(e) = bench::kinds::parse_kinds_flag(&args.kinds) {
+        return Exit::Fail(e);
     }
 
     // Ids themselves are parsed and validated by `build_config`, so the flag
@@ -324,11 +347,16 @@ fn build_config(args: &Args, source_commit_sha: String) -> Result<TournamentConf
         ),
         None => None,
     };
+    // `run` already rejected a malformed value; parsing again here keeps the
+    // flag → config path self-contained so the test below proves the pattern
+    // actually reaches the runner rather than being dropped in between.
+    let kinds = bench::kinds::parse_kinds_flag(&args.kinds)?;
     Ok(TournamentConfig::new(candidate_ids, baseline, args.team.clone(), args.harness_timeout_ms)
         .with_source_commit_sha(source_commit_sha)
         // Without this, `--harness-margin-ms` parsed but never reached the
         // runner, which then used its own default.
         .with_harness_margin_ms(args.harness_margin_ms)
+        .with_kinds(kinds)
         .with_output_dir(args.output_dir.clone()))
 }
 
@@ -368,11 +396,17 @@ fn worker_record(args: &Args) -> Result<RunRecord, String> {
 
     // This process already is the isolation boundary; a nested child would
     // only add latency.
+    // The parent always sends `--kinds` (empty = default pattern), so the
+    // composition the child fields is the one the batch declared. Parsing
+    // here fails the record rather than silently falling back to the default.
+    let kinds = bench::kinds::parse_kinds_flag(&args.kinds)?;
+
     let config = EvalConfig {
         source_commit_sha: args.source_commit_sha.clone(),
         team,
         harness_deadline: worker_deadline(args),
         isolation: Isolation::Thread,
+        kinds,
     };
     Ok(Evaluator::new(config).evaluate_one(&candidate, &case))
 }
@@ -621,6 +655,37 @@ mod tests {
         ]);
         let err = build_config(&args, "test-sha".to_owned()).expect_err("duplicate configuration");
         assert!(err.contains("duplicate candidate"), "{err}");
+    }
+
+    /// Issue #235 AC: `--kinds` parses and reaches the batch config, an
+    /// omitted flag stays `None` (= the historical alternation), and a
+    /// malformed pattern is refused instead of silently falling back.
+    #[test]
+    fn the_kinds_flag_reaches_the_tournament_config() {
+        use engine::model::AgentKind;
+
+        let args = parse(&["--kinds", "P,P,P,P,S"]);
+        let config = build_config(&args, "test-sha".to_owned()).expect("a valid pattern parses");
+        assert_eq!(
+            config.kinds,
+            Some(vec![
+                AgentKind::Patrol,
+                AgentKind::Patrol,
+                AgentKind::Patrol,
+                AgentKind::Patrol,
+                AgentKind::Supply
+            ]),
+            "--kinds was parsed but never reached the config"
+        );
+
+        let omitted = build_config(&parse(&[]), "s".to_owned()).expect("flags are valid");
+        assert_eq!(omitted.kinds, None, "omitted --kinds must mean 'today's default'");
+
+        for bad in ["3p2s", "X", "P,S,"] {
+            let err = build_config(&parse(&["--kinds", bad]), "s".to_owned())
+                .expect_err("a malformed pattern must be rejected");
+            assert!(err.contains("--kinds"), "{bad} → {err}");
+        }
     }
 
     /// The margin default must stay a default, not become an override.
