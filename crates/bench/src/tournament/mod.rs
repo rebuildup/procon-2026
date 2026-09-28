@@ -80,6 +80,14 @@ pub struct TournamentConfig {
     /// deserialising as "the old default" rather than failing.
     #[serde(default)]
     pub kinds: Option<Vec<engine::model::AgentKind>>,
+    /// Counterfactual: refill every Patrol tank at each day boundary
+    /// (Issue #243's `oracle_refill`).
+    ///
+    /// `false` (the default, `serde(default)` for configs written before the
+    /// axis existed) is the official refuel rule. Analysis-only — see
+    /// [`crate::evaluate::EvalConfig::oracle_refill`].
+    #[serde(default)]
+    pub oracle_refill: bool,
 }
 
 impl TournamentConfig {
@@ -101,6 +109,7 @@ impl TournamentConfig {
             output_dir: None,
             worker_exe: None,
             kinds: None,
+            oracle_refill: false,
         }
     }
 
@@ -108,6 +117,14 @@ impl TournamentConfig {
     #[must_use]
     pub fn with_kinds(mut self, kinds: Option<Vec<engine::model::AgentKind>>) -> Self {
         self.kinds = kinds;
+        self
+    }
+
+    /// Enable the `oracle_refill` counterfactual (Issue #243). Off by
+    /// default; analysis-only.
+    #[must_use]
+    pub fn with_oracle_refill(mut self, oracle_refill: bool) -> Self {
+        self.oracle_refill = oracle_refill;
         self
     }
 
@@ -313,6 +330,7 @@ impl TournamentRunner {
             // `--kinds` for every case in this batch; `None` keeps the
             // historical alternation (Issue #235).
             kinds: self.config.kinds.clone(),
+            oracle_refill: self.config.oracle_refill,
         };
         if let Some(exe) = self.config.worker_exe.clone().or_else(worker_executable) {
             eval_config = eval_config.with_process_isolation(exe);

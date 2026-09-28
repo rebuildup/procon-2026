@@ -435,7 +435,7 @@ mod tests {
     fn normalized_plan_simulates_identically_when_the_tail_is_waits() {
         let map = grid(&FLAT);
         let setting = setting_with(map, 6);
-        let sim = MatchSim::new(SimConfig { traffic_thresholds: Default::default() });
+        let sim = MatchSim::new(SimConfig::default());
 
         // Original candidate-shaped plan: 3 plain moves + 3 waits for agent 0.
         // Element sum = 6 (the engine clock), weighted sum = 3*2 + 3 = 9

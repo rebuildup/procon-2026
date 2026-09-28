@@ -103,6 +103,24 @@ procon-eval --cases all --generated '…' \
 > fuel が枯渇せず、`assign=patrol` の tier1-3 への効果は **0/25/0（引き分け）** に留まる。
 > kind-aware assignment の真価は fuel-tight / multi-day で見る必要がある。
 
+### counterfactual knob: `--oracle-refill`（Issue #243・分析専用）
+
+`--oracle-refill` は **公式ルールを模倣する knob ではなく、寄与を測るための反実仮想**です。
+日跨ぎの境界で全 Patrol のタンクを満タンに戻します（同一セル接触による Supply 給油は
+どちらでも従来どおり）。`fuel∞`（case の `fuelLimits` を引き上げる）と違い、**日内の燃料
+拘束は残る**点が「補給欠如」と「燃料切れ」を分離するために効きます。
+
+| 項目 | 内容 |
+|---|---|
+| 既定 | **省略 = `false` = 公式ルールと byte-identical**（`SimConfig::default()` / `EvalConfig::new()` / `TournamentConfig::new()` の三箇所すべてが `false`） |
+| 経路 | `procon-eval --oracle-refill` → `TournamentConfig` → `EvalConfig` → `SimConfig` → `MatchSim::step` の日跨ぎ分支（`phase_oracle_refill`） |
+| process isolation | 親は `--oracle-refill` を子に明示転送（`oracle_refill_survives_process_isolation` が pin）。落ちると子は公式ルールで走ってしまう |
+| 記録 | `RunRecord.oracle_refill`（`#[serde(default)]`）。counterfactual の run を evidence と取り違えないための識別子 |
+| 禁則 | **既定の evidence 経路では決して on にしない**。順位・baseline 比較・回帰検知はすべて off で回す |
+
+> Issue #243 の ablation（current / `fuel∞` / `oracle-refill` / kind mix / `assign`）だけが
+> この flag を使います。child 実装（fuel-aware tour / escort）の判定材料として使います。
+
 ## スコアと順位
 
 スコア型は `domain::OfficialScore`、比較は `domain::compare_scores` です。
@@ -604,9 +622,18 @@ fixture にして回帰を永続化します。
   "fuel_short_count": 0,         // うち燃料不足由来
   "day_budget_exceeded_days": [], // daySeconds 超過日（0-based）。空でなければ invalid
   "daily_response_us": [830, 402, 385],
-  "daily_varieties": [1, 2, 1]
+  "daily_varieties": [1, 2, 1],
+
+  "agent_kinds": ["Patrol", "Supply", "Patrol"], // 実際に field した種別（#235）
+  "agent_ball_counts": [3, 0, 2],  // agent ごとの総玉数（#243）。0 = zero-arrival
+  "oracle_refill": false           // 反実仮想 run の識別子（#243）。既定 false
 }
 ```
+
+`agent_ball_counts` は `total_balls` の内訳（合計が一致する）で、
+「5 台のうち何台が玉に到達したか」= **zero 到達 agent 数** を directly 読めます。
+`agent_kinds` / `agent_ball_counts` / `oracle_refill` はいずれも `#[serde(default)]`
+なので、それ以前に書かれた `runs.jsonl` はそのまま parse できます。
 
 ### status の意味
 

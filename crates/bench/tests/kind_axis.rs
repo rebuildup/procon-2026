@@ -34,6 +34,7 @@ fn config(kinds: Option<Vec<AgentKind>>) -> EvalConfig {
         harness_deadline: HarnessDeadline::default(),
         isolation: Isolation::Thread,
         kinds,
+        oracle_refill: false,
     }
 }
 

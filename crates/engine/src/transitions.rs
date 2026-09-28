@@ -209,6 +209,32 @@ pub fn phase_spawn(map: &mut MapGrid, events: &mut Vec<StepEvent>) {
     let _ = events; // Spawn is currently silent; kept for symmetry.
 }
 
+/// Counterfactual day-boundary tank refill (Issue #243's `oracle_refill`).
+///
+/// Restores every **Patrol** agent to `fuel_cap` at a day boundary, the way a
+/// hypothetical always-available supply point would. Supply agents are
+/// skipped (their tank is `u32::MAX` already, so topping up is a no-op that
+/// would only burn cycles).
+///
+/// This is **analysis-only**: the official rules refuel a Patrol tank only on
+/// supply contact ([`refill_fuel_if_supply_present`]), and the ablation in
+/// Issue #243 exists precisely to separate "fuel ran out" from "supply never
+/// came". The knob defaults to `false` everywhere, so no default evidence
+/// path can reach this function.
+pub fn phase_oracle_refill(agents: &mut [Agent], events: &mut Vec<StepEvent>) {
+    for agent in agents.iter_mut() {
+        if agent.kind != AgentKind::Patrol || agent.fuel >= agent.fuel_cap {
+            continue;
+        }
+        agent.fuel = agent.fuel_cap;
+        events.push(StepEvent::Picked {
+            agent_id: agent.id,
+            coord: agent.pos,
+            series: u32::MAX, // sentinel: refill, not a ball pick (same as supply refuel)
+        });
+    }
+}
+
 /// Reset the per-day traffic + pickup bookkeeping.
 pub fn begin_day(state: &mut MatchState) {
     state.traffic_yesterday = std::mem::take(&mut state.traffic_today);
@@ -523,6 +549,52 @@ mod tests {
         phase_fuel(&mut agents, &costs, &mut events);
         assert_eq!(agents[0].fuel, 7);
         assert_eq!(agents[1].fuel, u32::MAX);
+    }
+
+    /// Issue #243 — `phase_oracle_refill` tops up only Patrol tanks that are
+    /// actually below cap, leaves Supply alone, and says so with the same
+    /// refill sentinel the supply-contact path uses.
+    #[test]
+    fn phase_oracle_refill_refills_patrol_only_and_emits_the_refill_sentinel() {
+        let mut agents = vec![
+            Agent {
+                id: 0,
+                kind: AgentKind::Patrol,
+                pos: HexCoord::new(0, 0),
+                fuel: 3,
+                fuel_cap: 10,
+                inventory: Default::default(),
+            },
+            // A Patrol already at cap must not be touched (and must not
+            // produce a second event).
+            Agent {
+                id: 1,
+                kind: AgentKind::Patrol,
+                pos: HexCoord::new(1, 0),
+                fuel: 10,
+                fuel_cap: 10,
+                inventory: Default::default(),
+            },
+            Agent {
+                id: 2,
+                kind: AgentKind::Supply,
+                pos: HexCoord::new(0, 0),
+                fuel: u32::MAX,
+                fuel_cap: u32::MAX,
+                inventory: Default::default(),
+            },
+        ];
+        let mut events = Vec::new();
+        phase_oracle_refill(&mut agents, &mut events);
+        assert_eq!(agents[0].fuel, 10, "depleted patrol must be refilled to cap");
+        assert_eq!(agents[1].fuel, 10, "patrol at cap is untouched");
+        assert_eq!(agents[2].fuel, u32::MAX, "supply is never touched");
+        assert_eq!(events.len(), 1, "exactly the refilled patrol reports");
+        assert!(
+            events.iter().any(|e| matches!(e, StepEvent::Picked { agent_id: 0, series, .. }
+                if *series == u32::MAX)),
+            "refills use the u32::MAX sentinel, like supply refuelling"
+        );
     }
 
     #[test]

@@ -61,6 +61,11 @@ use domain::PlayerId;
         This is NOT `procon tournament`: that command drives the real server and reports \
         protocol progress, not solver quality."
 )]
+// Every bool here is an independent on/off CLI switch (`--quiet`,
+// `--worker`, `--list-candidates`, `--oracle-refill`), i.e. clap flag
+// surface rather than domain state — folding them into enums would only
+// make the flags harder to read.
+#[allow(clippy::struct_excessive_bools)]
 struct Args {
     /// Show the registered candidate algorithms and their parameters, then exit.
     #[arg(long)]
@@ -111,6 +116,16 @@ struct Args {
     /// pattern longer than the official 8-agent maximum are rejected.
     #[arg(long, default_value = "")]
     kinds: String,
+
+    /// Counterfactual day-boundary tank refill (Issue #243, analysis-only).
+    ///
+    /// With the flag, every Patrol tank is topped up to `fuelLimits` at each
+    /// day boundary; supply-contact refuelling is unchanged either way. The
+    /// flag is OFF by default so every default evidence path keeps the
+    /// official refuel rule byte-for-byte. Use it to separate "fuel ran out"
+    /// from "supply never came" — never as a strategy.
+    #[arg(long, default_value_t = false)]
+    oracle_refill: bool,
 
     /// Comma-separated candidate ids, e.g.
     /// `loop:iterations=32:initial=greedy,greedy,wait`.
@@ -357,6 +372,7 @@ fn build_config(args: &Args, source_commit_sha: String) -> Result<TournamentConf
         // runner, which then used its own default.
         .with_harness_margin_ms(args.harness_margin_ms)
         .with_kinds(kinds)
+        .with_oracle_refill(args.oracle_refill)
         .with_output_dir(args.output_dir.clone()))
 }
 
@@ -407,6 +423,7 @@ fn worker_record(args: &Args) -> Result<RunRecord, String> {
         harness_deadline: worker_deadline(args),
         isolation: Isolation::Thread,
         kinds,
+        oracle_refill: args.oracle_refill,
     };
     Ok(Evaluator::new(config).evaluate_one(&candidate, &case))
 }
@@ -686,6 +703,19 @@ mod tests {
                 .expect_err("a malformed pattern must be rejected");
             assert!(err.contains("--kinds"), "{bad} → {err}");
         }
+    }
+
+    /// Issue #243 AC: `--oracle-refill` parses, reaches the batch config, an
+    /// omitted flag stays `false` (= the official refuel rule), and the flag
+    /// is not silently dropped between the CLI and the runner.
+    #[test]
+    fn the_oracle_refill_flag_reaches_the_tournament_config() {
+        let on =
+            build_config(&parse(&["--oracle-refill"]), "s".to_owned()).expect("a bare flag parses");
+        assert!(on.oracle_refill, "--oracle-refill was parsed but never reached the config");
+
+        let off = build_config(&parse(&[]), "s".to_owned()).expect("flags are valid");
+        assert!(!off.oracle_refill, "an omitted flag must mean 'official refuel rule'");
     }
 
     /// The margin default must stay a default, not become an override.

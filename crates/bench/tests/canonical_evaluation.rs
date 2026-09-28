@@ -62,6 +62,7 @@ fn config(harness_deadline: HarnessDeadline, isolation: Isolation) -> EvalConfig
         harness_deadline,
         isolation,
         kinds: None,
+        oracle_refill: false,
     }
 }
 
@@ -536,6 +537,38 @@ fn kinds_survive_process_isolation() {
     );
 }
 
+/// Issue #243 — `oracle_refill` must survive **process isolation**: the
+/// counterfactual lives in the child's `SimConfig`, so a parent that forgets
+/// to forward `--oracle-refill` would silently run the official refuel rule
+/// while the operator believed they had enabled the counterfactual. The flag
+/// is read back from the record the child itself produced (before any parent
+/// stamping) so the assertion cannot pass by accident.
+#[test]
+fn oracle_refill_survives_process_isolation() {
+    let evaluator = Evaluator::new(
+        config(HarnessDeadline::default(), Isolation::Thread)
+            .with_process_isolation(worker_exe())
+            .with_oracle_refill(true),
+    );
+    let case = CaseSpec::from_bundled_fixture("small-8x8").expect("fixture loads");
+    let registry = CandidateRegistry::builtin();
+    let candidate = registry.build("wait").expect("wait is builtin");
+
+    let record = evaluator.evaluate_one(&candidate, &case);
+    assert_eq!(record.status, RunStatus::Success, "{}", record.status_detail.unwrap_or_default());
+    assert!(
+        record.oracle_refill,
+        "the child must have received `--oracle-refill` and recorded the counterfactual"
+    );
+
+    // And the default direction: with the knob off, the child records false.
+    let default_eval = Evaluator::new(
+        config(HarnessDeadline::default(), Isolation::Thread).with_process_isolation(worker_exe()),
+    );
+    let off = default_eval.evaluate_one(&candidate, &case);
+    assert!(!off.oracle_refill, "an unflagged batch must stay on the official refuel rule");
+}
+
 #[test]
 fn harness_deadline_is_derived_from_the_cases_official_window() {
     // `daySeconds = [60,60,60]` is 180 s of legal answering time. The flat
@@ -688,6 +721,8 @@ fn record_fixture(candidate_id: &str) -> RunRecord {
         daily_response_us: vec![100],
         daily_varieties: vec![1],
         agent_kinds: None,
+        agent_ball_counts: None,
+        oracle_refill: false,
     }
 }
 

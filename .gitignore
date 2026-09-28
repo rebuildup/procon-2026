@@ -71,3 +71,6 @@ packages/frontend/public/match-setting.json
 # committed project-local knowledge; ignore local override dirs)
 # ----------------------------------------
 .agents/
+# Python bytecode (scripts/ablation tooling)
+__pycache__/
+*.pyc
