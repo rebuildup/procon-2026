@@ -10,6 +10,7 @@
 //! tests. Prefer `engine::from_wire::protocol_setting_to_engine` in new code.
 
 pub use engine::from_wire::protocol_setting_to_engine;
+pub use engine::from_wire::protocol_setting_to_engine_with_kinds;
 
 #[cfg(test)]
 mod tests {

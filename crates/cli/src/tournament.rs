@@ -199,6 +199,12 @@ pub struct TournamentConfig {
     pub loop_initial_strategy: InitialStrategy,
     /// Iteration cap for the `loop` solver's local search.
     pub loop_iterations: u32,
+    /// Agent-kind composition pattern for every solver's match (live
+    /// `--kinds`, Issues #238/#243), as parsed by
+    /// [`bench::kinds::parse_kinds`]. `None` (the flag was omitted) keeps
+    /// the historical per-solver default unchanged — see
+    /// [`CoordinatorLoopConfig::agent_kinds`].
+    pub kinds: Option<Vec<engine::model::AgentKind>>,
     /// Team id baked into `CoordinatorLoopConfig::team_id`.
     pub team_id: String,
     /// Optional path where the harness writes a JSON leaderboard. When
@@ -222,6 +228,7 @@ impl Default for TournamentConfig {
             solvers: Vec::new(),
             loop_initial_strategy: InitialStrategy::GreedyNearestNeighbor,
             loop_iterations: 32,
+            kinds: None,
             team_id: "team-p0".to_owned(),
             state_output_dir: None,
             auto_restart_server: None,
@@ -304,6 +311,9 @@ pub async fn run_tournament(cfg: TournamentConfig) -> Result<TournamentReport, T
             solver_name: solver_name.clone(),
             server_url: Some(cfg.server.clone()),
             engine_setting_slot,
+            // One `--kinds` pattern for every solver in the run: the
+            // composition is the axis under test, not the solver order.
+            agent_kinds: cfg.kinds.clone(),
             ..CoordinatorLoopConfig::default()
         };
 

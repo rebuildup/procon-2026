@@ -84,6 +84,14 @@ procon-eval --cases all --generated '…' \
 | 実装 | `crates/bench/src/kinds.rs` → `CaseSpec::to_engine_setting_with_kinds` → `engine::from_wire::protocol_setting_to_engine_with_kinds` |
 | process isolation | 親は `--kinds` を子に転送するだけ（`kinds_survive_process_isolation` が pin） |
 
+> **live 対応（Issue #243 の live 側）**: `procon coordinator --kinds` /
+> `procon tournament --kinds` は**同一文法・同一 parser**（`bench::kinds::parse_kinds`）
+> を使い、`POST /agent` にそのまま送る。省略時は従来どおり byte-identical
+>（`wait` / `wait-mvp` は全 patrol、それ以外は `P,S` 交替）で、明示指定時は
+> **`wait` を含む全 solver に効く**。不正トークンは clap エラー（暗黙のフォールバックなし）。
+> 記録は `CoordinatorOutcome.kinds` → `ArenaRunRecord.kinds`
+>（`["Patrol", …]`、`RunRecord.agent_kinds` と同綴り）。
+
 **`assign=agents | patrol`（`loop` / `multiloop` の candidate param）** — 誰に tour を割り当てるか:
 
 - `agents`（既定、canonical 末尾に追記）= 現行の全台 tour と **byte-identical**。

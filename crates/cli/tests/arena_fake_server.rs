@@ -631,6 +631,13 @@ fn lobby_403_registration_stops_the_poll_and_records_match_and_departure() {
         assert_eq!(record.arena_match_id.as_deref(), Some("469"));
         assert_eq!(record.window_starts_at_unix, departing, "departure unix recorded");
         assert_eq!(record.days_completed, 2);
+        // Issues #238/#243 — the composition this run declared in
+        // `POST /agent` (wait, no `--kinds` ⇒ all patrol) is evidence too.
+        assert_eq!(
+            record.kinds,
+            vec![engine::model::AgentKind::Patrol; 4],
+            "the submitted agent-kind composition must be recorded"
+        );
         // Issue #236 — the lobby path records the same per-day evidence.
         assert_eq!(record.day_steps, vec![16, 16]);
         assert_eq!(record.days.len(), 2, "one summary per played day");
@@ -670,6 +677,10 @@ fn binary_arena_run_records_evidence_and_exits_without_leaking_the_token() {
             &url,
             "--candidate",
             "wait",
+            // Issues #238/#243: the flag has to survive the whole path —
+            // clap → loop → `POST /agent` → the evidence record below.
+            "--kinds",
+            "S",
             "--arena-evidence",
             evidence.to_str().expect("utf8 evidence path"),
             "--state-output",
@@ -698,6 +709,14 @@ fn binary_arena_run_records_evidence_and_exits_without_leaking_the_token() {
     assert_eq!(record.source_commit_sha, "feedbeef-179");
     assert_eq!(record.status, ArenaRunStatus::Completed);
     assert_eq!(record.days_completed, 2, "two-day fake match played out");
+    // Issues #238/#243 — `--kinds S` on a 4-agent team must show up in the
+    // durable evidence as the composition actually submitted.
+    assert_eq!(
+        record.kinds,
+        vec![engine::model::AgentKind::Supply; 4],
+        "--kinds must reach the evidence record: {:?}",
+        record.kinds
+    );
     assert!(record.registration_attempts.is_none(), "no --next means no registration phase");
     // Issue #236 — the binary path writes the per-day evidence too.
     assert_eq!(record.day_steps, vec![16, 16]);
