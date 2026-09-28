@@ -15,6 +15,11 @@
 //!    (AC: no sub-cadence polling spam),
 //! 4. a full registration + coordinator match + evidence record
 //!    (AC: registration phase, durable evidence, candidate correspondence),
+//!    including the Issue #236 per-day evidence — `days[]` carries each
+//!    played day's day-start `kind / pos / fuel` and a movement summary of
+//!    the plan we submitted (`moves + waits == daySteps` for these
+//!    wait-only submissions), with `daySteps` / `daySeconds` recorded once
+//!    at the top level,
 //! 5. the **live lobby state**: a confirming `403 AccessTimeError`
 //!    (`lobby: you are registered for match <id> departing at <unix>`)
 //!    stops the poll and records match id + departure time, then the 200
@@ -495,6 +500,41 @@ fn registration_match_and_evidence_record_form_one_coherent_run() {
         assert_eq!(parsed.arena_match_id.as_deref(), Some("m-full"));
         assert_eq!(parsed.team_id, "arena-team");
         assert!(!parsed.revisions.is_empty());
+
+        // Issue #236 — per-day evidence: the budgets from `/setting`
+        // recorded once, plus one summary per played day carrying the
+        // day-start state and a movement summary of what we submitted.
+        assert_eq!(parsed.day_steps, vec![16, 16], "`daySteps` recorded once");
+        assert_eq!(parsed.day_seconds, vec![30, 30], "`daySeconds` recorded once");
+        assert_eq!(parsed.days.len(), 2, "one summary per played day");
+        for (idx, day) in parsed.days.iter().enumerate() {
+            assert_eq!(day.day, u32::try_from(idx).expect("fits"), "day index");
+            // Day-start kind / pos / fuel, exactly what the fake's `GET /`
+            // answered for that day.
+            assert_eq!(day.agents.len(), 4, "day {idx}: four agents");
+            let kinds: Vec<i32> = day.agents.iter().map(|a| a.kind.value()).collect();
+            assert_eq!(kinds, vec![0, 1, 0, 1], "day {idx}: declared kind composition");
+            let pos: Vec<i32> = day.agents.iter().map(|a| a.pos).collect();
+            assert_eq!(pos, vec![0, 8, 16, 24], "day {idx}: day-start positions");
+            let fuel: Vec<i32> = day.agents.iter().map(|a| a.fuel).collect();
+            assert_eq!(fuel, vec![30, 30, 30, 30], "day {idx}: day-start fuel");
+            // Submitted movement summary, one entry per agent in
+            // submission order. WaitSolver submits an all-wait plan, so
+            // moves + waits must reproduce the day's `daySteps` exactly.
+            assert_eq!(day.movement.len(), 4, "day {idx}: one summary per agent");
+            for (agent, m) in day.movement.iter().enumerate() {
+                assert_eq!(m.moves, 0, "day {idx} agent {agent}: wait-only plan");
+                assert_eq!(m.runs, 1, "day {idx} agent {agent}: one coalesced wait run");
+                assert_eq!(m.waits, 16, "day {idx} agent {agent}: wait steps == daySteps");
+                assert_eq!(
+                    m.moves + m.waits,
+                    u32::try_from(parsed.day_steps[idx]).expect("daySteps is positive"),
+                    "day {idx} agent {agent}: moves + waits must equal daySteps"
+                );
+                assert_eq!(m.dirs, [0; 6], "day {idx} agent {agent}: no directional moves");
+            }
+        }
+
         // Offline/arena naming separation: this is emphatically not a
         // bench RunRecord.
         assert_ne!(parsed.record_kind, "run");
@@ -591,6 +631,14 @@ fn lobby_403_registration_stops_the_poll_and_records_match_and_departure() {
         assert_eq!(record.arena_match_id.as_deref(), Some("469"));
         assert_eq!(record.window_starts_at_unix, departing, "departure unix recorded");
         assert_eq!(record.days_completed, 2);
+        // Issue #236 — the lobby path records the same per-day evidence.
+        assert_eq!(record.day_steps, vec![16, 16]);
+        assert_eq!(record.days.len(), 2, "one summary per played day");
+        for day in &record.days {
+            assert_eq!(day.agents.len(), 4, "day-start state of every agent");
+            assert_eq!(day.movement.len(), 4, "movement summary for every agent");
+            assert!(day.movement.iter().all(|m| m.moves + m.waits == 16_u32));
+        }
     });
 }
 
@@ -651,6 +699,17 @@ fn binary_arena_run_records_evidence_and_exits_without_leaking_the_token() {
     assert_eq!(record.status, ArenaRunStatus::Completed);
     assert_eq!(record.days_completed, 2, "two-day fake match played out");
     assert!(record.registration_attempts.is_none(), "no --next means no registration phase");
+    // Issue #236 — the binary path writes the per-day evidence too.
+    assert_eq!(record.day_steps, vec![16, 16]);
+    assert_eq!(record.day_seconds, vec![30, 30]);
+    assert_eq!(record.days.len(), 2, "one summary per played day");
+    assert_eq!(record.days[0].day, 0);
+    assert_eq!(record.days[1].day, 1);
+    assert!(
+        record.days.iter().all(|d| d.agents.len() == 4 && d.movement.len() == 4),
+        "kind/pos/fuel + movement summary for every agent of every day: {:?}",
+        record.days
+    );
 
     // The state snapshot (a durable artifact) is token-free too.
     let state = std::fs::read_to_string(&state_output).expect("snapshot written");

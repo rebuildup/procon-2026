@@ -157,8 +157,32 @@ element 数（move = 1 ステップ）基準ではない（localhost probe: `[2,
 | `window_starts_at_unix` / `registration_attempts` / `registered_at_unix` / `arena_match_id` | 対象 match window と登録の事実 |
 | `status` | `completed` / `rejected` / `error` / `registration_failed` / `api_drift` |
 | `days_completed` / `revisions` | プロトコルから取れる result summary |
+| `day_steps` / `day_seconds` | `GET /setting` の per-day 予算・回答時間枠（`daySteps` / `daySeconds`）。**1回だけ**記録し、`days[]` の各エントリはこの予算に対して読む（Issue #236） |
+| `days` | **日ごとの evidence（Issue #236）**。1試合につき played day 数ぶんの要素（`days_completed` と同じ上限）。各要素は `day`（0-based index）+ `agents`（day 開始時点の自エージェント `kind / pos / fuel` — wire `GET /` の day state そのもの）+ `movement`（その日に**提出した**移動の要約: `moves` 移動数 / `waits` 待機ステップ数合計 / `runs` 待機ラン数 / `dirs` 方向ヒストグラム・公式 wire code `0..=5` 順）。**生の answer body は入れない** — 要約だけで、9日・8エージェント試合でも JSONL 1行のまま size guard テストが保証（< 16KB、1日あたり ~0.7KB、日数に対して線形） |
 | `result_ref` | arena が result URL / id を公開した場合に記録（現状 null — live smoke 時に確定） |
 | `error` | redact 済みの失敗要因 |
+
+### なぜ日次要約か（#233 方針5 / Issue #236）
+
+従来の evidence は registration / status / revisions / days だけで、**「何を動いたか・
+燃料がどう減ったか」が無い**。敗因解析のたびに replay JSON を手動取得する羽目になり、
+しかも `arena import-case` は MatchSetting しか取り込めない（日次 state・提出 action・
+相手の交通状態は落ちない — この制約自体は本 Issue の非スコープ）ため、live で既に
+見ていた情報が evidence に残らないだけの状態だった。
+
+`days[]` があれば **replay JSON なしで** 次の敗戦を解析できる:
+
+- **燃料 timeline**: 連続日次の `fuel` 差分で枯渇する日・エージェントを特定（#233 の
+  match 489 postmortem で欠けていた軸）。
+- **提出内容**: `moves` / `waits` / `runs` / `dirs` で「動かなかった」「同じ方向に
+  往復していた」を日単位で特定。
+- **判定前提**: `day_steps` / `day_seconds` でその日の予算・時間超過の有無を読む。
+
+データ源は coordinator が **既に見ている** `GET /` の day state と提出 payload のみ
+（`run_coordinator_loop` の revisions と同じ場所に並べて保持）。protocol client・
+新規 request・新規 endpoint は一切増やしていない。`kind / pos / fuel` は game state
+であり token / email / 表示名フィールドは依然として schema に存在しない（hygiene
+テスト維持）。
 
 **offline の `RunRecord`（`target/eval/runs.jsonl`、`record_kind` なしの score tuple）と
 混同しないこと** — schema・ファイル・命名系統が全部別物です。arena の result を
@@ -212,5 +236,11 @@ cargo run -q -p bench --bin procon-eval -- \
 - テスト / CI は **`procon37arena.online` に一切リクエストしません。**
   fake arena（axum / mockito）だけで registration 403→200・HTML drift・
   cadence 予算・フルマッチ・token hygiene を検証します。
+- 日次 evidence（Issue #236）も fake arena で検証:
+  `arena_fake_server` が played day ぶんの `days[]`（kind / pos / fuel + 提出移動要約、
+  wait-only 提出なので `moves + waits == daySteps`）と top-level `day_steps` /
+  `day_seconds` の充填を assert、`arena::tests::nine_day_record_stays_one_modest_jsonl_line`
+  が size guard（9日・8エージェント合成レコード < 16KB、1日エントリ < 1KB、
+  日数に対して線形、field count 固定）を assert します。
 - 本物の arena に対する live smoke（token 環境での 1 試合参加）は**別作業**です。
   そのときだけ production traffic を発生させ、`result_ref` の実値を確定させます。

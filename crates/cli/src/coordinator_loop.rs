@@ -45,8 +45,10 @@ use chrono::Utc;
 use domain::{MatchId, PlayerId};
 use engine::model::MatchSetting as EngineSetting;
 use protocol::http_client::SubmitAck;
-use protocol::match_config::{ActionPlanBody, AgentKind, MatchState as WireMatchState};
-use serde::Serialize;
+use protocol::match_config::{
+    ActionPlanBody, AgentKind, AgentState as WireAgentState, MatchState as WireMatchState,
+};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::action_adapter::{AdapterError, decision_to_actions};
@@ -223,12 +225,116 @@ impl CoordinatorLoopConfig {
 }
 
 /// Aggregated result of a single match run.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Per-day evidence sits **alongside** the revisions (Issue #236): the
+/// coordinator already sees everything a postmortem needs — the day-start
+/// `GET /` state and the plan it submitted — so it is summarised here
+/// instead of being re-fetchable only as a replay JSON download.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CoordinatorOutcome {
     /// Number of days that completed (revision >= 0 returned).
     pub days_completed: usize,
     /// Per-day revision id (as returned by `POST /`).
     pub revisions: Vec<i32>,
+    /// `GET /setting`'s `daySteps` — the per-day step budget, recorded once
+    /// from the same setting fetch that drove the loop.
+    pub day_steps: Vec<i32>,
+    /// `GET /setting`'s `daySeconds` — the per-day answer window.
+    pub day_seconds: Vec<i32>,
+    /// One [`DaySummary`] per completed day (Issue #236).
+    pub days: Vec<DaySummary>,
+}
+
+/// Day-start state of one of our agents, taken verbatim from the wire
+/// `GET /` payload of that day (Issue #236).
+///
+/// `kind / pos / fuel` are game state, never account data — the same three
+/// fields the spec's `AgentState` carries — so this is safe by construction
+/// to persist in evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DayAgentState {
+    /// Agent kind as reported when the day opened (the kind we declared in
+    /// `POST /agent`, echoed back by the server).
+    pub kind: AgentKind,
+    /// Cell index at day start (row-major linearisation of `Map.cells`).
+    pub pos: i32,
+    /// Fuel at day start — the first sample of this day's fuel timeline;
+    /// consecutive days' values give the per-day fuel delta a postmortem
+    /// needs (#233: diagnosing a fuel-exhaustion loss without replay JSON).
+    pub fuel: i32,
+}
+
+/// Movement summary of the plan **we submitted** for one agent on one day
+/// (Issue #236).
+///
+/// Deliberately a summary, never the raw answer body: a 9..=10-day plan
+/// would cost hundreds of bytes per agent per day, while these four counters
+/// carry what a postmortem actually asks — did the agent move at all, how
+/// much of the day was spent waiting, and which direction it walked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DayMovement {
+    /// Directional move actions (wire codes `0..=5`) — one count per element.
+    pub moves: u32,
+    /// Total wait steps: the summed length of the `-N` runs.
+    pub waits: u32,
+    /// Number of wait runs (negative entries), i.e. how often we idled.
+    pub runs: u32,
+    /// Move-direction histogram indexed by the official wire code
+    /// (`0` 左上, `1` 右上, `2` 右, `3` 右下, `4` 左下, `5` 左).
+    pub dirs: [u16; 6],
+}
+
+/// Per-day evidence for one played day (Issue #236): our agents' state at
+/// day start plus a movement summary of the plan submitted that day.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaySummary {
+    /// 0-based day index — the wire `GET /` `day` of that day.
+    pub day: u32,
+    /// Our agents at day start, in the wire `GET /` order.
+    pub agents: Vec<DayAgentState>,
+    /// Movement summary of that day's submitted plan — one entry per agent
+    /// of the answer body, in submission order. This matches `agents.len()`
+    /// on a real server; a test double that omits `agents` shortens that
+    /// side only, never this one.
+    pub movement: Vec<DayMovement>,
+}
+
+impl DaySummary {
+    /// Summarise one day from the wire day state and the plan we are about
+    /// to submit. Pure and total: an out-of-range direction code (which the
+    /// server can only reject anyway) is skipped rather than panicking, and
+    /// a plan shorter than the agent list simply yields fewer summaries.
+    #[must_use]
+    pub fn new(day: u32, wire_agents: &[WireAgentState], plan: &ActionPlanBody) -> Self {
+        Self {
+            day,
+            agents: wire_agents
+                .iter()
+                .map(|a| DayAgentState { kind: a.kind, pos: a.pos, fuel: a.fuel })
+                .collect(),
+            movement: plan.iter().map(|actions| summarise_actions(actions)).collect(),
+        }
+    }
+}
+
+/// Fold one agent's wire plan into a [`DayMovement`] (see the field docs
+/// for the counting rules).
+#[must_use]
+fn summarise_actions(actions: &[i32]) -> DayMovement {
+    let mut m = DayMovement { moves: 0, waits: 0, runs: 0, dirs: [0; 6] };
+    for &code in actions {
+        if code <= -1 {
+            m.waits = m.waits.saturating_add(code.unsigned_abs());
+            m.runs = m.runs.saturating_add(1);
+        } else if let Some(idx) = usize::try_from(code).ok().filter(|c| *c < 6) {
+            m.moves = m.moves.saturating_add(1);
+            m.dirs[idx] = m.dirs[idx].saturating_add(1);
+        }
+        // `code >= 6` is not a legal wire action; skip it silently — the
+        // server's revision carries the verdict and evidence building must
+        // never panic on a payload.
+    }
+    m
 }
 
 /// Top-level status of a single coordinator run, as observed by the CLI.
@@ -581,6 +687,9 @@ where
     }
 
     let mut revisions: Vec<i32> = Vec::with_capacity(total_days);
+    // Issue #236 — per-day evidence collected next to the revisions, from
+    // the very same `GET /` state and submitted plan the loop already has.
+    let mut day_summaries: Vec<DaySummary> = Vec::with_capacity(total_days);
     let mut days_completed = 0_usize;
 
     // Phase 5: per-day loop.
@@ -636,6 +745,11 @@ where
         let actions = normalize_submission(&engine_setting, &state, day_steps, &actions)
             .map_err(CoordinatorLoopError::Conversion)?;
 
+        // Issue #236 — summarise the day *before* `actions` is moved into
+        // the submit call: day-start agent state (kind / pos / fuel) plus
+        // the movement shape of the normalized plan we are about to send.
+        let summary = DaySummary::new(day, &state.agents, &actions);
+
         // Operator visibility: when DEBUG logging is on, dump the
         // exact wire payload we are about to send. Gated by the
         // `tracing::enabled!` check so the per-step formatting cost
@@ -658,6 +772,7 @@ where
         // submit_actions returns Err on revision<0, so reaching here means
         // the revision is non-negative. Store it and continue.
         revisions.push(accepted.revision);
+        day_summaries.push(summary);
         days_completed += 1;
 
         // Per-day Running snapshot. The closure mutates `snap` and
@@ -674,7 +789,13 @@ where
         }
     }
 
-    Ok(CoordinatorOutcome { days_completed, revisions })
+    Ok(CoordinatorOutcome {
+        days_completed,
+        revisions,
+        day_steps: wire_setting.day_steps.clone(),
+        day_seconds: wire_setting.day_seconds.clone(),
+        days: day_summaries,
+    })
 }
 
 /// Normalize one day's answer body to the official terrain-weighted step
@@ -879,5 +1000,77 @@ mod tests {
     fn zero_agents_yields_empty_kinds() {
         let kinds = agent_kinds_for(0, "loop");
         assert!(kinds.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // Issue #236 — per-day evidence summaries.
+    // ------------------------------------------------------------------
+
+    fn wire_agent(kind: AgentKind, pos: i32, fuel: i32) -> WireAgentState {
+        WireAgentState { kind, pos, fuel }
+    }
+
+    #[test]
+    fn day_summary_records_day_start_kind_pos_and_fuel() {
+        let state = [wire_agent(AgentKind::KIND_0, 0, 30), wire_agent(AgentKind::KIND_1, 8, 12)];
+        let plan: ActionPlanBody = vec![vec![-16]];
+        let summary = DaySummary::new(3, &state, &plan);
+        assert_eq!(summary.day, 3);
+        assert_eq!(summary.agents.len(), 2);
+        assert_eq!(summary.agents[0].kind, AgentKind::KIND_0);
+        assert_eq!(summary.agents[0].pos, 0);
+        assert_eq!(summary.agents[0].fuel, 30, "fuel timeline's first sample");
+        assert_eq!(summary.agents[1].kind, AgentKind::KIND_1);
+        assert_eq!(summary.agents[1].pos, 8);
+        assert_eq!(summary.agents[1].fuel, 12);
+        // One movement summary per submitted agent, in submission order.
+        assert_eq!(summary.movement.len(), 1);
+    }
+
+    #[test]
+    fn day_movement_summarises_moves_waits_runs_and_directions() {
+        // 3 moves (right, right, upper-right) + a 4-step wait run + one
+        // more move, then an 8-step trailing wait — the shape
+        // `normalize_day_plan` produces (#226).
+        let actions = [2_i32, 2, 1, -4, 0, -8];
+        let m = summarise_actions(&actions);
+        assert_eq!(m.moves, 4);
+        assert_eq!(m.waits, 12, "wait steps are summed, not run-counted");
+        assert_eq!(m.runs, 2, "two wait runs");
+        assert_eq!(m.moves + m.waits, 16, "element sum of the plan");
+        assert_eq!(m.dirs, [1, 1, 2, 0, 0, 0], "official wire order 0..=5");
+    }
+
+    #[test]
+    fn day_movement_is_a_summary_not_the_raw_plan() {
+        // The whole point of Issue #236: a full day plan collapses into a
+        // fixed four-field record no matter how long the answer body was.
+        let mut actions = vec![2_i32; 70];
+        actions.push(-76);
+        let m = summarise_actions(&actions);
+        assert_eq!(m.moves, 70);
+        assert_eq!(m.waits, 76);
+        assert_eq!(m.runs, 1);
+        // No plan elements survive into the summary struct itself.
+        let json = serde_json::to_string(&m).expect("serialises");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parses");
+        assert_eq!(
+            value.as_object().expect("object").len(),
+            4,
+            "movement summary must stay a fixed four fields: {json}"
+        );
+        assert!(json.len() < 96, "summary bytes must not track plan length: {json}");
+    }
+
+    #[test]
+    fn day_movement_skips_illegal_direction_codes_without_panicking() {
+        let m = summarise_actions(&[6, -1, 99]);
+        assert_eq!(m.moves, 0, "out-of-range codes are not moves");
+        assert_eq!(m.waits, 1);
+        assert_eq!(m.runs, 1);
+        assert_eq!(m.dirs, [0; 6]);
+        // i32::MIN must not overflow the wait sum either.
+        let m = summarise_actions(&[i32::MIN]);
+        assert_eq!(m.runs, 1);
     }
 }
