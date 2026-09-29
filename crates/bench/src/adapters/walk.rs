@@ -291,7 +291,19 @@ impl AssignMode {
             }
             Self::Escort => {
                 // 1. Pair every Supply with its nearest Patrol (day-start
-                //    geometry only — no target lists involved).
+                //    geometry only — no target lists involved) — subject to a
+                //    **capacity cap**: each Patrol escorts at most
+                //    ceil(n_supply / n_patrol) Supplies (Issue #250). Pure
+                //    nearest-neighbour can pile several Supplies onto one
+                //    Patrol — leaving another Patrol unescorted to starve at
+                //    fuel=1 mid-match — and its handed-over spot share piles
+                //    onto the same over-walked Patrol. With the cap,
+                //    n_supplies ≥ n_patrol guarantees every Patrol gets an
+                //    escort and the shares spread across Patrols.
+                //    (With n_supply < n_patrol — e.g. live attempt8's P,P,P,S
+                //    — capacity is 1 and the cap binds nothing: the unescorted
+                //    Patrols are a kinds-composition problem, fixed by fielding
+                //    at least one Supply per Patrol, e.g. `P,S`.)
                 let patrols: Vec<usize> = ctx
                     .agent_ids
                     .iter()
@@ -299,6 +311,14 @@ impl AssignMode {
                     .filter(|(_, id)| kind_of(ctx, **id) == Some(AgentKind::Patrol))
                     .map(|(index, _)| index)
                     .collect();
+                let n_supplies = ctx
+                    .agent_ids
+                    .iter()
+                    .filter(|id| kind_of(ctx, **id) == Some(AgentKind::Supply))
+                    .count();
+                let capacity =
+                    if patrols.is_empty() { 0 } else { n_supplies.div_ceil(patrols.len()) };
+                let mut escorting = vec![0usize; patrols.len()];
                 let mut pairs: Vec<(usize, usize)> = Vec::new(); // (supply index, patrol index)
                 for (index, id) in ctx.agent_ids.iter().enumerate() {
                     if kind_of(ctx, *id) != Some(AgentKind::Supply) {
@@ -307,17 +327,27 @@ impl AssignMode {
                     let Some(supply_pos) = pos_of(ctx, *id) else {
                         continue;
                     };
-                    let Some(paired) = patrols.iter().copied().min_by_key(|&patrol| {
-                        let patrol_pos =
-                            ctx.agent_ids.get(patrol).and_then(|pid| pos_of(ctx, *pid));
-                        (patrol_pos.map_or(u32::MAX, |p| hex_distance(supply_pos, p)), patrol)
-                    }) else {
+                    let Some(paired) = patrols
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .filter(|(slot, _)| escorting[*slot] < capacity)
+                        .map(|(_, patrol)| patrol)
+                        .min_by_key(|&patrol| {
+                            let patrol_pos =
+                                ctx.agent_ids.get(patrol).and_then(|pid| pos_of(ctx, *pid));
+                            (patrol_pos.map_or(u32::MAX, |p| hex_distance(supply_pos, p)), patrol)
+                        })
+                    else {
                         // No Patrol to escort: wait, exactly like `assign=patrol`.
                         if let Some(list) = targets.get_mut(index) {
                             list.clear();
                         }
                         continue;
                     };
+                    if let Some(slot) = patrols.iter().position(|&p| p == paired) {
+                        escorting[slot] += 1;
+                    }
                     pairs.push((index, paired));
                 }
 
@@ -693,6 +723,67 @@ mod tests {
             escorted.iter().all(Vec::is_empty),
             "no Patrol to follow, so every Supply waits, got {escorted:?}"
         );
+    }
+
+    /// Issue #250 — capacity-capped pairing: with `n_supply >= n_patrol` every
+    /// Patrol must get an escort even when all Supplies are nearest to the
+    /// same Patrol (pure nearest-neighbour would pile them onto patrol0 and
+    /// leave patrol1 unescorted to starve at fuel=1).
+    #[test]
+    fn assign_escort_spreads_supplies_across_patrols_when_nearest_piles_up() {
+        let map = map_with_spots();
+        let st = MatchState::new(MatchSetting {
+            match_id: MatchId::new("escort-capacity").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                Agent::patrol(0, HexCoord::new(0, 0), 4, 3),
+                Agent::patrol(1, HexCoord::new(0, 7), 4, 3),
+                // Both Supplies sit next to patrol0 — nearest-neighbour alone
+                // would pair both with it.
+                Agent::supply(2, HexCoord::new(1, 0)),
+                Agent::supply(3, HexCoord::new(1, 1)),
+            ],
+            day_steps: 4,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        })
+        .unwrap();
+        let ctx = SolverContext::from_state(&st);
+        // Both Supplies are geometrically nearest to patrol0 …
+        assert_eq!(hex_distance(HexCoord::new(1, 0), HexCoord::new(0, 0)), 1);
+        assert_eq!(hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 0)), 2);
+        assert!(
+            hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 0))
+                < hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 7)),
+            "supply3 must prefer patrol0 for the capacity cap to matter"
+        );
+        let targets = vec![
+            vec![HexCoord::new(2, 0)],
+            vec![HexCoord::new(5, 7)],
+            vec![HexCoord::new(4, 4)],
+            vec![HexCoord::new(3, 3)],
+        ];
+        let escorted = AssignMode::Escort.apply(&ctx, targets, WalkMode::Greedy);
+
+        // capacity = ceil(2 supplies / 2 patrols) = 1: the first Supply takes
+        // patrol0's only slot, so the second is forced onto patrol1.
+        assert_eq!(
+            escorted[0],
+            vec![HexCoord::new(2, 0), HexCoord::new(4, 4)],
+            "patrol0 gains supply2's share (its own tour stays a prefix)"
+        );
+        assert_eq!(
+            escorted[1],
+            vec![HexCoord::new(5, 7), HexCoord::new(3, 3)],
+            "patrol1 gains supply3's share — forced by the capacity cap, not by distance"
+        );
+        let extended = day_paths(&ctx, &escorted, WalkMode::Greedy);
+        assert_eq!(
+            escorted[3], extended[1],
+            "supply3 escorts patrol1 despite patrol0 being nearer"
+        );
+        assert_ne!(escorted[3], extended[0], "capacity cap must beat pure nearest-neighbour here");
     }
 
     /// Issue #248 AC — the engine end of the contract under **`walk=greedy`**
