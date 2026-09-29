@@ -285,7 +285,9 @@ impl Solver for LoopCandidate {
             // every `lookahead` / `operators` / `walk` combination without any
             // of them having to know kinds exist (Issue #235). The walk mode
             // doubles as the escort projection's walker (Issue #248), so the
-            // Supply chases exactly the path its paired Patrol will walk.
+            // Supply is handed exactly the path its paired Patrol will walk —
+            // and consumes it with that walker's semantics (per-step pursuit
+            // under `greedy`, ordered-waypoint replay under `astar`).
             Ok(targets) => {
                 plan_walk_with(ctx, &self.assign.apply(ctx, targets, self.walk), self.walk)
             }

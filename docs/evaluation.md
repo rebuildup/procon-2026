@@ -100,11 +100,20 @@ procon-eval --cases all --generated '…' \
 - `escort`（Issue #248）= 各 Supply に **ペア Patrol（day-start 位置が最寄り・同距離は
   小さい `agent_ids` index）の当日 path 投影** を target list として与える。投影は adapter
   自身が呼ぶ `plan_walk_with(targets, walk)`（phase 1）から action 列を復元して作り、
-  phase 2 の Patrol 実行動と一致する。Supply は `step % len = step`（list 長 = `daySteps`）
-  で **step s に Patrol の step s 後の位置**へ向かう pursuit。距離は単調非増加で、Patrol が
-  ターン／待機した所で同セル → engine の同一セル補給が発生。Patrol 不在なら空 list
-  （= `patrol` 同様に待機）。Patrol の list は無変更。`walk` は投影にも使われる（同じ
-  walker で投影するので pursuit が実際の Patrol path を追う）。
+  phase 2 の Patrol 実行動と一致する。Patrol 不在なら空 list（= `patrol` 同様に待機）。
+  Patrol の list は無変更。`walk` は投影にも使われる（同じ walker で投影するので、渡される
+  のは Patrol の実際の path）。
+  **list の消費方法は walker 次第で異なる**（`assign=` の性質ではなく `walk=` の性質）:
+  - `walk=greedy` = **step 単位の pursuit**（`list[step % len]`、この list は長さ
+    `daySteps` なので step s に「Patrol の step s 後の位置」へ1マス縮めて向かう）。
+  - `walk=astar` = **ordered-waypoint の trail replay**（Issue #215 の in-order leg 契約）。
+    step index を無視して `list[0] → list[1] → …` を Supply のペースで歩く。**step s に
+    Patrol の step s 後位置へ向かう保証はない**が、replay した trail が Patrol と交差すれば
+    同セルになり engine の同一セル補給が発生する（Patrol が tour 末尾で park している所
+    が典型）。
+  両 mode とも engine-level の補給 regression test で pin 済み（`walk.rs` の
+  `assign_escort_greedy_walk_refuels_the_patrol_mid_day` /
+  `assign_escort_astar_walk_refuels_the_patrol_mid_day`）。
 - 未知の値は `validate_spec` で `InvalidParameter`（build 不可）。
 
 > **解釈上の注意**: comfortable corpus は `fuel >= 2 x sum(daySteps)` の不変条件を持つため
@@ -127,7 +136,8 @@ procon-eval --cases all --generated '…' \
 | 禁則 | **既定の evidence 経路では決して on にしない**。順位・baseline 比較・回帰検知はすべて off で回す |
 
 > Issue #243 の ablation（current / `fuel∞` / `oracle-refill` / kind mix / `assign`）だけが
-> この flag を使います。child 実装（fuel-aware tour / escort）の判定材料として使います。
+> この flag を使います。child 実装（fuel-aware tour / escort）の判定材料として使い、
+> `assign=escort`（#248）はそこで採否が決まった child です。
 
 ## スコアと順位
 
@@ -261,7 +271,8 @@ solver が day-start に決めた **target list の歩き方** を選びます�
 target をどう歩くか」なのに対し）。`agents` は全 agent に割り当てて従来の挙動そのままで、
 `patrol` は `SolverContext` → `MatchState.agents[].kind` が `Supply` の agent の target
 list を空にします（空 list = 全日待機）。`escort` は各 Supply にペア Patrol の当日 path
-投影を渡して追随させ、同セルで engine の補給を発生させます（Issue #248 — match489 盤面で
+投影を渡します（list の消費は `walk=` の semantics — greedy は step 単位 pursuit、
+astar は ordered-waypoint replay、いずれも engine 補給テストで pin 済み）。Issue #248 — match489 盤面で
 `walk=astar` 系 3 candidate が dks 74→127 / 95→125 / 29→90、balls 90→156 / 127→194 /
 29→90 に改善、kinds は非劣）。`Supply` は #234 の通りそもそも玉を取得しないので、
 comfortable corpus ではスコア差になりません（tier1-3 は 0/25/0）。
