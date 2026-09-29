@@ -29,9 +29,11 @@
 //! `assign` (Issue #235) selects who the tour is *for*: `assign=agents`
 //! (the default) is every agent, exactly as before; `assign=patrol` withholds
 //! the target list from Supply agents so they wait instead of walking spots
-//! they cannot collect from (Issue #234 made that explicit). The parameter is
-//! appended last in [`PARAMS`], so every pre-existing canonical id keeps its
-//! bytes and its meaning.
+//! they cannot collect from (Issue #234 made that explicit); `assign=escort`
+//! (Issue #248) instead walks each Supply along its paired Patrol's projected
+//! day path so the two meet and refuel mid-day. The parameter is appended
+//! last in [`PARAMS`], so every pre-existing canonical id keeps its bytes and
+//! its meaning.
 //!
 //! Every `initial=` value here has exactly one live-CLI counterpart
 //! (`procon tournament|coordinator --loop-initial-strategy <label>`); the
@@ -131,7 +133,8 @@ pub const PARAMS: &[ParamSpec] = &[
         key: "assign",
         required: false,
         doc: "who receives a tour target: agents (default; every agent, pre-#235) | \
-              patrol (Supply agents get no target and wait, Issue #235)",
+              patrol (Supply agents get no target and wait, Issue #235) | \
+              escort (Supply walks its paired Patrol's projected day path, Issue #248)",
     },
 ];
 
@@ -280,8 +283,12 @@ impl Solver for LoopCandidate {
         match self.day_targets(ctx) {
             // `assign` filters the finished target lists, so it composes with
             // every `lookahead` / `operators` / `walk` combination without any
-            // of them having to know kinds exist (Issue #235).
-            Ok(targets) => plan_walk_with(ctx, &self.assign.apply(ctx, targets), self.walk),
+            // of them having to know kinds exist (Issue #235). The walk mode
+            // doubles as the escort projection's walker (Issue #248), so the
+            // Supply chases exactly the path its paired Patrol will walk.
+            Ok(targets) => {
+                plan_walk_with(ctx, &self.assign.apply(ctx, targets, self.walk), self.walk)
+            }
             Err(err) => {
                 tracing::debug!(candidate = %self.id, error = %err, "loop solve failed; waiting");
                 AgentActions::wait_all(&ctx.agent_ids, ctx.day_steps)
@@ -689,7 +696,8 @@ impl CandidateFactory for LoopFactory {
         "Iterative-improvement loop tour (2-opt / 3-opt) over the day's spots, \
          then walk the visit order. Supports initial=, iterations=, operators=, \
          lookahead=, walk= and assign= sweeps (lookahead=crossday plans the \
-         remaining days; assign=patrol withholds the tour from Supply agents)."
+         remaining days; assign=patrol withholds the tour from Supply agents; \
+         assign=escort walks each Supply along its paired Patrol's path, Issue #248)."
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {
