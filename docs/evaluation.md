@@ -92,7 +92,7 @@ procon-eval --cases all --generated '…' \
 > 記録は `CoordinatorOutcome.kinds` → `ArenaRunRecord.kinds`
 >（`["Patrol", …]`、`RunRecord.agent_kinds` と同綴り）。
 
-**`assign=agents | patrol | escort`（`loop` / `multiloop` の candidate param）** — 誰に tour を割り当てるか:
+**`assign=agents | patrol | escort | all`（`loop` / `multiloop` の candidate param）** — 誰に tour を割り当てるか:
 
 - `agents`（既定、canonical 末尾に追記）= 現行の全台 tour と **byte-identical**。
 - `patrol` = `ctx.state.agents[].kind == Supply` の agent に target を割り当てない
@@ -114,6 +114,16 @@ procon-eval --cases all --generated '…' \
   両 mode とも engine-level の補給 regression test で pin 済み（`walk.rs` の
   `assign_escort_greedy_walk_refuels_the_patrol_mid_day` /
   `assign_escort_astar_walk_refuels_the_patrol_mid_day`）。
+- `all`（Issue #253）= まず escort 手順（pairing → handover）を**そのまま実行**し、その
+  結果の Patrol list を **prefix** に保ったまま、**全 agent の share を cyclic rotation
+  で追記**したものを各 Patrol の target list にする（重複スキップ）。Supply は escort
+  同様にペア Patrol の投影を歩く。region partition が構造的に作る「1 Patrol あたりの
+  収穫天井」（live 696: balls 108 vs r5 の 320）と「単一 spot region で永久 park」
+  （live 692）を解消するのが目的。**kinds は escort 以下にならない**（prefix が
+  escort と同一 + `walk=astar` は in-order 訪問）— import 盤13枚の A/B で kinds
+  regression 0、balls は全盤で増加（692 盤: 148 → 323）。tail を全 Patrol が同じ
+  agent 順で歩くと region に寄って kinds が落ちる（665 盤: 18 → 13）ため、
+  **rotation が要**（`walk.rs` の `AssignMode::All` コメント参照）。
 - 未知の値は `validate_spec` で `InvalidParameter`（build 不可）。
 
 > **解釈上の注意**: comfortable corpus は `fuel >= 2 x sum(daySteps)` の不変条件を持つため
