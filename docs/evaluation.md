@@ -92,11 +92,19 @@ procon-eval --cases all --generated '…' \
 > 記録は `CoordinatorOutcome.kinds` → `ArenaRunRecord.kinds`
 >（`["Patrol", …]`、`RunRecord.agent_kinds` と同綴り）。
 
-**`assign=agents | patrol`（`loop` / `multiloop` の candidate param）** — 誰に tour を割り当てるか:
+**`assign=agents | patrol | escort`（`loop` / `multiloop` の candidate param）** — 誰に tour を割り当てるか:
 
 - `agents`（既定、canonical 末尾に追記）= 現行の全台 tour と **byte-identical**。
 - `patrol` = `ctx.state.agents[].kind == Supply` の agent に target を割り当てない
-  （空 target list = 全日 wait）。**escort / rendezvous は次 Issue**。
+  （空 target list = 全日 wait）。
+- `escort`（Issue #248）= 各 Supply に **ペア Patrol（day-start 位置が最寄り・同距離は
+  小さい `agent_ids` index）の当日 path 投影** を target list として与える。投影は adapter
+  自身が呼ぶ `plan_walk_with(targets, walk)`（phase 1）から action 列を復元して作り、
+  phase 2 の Patrol 実行動と一致する。Supply は `step % len = step`（list 長 = `daySteps`）
+  で **step s に Patrol の step s 後の位置**へ向かう pursuit。距離は単調非増加で、Patrol が
+  ターン／待機した所で同セル → engine の同一セル補給が発生。Patrol 不在なら空 list
+  （= `patrol` 同様に待機）。Patrol の list は無変更。`walk` は投影にも使われる（同じ
+  walker で投影するので pursuit が実際の Patrol path を追う）。
 - 未知の値は `validate_spec` で `InvalidParameter`（build 不可）。
 
 > **解釈上の注意**: comfortable corpus は `fuel >= 2 x sum(daySteps)` の不変条件を持つため
@@ -248,13 +256,15 @@ solver が day-start に決めた **target list の歩き方** を選びます�
 `step_towards` 単独歩行へ degrade し、それも進まなければ待機します。
 パラメータは id の末尾に追記され、既存 canonical ID の形は変わりません。
 
-`assign` の候補（`loop` / `multiloop` 共通、Issue #235）: `agents`（既定）/ `patrol` —
-**誰に tour target を割り当てるか**を選びます（`walk` が「決めた target をどう歩くか」なのに対し）。
-`agents` は全 agent に割り当てて従来の挙動そのままで、`patrol` は
-`SolverContext` → `MatchState.agents[].kind` が `Supply` の agent の target list を
-空にします（空 list = 全日待機）。`Supply` は #234 の通りそもそも玉を取得しないので、
-comfortable corpus ではスコア差になりません（tier1-3 は 0/25/0）。escort / rendezvous
-（補給車が巡回車に追随する）は**次 Issue**。
+`assign` の候補（`loop` / `multiloop` 共通、Issue #235 / #248）: `agents`（既定）/
+`patrol` / `escort` — **誰に tour target を割り当てるか**を選びます（`walk` が「決めた
+target をどう歩くか」なのに対し）。`agents` は全 agent に割り当てて従来の挙動そのままで、
+`patrol` は `SolverContext` → `MatchState.agents[].kind` が `Supply` の agent の target
+list を空にします（空 list = 全日待機）。`escort` は各 Supply にペア Patrol の当日 path
+投影を渡して追随させ、同セルで engine の補給を発生させます（Issue #248 — match489 盤面で
+`walk=astar` 系 3 candidate が dks 74→127 / 95→125 / 29→90、balls 90→156 / 127→194 /
+29→90 に改善、kinds は非劣）。`Supply` は #234 の通りそもそも玉を取得しないので、
+comfortable corpus ではスコア差になりません（tier1-3 は 0/25/0）。
 未知の値は `validate_spec` で拒否され、パラメータは id の末尾に追記されます。
 
 `multiloop` は `solver-loop::MultiLoopComposer` を evaluator に接続した
