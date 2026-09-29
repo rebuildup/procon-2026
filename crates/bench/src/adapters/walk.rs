@@ -19,7 +19,9 @@
 //! receive a target list at all. `assign=agents` (default) is everyone, the
 //! pre-#235 behaviour; `assign=patrol` withholds the tour from
 //! [`AgentKind::Supply`] agents so they wait instead of walking a spot they
-//! could never collect from (Issue #235).
+//! could never collect from (Issue #235); `assign=escort` hands each Supply
+//! the projected day path of its paired Patrol so the two meet and refuel
+//! mid-day (Issue #248).
 //!
 //! # Walk modes (`walk=`)
 //!
@@ -28,10 +30,16 @@
 //! order with A*-planned legs; it lives in [`super::astar_walk`] because it
 //! carries Issue #194's coordinate-conversion machinery. Candidates select
 //! one or the other through [`plan_walk_with`] after parsing their `walk`
-//! parameter with [`parse_walk`], so the assignment half of a tour candidate
-//! is untouched by the choice.
+//! parameter with [`parse_walk`]. The assignment half of a tour candidate is
+//! otherwise untouched by the choice — except that [`AssignMode::Escort`]
+//! projects the paired Patrol's path with the *same* walker (Issue #248), so
+//! the Supply is always handed the cells the Patrol will actually walk. How
+//! it then consumes that list stays the walker's own semantics: per-step
+//! pursuit under `greedy`, ordered-waypoint replay under `astar`.
 
-use engine::model::{Action, AgentActions, AgentKind, Direction, HexCoord, MapGrid, SolverContext};
+use engine::model::{
+    Action, ActionKind, AgentActions, AgentKind, Direction, HexCoord, MapGrid, SolverContext,
+};
 
 use crate::candidate::{CandidateError, CandidateSpec};
 
@@ -200,39 +208,161 @@ pub enum AssignMode {
     /// and therefore wait the whole day ([`plan_walk`]'s documented empty-list
     /// behaviour). Patrol agents are untouched.
     ///
-    /// Escort / rendezvous (following a Patrol to refuel it) is deliberately
-    /// *not* what this mode does — waiting in place is the minimal "stop
-    /// wasting the tour" switch the Issue asks for.
+    /// Waiting in place is the minimal "stop wasting the tour" switch (Issue
+    /// #235); [`Self::Escort`] is the following variant that puts the Supply
+    /// back on the road.
     Patrol,
+    /// `assign=escort` (Issue #248): each [`AgentKind::Supply`] gets the
+    /// **projected day path of its paired Patrol** as its target list, so the
+    /// two walk the same cells and the engine's same-cell refill rule tops the
+    /// Patrol up mid-day.
+    ///
+    /// Pairing is deterministic: the Patrol whose day-start cell is nearest to
+    /// the Supply ([`hex_distance`]), ties broken by the smaller position in
+    /// `ctx.agent_ids`. With no Patrol in the team every Supply gets an empty
+    /// list and waits — escort has nobody to follow. Patrol target lists are
+    /// never modified.
+    ///
+    /// The projection is [`day_paths`] over `walk`, i.e. exactly the path the
+    /// paired Patrol will walk in the adapter's own `plan_walk_with` call
+    /// (both walkers plan every agent independently, so phase 1 reproduces the
+    /// Patrol's phase-2 actions). How the Supply then consumes that list is
+    /// the **walker's** semantics, and the two differ — this is a property of
+    /// `walk=`, not of `assign=`:
+    ///
+    /// - `walk=greedy`: [`plan_walk`] resolves `list[step % len]` per step
+    ///   (here `len == day_steps`), so at step `s` the Supply steps toward
+    ///   the Patrol's position **after step `s`** — a pursuit that gains a
+    ///   cell whenever the Patrol does not step directly away.
+    /// - `walk=astar`: [`super::astar_walk`] consumes the list as **ordered
+    ///   waypoints**, one A* leg per entry (Issue #215's anti-oscillation
+    ///   contract) — a trail replay that walks `list[0]`, `list[1]`, … at the
+    ///   Supply's own pace regardless of the current step index. The two
+    ///   still share cells whenever the replayed trail crosses the Patrol
+    ///   (typically while it parks at the end of its tour), but *not* by
+    ///   tracking the Patrol's step-`s` position.
+    ///
+    /// Both modes are pinned by engine-level refill tests:
+    /// [`assign_escort_greedy_walk_refuels_the_patrol_mid_day`] and
+    /// [`assign_escort_astar_walk_refuels_the_patrol_mid_day`]. A Supply whose
+    /// paired Patrol has no tour still parks on that Patrol's start cell.
+    Escort,
 }
 
 impl AssignMode {
-    /// Drop the target lists of Supply agents, in `ctx.agent_ids` order.
+    /// Resolve the Supply agents' target lists for this mode, in
+    /// `ctx.agent_ids` order.
     ///
     /// Reads the kind through `ctx.state.agents[].kind`, which is the same
     /// visibility path every candidate has (Issue #235 Deliverable 2). When
     /// `self` is [`Self::Agents`] the vector is returned untouched, so the
     /// default path never re-allocates or re-orders anything.
+    ///
+    /// `walk` selects the walker used to project the paired Patrol's path for
+    /// [`Self::Escort`]; the other modes ignore it (the caller still walks the
+    /// returned lists with the same `walk`, so the two stay consistent).
     #[must_use]
     pub fn apply(
         self,
         ctx: &SolverContext<'_>,
         mut targets: Vec<Vec<HexCoord>>,
+        walk: WalkMode,
     ) -> Vec<Vec<HexCoord>> {
-        if self == Self::Agents {
-            return targets;
+        match self {
+            Self::Agents => targets,
+            Self::Patrol => {
+                for (index, id) in ctx.agent_ids.iter().enumerate() {
+                    let is_supply =
+                        ctx.state.agents.iter().any(|a| a.id == *id && a.kind == AgentKind::Supply);
+                    if is_supply {
+                        if let Some(list) = targets.get_mut(index) {
+                            list.clear();
+                        }
+                    }
+                }
+                targets
+            }
+            Self::Escort => {
+                let paths = day_paths(ctx, &targets, walk);
+                let patrols: Vec<usize> = ctx
+                    .agent_ids
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, id)| kind_of(ctx, **id) == Some(AgentKind::Patrol))
+                    .map(|(index, _)| index)
+                    .collect();
+                for (index, id) in ctx.agent_ids.iter().enumerate() {
+                    if kind_of(ctx, *id) != Some(AgentKind::Supply) {
+                        continue;
+                    }
+                    let Some(list) = targets.get_mut(index) else {
+                        continue;
+                    };
+                    let Some(supply_pos) = pos_of(ctx, *id) else {
+                        continue;
+                    };
+                    let Some(paired) = patrols.iter().copied().min_by_key(|&patrol| {
+                        let patrol_pos =
+                            ctx.agent_ids.get(patrol).and_then(|pid| pos_of(ctx, *pid));
+                        (patrol_pos.map_or(u32::MAX, |p| hex_distance(supply_pos, p)), patrol)
+                    }) else {
+                        // No Patrol to escort: wait, exactly like `assign=patrol`.
+                        list.clear();
+                        continue;
+                    };
+                    *list = paths.get(paired).cloned().unwrap_or_default();
+                }
+                targets
+            }
         }
-        for (index, id) in ctx.agent_ids.iter().enumerate() {
-            let is_supply =
-                ctx.state.agents.iter().any(|a| a.id == *id && a.kind == AgentKind::Supply);
-            if is_supply {
-                if let Some(list) = targets.get_mut(index) {
-                    list.clear();
+    }
+}
+
+/// Look up a controlled agent's kind by id through `ctx.state`.
+fn kind_of(ctx: &SolverContext<'_>, id: u8) -> Option<AgentKind> {
+    ctx.state.agents.iter().find(|a| a.id == id).map(|a| a.kind)
+}
+
+/// Look up a controlled agent's day-start cell by id through `ctx.state`.
+fn pos_of(ctx: &SolverContext<'_>, id: u8) -> Option<HexCoord> {
+    ctx.state.agents.iter().find(|a| a.id == id).map(|a| a.pos)
+}
+
+/// Every agent's projected day path: `paths[agent][step]` is the cell that
+/// agent occupies after step `step` when walked with `walk` over `targets`.
+///
+/// Phase 1 of [`AssignMode::Escort`] — run the adapter's own walker once over
+/// the unmodified target lists and reconstruct each agent's positions from its
+/// action sequence (the same `Direction::step` fold [`plan_walk`] uses). Both
+/// walkers plan every agent independently from its day-start cell, so these
+/// paths equal the actions the adapter will emit for the Patrols in phase 2.
+fn day_paths(
+    ctx: &SolverContext<'_>,
+    targets: &[Vec<HexCoord>],
+    walk: WalkMode,
+) -> Vec<Vec<HexCoord>> {
+    let plan = plan_walk_with(ctx, targets, walk);
+    let per_agent = ctx.agent_ids.len();
+    let day_steps = ctx.day_steps as usize;
+    let mut positions: Vec<HexCoord> =
+        ctx.agent_ids.iter().map(|id| pos_of(ctx, *id).unwrap_or(HexCoord::new(0, 0))).collect();
+    let mut paths = vec![Vec::with_capacity(day_steps); per_agent];
+    for step in 0..day_steps {
+        for (index, _) in ctx.agent_ids.iter().enumerate() {
+            let action = plan.actions.get(step * per_agent + index);
+            if let Some(ActionKind::Move(dir)) = action.map(|a| a.kind) {
+                if let Some(pos) = positions.get_mut(index) {
+                    *pos = dir.step(*pos);
+                }
+            }
+            if let Some(path) = paths.get_mut(index) {
+                if let Some(pos) = positions.get(index) {
+                    path.push(*pos);
                 }
             }
         }
-        targets
     }
+    paths
 }
 
 /// Parse the `assign` parameter into an [`AssignMode`].
@@ -244,15 +374,16 @@ impl AssignMode {
 ///
 /// # Errors
 /// [`CandidateError::InvalidParameter`] for any value other than
-/// `agents` / `patrol`.
+/// `agents` / `patrol` / `escort`.
 pub(crate) fn parse_assign(spec: &CandidateSpec) -> Result<AssignMode, CandidateError> {
     match spec.param("assign") {
         None | Some("agents") => Ok(AssignMode::Agents),
         Some("patrol") => Ok(AssignMode::Patrol),
+        Some("escort") => Ok(AssignMode::Escort),
         Some(other) => Err(CandidateError::InvalidParameter {
             key: "assign".to_owned(),
             value: other.to_owned(),
-            reason: "expected agents | patrol".to_owned(),
+            reason: "expected agents | patrol | escort".to_owned(),
         }),
     }
 }
@@ -377,21 +508,27 @@ mod tests {
         }
     }
 
-    /// Issue #235 — `assign` is a schema-gated value: omitted and `agents`
-    /// select today's all-agents assignment, `patrol` withholds the tour from
-    /// Supply agents, anything else is an `InvalidParameter` at parse time.
+    /// `assign` is a schema-gated value: omitted and `agents` select the
+    /// all-agents assignment, `patrol` withholds the tour from Supply agents
+    /// (Issue #235), `escort` walks each Supply along its paired Patrol's
+    /// projected path (Issue #248), anything else is an `InvalidParameter`.
     #[test]
-    fn assign_param_parses_agents_and_patrol_and_rejects_anything_else() {
+    fn assign_param_parses_agents_patrol_escort_and_rejects_anything_else() {
         let parse = |id: &str| parse_assign(&CandidateSpec::parse(id).expect("id parses"));
         assert_eq!(parse("loop"), Ok(AssignMode::Agents));
         assert_eq!(parse("loop:assign=agents"), Ok(AssignMode::Agents));
         assert_eq!(parse("loop:assign=patrol"), Ok(AssignMode::Patrol));
+        assert_eq!(parse("loop:assign=escort"), Ok(AssignMode::Escort));
         assert_eq!(
             parse("multiloop:kmeans=4:seed=42:walk=astar:assign=patrol"),
             Ok(AssignMode::Patrol)
         );
+        assert_eq!(
+            parse("multiloop:kmeans=4:seed=42:walk=astar:assign=escort"),
+            Ok(AssignMode::Escort)
+        );
         assert_eq!(parse("loop"), Ok(AssignMode::default()), "the default is agents");
-        for id in ["loop:assign=Patrol", "loop:assign=escort", "loop:assign=1", "loop:assign=tour"]
+        for id in ["loop:assign=Patrol", "loop:assign=Escort", "loop:assign=1", "loop:assign=tour"]
         {
             assert!(
                 matches!(parse(id), Err(CandidateError::InvalidParameter { key, .. }) if key == "assign"),
@@ -415,15 +552,268 @@ mod tests {
         let targets =
             vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(3, 3)], vec![HexCoord::new(4, 4)]];
 
-        let untouched = AssignMode::Agents.apply(&ctx, targets.clone());
+        let untouched = AssignMode::Agents.apply(&ctx, targets.clone(), WalkMode::Greedy);
         assert_eq!(untouched, targets, "assign=agents must be a no-op");
 
-        let filtered = AssignMode::Patrol.apply(&ctx, targets);
+        let filtered = AssignMode::Patrol.apply(&ctx, targets, WalkMode::Greedy);
         assert_eq!(
             filtered,
             vec![vec![HexCoord::new(2, 0)], Vec::new(), Vec::new()],
             "the patrol keeps its tour; both supply agents wait"
         );
+    }
+
+    /// Issue #248 AC — pairing: each Supply receives the projected day path
+    /// of the Patrol whose day-start cell is nearest to it (ties by smaller
+    /// `agent_ids` index), while the Patrols' own lists stay untouched.
+    #[test]
+    fn assign_escort_pairs_each_supply_with_its_nearest_patrol() {
+        let map = map_with_spots();
+        let st = MatchState::new(MatchSetting {
+            match_id: MatchId::new("escort-pair").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                Agent::patrol(0, HexCoord::new(0, 0), 4, 3),
+                Agent::patrol(1, HexCoord::new(0, 7), 4, 3),
+                Agent::supply(2, HexCoord::new(1, 0)),
+                Agent::supply(3, HexCoord::new(1, 6)),
+            ],
+            day_steps: 4,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        })
+        .unwrap();
+        let ctx = SolverContext::from_state(&st);
+        let targets = vec![
+            vec![HexCoord::new(2, 0)],
+            vec![HexCoord::new(5, 7)],
+            vec![HexCoord::new(4, 4)],
+            vec![HexCoord::new(3, 3)],
+        ];
+        // The pairing keys off hex distance: (1, 0) is next to patrol0 and
+        // (1, 6) is next to patrol1 — the own-tour targets must not decide it.
+        assert_eq!(hex_distance(HexCoord::new(1, 0), HexCoord::new(0, 0)), 1);
+        assert_eq!(hex_distance(HexCoord::new(1, 0), HexCoord::new(0, 7)), 7);
+        assert_eq!(hex_distance(HexCoord::new(1, 6), HexCoord::new(0, 7)), 1);
+        assert_eq!(hex_distance(HexCoord::new(1, 6), HexCoord::new(0, 0)), 7);
+
+        let paths = day_paths(&ctx, &targets, WalkMode::Greedy);
+        assert_ne!(paths[0], paths[1], "the two patrols must walk different paths");
+
+        let escorted = AssignMode::Escort.apply(&ctx, targets.clone(), WalkMode::Greedy);
+        assert_eq!(escorted[0], targets[0], "patrol0's list is untouched");
+        assert_eq!(escorted[1], targets[1], "patrol1's list is untouched");
+        assert_eq!(
+            escorted[2], paths[0],
+            "supply2 pairs with the nearest patrol (patrol0) and walks its path"
+        );
+        assert_eq!(
+            escorted[3], paths[1],
+            "supply3 pairs with the nearest patrol (patrol1) and walks its path"
+        );
+        assert_ne!(escorted[2], targets[2], "the escort replaces the Supply's own tour");
+    }
+
+    /// Issue #248 — with no Patrol in the team there is nobody to escort, so
+    /// every Supply waits: the same empty-list contract as `assign=patrol`.
+    #[test]
+    fn assign_escort_without_a_patrol_makes_supplies_wait() {
+        let map = map_with_spots();
+        let st = MatchState::new(MatchSetting {
+            match_id: MatchId::new("escort-solo").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                Agent::supply(0, HexCoord::new(0, 0)),
+                Agent::supply(1, HexCoord::new(3, 3)),
+                Agent::supply(2, HexCoord::new(7, 7)),
+            ],
+            day_steps: 4,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        })
+        .unwrap();
+        let ctx = SolverContext::from_state(&st);
+        let targets = vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(5, 5)], vec![]];
+        let escorted = AssignMode::Escort.apply(&ctx, targets, WalkMode::Greedy);
+        assert!(
+            escorted.iter().all(Vec::is_empty),
+            "no Patrol to follow, so every Supply waits, got {escorted:?}"
+        );
+    }
+
+    /// Issue #248 AC — the engine end of the contract under **`walk=greedy`**
+    /// (the default): `assign=escort` puts the Supply on the paired Patrol's
+    /// cell mid-day and the official same-cell refill rule fires (`Picked`
+    /// with the `u32::MAX` sentinel, tank back to cap). The `assign=patrol`
+    /// control never meets the Patrol, so it never refuels.
+    ///
+    /// `walk=astar` has its own proof in
+    /// [`assign_escort_astar_walk_refuels_the_patrol_mid_day`] — the two
+    /// walks consume the projected path differently, so neither test
+    /// substitutes for the other.
+    #[test]
+    fn assign_escort_greedy_walk_refuels_the_patrol_mid_day() {
+        let map = map_with_spots();
+        let setting = MatchSetting {
+            match_id: MatchId::new("escort-refuel").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                // Patrol walks (0,0) -> (1,0) -> (2,0) and parks on the spot.
+                Agent::patrol(0, HexCoord::new(0, 0), 4, 3),
+                // …and the Supply starts one cell below the first step, so
+                // escorting it onto the projected path meets the Patrol at
+                // step 0 — while its own tour would wander elsewhere.
+                Agent::supply(1, HexCoord::new(1, 1)),
+                // A second Supply too far away to arrive within the day: it
+                // proves pairing is per-agent, not a global overwrite.
+                Agent::supply(2, HexCoord::new(7, 7)),
+            ],
+            day_steps: 4,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        };
+        let state = MatchState::new(setting.clone()).unwrap();
+        let ctx = SolverContext::from_state(&state);
+        let targets =
+            vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(4, 4)], vec![HexCoord::new(5, 5)]];
+
+        let is_refuel = |e: &engine::transitions::StepEvent| matches!(e, engine::transitions::StepEvent::Picked { series, .. } if *series == u32::MAX);
+        let run = |mode: AssignMode| -> (bool, u32) {
+            let plan = plan_walk(&ctx, &mode.apply(&ctx, targets.clone(), WalkMode::Greedy));
+            assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
+            let mut run_state = MatchState::new(setting.clone()).unwrap();
+            let sim = engine::MatchSim::default();
+            let mut refuel_seen = false;
+            for block in plan.actions.chunks(ctx.agent_ids.len()) {
+                let events = sim.step(&mut run_state, &AgentActions::new(block.to_vec()));
+                refuel_seen |= events.iter().any(is_refuel);
+            }
+            let patrol = run_state.agents.iter().find(|a| a.id == 0).expect("patrol exists");
+            (refuel_seen, patrol.fuel)
+        };
+
+        let (escorted, fuel) = run(AssignMode::Escort);
+        assert!(escorted, "escort must produce a same-cell refill event");
+        // `Agent::patrol(_, _, 4, 3)` = day_steps × multiplier = 12.
+        assert_eq!(fuel, 12, "the patrol ends the day at tank cap after the refill");
+
+        let (waiting, _) = run(AssignMode::Patrol);
+        assert!(!waiting, "assign=patrol must never meet the patrol, so no refill");
+    }
+
+    /// PR #249 review AC — the live-favoured `walk=astar` needs its own
+    /// engine-level proof: escort under A* still puts the Supply on the
+    /// Patrol's cell and the official same-cell refill fires.
+    ///
+    /// The same test pins what A* escort *means*, because the cell sequence
+    /// rules out time-indexed pursuit: `plan_walk_astar` consumes the
+    /// projected path as an **ordered waypoint list** (Issue #215), so the
+    /// Supply walks leg 0 from (4,0) straight to `list[0]=(1,0)` — *passing
+    /// through* the Patrol's park cell (2,0) at step 1 (the meeting), then
+    /// continuing to (1,0) and walking back. A chaser aiming at `list[step]`
+    /// would never leave the parked Patrol, so `[.., (1,0), ..]` at step 2 is
+    /// the observable difference between trail replay and pursuit.
+    #[test]
+    fn assign_escort_astar_walk_refuels_the_patrol_mid_day() {
+        let map = map_with_spots();
+        let setting = MatchSetting {
+            match_id: MatchId::new("escort-refuel-astar").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                // Patrol walks (0,0) -> (1,0) -> (2,0) and parks on the spot.
+                Agent::patrol(0, HexCoord::new(0, 0), 4, 3),
+                // The Supply starts *beyond* the park cell, so its first A*
+                // leg (4,0) -> (1,0) necessarily passes through (2,0) — the
+                // rendezvous — and then overshoots to the waypoint itself.
+                Agent::supply(1, HexCoord::new(4, 0)),
+                // Too far to arrive within the day: pairing stays per-agent.
+                Agent::supply(2, HexCoord::new(7, 7)),
+            ],
+            day_steps: 4,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        };
+        let state = MatchState::new(setting.clone()).unwrap();
+        let ctx = SolverContext::from_state(&state);
+        let targets =
+            vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(4, 4)], vec![HexCoord::new(5, 5)]];
+
+        // Walk supply1's cells under each mode: fold its Move actions.
+        let supply1_cells = |walk: WalkMode| -> Vec<HexCoord> {
+            let plan =
+                plan_walk_with(&ctx, &AssignMode::Escort.apply(&ctx, targets.clone(), walk), walk);
+            assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
+            let mut pos = HexCoord::new(4, 0);
+            let mut cells = vec![pos];
+            for block in plan.actions.chunks(ctx.agent_ids.len()) {
+                if let ActionKind::Move(dir) = block[1].kind {
+                    pos = dir.step(pos);
+                }
+                cells.push(pos);
+            }
+            cells
+        };
+
+        // The semantics pin: A* replays the list in order (overshoots the
+        // park cell to reach waypoint 0), greedy pursues time-indexed
+        // positions (stays with the parked Patrol). Deterministic: the map is
+        // plain, so both A* legs are straight lines along row 0.
+        assert_eq!(
+            supply1_cells(WalkMode::Astar),
+            vec![
+                HexCoord::new(4, 0),
+                HexCoord::new(3, 0),
+                HexCoord::new(2, 0),
+                HexCoord::new(1, 0),
+                HexCoord::new(2, 0)
+            ],
+            "walk=astar must consume the projected path as ordered waypoints: pass the park \
+             cell on leg 0, reach list[0], then walk back"
+        );
+        assert_eq!(
+            supply1_cells(WalkMode::Greedy),
+            vec![
+                HexCoord::new(4, 0),
+                HexCoord::new(3, 0),
+                HexCoord::new(2, 0),
+                HexCoord::new(2, 0),
+                HexCoord::new(2, 0)
+            ],
+            "walk=greedy must aim at list[step] instead: once at the park cell it stays"
+        );
+
+        // The engine proof: step the A* plan through MatchSim and watch the
+        // official refill sentinel; the patrol-assign control never meets.
+        let is_refuel = |e: &engine::transitions::StepEvent| matches!(e, engine::transitions::StepEvent::Picked { series, .. } if *series == u32::MAX);
+        let run = |mode: AssignMode| -> (bool, u32) {
+            let plan = plan_walk_with(
+                &ctx,
+                &mode.apply(&ctx, targets.clone(), WalkMode::Astar),
+                WalkMode::Astar,
+            );
+            assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
+            let mut run_state = MatchState::new(setting.clone()).unwrap();
+            let sim = engine::MatchSim::default();
+            let mut refuel_seen = false;
+            for block in plan.actions.chunks(ctx.agent_ids.len()) {
+                let events = sim.step(&mut run_state, &AgentActions::new(block.to_vec()));
+                refuel_seen |= events.iter().any(is_refuel);
+            }
+            let patrol = run_state.agents.iter().find(|a| a.id == 0).expect("patrol exists");
+            (refuel_seen, patrol.fuel)
+        };
+
+        let (escorted, fuel) = run(AssignMode::Escort);
+        assert!(escorted, "walk=astar escort must produce a same-cell refill event");
+        // `Agent::patrol(_, _, 4, 3)` = day_steps × multiplier = 12.
+        assert_eq!(fuel, 12, "the patrol ends the day at tank cap after the refill");
+
+        let (waiting, _) = run(AssignMode::Patrol);
+        assert!(!waiting, "assign=patrol must never meet the patrol under walk=astar either");
     }
 
     /// Issue #215 AC — default equivalence: selecting `greedy` explicitly is

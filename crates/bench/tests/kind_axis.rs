@@ -282,7 +282,7 @@ fn assign_agents_is_byte_identical_to_the_omitted_parameter() {
 fn assign_rejects_unknown_values_on_both_tour_candidates() {
     let registry = CandidateRegistry::builtin();
     for id in [
-        "loop:iterations=32:initial=greedy:assign=escort",
+        "loop:iterations=32:initial=greedy:assign=Escort",
         "loop:assign=PATROL",
         "multiloop:kmeans=4:seed=42:assign=tour",
         "multiloop:grid=2x2:assign=none",

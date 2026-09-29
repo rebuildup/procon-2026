@@ -78,7 +78,8 @@ pub const PARAMS: &[ParamSpec] = &[
         key: "assign",
         required: false,
         doc: "who receives a tour target: agents (default; every agent, pre-#235) | \
-              patrol (Supply agents get no target and wait, Issue #235)",
+              patrol (Supply agents get no target and wait, Issue #235) | \
+              escort (Supply walks its paired Patrol's projected day path, Issue #248)",
     },
 ];
 
@@ -145,7 +146,7 @@ impl Solver for MultiLoopCandidate {
         match self.inner.solve(&problem) {
             Ok(outcome) => {
                 let per_agent = agent_targets(ctx, &outcome);
-                plan_walk_with(ctx, &self.assign.apply(ctx, per_agent), self.walk)
+                plan_walk_with(ctx, &self.assign.apply(ctx, per_agent, self.walk), self.walk)
             }
             Err(err) => {
                 tracing::debug!(candidate = %self.id, error = %err, "multiloop solve failed; waiting");
@@ -326,7 +327,8 @@ impl CandidateFactory for MultiLoopFactory {
         "Region-clustering tour: partition spots (grid or k-means), build one tour per \
          region, hand regions to agents round-robin. A different mechanism from `loop`. \
          Supports refine=, walk= and assign= sweeps (assign=patrol withholds the tour \
-         from Supply agents, Issue #235)."
+         from Supply agents, Issue #235; assign=escort walks each Supply along its paired \
+         Patrol's path, Issue #248)."
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {
