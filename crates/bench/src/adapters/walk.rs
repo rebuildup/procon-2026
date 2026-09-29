@@ -212,16 +212,23 @@ pub enum AssignMode {
     /// #235); [`Self::Escort`] is the following variant that puts the Supply
     /// back on the road.
     Patrol,
-    /// `assign=escort` (Issue #248): each [`AgentKind::Supply`] gets the
-    /// **projected day path of its paired Patrol** as its target list, so the
-    /// two walk the same cells and the engine's same-cell refill rule tops the
-    /// Patrol up mid-day.
+    /// `assign=escort` (Issue #248, spot-share handover Issue #250): each
+    /// [`AgentKind::Supply`] gets the **projected day path of its paired
+    /// Patrol** as its target list, so the two walk the same cells and the
+    /// engine's same-cell refill rule tops the Patrol up mid-day — and before
+    /// that projection runs, the Supply's **own spot share** (which the solver
+    /// dealt it round-robin and which a Supply can never collect, Issue #234)
+    /// is **appended to the paired Patrol's target list**, so the spots are
+    /// not dropped on the floor. Under `P,S,P,S` that doubles the collectors'
+    /// daily coverage from half the board to all of it.
     ///
     /// Pairing is deterministic: the Patrol whose day-start cell is nearest to
     /// the Supply ([`hex_distance`]), ties broken by the smaller position in
     /// `ctx.agent_ids`. With no Patrol in the team every Supply gets an empty
     /// list and waits — escort has nobody to follow. Patrol target lists are
-    /// never modified.
+    /// never *rewritten*: the handover only **appends** spots the Patrol does
+    /// not already hold (own tour first, then each Supply's share, duplicates
+    /// skipped), so the Patrol's own visit order stays a prefix.
     ///
     /// The projection is [`day_paths`] over `walk`, i.e. exactly the path the
     /// paired Patrol will walk in the adapter's own `plan_walk_with` call
@@ -283,7 +290,20 @@ impl AssignMode {
                 targets
             }
             Self::Escort => {
-                let paths = day_paths(ctx, &targets, walk);
+                // 1. Pair every Supply with its nearest Patrol (day-start
+                //    geometry only — no target lists involved) — subject to a
+                //    **capacity cap**: each Patrol escorts at most
+                //    ceil(n_supply / n_patrol) Supplies (Issue #250). Pure
+                //    nearest-neighbour can pile several Supplies onto one
+                //    Patrol — leaving another Patrol unescorted to starve at
+                //    fuel=1 mid-match — and its handed-over spot share piles
+                //    onto the same over-walked Patrol. With the cap,
+                //    n_supplies ≥ n_patrol guarantees every Patrol gets an
+                //    escort and the shares spread across Patrols.
+                //    (With n_supply < n_patrol — e.g. live attempt8's P,P,P,S
+                //    — capacity is 1 and the cap binds nothing: the unescorted
+                //    Patrols are a kinds-composition problem, fixed by fielding
+                //    at least one Supply per Patrol, e.g. `P,S`.)
                 let patrols: Vec<usize> = ctx
                     .agent_ids
                     .iter()
@@ -291,26 +311,71 @@ impl AssignMode {
                     .filter(|(_, id)| kind_of(ctx, **id) == Some(AgentKind::Patrol))
                     .map(|(index, _)| index)
                     .collect();
+                let n_supplies = ctx
+                    .agent_ids
+                    .iter()
+                    .filter(|id| kind_of(ctx, **id) == Some(AgentKind::Supply))
+                    .count();
+                let capacity =
+                    if patrols.is_empty() { 0 } else { n_supplies.div_ceil(patrols.len()) };
+                let mut escorting = vec![0usize; patrols.len()];
+                let mut pairs: Vec<(usize, usize)> = Vec::new(); // (supply index, patrol index)
                 for (index, id) in ctx.agent_ids.iter().enumerate() {
                     if kind_of(ctx, *id) != Some(AgentKind::Supply) {
                         continue;
                     }
-                    let Some(list) = targets.get_mut(index) else {
-                        continue;
-                    };
                     let Some(supply_pos) = pos_of(ctx, *id) else {
                         continue;
                     };
-                    let Some(paired) = patrols.iter().copied().min_by_key(|&patrol| {
-                        let patrol_pos =
-                            ctx.agent_ids.get(patrol).and_then(|pid| pos_of(ctx, *pid));
-                        (patrol_pos.map_or(u32::MAX, |p| hex_distance(supply_pos, p)), patrol)
-                    }) else {
+                    let Some(paired) = patrols
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .filter(|(slot, _)| escorting[*slot] < capacity)
+                        .map(|(_, patrol)| patrol)
+                        .min_by_key(|&patrol| {
+                            let patrol_pos =
+                                ctx.agent_ids.get(patrol).and_then(|pid| pos_of(ctx, *pid));
+                            (patrol_pos.map_or(u32::MAX, |p| hex_distance(supply_pos, p)), patrol)
+                        })
+                    else {
                         // No Patrol to escort: wait, exactly like `assign=patrol`.
-                        list.clear();
+                        if let Some(list) = targets.get_mut(index) {
+                            list.clear();
+                        }
                         continue;
                     };
-                    *list = paths.get(paired).cloned().unwrap_or_default();
+                    if let Some(slot) = patrols.iter().position(|&p| p == paired) {
+                        escorting[slot] += 1;
+                    }
+                    pairs.push((index, paired));
+                }
+
+                // 2. Handover (Issue #250): the Supply's own spot share — which
+                //    a Supply can never collect (Issue #234) — is appended to
+                //    the paired Patrol's list instead of being dropped. Own
+                //    tour stays a prefix; duplicates are skipped.
+                for &(supply, patrol) in &pairs {
+                    let own = targets.get(supply).cloned().unwrap_or_default();
+                    if let Some(patrol_list) = targets.get_mut(patrol) {
+                        for spot in own {
+                            if !patrol_list.contains(&spot) {
+                                patrol_list.push(spot);
+                            }
+                        }
+                    }
+                }
+
+                // 3. Project AFTER the handover so the Supply follows the
+                //    extended path — the cells the Patrol will actually walk
+                //    with the handed-over spots included.
+                let paths = day_paths(ctx, &targets, walk);
+
+                // 4. Replace each paired Supply's list with the projection.
+                for &(supply, patrol) in &pairs {
+                    if let Some(list) = targets.get_mut(supply) {
+                        *list = paths.get(patrol).cloned().unwrap_or_default();
+                    }
                 }
                 targets
             }
@@ -602,15 +667,32 @@ mod tests {
         assert_ne!(paths[0], paths[1], "the two patrols must walk different paths");
 
         let escorted = AssignMode::Escort.apply(&ctx, targets.clone(), WalkMode::Greedy);
-        assert_eq!(escorted[0], targets[0], "patrol0's list is untouched");
-        assert_eq!(escorted[1], targets[1], "patrol1's list is untouched");
+        // Handover (Issue #250): each paired Supply's own share is appended to
+        // the Patrol list — the own tour stays a prefix, nothing is dropped.
         assert_eq!(
-            escorted[2], paths[0],
-            "supply2 pairs with the nearest patrol (patrol0) and walks its path"
+            escorted[0],
+            vec![HexCoord::new(2, 0), HexCoord::new(4, 4)],
+            "patrol0 keeps its own tour and gains supply2's handed-over share"
         );
         assert_eq!(
-            escorted[3], paths[1],
-            "supply3 pairs with the nearest patrol (patrol1) and walks its path"
+            escorted[1],
+            vec![HexCoord::new(5, 7), HexCoord::new(3, 3)],
+            "patrol1 keeps its own tour and gains supply3's handed-over share"
+        );
+        // The projection runs AFTER the handover, so the supplies follow the
+        // extended paths, not the pre-handover ones.
+        let extended = day_paths(&ctx, &escorted, WalkMode::Greedy);
+        assert_eq!(
+            escorted[2], extended[0],
+            "supply2 pairs with the nearest patrol (patrol0) and walks its extended path"
+        );
+        assert_eq!(
+            escorted[3], extended[1],
+            "supply3 pairs with the nearest patrol (patrol1) and walks its extended path"
+        );
+        assert_ne!(
+            escorted[2], paths[0],
+            "the Supply follows the POST-handover projection, not the pre-handover one"
         );
         assert_ne!(escorted[2], targets[2], "the escort replaces the Supply's own tour");
     }
@@ -641,6 +723,67 @@ mod tests {
             escorted.iter().all(Vec::is_empty),
             "no Patrol to follow, so every Supply waits, got {escorted:?}"
         );
+    }
+
+    /// Issue #250 — capacity-capped pairing: with `n_supply >= n_patrol` every
+    /// Patrol must get an escort even when all Supplies are nearest to the
+    /// same Patrol (pure nearest-neighbour would pile them onto patrol0 and
+    /// leave patrol1 unescorted to starve at fuel=1).
+    #[test]
+    fn assign_escort_spreads_supplies_across_patrols_when_nearest_piles_up() {
+        let map = map_with_spots();
+        let st = MatchState::new(MatchSetting {
+            match_id: MatchId::new("escort-capacity").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                Agent::patrol(0, HexCoord::new(0, 0), 4, 3),
+                Agent::patrol(1, HexCoord::new(0, 7), 4, 3),
+                // Both Supplies sit next to patrol0 — nearest-neighbour alone
+                // would pair both with it.
+                Agent::supply(2, HexCoord::new(1, 0)),
+                Agent::supply(3, HexCoord::new(1, 1)),
+            ],
+            day_steps: 4,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        })
+        .unwrap();
+        let ctx = SolverContext::from_state(&st);
+        // Both Supplies are geometrically nearest to patrol0 …
+        assert_eq!(hex_distance(HexCoord::new(1, 0), HexCoord::new(0, 0)), 1);
+        assert_eq!(hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 0)), 2);
+        assert!(
+            hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 0))
+                < hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 7)),
+            "supply3 must prefer patrol0 for the capacity cap to matter"
+        );
+        let targets = vec![
+            vec![HexCoord::new(2, 0)],
+            vec![HexCoord::new(5, 7)],
+            vec![HexCoord::new(4, 4)],
+            vec![HexCoord::new(3, 3)],
+        ];
+        let escorted = AssignMode::Escort.apply(&ctx, targets, WalkMode::Greedy);
+
+        // capacity = ceil(2 supplies / 2 patrols) = 1: the first Supply takes
+        // patrol0's only slot, so the second is forced onto patrol1.
+        assert_eq!(
+            escorted[0],
+            vec![HexCoord::new(2, 0), HexCoord::new(4, 4)],
+            "patrol0 gains supply2's share (its own tour stays a prefix)"
+        );
+        assert_eq!(
+            escorted[1],
+            vec![HexCoord::new(5, 7), HexCoord::new(3, 3)],
+            "patrol1 gains supply3's share — forced by the capacity cap, not by distance"
+        );
+        let extended = day_paths(&ctx, &escorted, WalkMode::Greedy);
+        assert_eq!(
+            escorted[3], extended[1],
+            "supply3 escorts patrol1 despite patrol0 being nearer"
+        );
+        assert_ne!(escorted[3], extended[0], "capacity cap must beat pure nearest-neighbour here");
     }
 
     /// Issue #248 AC — the engine end of the contract under **`walk=greedy`**
@@ -681,27 +824,33 @@ mod tests {
             vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(4, 4)], vec![HexCoord::new(5, 5)]];
 
         let is_refuel = |e: &engine::transitions::StepEvent| matches!(e, engine::transitions::StepEvent::Picked { series, .. } if *series == u32::MAX);
-        let run = |mode: AssignMode| -> (bool, u32) {
+        let run = |mode: AssignMode| -> Option<u32> {
             let plan = plan_walk(&ctx, &mode.apply(&ctx, targets.clone(), WalkMode::Greedy));
             assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
             let mut run_state = MatchState::new(setting.clone()).unwrap();
             let sim = engine::MatchSim::default();
-            let mut refuel_seen = false;
+            let mut fuel_at_refuel = None;
             for block in plan.actions.chunks(ctx.agent_ids.len()) {
                 let events = sim.step(&mut run_state, &AgentActions::new(block.to_vec()));
-                refuel_seen |= events.iter().any(is_refuel);
+                if fuel_at_refuel.is_none() && events.iter().any(is_refuel) {
+                    let patrol =
+                        run_state.agents.iter().find(|a| a.id == 0).expect("patrol exists");
+                    fuel_at_refuel = Some(patrol.fuel);
+                }
             }
-            let patrol = run_state.agents.iter().find(|a| a.id == 0).expect("patrol exists");
-            (refuel_seen, patrol.fuel)
+            fuel_at_refuel
         };
 
-        let (escorted, fuel) = run(AssignMode::Escort);
-        assert!(escorted, "escort must produce a same-cell refill event");
-        // `Agent::patrol(_, _, 4, 3)` = day_steps × multiplier = 12.
-        assert_eq!(fuel, 12, "the patrol ends the day at tank cap after the refill");
+        let fuel_at_refuel = run(AssignMode::Escort);
+        let fuel = fuel_at_refuel.expect("escort must produce a same-cell refill event");
+        // `Agent::patrol(_, _, 4, 3)` = day_steps × multiplier = 12: the refill
+        // tops the tank to cap *at the moment it fires*. The Patrol then keeps
+        // walking its (handed-over, Issue #250) tour, so day-end fuel may be
+        // below cap — that is the engine rule, not a weaker escort.
+        assert_eq!(fuel, 12, "the refill must top the tank to cap when it fires");
 
-        let (waiting, _) = run(AssignMode::Patrol);
-        assert!(!waiting, "assign=patrol must never meet the patrol, so no refill");
+        let waiting = run(AssignMode::Patrol);
+        assert!(waiting.is_none(), "assign=patrol must never meet the patrol, so no refill");
     }
 
     /// PR #249 review AC — the live-favoured `walk=astar` needs its own
@@ -760,8 +909,10 @@ mod tests {
 
         // The semantics pin: A* replays the list in order (overshoots the
         // park cell to reach waypoint 0), greedy pursues time-indexed
-        // positions (stays with the parked Patrol). Deterministic: the map is
-        // plain, so both A* legs are straight lines along row 0.
+        // positions. Deterministic: the map is plain, so both A* legs are
+        // straight lines along row 0. (The patrol's tour now also carries the
+        // handed-over shares, Issue #250 — hence the projection is longer than
+        // the pre-handover one, but the overshoot-to-list[0] signature stands.)
         assert_eq!(
             supply1_cells(WalkMode::Astar),
             vec![
@@ -779,17 +930,17 @@ mod tests {
             vec![
                 HexCoord::new(4, 0),
                 HexCoord::new(3, 0),
-                HexCoord::new(2, 0),
-                HexCoord::new(2, 0),
+                HexCoord::new(3, 0),
+                HexCoord::new(3, 1),
                 HexCoord::new(2, 0)
             ],
-            "walk=greedy must aim at list[step] instead: once at the park cell it stays"
+            "walk=greedy aims at list[step] instead: it never overshoots to list[0]=(1,0)"
         );
 
         // The engine proof: step the A* plan through MatchSim and watch the
         // official refill sentinel; the patrol-assign control never meets.
         let is_refuel = |e: &engine::transitions::StepEvent| matches!(e, engine::transitions::StepEvent::Picked { series, .. } if *series == u32::MAX);
-        let run = |mode: AssignMode| -> (bool, u32) {
+        let run = |mode: AssignMode| -> Option<u32> {
             let plan = plan_walk_with(
                 &ctx,
                 &mode.apply(&ctx, targets.clone(), WalkMode::Astar),
@@ -798,22 +949,31 @@ mod tests {
             assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
             let mut run_state = MatchState::new(setting.clone()).unwrap();
             let sim = engine::MatchSim::default();
-            let mut refuel_seen = false;
+            let mut fuel_at_refuel = None;
             for block in plan.actions.chunks(ctx.agent_ids.len()) {
                 let events = sim.step(&mut run_state, &AgentActions::new(block.to_vec()));
-                refuel_seen |= events.iter().any(is_refuel);
+                if fuel_at_refuel.is_none() && events.iter().any(is_refuel) {
+                    let patrol =
+                        run_state.agents.iter().find(|a| a.id == 0).expect("patrol exists");
+                    fuel_at_refuel = Some(patrol.fuel);
+                }
             }
-            let patrol = run_state.agents.iter().find(|a| a.id == 0).expect("patrol exists");
-            (refuel_seen, patrol.fuel)
+            fuel_at_refuel
         };
 
-        let (escorted, fuel) = run(AssignMode::Escort);
-        assert!(escorted, "walk=astar escort must produce a same-cell refill event");
-        // `Agent::patrol(_, _, 4, 3)` = day_steps × multiplier = 12.
-        assert_eq!(fuel, 12, "the patrol ends the day at tank cap after the refill");
+        let fuel = run(AssignMode::Escort)
+            .expect("walk=astar escort must produce a same-cell refill event");
+        // `Agent::patrol(_, _, 4, 3)` = day_steps × multiplier = 12: the refill
+        // tops the tank to cap *at the moment it fires*; the Patrol keeps
+        // walking its handed-over tour afterwards (Issue #250), so day-end fuel
+        // is not asserted here.
+        assert_eq!(fuel, 12, "the refill must top the tank to cap when it fires");
 
-        let (waiting, _) = run(AssignMode::Patrol);
-        assert!(!waiting, "assign=patrol must never meet the patrol under walk=astar either");
+        let waiting = run(AssignMode::Patrol);
+        assert!(
+            waiting.is_none(),
+            "assign=patrol must never meet the patrol under walk=astar either"
+        );
     }
 
     /// Issue #215 AC — default equivalence: selecting `greedy` explicitly is
