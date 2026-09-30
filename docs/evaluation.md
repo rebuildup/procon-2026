@@ -39,7 +39,7 @@ solver の内部ヒューリスティック（例: `solver-loop` の `ScoreRepor
 | `daySteps` (per-day) | `MatchSetting::day_steps_by_day` に保持され、**`MatchSim::run_inner` が day loop 内で各日の値を読む**ので `daySteps=[16,24]` なら day1 は本当に24 step 実行する |
 | `daySeconds` (per-day) | **公式 validity として判定**。各日の回答時間 `daily_response_us[i]` が `day_budget_us()[i]` を超えていればその日は未受理と見なして `invalid` / `scored=false`。長さが `daySteps` と食い違う・非正なら from_wire が拒否 |
 | `busyThreshold` / `jammedThreshold` | `CaseSpec::sim_config()` → `SimConfig`。**`SimConfig::default()` (2/5) を使わない** — fixture は 1/2 なので別ゲームになる |
-| `daySteps` の**提出時**解釈（Issue #226） | 公式は **地形加重**で検証する: `Σ(**出発セル**の step cost: 平地2 / 山3 / 道路1・2・4) + Σ待機 == daySteps[day]`。element 数（move=1）でも進入セル基準でもない — localhost probe（`[2,-19]`/`[2,-18]` 平地→道路ペアと `[2,-17]` 平地→山地）で出発セル課金・等号判定を確定。候補（engine の element 時計で plan）は **wire 提出境界** `coordinator_loop` → `engine::wire_plan::normalize_day_plan` で行動 prefix を保ったまま truncate + 待機 pad してから `POST /` する。**候補本体・offline scoring は変更しない**（待機は `MatchSim` で状態不変、tail-wait 系 plan の前後同一性は `wire_plan` の property test で固定） |
+| `daySteps` の**提出時**解釈（Issue #226） | 公式は **地形加重**で検証する: `Σ(**出発セル**の step cost: 平地2 / 山3 / 道路1・2・4) + Σ待機 == daySteps[day]`。element 数（move=1）でも進入セル基準でもない — localhost probe（`[2,-19]`/`[2,-18]` 平地→道路ペアと `[2,-17]` 平地→山地）で出発セル課金・等号判定を確定。候補（engine の element 時計で plan）は **wire 提出境界** `coordinator_loop` → `engine::wire_plan::normalize_day_plan` で行動 prefix を保ったまま truncate + 待機 pad してから `POST /` する。**既定では候補本体・offline scoring を変更しない**（待機は `MatchSim` で状態不変、tail-wait 系 plan の前後同一性は `wire_plan` の property test で固定）。この不一致（offline は element 全量、live は prefix のみ）が Issue #255 の主題で、**opt-in の `budget=official`** が候補側で同一の wire 関数を呼んで時計を揃える（→「day budget の時計」節。既定 `element` はこれまで通り） |
 
 agent の種類（巡回/補給）は wire に無いため、**既定は index 交替**（5 台なら 3 巡回 / 2 補給）。
 種類そのものは `--kinds` で評価軸にできる（Issue #235、下参照）。
@@ -129,6 +129,40 @@ procon-eval --cases all --generated '…' \
 > **解釈上の注意**: comfortable corpus は `fuel >= 2 x sum(daySteps)` の不変条件を持つため
 > fuel が枯渇せず、`assign=patrol` の tier1-3 への効果は **0/25/0（引き分け）** に留まる。
 > kind-aware assignment の真価は fuel-tight / multi-day で見る必要がある。
+
+### day budget の時計: `budget=element | official`（Issue #255）
+
+engine の一日は **`day_steps` 個の element**（1 step = 1 action）で進むが、公式提出は
+**地形加重 budget**（`Σ出発セル step cost + Σ待機 == daySteps`、上記 #226 の行）で検証し、
+`wire_plan::normalize_day_plan` が **行動 prefix を保ったまま tail を truncate** する。
+候補が element 時計で組むと、offline は element プラン全量を評価し live は budget 収まりの
+prefix だけ実行する — **両者が構造的に不一致**（match 701: 146 element 計画 → 98 moves 提出、
+同盤 offline dks 174 vs live 96）。
+
+`budget=`（`loop` / `multiloop` の canonical 末尾に追記される append-last param）で時計を揃える:
+
+| 値 | 動作 |
+|---|---|
+| `element`（既定、省略時） | 従来通り element 時計。**全 pre-#255 canonical id は byte-identical**、truncate は相変わらず wire 境界の関心事 |
+| `official` | 完成プランを **`engine::wire_plan::normalize_day_plan`（正本）** に通してから simulate。`MatchSim` が実行するのはサーバが受理するものと同一で、再提出は no-op（move 一切失われず `pad == 0`） |
+
+- **budget ルールの正本は wire 側だけ**。候補側の実装は「同じ関数を simulate 前に呼ぶ」だけ
+  で、独自の重み付け実装を持たない。
+- **`assign=` の byte-identical 契約への影響**: なし。既定 `budget=element` は
+  `assign=agents` / `patrol` / `escort` / `all` のいずれも plan を無改変で返す
+  （`walk.rs` の `budget_element_returns_the_plan_untouched` が pin）。`budget=official` は
+  **どの `assign=` に対しても** plan を予算内に切り詰める — byte-identical 契約が壊れるのは
+  `budget=official` を**明示した id だけ**で、それも canonical id の shape（param 追加順）は
+  変わらない。
+- malformed な plan（day contract 破り）はそのまま返す → evaluator の malformed-plan flag が
+  報告する従来の挙動を維持。
+- **検証**: unit（schema gate / element の no-op / official の budget 満足・`pad == 0`）+
+  integration `crates/bench/tests/budget_official.rs`（**import 盤 701 全日 ×
+  `assign=all`/`escort`** で wire 再 normalize が verbatim prefix = move 保持・pad 追記なし、
+  そして element では**truncate が実際に起きる**対向 assert）。A/B（14 import 盤、
+  live kinds 合わせ）で live/offline dks 比は element 平均 **0.787** → official 平均
+  **1.011**（≥0.8: 6/14 → **14/14**、artifacts `target/ab255-matched-*/`）。
+
 
 ### counterfactual knob: `--oracle-refill`（Issue #243・分析専用）
 
