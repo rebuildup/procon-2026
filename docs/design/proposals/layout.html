@@ -1,0 +1,2137 @@
+<!doctype html>
+<!--
+  Layout proposal — procon-2026 viewer (rev v4)
+  ============================================================================
+
+  SCOPE
+    Structural / spatial proposal for the SolidJS contest viewer.
+    Covers: one shared 12-column grid (documented + demonstrated at 1280 and
+    420), the global app shell as bounded sub-panels, four route mocks in the
+    same region language, the sidebar as single-line icon+label tabs with
+    icon-expressed state, the right-hand information rail as boxed units, the
+    match-state HUD with locked two-tier type, the map-panel fit-and-centre
+    rule, the box/label reduction proof (before/after), the measured contrast
+    table, and the extracted numbered layout rules.
+
+  SKILLS USED
+    layout-system · navigation-design · visual-hierarchy · information-density
+    (loaded before reading DESIGN-BRIEF.md v4 / source / CSS)
+
+  WHAT CHANGED IN THIS REVISION (v4 — against DESIGN-BRIEF v4 「Design tone —
+  GitHub / VSCode」 and 「囲み・分割の優先見直し」, plus the Primer Primitives and
+  Primer Octicons adoptions)
+    1. Over-boxing and over-dividing removed. Every border now answers the
+       decision rule in order: (1) is this one unit? (2) does the inside really
+       need further division? (3) does the label carry meaning? Boxes survive
+       only around units. Inside a box, divisions are ROWS + HAIRLINES, never
+       nested boxes. Full borders are a last resort. 31 micro-caps nameplates
+       (ROUTE / STATUS / MAP / MATCH-STATE / COORDINATOR / FIXTURE / …) are
+       deleted — they named the box without changing the reader’s
+       understanding. See section 02c for the before/after of two regions.
+    2. Rows folded. The two-line label-over-value tile became a ONE-LINE row
+       (label 11px left / value 15px right, hairline between rows). 24 tile
+       boxes and their 24 stacked pairs collapse into 24 rows. CONTENT groups
+       by meaning: e.g. MATCH-STATE is one group of match values (Day,
+       Revisions, Last update) and one group of link values (Solver, Server).
+    3. Chrome vs content border density is now explicit. Chrome closes its
+       bounded regions (header, sidebar, mock frame); the content region
+       carries exactly ONE boundary — the map instrument, which is a different
+       layer — and is otherwise divided by rows and hairlines only. Surface
+       boundaries use Primer boxShadow.thin (inset 0 0 0 1px) instead of a
+       layout-shifting border.
+    4. Tokens replaced by Primer Primitives (MIT). Spacing is space xxs 2 / xs
+       4 / sm 8 / md 12 / lg 16 / xl 24 (the invented 4/8/12/16/24/32 scale is
+       gone). Radius is borderRadius.small 3 (badges/tags/labels only) and
+       medium 6 (button/input/card/container default). Borders are borderWidth
+       thin 1 / thick 2, with boxShadow.thin for surface boundaries. UI colour
+       is fgColor / bgColor / borderColor, not invented hex. Three documented
+       exceptions (EXC-1/2/3) are recorded in the contrast section.
+    5. UI icons replaced by Primer Octicons (MIT), inlined as SVG paths.
+       Sidebar nav: home / history / beaker / broadcast. Theme toggle: moon /
+       sun. HUD meta: versions (DAY) / versions (REVISIONS) / clock (LAST
+       UPDATE) / beaker (SOLVER) / server (SERVER). Transport: move-to-start /
+       chevron-left / pause / triangle-fill (Play — octicons has no `play`
+       glyph; `skip` is dependency-skip and is NOT used) / chevron-right /
+       move-to-end, with stopwatch for rate. Renderer: file-media / cpu.
+       Status marker: dot-fill. viewBox 16 only, currentColor only, no icon
+       font, no CDN. Map terrain and visualiser marks stay CUSTOM — octicons
+       are UI chrome only.
+    6. Focus rings are tonal (borderColor.emphasis, borderWidth.thick 2px),
+       not accent-coloured — brief v4 撤回 5.
+
+  CORRECTION (v4 fix — DESIGN-BRIEF 「GitHub 構造の具体規格（v4 追記 — 修正）」)
+    The earlier "reduce over-boxing / delete decorative labels" pass went too
+    far in two places and is corrected here — everything else stands:
+    (a) SIDEBAR — back to GitHub tabs: ONE LINE per item (icon + label),
+        never two lines. The nav-sub second line (1 / 4 · [2, 3]) is removed
+        from the sidebar and lives only on the right-hand information rail.
+        The text role headings (Orient / Review / Monitor) are deleted — same
+        empty decoration as the nameplates. Four items (Home / Replays /
+        Solvers / Live) stacked, no group headings. State is shown by icon:
+        selection tone (a surface value step) + bold weight for the current
+        item (still no left accent bar), dot-fill marker for running.
+    (b) RIGHT-HAND INFORMATION RAIL — back to boxed units, GitHub repo-sidebar
+        style (About / Releases / Packages): one information unit per box,
+        ONE heading INSIDE each box naming that unit (a unit title is
+        meaningful and stays); labels outside or beside a box that merely
+        restate its contents stay deleted. Inside a box: rows + hairlines.
+        Rail density is a feature — not thinned out. Boxes added on the rail:
+        "Match state" (Day / Revisions / Last update / Solver / Server) and
+        "Fixture" (poll / map / cells); route mocks box "Score" + "Replay" on
+        /replays and "Fixture" on /solvers / /live.
+
+  KEPT FROM REV v3 (accepted)
+    · the six sub-panel shell on /live — ROUTE / STATUS / MAP / MATCH-STATE /
+      COORDINATOR / FIXTURE — refined under the box rules, not dismantled
+    · one shared 12-column grid, gutter/gap scale (now Primer space tokens)
+    · main is the sole scroll owner; header fixed; sidebar independent
+    · content band max-width 1080px, left-aligned, never centred
+    · sidebar collapses to a horizontal bar below 768px — labels, order,
+      destination and current-location meaning all preserved
+    · selection tone with aria-current="page"; no left accent bar
+    · map fit + centre rule: viewBox = mapPixelSize(map), width/height 100%,
+      xMidYMid meet, 16px mounting inset
+    · HUD type locked to two tiers: label 11px / value 15px
+    · real copy and real fixture values (1 / 4, [2, 3], loop,
+      http://127.0.0.1:8080, 17:06:06, the procon coordinator command,
+      alice 30 / bob 31)
+
+  EVIDENCE
+    DESIGN-BRIEF.md (v4), packages/frontend/src/{App,components/Layout,
+    components/Header,components/Sidebar,components/MapViewer,
+    components/ReplayViewer,pages/*}.tsx, packages/frontend/src/types/map.ts,
+    packages/frontend/src/styles/{layout,live,replay-viewer,map-viewer,
+    theme}.css. Token values read from primer/primitives
+    src/tokens/{functional/spacing/space.json5, functional/size/radius.json5,
+    functional/size/border.json5, functional/color/{fg,bg,border}Color.json5,
+    base/color/{light,dark}/*.json5}; icon paths from primer/octicons
+    icons/*-16.svg.
+
+  THIRD-PARTY ATTRIBUTION
+    Primer Octicons — https://github.com/primer/octicons — MIT
+      Copyright (c) 2022 GitHub, Inc.
+      Paths are inlined unmodified in the icon sprite below (viewBox 16).
+    Primer Primitives — https://github.com/primer/primitives — MIT
+      Copyright (c) 2022 GitHub, Inc.
+      Size / radius / border / colour token values adopted by reference.
+
+  DELIBERATELY NOT COVERED HERE
+    - Color roles beyond the contrast floors, accent/semantic palette
+                                                       -> design-system.html
+    - Interaction states beyond the nav four, motion, keyboard -> ux.html
+    - Typography scale & mixed-script typesetting decisions     -> design-system.html
+    - Spot-series palette / visualiser mark patterns            -> design-system.html
+    - Brand mark, projector legibility, multi-map display       -> DESIGN-BRIEF
+                                                                  "Explicitly
+                                                                  unresolved"
+    - The WebGPU blank-canvas bug (Issue #259)                  -> engineering
+
+  RENDERING
+    Standalone. All CSS inline in one <style>. One vanilla-JS handler
+    (light/dark toggle) — no other script. Zero network requests: system font
+    stack, inline SVG only, no web fonts, no CDN, no remote images.
+    Correct at 1280x800 with no page-level horizontal scrolling — long
+    command and path strings wrap inside their band.
+-->
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layout proposal — procon-2026 viewer</title>
+<style>
+/* ==========================================================================
+   0. TOKENS — Primer Primitives (MIT), not invented values.
+   Source: https://github.com/primer/primitives  (@primer/primitives)
+   Every size / radius / border / UI colour below resolves to a Primer token.
+   Semantic aliases are quoted next to each line. Documented exceptions are
+   listed in the header comment — no silent re-tuning.
+   Contrast floors (WCAG 2.x): text/icon ≥ 4.5:1 (large 3:1), non-text ≥ 3:1.
+   ========================================================================== */
+:root{
+  /* bg = bgColor.default (neutral.0 / dark neutral.1)
+     surface-alt = bgColor.muted (neutral.1 / dark neutral.2)
+     surface-2   = control.transparent.bgColor.active
+                   (neutral.8 @ .10 over default / dark neutral.8 @ .25 over neutral.1) */
+  --bg:#f6f8fa; --surface:#ffffff; --surface-alt:#f6f8fa; --surface-2:#f2f3f5;
+
+  /* fg  = fgColor.default (base.color.black / dark neutral.12)
+     muted = fgColor.muted (neutral.9). no third faint tier — Primer ships
+     one secondary text role, so micro-caps share it. */
+  --fg:#1f2328; --muted:#59636e; --faint:#59636e;
+
+  /* hair = borderColor.default (neutral.6 / dark neutral.7) — row divider
+     edge = borderColor.emphasis (neutral.8 / dark neutral.8) — unit boundary
+     boxShadow.thin = inset 0 0 0 1px (Primer's no-layout-shift boundary) */
+  --hair:#d1d9e0; --edge:#818b98; --edge-inset:inset 0 0 0 1px var(--edge);
+
+  /* accent = fgColor.accent (blue.5). state-only, never surface decoration */
+  --accent:#0969da; --accent-fg:#ffffff;
+  /* running = fgColor.success (green.5) */
+  --running:#1a7f37;
+  --tick:#818b98; --doc-line:#818b98;
+  --hex-plain:#8ed973; --hex-mountain:#bfbfbf; --hex-water:#46b1e1; --hex-road:#156082;
+
+  /* space (Primer functional/spacing/space.json5) */
+  --s1:4px;   /* space.xs  — badge / list item */
+  --s2:8px;   /* space.sm  — DEFAULT flex/grid gap, card padding */
+  --s3:12px;  /* space.md  — panel padding, block gap */
+  --s4:16px;  /* space.lg  — section gap */
+  --s5:24px;  /* space.xl  — page gutter, panel row gap */
+  --s6:32px;  /* EXC-1: no functional space token above xl; base.size.32 used
+                 for the design-sheet outer padding only */
+
+  /* the one grid */
+  --cols:12;
+  --g-col:16px;   /* space.lg  */
+  --g-row:24px;   /* space.xl  */
+  --g-dense:8px;  /* space.sm  */
+  --g-blk:12px;   /* space.md  */
+  --gutter:24px;  /* space.xl  */
+  --content-max:1080px;
+
+  /* shell chrome */
+  --hdr-h:56px;
+  --nav-w:200px;
+
+  /* radius (Primer functional/size/radius.json5):
+     small 3px = badge/tag/label ONLY (never button or card)
+     medium 6px = DEFAULT for button, input, card, container */
+  --r-ctl:6px;   /* borderRadius.medium */
+  --r-sm:3px;    /* borderRadius.small — chips, meas tags, spec-num */
+  --r-panel:6px; /* borderRadius.medium — same default as controls (EXC-2) */
+  --r-full:9999px;
+  /* borderWidth.thin 1px / .thick 2px (focus) */
+  --bw:1px; --bw-focus:2px;
+
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  /* system faces only — CJK fallbacks so brief terms (禁止 / 囲み / 符号) render */
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,
+         "Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",sans-serif;
+}
+:root[data-theme="dark"]{
+  --bg:#0d1117; --surface:#0d1117; --surface-alt:#151b23; --surface-2:#23282f;
+  --fg:#f0f6fc; --muted:#9198a1; --faint:#9198a1;
+  --hair:#3d444d; --edge:#656c76;
+  --accent:#1f6feb; --accent-fg:#ffffff;
+  --running:#238636;
+  --tick:#656c76; --doc-line:#656c76;
+  color-scheme:dark;
+}
+
+/* ==========================================================================
+   1. DOCUMENT CHROME — itself laid on the same 12-column grid
+   ========================================================================== */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:var(--sans); font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* THE GRID. one definition, used by the document, the shell content band,
+   every route panel row and every nested component. 12 fluid columns; gap
+   from the spacing scale. A full-width band's nested copy of this grid is
+   track-identical, so nested column boundaries land on the outer ones. */
+.grid{
+  display:grid;
+  grid-template-columns:repeat(12,minmax(0,1fr));
+  column-gap:var(--g-col);
+  row-gap:var(--g-row);
+}
+
+.doc{
+  max-width:1440px; margin:0 auto;
+  padding:var(--s6) var(--gutter) 72px;
+}
+
+.eyebrow{
+  font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--muted); margin:0 0 var(--s2);
+}
+.doc-head{grid-column:1/-1;padding-bottom:var(--s5);border-bottom:1px solid var(--doc-line);
+  display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--g-col);row-gap:var(--s4)}
+.doc-head .head-copy{grid-column:span 9;display:flex;flex-direction:column;gap:var(--s2)}
+.doc-head .head-util{grid-column:span 3;display:flex;justify-content:flex-end;align-items:flex-start}
+.doc-head h1{font-size:24px;line-height:1.15;font-weight:650;margin:0;letter-spacing:-.01em}
+.doc-head h1 .dim{color:var(--muted);font-weight:450}
+.doc-scope{margin:0;color:var(--muted);max-width:72ch;font-size:13.5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:var(--s2) 0 0;padding:0;list-style:none}
+.chips li{
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.02em;
+  padding:3px 7px; border-radius:var(--r-sm);
+  background:var(--surface-alt); color:var(--muted);
+}
+.toggle{
+  flex:none; display:inline-flex; align-items:center; gap:7px;
+  font:600 12.5px/1 var(--sans); letter-spacing:.02em;
+  color:var(--fg); background:var(--surface-alt);
+  border:0; box-shadow:var(--edge-inset); border-radius:var(--r-ctl);
+  padding:9px 13px; cursor:pointer;
+}
+.toggle:hover{background:var(--surface-2)}
+.toggle:focus-visible{outline:var(--bw-focus) solid var(--edge);outline-offset:2px}
+.toggle .ico{width:14px;height:14px}
+
+section.spec{grid-column:1/-1;margin-top:44px;
+  display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--g-col);row-gap:var(--s4)}
+.spec-head{grid-column:1/-1;display:flex;align-items:baseline;gap:var(--s3);flex-wrap:wrap}
+.spec-num{
+  font-family:var(--mono);font-size:11px;font-weight:700;color:var(--fg);
+  background:var(--surface-2);border-radius:var(--r-sm);padding:2px 7px;
+}
+.spec-head h2{font-size:19px;font-weight:650;margin:0;letter-spacing:-.005em}
+.spec-head .note{font-size:12.5px;color:var(--muted);margin-left:auto}
+.lede{grid-column:1/-1;margin:0;color:var(--muted);max-width:88ch;font-size:13.5px}
+.lede code{font-family:var(--mono);font-size:12.5px;color:var(--fg);background:var(--surface-alt);padding:1px 4px;border-radius:3px}
+/* Long command/path tokens must wrap inside their band instead of widening the page. */
+code,pre,.mono{overflow-wrap:anywhere;word-break:break-word}
+/* octicons are filled paths — inherit the element's colour */
+svg.ico,svg.marker,svg.seg-ico{fill:currentColor;display:block}
+table{max-width:100%}
+td,th{overflow-wrap:anywhere}
+.lede b{color:var(--fg);font-weight:650}
+
+.scroller{grid-column:1/-1;overflow-x:auto;overflow-y:hidden;background:var(--surface-alt);
+  padding:var(--s4);border-radius:var(--r-panel);box-shadow:var(--edge-inset)}
+
+/* value-first annotation — numbers with units, never prose labels.
+   tone only: the chip is not a unit, it is metadata. */
+.meas{
+  display:inline-flex;align-items:baseline;gap:5px;flex-wrap:wrap;
+  font-family:var(--mono);font-size:11px;letter-spacing:.02em;
+  font-variant-numeric:tabular-nums;color:var(--muted);
+  background:var(--surface-alt);border-radius:var(--r-sm);
+  padding:3px 8px;
+}
+.meas b{color:var(--fg);font-weight:700}
+.meas .u{color:var(--faint);font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+.meas-row{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center}
+
+/* ==========================================================================
+   2. MOCK PRIMITIVES — the proposal itself, applied
+   ========================================================================== */
+.frame{
+  width:1032px; flex:none;
+  background:var(--bg); border-radius:var(--r-panel); overflow:hidden;
+  box-shadow:var(--edge-inset);
+}
+.frame-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:0 0 var(--s2);
+}
+.frame-tag{
+  font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:.07em;
+  padding:3px 8px; background:var(--fg); color:var(--surface); border-radius:var(--r-sm);
+}
+.frame--shell{width:1280px;height:800px;display:flex;flex-direction:column}
+
+/* --- unit rule (brief v4 + GitHub-structure correction): box only one
+   coherent unit. Inside a box, never nest another box — divide with rows +
+   hairlines. The map instrument earns a boundary (different layer); each
+   information unit on the right-hand rail ALSO earns one box with its title
+   inside (GitHub About / Releases / Packages pattern) — under-boxing the rail
+   is as wrong as over-boxing. ROUTE / STATUS / COORDINATOR stay as bounded
+   grid regions closed by tone + gap + hairlines. A title inside a box is the
+   unit's name and stays; a tag outside or beside a box that restates its
+   contents is decoration and goes. */
+.panel{
+  background:transparent;
+  display:flex; flex-direction:column; min-width:0;
+}
+.panel--inst{
+  background:var(--surface);
+  box-shadow:var(--edge-inset);          /* the one content outline */
+  border-radius:var(--r-panel);
+  overflow:hidden;
+}
+.panel-bd{
+  padding:0;display:flex;flex-direction:column;gap:var(--g-blk);
+  min-width:0;flex:1;
+}
+.panel-bd.tight{gap:var(--g-dense)}
+.panel--quiet .panel-bd{color:var(--muted);font-size:12.5px}
+
+/* --- row: one fact per line. label 11 / value 15, hairline between rows.
+   Replaces the nested tile box + its two-line label/value stack. --- */
+.rows{display:flex;flex-direction:column;min-width:0}
+.rows--tone{
+  background:var(--surface);border-radius:var(--r-ctl);
+  padding:2px 12px;
+}
+.row{
+  display:flex;align-items:baseline;justify-content:space-between;gap:var(--s3);
+  padding:7px 0;min-width:0;
+}
+.row+.row{border-top:1px solid var(--hair)}
+.row .l{
+  flex:none;display:inline-flex;align-items:center;gap:5px;
+  font-size:11px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted);
+}
+.row .l .ico{width:11px;height:11px}
+.row .v{
+  font-family:var(--mono);font-size:15px;font-weight:650;line-height:1.25;
+  font-variant-numeric:tabular-nums;color:var(--fg);
+  text-align:right;overflow-wrap:anywhere;min-width:0;
+}
+.grp{display:flex;flex-direction:column;min-width:0}
+.grp+.grp{margin-top:var(--g-blk)}
+
+/* --- info unit box (right rail): 1 unit = 1 box, GitHub About/Releases
+   pattern. The heading INSIDE the box is the unit's title and stays; labels
+   outside or beside a box that restate its contents stay deleted. Inside the
+   box: rows + hairlines only, never nested boxes. --- */
+.Box{
+  background:var(--surface);box-shadow:var(--edge-inset);
+  border-radius:var(--r-panel);overflow:hidden;
+  display:flex;flex-direction:column;min-width:0;
+}
+.Box-header{
+  flex:none;
+  margin:0;padding:var(--s2) var(--s3);
+  font-size:12.5px;font-weight:650;letter-spacing:-.005em;
+  color:var(--fg);border-bottom:1px solid var(--hair);
+}
+.Box-body{padding:var(--s1) var(--s3) var(--s2);display:flex;flex-direction:column;min-width:0}
+
+/* --- masthead row: ROUTE + STATUS folded into one line, no box --- */
+.masthead{
+  display:flex;align-items:baseline;gap:var(--s3);flex-wrap:wrap;
+  padding-bottom:var(--s3);border-bottom:1px solid var(--hair);
+}
+.masthead .route-name{margin:0}
+.masthead .path{margin:0;display:inline}
+.masthead .state{margin-left:auto;display:inline-flex;align-items:center;gap:var(--s2)}
+
+/* --- mock shell ------------------------------------------------------- */
+.m-shell{display:flex;flex-direction:column;height:100%;background:var(--bg)}
+.m-hdr{
+  height:var(--hdr-h); flex:none; display:flex; align-items:center;
+  justify-content:space-between; gap:var(--s4);
+  padding:0 var(--gutter); background:var(--surface);
+  border-bottom:1px solid var(--hair);
+}
+.m-brand{display:flex;align-items:baseline;gap:7px}
+.m-brand b{font-size:15px;font-weight:650;letter-spacing:-.01em}
+.m-brand span{font-size:12px;color:var(--muted)}
+.m-hdr .m-theme{
+  font:600 12px/1 var(--sans); color:var(--fg); background:var(--surface-alt);
+  border:0; box-shadow:var(--edge-inset); border-radius:var(--r-ctl); padding:8px 12px; cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;
+}
+.m-hdr .m-theme:hover{background:var(--surface-2)}
+.m-hdr .m-theme .ico{width:13px;height:13px}
+.m-body{display:flex;flex:1;min-height:0}
+.m-nav{
+  width:var(--nav-w); flex:none; background:var(--surface);
+  border-right:1px solid var(--hair);
+  padding:var(--s3) var(--s3) var(--s4);
+  overflow:hidden;
+  display:flex;flex-direction:column;gap:var(--s4);
+}
+
+/* sidebar composition — GitHub tabs: ONE LINE per item (icon + label).
+   No role headings (Orient / Review / Monitor were text decoration).
+   No second line: live values (1 / 4 · [2, 3]) belong to the right rail.
+   State is shown by icon: selection tone + bold weight for the current
+   item (no left accent bar), dot-fill marker for running. */
+.nav-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.nav-it{
+  display:flex;align-items:center;gap:9px;
+  padding:7px 9px;border-radius:var(--r-ctl);
+  border:1px solid transparent;
+  font-size:13px;font-weight:550;color:var(--fg);text-decoration:none;
+  min-width:0;
+}
+.nav-it .ico{flex:none;width:16px;height:16px;color:var(--muted)}
+.nav-it .nav-name{
+  flex:1;min-width:0;line-height:1.25;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.nav-it .nav-dot{width:11px;height:11px;flex:none;color:var(--running)}
+/* selection tone — a surface value step + hairline, carried by weight + ink */
+.nav-it.st-default{background:transparent}
+.nav-it.st-hover{background:var(--surface-alt)}
+.nav-it.st-selected{
+  background:var(--surface-2);box-shadow:var(--edge-inset);font-weight:700;
+}
+.nav-it.st-selected .ico{color:var(--fg)}
+.nav-it.st-focus{background:transparent;outline:var(--bw-focus) solid var(--edge);outline-offset:-1px}
+
+.m-main{
+  flex:1;min-width:0;overflow:auto; background:var(--bg);
+  padding:var(--gutter);
+}
+.m-col{
+  width:100%;max-width:var(--content-max);
+  display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  column-gap:var(--g-col);row-gap:var(--g-row);
+  align-items:start;
+}
+
+.route-name{margin:0;font-size:16px;font-weight:700;letter-spacing:-.005em;color:var(--fg)}
+.path{
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;
+  color:var(--muted);margin:0 0 0 8px;
+}
+
+/* --- UI variants, chosen by information priority -----------------------
+   P  primary   → wide span + large value
+   S  secondary → one-line row (label 11px / value 15px)
+   T  tertiary  → text link */
+.score-row{display:flex;align-items:baseline;gap:var(--s5);flex-wrap:wrap;min-width:0}
+.score-row .who{display:flex;align-items:baseline;gap:7px}
+.score-row .who .l{font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+.score-row .who .v{
+  font-family:var(--mono);font-size:26px;font-weight:700;line-height:1.05;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--fg);
+}
+
+/* tertiary — text link */
+.tlink{
+  font-size:12.5px;color:var(--muted);text-decoration:underline;
+  text-underline-offset:2px;text-decoration-thickness:1px;
+}
+.tlink:hover{color:var(--fg)}
+
+/* --- match-state HUD: two type tiers, locked --------------------------
+   label 11px / value 15px, identical across DAY / REVISIONS / SOLVER /
+   SERVER / LAST UPDATE. priority is span + position, never font size. */
+.hud-t .l{font-size:11px}
+.hud-t .v{font-size:15px}
+
+/* --- chips (neutral + state marker, never a tinted fill) --------------
+   marker = octicon dot-fill, tone-matched. no border — tone + shape only. */
+.chip{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--surface-alt); color:var(--fg);
+  border-radius:var(--r-full); padding:3px 10px;
+  font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+}
+.chip .marker{width:10px;height:10px;flex:none;color:var(--muted)}
+.chip .marker.is-running{color:var(--running)}
+
+/* --- map instrument ---------------------------------------------------
+   viewBox = mapPixelSize(map) · width/height 100% · xMidYMid meet · inset 16 */
+.map-inst{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1 1 auto}
+.map-scale{
+  height:5px;flex:none;background:
+    repeating-linear-gradient(90deg,var(--tick) 0 1px,transparent 1px 9px);
+  opacity:.9;border-bottom:1px solid var(--hair);
+}
+/* 16px mounting gap is the fit inset — spacing, not a stroke */
+.map-viewport{
+  flex:1 1 auto; min-height:0; padding:var(--s4); background:var(--surface);
+  display:flex; align-items:stretch; justify-content:stretch;
+}
+.board{display:block;flex:1 1 auto;width:100%;height:100%;min-width:0;min-height:0}
+.board .cell{stroke:rgba(18,22,27,.28);stroke-width:.6}
+:root[data-theme="dark"] .board .cell{stroke:rgba(0,0,0,.45)}
+.map-foot{
+  flex:none;display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:7px 12px; background:var(--surface-alt); border-top:1px solid var(--hair);
+  font-family:var(--mono);font-size:11px;color:var(--muted);
+  font-variant-numeric:tabular-nums;
+}
+.map-foot .k{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:var(--muted)}
+
+/* --- controls (kept broadly as-is) ------------------------------------ */
+.seg{display:inline-flex;background:var(--surface-alt);box-shadow:var(--edge-inset);
+  border-radius:var(--r-ctl);overflow:hidden}
+.seg button{
+  font:600 11.5px/1 var(--sans);letter-spacing:.03em;
+  padding:8px 14px;border:0;background:transparent;color:var(--muted);cursor:pointer;
+}
+.seg button+button{border-left:1px solid var(--hair)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.transport{display:flex;align-items:center;gap:var(--g-dense);flex-wrap:wrap}
+.btn{
+  font:600 12px/1 var(--sans); color:var(--fg); background:var(--surface-alt);
+  border:0; box-shadow:var(--edge-inset); border-radius:var(--r-ctl);
+  min-width:34px; height:32px; padding:0 11px; cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+}
+.btn:hover{background:var(--surface-2)}
+.btn:focus-visible{outline:var(--bw-focus) solid var(--edge);outline-offset:2px}
+.btn.on{background:var(--accent);color:var(--accent-fg)}
+.btn .ico{width:14px;height:14px}
+.rates{display:inline-flex;gap:4px;margin-left:6px}
+.rates .btn{min-width:40px;padding:0 6px;font-family:var(--mono)}
+.scrub-label{display:flex;flex-direction:column;gap:5px;font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;font-weight:700;color:var(--muted)}
+.scrub{position:relative;height:6px;border-radius:3px;background:var(--surface-2)}
+.scrub .fill{position:absolute;left:0;top:0;bottom:0;width:62%;background:var(--accent);border-radius:3px}
+.scrub .knob{
+  position:absolute;left:62%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;
+  border-radius:50%;background:var(--surface);border:var(--bw-focus) solid var(--accent);
+}
+.scrub-meta{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;
+  color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* --- score / meta ----------------------------------------------------- */
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:12px;margin:0}
+.kv dt{color:var(--muted);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  font-weight:700;align-self:center}
+.kv dd{margin:0;font-family:var(--mono);font-weight:650;font-variant-numeric:tabular-nums;color:var(--fg)}
+
+.cmd{
+  margin:0;padding:10px 13px;background:var(--surface-alt);
+  border-radius:var(--r-ctl);
+  font-family:var(--mono);font-size:12px;color:var(--fg);
+  white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;
+}
+.pg-body{margin:0;color:var(--muted);font-size:13px}
+.pg-body code{font-family:var(--mono);font-size:12px;color:var(--fg);background:var(--surface-alt);
+  padding:1px 5px;border-radius:3px;overflow-wrap:anywhere}
+
+/* ==========================================================================
+   3. GRID DEMONSTRATION (1280 and 420)
+   ========================================================================== */
+.ruler{
+  display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  column-gap:var(--g-col);row-gap:var(--s2);
+  background:var(--surface);padding:var(--s4);border-radius:var(--r-panel);
+  box-shadow:var(--edge-inset);
+}
+.ruler--narrow{column-gap:var(--g-dense)}
+.ruler .col{
+  height:56px;background:var(--surface-2);box-shadow:var(--edge-inset);border-radius:var(--r-sm);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:10px;font-weight:700;color:var(--muted);
+}
+.ruler .span{height:32px;background:var(--fg);color:var(--surface);border-radius:3px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:10px;font-weight:700}
+.gspec{grid-column:span 6}
+table.bp{width:100%;border-collapse:collapse;font-size:13px;background:var(--surface);
+  box-shadow:var(--edge-inset);border-radius:var(--r-panel);overflow:hidden}
+table.bp th,table.bp td{padding:8px 11px;text-align:left;vertical-align:top}
+table.bp thead th{font-size:10px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--muted);font-weight:700;background:var(--surface-alt);border-bottom:1px solid var(--hair)}
+table.bp tbody tr+tr td{border-top:1px solid var(--hair)}
+table.bp td.w{font-family:var(--mono);font-weight:650;white-space:nowrap;font-size:12.5px;color:var(--fg)}
+table.bp td.w span{display:block;color:var(--muted);font-weight:400;font-family:var(--sans);
+  font-size:11.5px;white-space:normal}
+
+/* ==========================================================================
+   4. NAV STATE STRIP — one unit, divided by hairlines (not four boxes)
+   ========================================================================== */
+/* --- before/after reduction proof ------------------------------------- */
+.ba{grid-column:1/-1;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  column-gap:var(--g-col);row-gap:var(--s5)}
+.ba-item{grid-column:1/-1;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  column-gap:var(--g-col);row-gap:var(--s2)}
+.ba-cap{grid-column:1/-1;font-family:var(--mono);font-size:11px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.ba-side{grid-column:span 6;min-width:0}
+.ba-tag{
+  display:inline-block;font-family:var(--mono);font-size:10px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;
+  border-radius:var(--r-sm);margin-bottom:var(--s2);
+}
+.ba-tag--before{background:var(--surface-2);color:var(--muted)}
+.ba-tag--after{background:var(--fg);color:var(--surface)}
+.ba-frame{
+  background:var(--surface);border-radius:var(--r-panel);padding:var(--s3);
+  min-width:0;box-shadow:var(--edge-inset);
+}
+.nav-states{grid-column:1/-1;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  column-gap:0;row-gap:0;
+  background:var(--surface);box-shadow:var(--edge-inset);border-radius:var(--r-panel);
+  overflow:hidden}
+.nav-state{grid-column:span 3;padding:var(--s3)}
+.nav-state+.nav-state{border-left:1px solid var(--hair)}
+.nav-state h3{margin:0 0 var(--s2);font-family:var(--mono);font-size:10px;font-weight:700;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+.nav-state ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+
+/* ==========================================================================
+   5. RESPONSIVE PREVIEW + RULES
+   ========================================================================== */
+.resp-wrap{grid-column:1/-1;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  column-gap:var(--g-col);row-gap:var(--s5)}
+.phone{
+  grid-column:span 4;width:420px;max-width:100%;background:var(--bg);
+  box-shadow:var(--edge-inset);border-radius:var(--r-panel); overflow:hidden;
+}
+.phone .m-shell{height:auto}
+.phone .m-main{padding:var(--s4)}
+.phone .m-nav{
+  width:100%;padding:var(--s2) var(--s3);flex-direction:row;flex-wrap:wrap;
+  gap:var(--s2);border-right:0;border-bottom:1px solid var(--hair);
+}
+.phone .m-nav .nav-list{flex-direction:row;gap:var(--s1);flex-wrap:wrap}
+.phone .m-nav .nav-it{padding:7px 10px;font-size:12.5px;white-space:nowrap}
+.phone .m-col{column-gap:var(--g-dense);row-gap:var(--s4)}
+.phone .map-inst{height:280px}
+.phone .map-viewport{padding:var(--s3)}
+.resp-notes{grid-column:span 8;display:flex;flex-direction:column;gap:var(--s3)}
+.tier{
+  display:inline-block;font-family:var(--mono);font-size:10px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;
+  border-radius:var(--r-sm); background:var(--surface-2); color:var(--muted);
+  margin-bottom:var(--s1);align-self:flex-start;
+}
+
+/* ==========================================================================
+   6. RULES + CONTRADICTIONS
+   ========================================================================== */
+/* rules + findings: one list unit each, rows separated by hairlines.
+   11 bordered cards replaced by 11 rows in 1 container. */
+ol.rules{grid-column:1/-1;counter-reset:r;list-style:none;margin:0;padding:0;
+  background:var(--surface);box-shadow:var(--edge-inset);border-radius:var(--r-panel);
+  overflow:hidden}
+ol.rules li{
+  counter-increment:r;
+  padding:11px 16px 11px 50px; font-size:13px; color:var(--muted);
+  position:relative;
+}
+ol.rules li+li{border-top:1px solid var(--hair)}
+ol.rules li .n{
+  position:absolute;left:16px;top:12px;
+  width:22px;height:22px;border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--fg);
+  font:700 11px/22px var(--mono);text-align:center;
+}
+ol.rules li b{color:var(--fg);font-weight:650}
+ol.rules li code{font-family:var(--mono);font-size:12px;background:var(--surface-alt);
+  padding:1px 5px;border-radius:3px;color:var(--fg)}
+
+.findings{grid-column:1/-1;
+  background:var(--surface);box-shadow:var(--edge-inset);border-radius:var(--r-panel);
+  overflow:hidden}
+.finding{padding:11px 16px;font-size:12.5px;color:var(--muted)}
+.finding+.finding{border-top:1px solid var(--hair)}
+.finding b{display:block;color:var(--fg);font-size:12px;margin-bottom:3px;font-weight:650}
+.finding code{font-family:var(--mono);font-size:11.5px;color:var(--fg);overflow-wrap:anywhere}
+
+.rule-note{
+  grid-column:1/-1;padding:2px 0 2px 12px;
+  border-left:1px solid var(--hair);
+  font-size:13px; color:var(--muted);
+}
+.rule-note b{color:var(--fg);font-weight:650}
+.rule-note code{font-family:var(--mono);font-size:12px;background:var(--surface-alt);
+  padding:1px 5px;border-radius:var(--r-sm);color:var(--fg)}
+
+footer.doc-foot{grid-column:1/-1;margin-top:56px;padding-top:var(--s4);
+  border-top:1px solid var(--doc-line);font-size:12px;color:var(--muted)}
+footer.doc-foot code{font-family:var(--mono)}
+
+.sp1{grid-column:span 1}.sp2{grid-column:span 2}.sp3{grid-column:span 3}
+.sp4{grid-column:span 4}.sp5{grid-column:span 5}.sp6{grid-column:span 6}
+.sp7{grid-column:span 7}.sp8{grid-column:span 8}.sp9{grid-column:span 9}
+.sp10{grid-column:span 10}.sp11{grid-column:span 11}.sp12{grid-column:span 12}
+
+/* ==========================================================================
+   7. BREAKPOINTS — content stress points, not device names
+   ========================================================================== */
+@media (max-width:960px){
+  :root{--gutter:16px;--g-col:12px}
+}
+@media (max-width:768px){
+  /* shell sidebar repositions to a horizontal bar; labels / order /
+     destination / current-state meaning are all preserved */
+}
+@media (max-width:560px){
+  :root{--g-col:var(--g-dense);--g-row:var(--s4);--gutter:var(--s4)}
+  .doc-head .head-copy,.doc-head .head-util{grid-column:1/-1}
+  .doc-head .head-util{justify-content:flex-start}
+  .gspec,.nav-state,.finding,ol.rules li{grid-column:1/-1}
+  .phone,.resp-notes{grid-column:1/-1}
+  .sp3,.sp4,.sp5,.sp6,.sp7,.sp8,.sp9,.sp10{grid-column:span 12}
+}
+</style>
+</head>
+<body>
+
+<!-- icon sprite — Primer Octicons (MIT), inlined as SVG.
+     https://github.com/primer/octicons — code license MIT.
+     UI chrome icons only; map / visualiser marks stay custom.
+     viewBox 16 (the octicon 16 grid = --icon-size-sm). currentColor only.
+     No icon font, no image, no network request. Minimal shape modification:
+     paths are copied from the octicon sources as-is. -->
+<svg width="0" height="0" style="width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
+  <defs>
+    <!-- nav Home — octicon home-16 -->
+    <symbol id="i-home" viewBox="0 0 16 16"><path d="M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z"/></symbol>
+    <!-- nav Replays — octicon history-16 -->
+    <symbol id="i-replays" viewBox="0 0 16 16"><path d="m.427 1.927 1.215 1.215a8.002 8.002 0 1 1-1.6 5.685.75.75 0 1 1 1.493-.154 6.5 6.5 0 1 0 1.18-4.458l1.358 1.358A.25.25 0 0 1 3.896 6H.25A.25.25 0 0 1 0 5.75V2.104a.25.25 0 0 1 .427-.177ZM7.75 4a.75.75 0 0 1 .75.75v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25v-3.5A.75.75 0 0 1 7.75 4Z"/></symbol>
+    <!-- nav Solvers — octicon beaker-16 -->
+    <symbol id="i-solvers" viewBox="0 0 16 16"><path d="M5 5.782V2.5h-.25a.75.75 0 0 1 0-1.5h6.5a.75.75 0 0 1 0 1.5H11v3.282l3.666 5.76C15.619 13.04 14.543 15 12.767 15H3.233c-1.776 0-2.852-1.96-1.899-3.458Zm-2.4 6.565a.75.75 0 0 0 .633 1.153h9.534a.75.75 0 0 0 .633-1.153L12.225 10.5h-8.45ZM9.5 2.5h-3V6c0 .143-.04.283-.117.403L4.73 9h6.54L9.617 6.403A.746.746 0 0 1 9.5 6Z"/></symbol>
+    <!-- nav Live — octicon broadcast-16 -->
+    <symbol id="i-live" viewBox="0 0 16 16"><path d="M8.75 8.582v5.668a.75.75 0 0 1-1.5 0V8.582a1.75 1.75 0 1 1 1.5 0Zm3.983-7.125a.75.75 0 0 1 1.06.026A7.976 7.976 0 0 1 16 7c0 2.139-.84 4.083-2.207 5.517a.75.75 0 1 1-1.086-1.034A6.474 6.474 0 0 0 14.5 7a6.474 6.474 0 0 0-1.793-4.483.75.75 0 0 1 .026-1.06Zm-9.466 0c.3.286.312.76.026 1.06A6.474 6.474 0 0 0 1.5 7a6.47 6.47 0 0 0 1.793 4.483.75.75 0 0 1-1.086 1.034A7.973 7.973 0 0 1 0 7c0-2.139.84-4.083 2.207-5.517a.75.75 0 0 1 1.06-.026Zm8.556 2.321A4.988 4.988 0 0 1 13 7a4.988 4.988 0 0 1-1.177 3.222.75.75 0 1 1-1.146-.967A3.487 3.487 0 0 0 11.5 7c0-.86-.309-1.645-.823-2.255a.75.75 0 0 1 1.146-.967Zm-6.492.958A3.48 3.48 0 0 0 4.5 7a3.48 3.48 0 0 0 .823 2.255.75.75 0 0 1-1.146.967A4.981 4.981 0 0 1 3 7a4.982 4.982 0 0 1 1.188-3.236.75.75 0 0 1 1.143.972Z"/></symbol>
+    <!-- theme toggle — octicon moon-16 / sun-16 -->
+    <symbol id="i-moon" viewBox="0 0 16 16"><path d="M9.598 1.591a.749.749 0 0 1 .785-.175 7.001 7.001 0 1 1-8.967 8.967.75.75 0 0 1 .961-.96 5.5 5.5 0 0 0 7.046-7.046.75.75 0 0 1 .175-.786Zm1.616 1.945a7 7 0 0 1-7.678 7.678 5.499 5.499 0 1 0 7.678-7.678Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-1.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Zm5.657-8.157a.75.75 0 0 1 0 1.061l-1.061 1.06a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l1.06-1.06a.75.75 0 0 1 1.06 0Zm-9.193 9.193a.75.75 0 0 1 0 1.06l-1.06 1.061a.75.75 0 1 1-1.061-1.06l1.06-1.061a.75.75 0 0 1 1.061 0ZM8 0a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V.75A.75.75 0 0 1 8 0ZM3 8a.75.75 0 0 1-.75.75H.75a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 3 8Zm13 0a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 16 8Zm-8 5a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 8 13Zm3.536-1.464a.75.75 0 0 1 1.06 0l1.061 1.06a.75.75 0 0 1-1.06 1.061l-1.061-1.06a.75.75 0 0 1 0-1.061ZM2.343 2.343a.75.75 0 0 1 1.061 0l1.06 1.061a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-1.06-1.06a.75.75 0 0 1 0-1.06Z"/></symbol>
+    <!-- transport — octicon move-to-start-16 / pause-16 / triangle-fill-16 /
+         chevron-left-16 / chevron-right-16 / move-to-end-16 / stopwatch-16.
+         NOTE: octicons has no `play` glyph — triangle-fill is the settled
+         stand-in (see brief 採用マッピング（確定）). `skip` is dependency-skip
+         (circle+slash) and is NOT used. -->
+    <symbol id="i-start" viewBox="0 0 16 16"><path d="M5.22 7.47a.749.749 0 0 0 0 1.06l3.75 3.75a.749.749 0 1 0 1.06-1.06L7.561 8.75h6.689a.75.75 0 0 0 0-1.5H7.561l2.469-2.47a.749.749 0 1 0-1.06-1.06L5.22 7.47ZM3 3.75a.75.75 0 0 0-1.5 0v8.5a.75.75 0 0 0 1.5 0v-8.5Z"/></symbol>
+    <symbol id="i-step-back" viewBox="0 0 16 16"><path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 16 16"><path d="M13.378 6.948a1.2 1.2 0 0 1 0 2.103l-8 4.397A1.2 1.2 0 0 1 3.6 12.397V3.602A1.2 1.2 0 0 1 5.378 2.55z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 16 16"><path d="M5 2h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm5 0h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z"/></symbol>
+    <symbol id="i-step-fwd" viewBox="0 0 16 16"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z"/></symbol>
+    <symbol id="i-end" viewBox="0 0 16 16"><path d="m10.78 8.53-3.75 3.75a.749.749 0 1 1-1.06-1.06l2.469-2.47H1.75a.75.75 0 0 1 0-1.5h6.689L5.97 4.78a.749.749 0 1 1 1.06-1.06l3.75 3.75a.749.749 0 0 1 0 1.06ZM13 12.25v-8.5a.75.75 0 0 1 1.5 0v8.5a.75.75 0 0 1-1.5 0Z"/></symbol>
+    <symbol id="i-rate" viewBox="0 0 16 16"><path d="M5.75.75A.75.75 0 0 1 6.5 0h3a.75.75 0 0 1 0 1.5h-.75v1l-.001.041a6.724 6.724 0 0 1 3.464 1.435l.007-.006.75-.75a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734l-.75.75-.006.007a6.75 6.75 0 1 1-10.548 0L2.72 5.03l-.75-.75a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l.75.75.007.006A6.72 6.72 0 0 1 7.25 2.541V1.5H6.5a.75.75 0 0 1-.75-.75ZM8 14.5a5.25 5.25 0 1 0-.001-10.501A5.25 5.25 0 0 0 8 14.5Zm.389-6.7 1.33-1.33a.75.75 0 1 1 1.061 1.06L9.45 8.861A1.503 1.503 0 0 1 8 10.75a1.499 1.499 0 1 1 .389-2.95Z"/></symbol>
+    <!-- renderer SVG / WebGPU — octicon file-media-16 / cpu-16 -->
+    <symbol id="i-svg" viewBox="0 0 16 16"><path d="M16 13.25A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25V2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75ZM1.75 2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h.94l.03-.03 6.077-6.078a1.75 1.75 0 0 1 2.412-.06L14.5 10.31V2.75a.25.25 0 0 0-.25-.25Zm12.5 11a.25.25 0 0 0 .25-.25v-.917l-4.298-3.889a.25.25 0 0 0-.344.009L4.81 13.5ZM7 6a2 2 0 1 1-3.999.001A2 2 0 0 1 7 6ZM5.5 6a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0Z"/></symbol>
+    <symbol id="i-webgpu" viewBox="0 0 16 16"><path d="M6.5.75V2h3V.75a.75.75 0 0 1 1.5 0V2h1.25c.966 0 1.75.784 1.75 1.75V5h1.25a.75.75 0 0 1 0 1.5H14v3h1.25a.75.75 0 0 1 0 1.5H14v1.25A1.75 1.75 0 0 1 12.25 14H11v1.25a.75.75 0 0 1-1.5 0V14h-3v1.25a.75.75 0 0 1-1.5 0V14H3.75A1.75 1.75 0 0 1 2 12.25V11H.75a.75.75 0 0 1 0-1.5H2v-3H.75a.75.75 0 0 1 0-1.5H2V3.75C2 2.784 2.784 2 3.75 2H5V.75a.75.75 0 0 1 1.5 0Zm5.75 11.75a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25h-8.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25ZM5.75 5h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5A.75.75 0 0 1 5.75 5Zm.75 4.5h3v-3h-3Z"/></symbol>
+    <!-- HUD meta — octicon versions-16 (DAY) / iterations-16 (REVISIONS,
+         unmapped in the settled table; chosen as the nearest revision-cycle
+         glyph) / server-16 / clock-16. SOLVER reuses beaker-16 so the solver
+         concept wears one icon in nav and HUD. -->
+    <symbol id="i-day" viewBox="0 0 16 16"><path d="M7.75 14A1.75 1.75 0 0 1 6 12.25v-8.5C6 2.784 6.784 2 7.75 2h6.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 14Zm-.25-1.75c0 .138.112.25.25.25h6.5a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25h-6.5a.25.25 0 0 0-.25.25ZM4.9 3.508a.75.75 0 0 1-.274 1.025.249.249 0 0 0-.126.217v6.5c0 .09.048.173.126.217a.75.75 0 0 1-.752 1.298A1.75 1.75 0 0 1 3 11.25v-6.5c0-.649.353-1.214.874-1.516a.75.75 0 0 1 1.025.274ZM1.625 5.533h.001a.249.249 0 0 0-.126.217v4.5c0 .09.048.173.126.217a.75.75 0 0 1-.752 1.298A1.748 1.748 0 0 1 0 10.25v-4.5a1.748 1.748 0 0 1 .873-1.516.75.75 0 1 1 .752 1.299Z"/></symbol>
+    <!-- REVISIONS — octicon iterations-16 -->
+    <symbol id="i-revisions" viewBox="0 0 16 16"><path d="M2.5 7.25a4.75 4.75 0 0 1 9.5 0 .75.75 0 0 0 1.5 0 6.25 6.25 0 1 0-6.25 6.25H12v2.146c0 .223.27.335.427.177l2.896-2.896a.25.25 0 0 0 0-.354l-2.896-2.896a.25.25 0 0 0-.427.177V12H7.25A4.75 4.75 0 0 1 2.5 7.25Z"/></symbol>
+    <symbol id="i-server" viewBox="0 0 16 16"><path d="M1.75 1h12.5c.966 0 1.75.784 1.75 1.75v4c0 .372-.116.717-.314 1 .198.283.314.628.314 1v4a1.75 1.75 0 0 1-1.75 1.75H1.75A1.75 1.75 0 0 1 0 12.75v-4c0-.358.109-.707.314-1a1.739 1.739 0 0 1-.314-1v-4C0 1.784.784 1 1.75 1ZM1.5 2.75v4c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-4a.25.25 0 0 0-.25-.25H1.75a.25.25 0 0 0-.25.25Zm.25 5.75a.25.25 0 0 0-.25.25v4c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-4a.25.25 0 0 0-.25-.25ZM7 4.75A.75.75 0 0 1 7.75 4h4.5a.75.75 0 0 1 0 1.5h-4.5A.75.75 0 0 1 7 4.75ZM7.75 10h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM3 4.75A.75.75 0 0 1 3.75 4h.5a.75.75 0 0 1 0 1.5h-.5A.75.75 0 0 1 3 4.75ZM3.75 10h.5a.75.75 0 0 1 0 1.5h-.5a.75.75 0 0 1 0-1.5Z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25v-3.5a.75.75 0 0 1 1.5 0Z"/></symbol>
+    <!-- status running marker — octicon dot-fill-16 -->
+    <symbol id="i-dot" viewBox="0 0 16 16"><path d="M8 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/></symbol>
+  </defs>
+</svg>
+
+<!-- shared hex geometry: pointy-top, HEX_SIZE 24, even-r -->
+<svg width="0" height="0" style="width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
+  <defs>
+    <polygon id="hx" points="0,-24 20.78,-12 20.78,12 0,24 -20.78,12 -20.78,-12"/>
+  </defs>
+</svg>
+
+<div class="doc grid">
+
+  <header class="doc-head">
+    <div class="head-copy">
+      <p class="eyebrow">Design proposal · 01 of the layout track · rev v4</p>
+      <h1>Layout <span class="dim">— procon-2026 viewer</span></h1>
+      <p class="doc-scope">
+        Structural proposal for the SolidJS + WebGPU match viewer. One shared 12-column grid;
+        the shell and every route as bounded regions that close their own hierarchy with rows
+        and hairlines — boxes only around units (one box per unit on the right-hand
+        information rail, title inside; labels only where they carry meaning);
+        sidebar as single-line icon + label tabs, state by icon and selection tone;
+        tokens from Primer Primitives, UI icons from Primer Octicons. Geometry + contrast
+        floors only — colour roles and interaction states are out of scope.
+      </p>
+      <ul class="chips">
+        <li>layout-system</li><li>navigation-design</li><li>visual-hierarchy</li>
+        <li>information-density</li><li>Primer Primitives · MIT</li><li>Primer Octicons · MIT</li>
+      </ul>
+    </div>
+    <div class="head-util">
+      <button class="toggle" id="theme-toggle" type="button" aria-pressed="false">
+        <svg class="ico" aria-hidden="true"><use href="#i-moon"/></svg><span class="lbl">Dark mode</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ====================================================================
+       01 — ONE GRID
+       ==================================================================== -->
+  <section class="spec" id="sec1">
+    <div class="spec-head">
+      <span class="spec-num">01</span>
+      <h2>One grid system</h2>
+      <span class="note">12 fluid columns · demonstrated at 1280 and 420</span>
+    </div>
+    <p class="lede">
+      Every section of this page and every panel inside the app sits on the same grid:
+      <b>12 fluid tracks</b> — <code>repeat(12, minmax(0, 1fr))</code> — with every gutter and
+      gap on the Primer <code>space</code> scale <b>xs 4 · sm 8 · md 12 · lg 16 · xl 24</b>. No per-section freestyle layout,
+      no absolute positioning, no hard-coded pixel column width. Nested components use nested
+      grid or flex and stay inside their outer column boundaries.
+    </p>
+
+    <div class="meas-row">
+      <span class="meas"><b>12</b><span class="u">col</span></span>
+      <span class="meas"><b>16</b><span class="u">col gap · space.lg</span></span>
+      <span class="meas"><b>24</b><span class="u">panel row gap · space.xl</span></span>
+      <span class="meas"><b>24</b><span class="u">page gutter · space.xl</span></span>
+      <span class="meas"><b>12</b><span class="u">block gap · space.md</span></span>
+      <span class="meas"><b>8</b><span class="u">dense gap · space.sm</span></span>
+      <span class="meas"><b>1080</b><span class="u">px content max · left-aligned</span></span>
+      <span class="meas"><b>1032</b><span class="u">px band @ 1280</span></span>
+    </div>
+
+    <div class="gspec">
+      <table class="bp">
+        <thead><tr><th scope="col">Role</th><th scope="col">Value</th><th scope="col">Primer token</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="w">columns<span>the only track definition on the page</span></td>
+            <td><code>repeat(12, minmax(0, 1fr))</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td class="w">column gap<span>between every pair of columns</span></td>
+            <td>16px <span>→ 8px at ≤560px</span></td>
+            <td>space.lg · space.sm</td>
+          </tr>
+          <tr>
+            <td class="w">panel row gap<span>between panel rows</span></td>
+            <td>24px <span>→ 16px at ≤560px</span></td>
+            <td>space.xl · space.lg</td>
+          </tr>
+          <tr>
+            <td class="w">page gutter<span>outer edge of the content band</span></td>
+            <td>24px <span>→ 16px at ≤960px</span></td>
+            <td>space.xl · space.lg</td>
+          </tr>
+          <tr>
+            <td class="w">block gap<span>inside one panel</span></td>
+            <td>12px</td>
+            <td>space.md</td>
+          </tr>
+          <tr>
+            <td class="w">dense gap<span>HUD tiles, transport, rates</span></td>
+            <td>8px</td>
+            <td>space.sm</td>
+          </tr>
+          <tr>
+            <td class="w">content band<span>max width, left-aligned, never centred</span></td>
+            <td>1080px</td>
+            <td>layout max — not a Primer token</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="gspec">
+      <table class="bp">
+        <thead><tr><th scope="col">Reading</th><th scope="col">Why this number</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="w">24 vs 8<span>the density strategy</span></td>
+            <td>The brief asks for an airy outer frame and dense HUD / tables.
+              That contrast can only exist if outer and inner are separate tokens.
+              <code>space.xl</code> page gutter against a <code>space.sm</code> row gap <b>is</b>
+              the density strategy.</td>
+          </tr>
+          <tr>
+            <td class="w">16<span>column gap</span></td>
+            <td>Wide enough that two adjacent panels never read as one block, narrow enough
+              that a 4-column rail at 1280 still holds <code>http://127.0.0.1:8080</code>.</td>
+          </tr>
+          <tr>
+            <td class="w">24<span>panel row gap</span></td>
+            <td>Panel rows must read louder than the 12px block gap inside a panel. With
+              region boundaries now doing part of the separation, <code>space.xl</code> is the
+              rhythm between rows — still on the Primer scale.</td>
+          </tr>
+          <tr>
+            <td class="w">span + area<span>priority</span></td>
+            <td>Priority is <b>grid position</b> (earlier row, lefter column) and
+              <b>column span / area</b>. Never font size, never a heading ladder.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scroller">
+      <div class="frame-bar"><span class="frame-tag">GRID AT 1280 · band 1032 · gap 16 · gutter 24</span></div>
+      <div class="ruler" style="width:1032px">
+        <div class="col">1</div><div class="col">2</div><div class="col">3</div><div class="col">4</div>
+        <div class="col">5</div><div class="col">6</div><div class="col">7</div><div class="col">8</div>
+        <div class="col">9</div><div class="col">10</div><div class="col">11</div><div class="col">12</div>
+        <div class="span sp2">span 2</div>
+        <div class="span sp2">span 2</div>
+        <div class="span sp2">span 2</div>
+        <div class="span sp2">span 2</div>
+        <div class="span sp4">span 4</div>
+      </div>
+    </div>
+
+    <div class="scroller">
+      <div class="frame-bar"><span class="frame-tag">GRID AT 420 · band 388 · gap 8 · gutter 16 — same 12 tracks</span></div>
+      <div class="ruler ruler--narrow" style="width:420px">
+        <div class="col">1</div><div class="col">2</div><div class="col">3</div><div class="col">4</div>
+        <div class="col">5</div><div class="col">6</div><div class="col">7</div><div class="col">8</div>
+        <div class="col">9</div><div class="col">10</div><div class="col">11</div><div class="col">12</div>
+        <div class="span sp4">span 4</div>
+        <div class="span sp4">span 4</div>
+        <div class="span sp4">span 4</div>
+        <div class="span sp12">span 12</div>
+      </div>
+    </div>
+
+    <div class="meas-row">
+      <span class="meas"><b>same</b><span class="u">12 tracks at both widths</span></span>
+      <span class="meas"><b>0</b><span class="u">absolute-positioned elements</span></span>
+      <span class="meas"><b>4 / 4 / 4 / 12</b><span class="u">span reflow at 420</span></span>
+    </div>
+  </section>
+
+  <!-- ====================================================================
+       02 — APP SHELL (bounded sub-panels)
+       ==================================================================== -->
+  <section class="spec" id="sec2">
+    <div class="spec-head">
+      <span class="spec-num">02</span>
+      <h2>App shell</h2>
+      <span class="note">rendered 1:1 — 1280 × 800 · content shown: <code style="font-family:var(--mono)">/live</code></span>
+    </div>
+    <p class="lede">
+      The shell is a set of <b>bounded sub-panels</b>, not one document flow. Header and sidebar
+      are fixed framing; <b>main owns page scroll</b> and nothing overlaps. Inside main the
+      content band is <b>left-aligned</b>, <code>max-width 1080</code>, never centred. On the
+      band's 12-column grid, each route places panels whose position, span and area carry the
+      priority — and each panel closes its own hierarchy inside its outline. The eye lands on
+      the map panel first on <code>/live</code> because it is the largest region, not because a
+      heading told it to.
+    </p>
+
+    <div class="scroller">
+      <div class="frame-bar"><span class="frame-tag">APP SHELL · /live · 1280 × 800</span></div>
+      <div class="frame frame--shell">
+        <div class="m-shell">
+
+          <div class="m-hdr">
+            <div class="m-brand"><b>procon-2026</b><span>viewer</span></div>
+            <button class="m-theme" type="button"><svg class="ico" aria-hidden="true"><use href="#i-moon"/></svg><span>Dark mode</span></button>
+          </div>
+
+          <div class="m-body">
+            <nav class="m-nav" aria-label="Primary (mock)">
+              <ul class="nav-list">
+                <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-name">Home</span></a></li>
+                <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li>
+                <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li>
+                <li><a class="nav-it st-selected" href="#" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li>
+              </ul>
+            </nav>
+
+            <div class="m-main">
+              <div class="m-col">
+
+                <!-- ROUTE — one line: identity + path. no nameplate, no box -->
+                <section class="panel sp8">
+                  <div class="panel-bd tight">
+                    <h3 class="route-name">Live Match <span class="path">/live</span></h3>
+                  </div>
+                </section>
+
+                <!-- STATUS — one line: marker + state + muted rate -->
+                <section class="panel sp4">
+                  <div class="panel-bd tight" style="justify-content:center">
+                    <span class="chip" style="align-self:flex-start"><svg class="marker is-running" aria-hidden="true"><use href="#i-dot"/></svg>Running<span class="u" style="font-family:var(--mono);font-weight:500;letter-spacing:.02em;text-transform:none;font-size:11px;color:var(--muted)">1 Hz</span></span>
+                  </div>
+                </section>
+
+                <!-- MAP — the instrument: the one content outline -->
+                <section class="panel panel--inst sp8">
+                  <div class="map-inst" style="height:360px">
+                    <div class="map-scale"></div>
+                    <div class="map-viewport">
+                      <!-- viewBox = mapPixelSize(map) · xMidYMid meet · 16px inset -->
+                      <svg class="board" viewBox="0 0 207.85 192" preserveAspectRatio="xMidYMid meet">
+                        <g fill="#8ed973">
+                          <use href="#hx" x="20.78" y="24"/><use href="#hx" x="62.35" y="24"/><use href="#hx" x="103.92" y="24"/><use href="#hx" x="145.49" y="24"/>
+                          <use href="#hx" x="41.57" y="60"/><use href="#hx" x="124.71" y="60"/><use href="#hx" x="166.27" y="60"/>
+                          <use href="#hx" x="20.78" y="96"/><use href="#hx" x="62.35" y="96"/><use href="#hx" x="103.92" y="96"/><use href="#hx" x="145.49" y="96"/>
+                          <use href="#hx" x="41.57" y="132"/><use href="#hx" x="83.14" y="132"/><use href="#hx" x="124.71" y="132"/><use href="#hx" x="166.27" y="132"/>
+                        </g>
+                        <g fill="#156082"><use href="#hx" x="83.14" y="60"/></g>
+                      </svg>
+                    </div>
+                    <div class="map-foot">
+                      <span class="k">map 4 × 4 · cell type 0–3</span>
+                      <span>viewBox = mapPixelSize · inset 16 · meet</span>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- MATCH-STATE — one information unit = one box (GitHub
+                     About/Releases pattern), unit title inside. Two meaning
+                     groups: match values / link values. Rows + hairlines
+                     inside; the sidebar's live values (1 / 4 · [2, 3]) live
+                     here, not on a nav sub-line. -->
+                <section class="Box sp4">
+                  <h4 class="Box-header">Match state</h4>
+                  <div class="Box-body">
+                    <div class="rows">
+                      <div class="grp">
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-day"/></svg>Day</span><span class="v">1 / 4</span></div>
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-revisions"/></svg>Revisions</span><span class="v">[2, 3]</span></div>
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>Last update</span><span class="v">17:06:06</span></div>
+                      </div>
+                      <div class="grp">
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg>Solver</span><span class="v">loop</span></div>
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-server"/></svg>Server</span><span class="v">http://127.0.0.1:8080</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- COORDINATOR — one fact = the command, tone not outline -->
+                <section class="panel sp8 panel--quiet">
+                  <div class="panel-bd tight">
+                    <pre class="cmd">procon coordinator --solver wait --state-output packages/frontend/public/match-state.json</pre>
+                  </div>
+                </section>
+
+                <!-- FIXTURE — one information unit = one box, title inside -->
+                <section class="Box sp4">
+                  <h4 class="Box-header">Fixture</h4>
+                  <div class="Box-body">
+                    <div class="rows">
+                      <div class="grp">
+                        <div class="row"><span class="l">poll</span><span class="v">1 s</span></div>
+                        <div class="row"><span class="l">map</span><span class="v">4 × 4</span></div>
+                        <div class="row"><span class="l">cells</span><span class="v">16</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="meas-row">
+      <span class="meas"><b>56</b><span class="u">px header · fixed</span></span>
+      <span class="meas"><b>200</b><span class="u">px sidebar · sticky</span></span>
+      <span class="meas"><b>24</b><span class="u">px main gutter · space.xl</span></span>
+      <span class="meas"><b>1080</b><span class="u">px content max · left</span></span>
+      <span class="meas"><b>1</b><span class="u">scroll owner · main</span></span>
+      <span class="meas"><b>6</b><span class="u">regions · /live</span></span>
+      <span class="meas"><b>1</b><span class="u">content outline · map instrument</span></span>
+    </div>
+
+    <div class="rule-note">
+      <b>Region map for the shell content (and every route).</b> Six regions on the 12-column
+      grid, each closing its own hierarchy. <b>ROUTE</b> <span class="mono">span 8</span> and
+      <b>STATUS</b> <span class="mono">span 4</span> complete on one line each and take no box ·
+      <b>MAP</b> <span class="mono">span 8 · 360px</span> is the instrument — the single content
+      unit that earns a boundary · <b>MATCH-STATE</b> <span class="mono">span 4</span> is two
+      meaning groups of one-line rows divided by hairlines ·
+      <b>COORDINATOR</b> <span class="mono">span 8</span> is one command on tone ·
+      <b>FIXTURE</b> <span class="mono">span 4</span> is one group of rows. No region is a
+      paragraph in a page flow; nothing is stacked as heading → prose → table.
+    </div>
+
+    <div class="spec-head" style="margin-top:12px">
+      <span class="spec-num">02b</span>
+      <h2>Sidebar composition</h2>
+      <span class="note">one line per item · state by icon · selection tone + bold</span>
+    </div>
+    <p class="lede">
+      GitHub tabs: one line per item — <b>icon + label, never two lines</b>. No role headings
+      (Orient / Review / Monitor were text decoration); no second line — live values
+      (1 / 4 · [2, 3]) live on the right-hand information rail. Destination order is fixed —
+      Home / Replays / Solvers / Live. State is shown by icon (dot-fill marker for running);
+      current item = selection tone (surface step) + bold weight, <code>aria-current="page"</code>,
+      no left accent bar.
+    </p>
+
+    <div class="nav-states">
+      <div class="nav-state">
+        <h3>default</h3>
+        <ul class="nav-list"><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li></ul>
+      </div>
+      <div class="nav-state">
+        <h3>hover</h3>
+        <ul class="nav-list"><li><a class="nav-it st-hover" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li></ul>
+      </div>
+      <div class="nav-state">
+        <h3>selected</h3>
+        <ul class="nav-list"><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li><li><a class="nav-it st-selected" href="#" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li></ul>
+      </div>
+      <div class="nav-state">
+        <h3>focus</h3>
+        <ul class="nav-list"><li><a class="nav-it st-focus" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li></ul>
+      </div>
+    </div>
+    <div class="meas-row">
+      <span class="meas"><b>4</b><span class="u">items · 1 line each · no role headings</span></span>
+      <span class="meas"><b>1 / 4 · [2, 3]</b><span class="u">lives on the right rail, not the nav</span></span>
+      <span class="meas"><b>surface → surface-2</b><span class="u">selection tone · no accent bar</span></span>
+      <span class="meas"><b>2</b><span class="u">px focus · borderWidth.thick · tonal</span></span>
+      <span class="meas"><b>dot-fill</b><span class="u">octicon running marker</span></span>
+    </div>
+
+    <div class="spec-head" style="margin-top:12px">
+      <span class="spec-num">02c</span>
+      <h2>Box and label reduction — before / after</h2>
+      <span class="note">two regions, side by side · judge the drop in borders and nameplates</span>
+    </div>
+    <p class="lede">
+      The previous pass bounded every region and named it with a micro-caps header. Under the
+      v4 decision rule — <b>is it one unit? does the inside need further division? does the label
+      carry meaning?</b> — most of those outlines and every nameplate failed. Below, two regions
+      rendered both ways at the same size.
+    </p>
+
+    <div class="ba">
+
+      <!-- ---------- region A: MATCH-STATE ---------- -->
+      <div class="ba-item">
+        <p class="ba-cap">Region A · MATCH-STATE <span class="mono">span 4</span> — 1 nameplate + 6 boxes + 10 text rows → 0 nameplates + 0 boxes + 5 one-line rows</p>
+
+        <div class="ba-side">
+          <span class="ba-tag ba-tag--before">before</span>
+          <div class="ba-frame">
+            <!-- reconstructed old form: nameplate header + nested two-line tiles -->
+            <div style="border:1px solid var(--edge);border-radius:var(--r-panel);overflow:hidden">
+              <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface-alt);border-bottom:1px solid var(--edge)">
+                <span style="font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)">Match-state</span>
+                <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">11 / 15 px</span>
+              </div>
+              <div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+                <div style="border:1px solid var(--edge);border-radius:var(--r-ctl);padding:8px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)">Day</div><div style="font-family:var(--mono);font-size:15px;font-weight:650;color:var(--fg)">1 / 4</div></div>
+                <div style="border:1px solid var(--edge);border-radius:var(--r-ctl);padding:8px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)">Revisions</div><div style="font-family:var(--mono);font-size:15px;font-weight:650;color:var(--fg)">[2, 3]</div></div>
+                <div style="border:1px solid var(--edge);border-radius:var(--r-ctl);padding:8px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)">Solver</div><div style="font-family:var(--mono);font-size:15px;font-weight:650;color:var(--fg)">loop</div></div>
+                <div style="border:1px solid var(--edge);border-radius:var(--r-ctl);padding:8px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)">Last update</div><div style="font-family:var(--mono);font-size:15px;font-weight:650;color:var(--fg)">17:06:06</div></div>
+                <div style="border:1px solid var(--edge);border-radius:var(--r-ctl);padding:8px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)">Server</div><div style="font-family:var(--mono);font-size:15px;font-weight:650;color:var(--fg);overflow-wrap:anywhere">http://127.0.0.1:8080</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ba-side">
+          <span class="ba-tag ba-tag--after">after</span>
+          <div class="ba-frame">
+            <div class="rows">
+              <div class="grp">
+                <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-day"/></svg>Day</span><span class="v">1 / 4</span></div>
+                <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-revisions"/></svg>Revisions</span><span class="v">[2, 3]</span></div>
+                <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>Last update</span><span class="v">17:06:06</span></div>
+              </div>
+              <div class="grp">
+                <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg>Solver</span><span class="v">loop</span></div>
+                <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-server"/></svg>Server</span><span class="v">http://127.0.0.1:8080</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------- region B: ROUTE + STATUS ---------- -->
+      <div class="ba-item">
+        <p class="ba-cap">Region B · ROUTE + STATUS <span class="mono">span 8 + span 4</span> — 2 boxes + 2 nameplates + 4 text rows → 0 boxes + 0 nameplates + 1 line</p>
+
+        <div class="ba-side">
+          <span class="ba-tag ba-tag--before">before</span>
+          <div class="ba-frame">
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
+              <div style="border:1px solid var(--edge);border-radius:var(--r-panel);overflow:hidden">
+                <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface-alt);border-bottom:1px solid var(--edge)">
+                  <span style="font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)">Route</span>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">/live</span>
+                </div>
+                <div style="padding:12px"><div style="font-size:16px;font-weight:700;color:var(--fg)">Live Match</div></div>
+              </div>
+              <div style="border:1px solid var(--edge);border-radius:var(--r-panel);overflow:hidden">
+                <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface-alt);border-bottom:1px solid var(--edge)">
+                  <span style="font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)">Status</span>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">1 Hz</span>
+                </div>
+                <div style="padding:12px"><span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-alt);border-radius:999px;padding:3px 10px;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--fg)"><svg class="marker is-running" style="width:10px;height:10px" aria-hidden="true"><use href="#i-dot"/></svg>Running</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ba-side">
+          <span class="ba-tag ba-tag--after">after</span>
+          <div class="ba-frame">
+            <div style="display:flex;align-items:baseline;gap:var(--s3);flex-wrap:wrap">
+              <h3 class="route-name" style="flex:1 1 auto;min-width:0">Live Match <span class="path">/live</span></h3>
+              <span class="chip"><svg class="marker is-running" aria-hidden="true"><use href="#i-dot"/></svg>Running<span style="font-family:var(--mono);font-weight:500;letter-spacing:.02em;text-transform:none;font-size:11px;color:var(--muted)">1 Hz</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="meas-row">
+        <span class="meas"><b>2</b><span class="u">regions shown both ways</span></span>
+        <span class="meas"><b>8</b><span class="u">boxes removed across the two</span></span>
+        <span class="meas"><b>3</b><span class="u">nameplates removed across the two</span></span>
+        <span class="meas"><b>14 → 6</b><span class="u">text lines · each fact folded to one line</span></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================================
+       03 — ROUTE MOCKS (same panel language)
+       ==================================================================== -->
+  <section class="spec" id="sec3">
+    <div class="spec-head">
+      <span class="spec-num">03</span>
+      <h2>Route mocks</h2>
+      <span class="note">bounded sub-panels · priority = position + span + area · real copy</span>
+    </div>
+    <p class="lede">
+      Four routes in the same panel language as the shell. Real copy and real fixture values.
+      Variant follows priority — primary takes wide span and the large-value form, secondary is
+      a labelled tile inside its panel, tertiary is a link on a quiet panel — and the numbers
+      carry the reasoning: <b>span 8/12</b>, <b>label 11px / value 15px</b>, <b>value 26px</b>.
+    </p>
+
+    <div class="meas-row">
+      <span class="meas"><b>P</b><span class="u">span 8–12 · value 26px · area ≥ 55%</span></span>
+      <span class="meas"><b>S</b><span class="u">span 2–4 · tile 11 / 15px</span></span>
+      <span class="meas"><b>T</b><span class="u">span ≤ 4 · link 12.5px · off-scan</span></span>
+    </div>
+
+    <!-- ---------------------------------------------------------- / -->
+    <div class="scroller" style="margin-top:24px">
+      <div class="frame-bar"><span class="frame-tag">ROUTE / · HOME</span></div>
+      <div class="frame">
+        <div style="padding:var(--gutter);background:var(--bg)">
+          <div class="m-col">
+
+            <section class="panel sp12">
+              <div class="panel-bd tight">
+                <h3 class="route-name">Home <span class="path">/</span></h3>
+              </div>
+            </section>
+
+            <!-- destinations: one kind of value = one group of rows -->
+            <section class="panel sp8">
+              <div class="panel-bd tight">
+                <div class="rows rows--tone">
+                  <div class="grp">
+                    <div class="row"><span class="l">/live</span><span class="v">1 Hz · /match-state.json</span></div>
+                    <div class="row"><span class="l">/replays</span><span class="v">5 steps</span></div>
+                    <div class="row"><span class="l">/solvers</span><span class="v">0 listed</span></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- prose completes in one unit: welcome + caveat, no nameplates -->
+            <section class="panel sp4 panel--quiet">
+              <div class="panel-bd">
+                <p class="pg-body">
+                  Welcome to the procon-2026 viewer. Pick a section in the sidebar to explore replays
+                  and solvers.
+                </p>
+                <p class="pg-body" style="margin:0;font-size:12.5px">
+                  Real replays load from the engine once
+                  <a class="tlink" href="#">issue #49's loader</a> lands.
+                </p>
+              </div>
+            </section>
+
+          </div>
+        </div>
+      </div>
+      <div class="meas-row" style="margin-top:10px">
+        <span class="meas"><b>3</b><span class="u">regions</span></span>
+        <span class="meas"><b>12 / 8 / 4</b><span class="u">span</span></span>
+        <span class="meas"><b>3</b><span class="u">destination rows · 0 boxes</span></span>
+      </div>
+    </div>
+
+    <!-- ------------------------------------------------------ /replays -->
+    <div class="scroller" style="margin-top:32px">
+      <div class="frame-bar"><span class="frame-tag">ROUTE /replays · REPLAYS</span></div>
+      <div class="frame">
+        <div style="padding:var(--gutter);background:var(--bg)">
+          <div class="m-col">
+
+            <section class="panel sp12">
+              <div class="panel-bd tight">
+                <h3 class="route-name">Demo match (alice vs bob) <span class="path">/replays</span></h3>
+              </div>
+            </section>
+
+            <section class="panel panel--inst sp8">
+              <div class="map-inst" style="height:360px">
+                <div class="map-scale"></div>
+                <div class="map-viewport">
+                  <!-- viewBox = mapPixelSize(4 × 3) -->
+                  <svg class="board" viewBox="0 0 207.85 156" preserveAspectRatio="xMidYMid meet">
+                    <g fill="#8ed973">
+                      <use href="#hx" x="20.78" y="24"/><use href="#hx" x="62.35" y="24"/><use href="#hx" x="103.92" y="24"/><use href="#hx" x="145.49" y="24"/>
+                      <use href="#hx" x="41.57" y="60"/><use href="#hx" x="83.14" y="60"/><use href="#hx" x="124.71" y="60"/><use href="#hx" x="166.27" y="60"/>
+                      <use href="#hx" x="20.78" y="96"/><use href="#hx" x="62.35" y="96"/><use href="#hx" x="103.92" y="96"/><use href="#hx" x="145.49" y="96"/>
+                    </g>
+                  </svg>
+                </div>
+                <!-- transport + scrub: octicon family, icon-led -->
+                <div style="flex:none;padding:10px 12px;background:var(--surface-alt);border-top:1px solid var(--hair);
+                            display:flex;flex-direction:column;gap:var(--g-dense)">
+                  <div class="transport" role="group" aria-label="Replay transport">
+                    <button class="btn" type="button" aria-label="To start"><svg class="ico" aria-hidden="true"><use href="#i-start"/></svg></button>
+                    <button class="btn" type="button" aria-label="Step backward"><svg class="ico" aria-hidden="true"><use href="#i-step-back"/></svg></button>
+                    <button class="btn" type="button" aria-label="Pause"><svg class="ico" aria-hidden="true"><use href="#i-pause"/></svg></button>
+                    <button class="btn" type="button" aria-label="Play"><svg class="ico" aria-hidden="true"><use href="#i-play"/></svg></button>
+                    <button class="btn" type="button" aria-label="Step forward"><svg class="ico" aria-hidden="true"><use href="#i-step-fwd"/></svg></button>
+                    <button class="btn" type="button" aria-label="To end"><svg class="ico" aria-hidden="true"><use href="#i-end"/></svg></button>
+                    <span class="rates" role="group" aria-label="Playback rate">
+                      <svg class="ico" aria-hidden="true" style="width:13px;height:13px;align-self:center;color:var(--muted)"><use href="#i-rate"/></svg>
+                      <button class="btn" type="button">1×</button>
+                      <button class="btn on" type="button">2×</button>
+                      <button class="btn" type="button">4×</button>
+                    </span>
+                    <span style="margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)">step 4 / 5</span>
+                  </div>
+                  <div class="scrub"><span class="fill"></span><span class="knob"></span></div>
+                  <div class="scrub-meta"><span>1</span><span>5</span></div>
+                </div>
+                <div class="map-foot">
+                  <span class="k">placeholder map 4 × 3 · turn 3</span>
+                  <span>viewBox = mapPixelSize · inset 16 · meet</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- right rail: one info unit per box, title inside -->
+            <section class="panel sp4">
+              <div class="panel-bd tight">
+                <div class="Box">
+                  <h4 class="Box-header">Score</h4>
+                  <div class="Box-body">
+                  <div class="score-row">
+                    <span class="who"><span class="l">alice</span><span class="v">30</span></span>
+                    <span class="who"><span class="l">bob</span><span class="v">31</span></span>
+                  </div>
+                  </div>
+                </div>
+<div class="Box">
+                  <h4 class="Box-header">Replay</h4>
+                  <div class="Box-body">
+                    <div class="rows">
+                      <div class="grp">
+                        <div class="row"><span class="l">id</span><span class="v">demo</span></div>
+                        <div class="row"><span class="l">steps</span><span class="v">5</span></div>
+                        <div class="row"><span class="l">players</span><span class="v">2</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel sp12 panel--quiet">
+              <div class="panel-bd tight">
+                <p class="pg-body" style="margin:0;font-size:12.5px">
+                  Preview of the replay playback surface. Real replays will be loaded from the engine
+                  once <a class="tlink" href="#">issue #49's loader</a> lands.
+                </p>
+              </div>
+            </section>
+
+          </div>
+        </div>
+      </div>
+      <div class="meas-row" style="margin-top:10px">
+        <span class="meas"><b>8 / 4</b><span class="u">map / score span</span></span>
+        <span class="meas"><b>26</b><span class="u">px score value · 1 line</span></span>
+        <span class="meas"><b>30 · 31</b><span class="u">alice / bob @ turn 3</span></span>
+        <span class="meas"><b>207.85 × 156</b><span class="u">viewBox = mapPixelSize</span></span>
+      </div>
+    </div>
+
+    <!-- ------------------------------------------------------ /solvers -->
+    <div class="scroller" style="margin-top:32px">
+      <div class="frame-bar"><span class="frame-tag">ROUTE /solvers · SOLVERS</span></div>
+      <div class="frame">
+        <div style="padding:var(--gutter);background:var(--bg)">
+          <div class="m-col">
+
+            <section class="panel sp8">
+              <div class="panel-bd tight">
+                <h3 class="route-name">Solvers <span class="path">/solvers</span></h3>
+              </div>
+            </section>
+
+            <!-- renderer control: icon-led, text secondary -->
+            <section class="panel sp4">
+              <div class="panel-bd tight" style="justify-content:center">
+                <span class="seg" role="group" aria-label="Renderer mode" style="align-self:flex-start">
+                  <button type="button" aria-pressed="true"><svg class="seg-ico" aria-hidden="true" style="width:13px;height:13px"><use href="#i-svg"/></svg>SVG</button>
+                  <button type="button" aria-pressed="false"><svg class="seg-ico" aria-hidden="true" style="width:13px;height:13px"><use href="#i-webgpu"/></svg>WebGPU</button>
+                </span>
+              </div>
+            </section>
+
+            <section class="panel panel--inst sp8">
+              <div class="map-inst" style="height:360px">
+                <div class="map-scale"></div>
+                <div class="map-viewport">
+                  <!-- viewBox = mapPixelSize(8 × 6) · four terrain kinds, 4 spots, 3 agents -->
+                  <svg class="board" viewBox="0 0 374.12 264" preserveAspectRatio="xMidYMid meet">
+                    <g fill="#8ed973">
+                      <use href="#hx" x="62.35" y="60"/><use href="#hx" x="103.92" y="60"/>
+                      <use href="#hx" x="228.62" y="60"/><use href="#hx" x="270.19" y="60"/>
+                      <use href="#hx" x="83.14" y="96"/><use href="#hx" x="207.85" y="96"/>
+                      <use href="#hx" x="249.42" y="96"/><use href="#hx" x="166.27" y="132"/>
+                      <use href="#hx" x="207.85" y="132"/><use href="#hx" x="290.98" y="132"/>
+                      <use href="#hx" x="103.92" y="168"/><use href="#hx" x="145.49" y="168"/>
+                      <use href="#hx" x="249.42" y="168"/>
+                    </g>
+                    <g fill="#156082">
+                      <use href="#hx" x="166.27" y="60"/><use href="#hx" x="103.92" y="96"/>
+                      <use href="#hx" x="270.19" y="96"/><use href="#hx" x="83.14" y="132"/>
+                      <use href="#hx" x="249.42" y="132"/><use href="#hx" x="207.85" y="168"/>
+                    </g>
+                    <g fill="#46b1e1">
+                      <use href="#hx" x="207.85" y="60"/><use href="#hx" x="145.49" y="96"/>
+                      <use href="#hx" x="124.71" y="132"/><use href="#hx" x="83.14" y="168"/>
+                      <use href="#hx" x="270.19" y="168"/>
+                    </g>
+                    <g fill="#bfbfbf">
+                      <use href="#hx" x="20.78" y="24"/><use href="#hx" x="62.35" y="24"/>
+                      <use href="#hx" x="103.92" y="24"/><use href="#hx" x="145.49" y="24"/>
+                      <use href="#hx" x="187.05" y="24"/><use href="#hx" x="228.62" y="24"/>
+                      <use href="#hx" x="270.19" y="24"/><use href="#hx" x="311.76" y="24"/>
+                      <use href="#hx" x="41.57" y="60"/><use href="#hx" x="332.55" y="60"/>
+                      <use href="#hx" x="20.78" y="96"/><use href="#hx" x="311.76" y="96"/>
+                      <use href="#hx" x="41.57" y="132"/><use href="#hx" x="332.55" y="132"/>
+                      <use href="#hx" x="20.78" y="168"/><use href="#hx" x="311.76" y="168"/>
+                      <use href="#hx" x="41.57" y="204"/><use href="#hx" x="83.14" y="204"/>
+                      <use href="#hx" x="124.71" y="204"/><use href="#hx" x="166.27" y="204"/>
+                      <use href="#hx" x="207.85" y="204"/><use href="#hx" x="249.42" y="204"/>
+                      <use href="#hx" x="290.98" y="204"/><use href="#hx" x="332.55" y="204"/>
+                    </g>
+                    <!-- spot series: data palette + numeric slab (redundant cue) -->
+                    <circle cx="62.35" cy="60" r="7.68" fill="#cc9900"/>
+                    <text x="62.35" y="60" fill="#1b1b1b" font-family="ui-sans-serif,system-ui,sans-serif" font-size="9" font-weight="700" text-anchor="middle" dominant-baseline="central">0</text>
+                    <circle cx="228.62" y="60" r="7.68" fill="#c04f15"/>
+                    <text x="228.62" y="60" fill="#fff" font-family="ui-sans-serif,system-ui,sans-serif" font-size="9" font-weight="700" text-anchor="middle" dominant-baseline="central">1</text>
+                    <circle cx="124.71" cy="132" r="7.68" fill="#46b1e1"/>
+                    <text x="124.71" y="132" fill="#1b1b1b" font-family="ui-sans-serif,system-ui,sans-serif" font-size="9" font-weight="700" text-anchor="middle" dominant-baseline="central">2</text>
+                    <circle cx="270.19" cy="168" r="7.68" fill="#e59edd"/>
+                    <text x="270.19" y="168" fill="#1b1b1b" font-family="ui-sans-serif,system-ui,sans-serif" font-size="9" font-weight="700" text-anchor="middle" dominant-baseline="central">0</text>
+                    <!-- agents: motif-coded (patrol mark / supply mark), data palette -->
+                    <polygon points="83.14,157.92 93.22,174.72 73.06,174.72" fill="#00b050"/>
+                    <polygon points="207.85,85.92 217.93,102.72 197.77,102.72" fill="#00b050"/>
+                    <polygon points="270.19,85.92 280.27,96 270.19,106.08 260.11,96" fill="#e59edd"/>
+                  </svg>
+                </div>
+                <div class="map-foot">
+                  <span class="k">plain / road / water / mountain</span>
+                  <span>4 spots · 3 agents · data palette</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- right rail: one info unit per box, title inside -->
+            <section class="panel sp4">
+              <div class="panel-bd tight">
+<div class="Box">
+                  <h4 class="Box-header">Fixture</h4>
+                  <div class="Box-body">
+                    <div class="rows">
+                      <div class="grp">
+                        <div class="row"><span class="l">width</span><span class="v">8</span></div>
+                        <div class="row"><span class="l">height</span><span class="v">6</span></div>
+                        <div class="row"><span class="l">cells</span><span class="v">48</span></div>
+                      </div>
+                      <div class="grp">
+                        <div class="row"><span class="l">spots</span><span class="v">4</span></div>
+                        <div class="row"><span class="l">agents</span><span class="v">3</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel sp12 panel--quiet">
+              <div class="panel-bd tight">
+                <p class="pg-body" style="margin:0;font-size:12.5px">
+                  Solver list will appear here once the protocol bridge is online. The map viewer is
+                  a preview seeded with an inline fixture to exercise the renderer.
+                </p>
+              </div>
+            </section>
+
+          </div>
+        </div>
+      </div>
+      <div class="meas-row" style="margin-top:10px">
+        <span class="meas"><b>8 / 4</b><span class="u">map / fixture span</span></span>
+        <span class="meas"><b>374.12 × 264</b><span class="u">viewBox = mapPixelSize(8 × 6)</span></span>
+        <span class="meas"><b>48</b><span class="u">cells · 4 spots · 3 agents</span></span>
+      </div>
+    </div>
+
+    <!-- --------------------------------------------------------- /live -->
+    <div class="scroller" style="margin-top:32px">
+      <div class="frame-bar"><span class="frame-tag">ROUTE /live · LIVE MATCH</span></div>
+      <div class="frame">
+        <div style="padding:var(--gutter);background:var(--bg)">
+          <div class="m-col">
+
+            <section class="panel sp8">
+              <div class="panel-bd tight">
+                <h3 class="route-name">Live Match <span class="path">/live</span></h3>
+              </div>
+            </section>
+
+            <section class="panel sp4">
+              <div class="panel-bd tight" style="justify-content:center">
+                <span class="chip" style="align-self:flex-start"><svg class="marker is-running" aria-hidden="true"><use href="#i-dot"/></svg>Running<span style="font-family:var(--mono);font-weight:500;letter-spacing:.02em;text-transform:none;font-size:11px;color:var(--muted)">1 Hz</span></span>
+              </div>
+            </section>
+
+            <section class="panel panel--inst sp8">
+              <div class="map-inst" style="height:420px">
+                <div class="map-scale"></div>
+                <div class="map-viewport">
+                  <!-- viewBox = mapPixelSize(4 × 4) -->
+                  <svg class="board" viewBox="0 0 207.85 192" preserveAspectRatio="xMidYMid meet">
+                    <g fill="#8ed973">
+                      <use href="#hx" x="20.78" y="24"/><use href="#hx" x="62.35" y="24"/><use href="#hx" x="103.92" y="24"/><use href="#hx" x="145.49" y="24"/>
+                      <use href="#hx" x="41.57" y="60"/><use href="#hx" x="124.71" y="60"/><use href="#hx" x="166.27" y="60"/>
+                      <use href="#hx" x="20.78" y="96"/><use href="#hx" x="62.35" y="96"/><use href="#hx" x="103.92" y="96"/><use href="#hx" x="145.49" y="96"/>
+                      <use href="#hx" x="41.57" y="132"/><use href="#hx" x="83.14" y="132"/><use href="#hx" x="124.71" y="132"/><use href="#hx" x="166.27" y="132"/>
+                    </g>
+                    <g fill="#156082"><use href="#hx" x="83.14" y="60"/></g>
+                  </svg>
+                </div>
+                <div class="map-foot">
+                  <span class="k">map 4 × 4 · cell type 0–3</span>
+                  <span>viewBox = mapPixelSize · inset 16 · meet</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- right rail: one info unit per box, title inside -->
+            <section class="panel sp4">
+              <div class="panel-bd tight">
+                <div class="Box">
+                                  <h4 class="Box-header">Match state</h4>
+                                  <div class="Box-body">
+                                    <div class="rows">
+                                      <div class="grp">
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-day"/></svg>Day</span><span class="v">1 / 4</span></div>
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-revisions"/></svg>Revisions</span><span class="v">[2, 3]</span></div>
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>Last update</span><span class="v">17:06:06</span></div>
+                                      </div>
+                                      <div class="grp">
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg>Solver</span><span class="v">loop</span></div>
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-server"/></svg>Server</span><span class="v">http://127.0.0.1:8080</span></div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+              </div>
+            </section>
+
+            <section class="panel sp8 panel--quiet">
+              <div class="panel-bd tight">
+                <pre class="cmd">procon coordinator --solver wait --state-output packages/frontend/public/match-state.json</pre>
+              </div>
+            </section>
+
+                <div class="Box">
+                                  <h4 class="Box-header">Fixture</h4>
+                                  <div class="Box-body">
+                                    <div class="rows">
+                                      <div class="grp">
+                                        <div class="row"><span class="l">poll</span><span class="v">1 s</span></div>
+                                        <div class="row"><span class="l">map</span><span class="v">4 × 4</span></div>
+                                        <div class="row"><span class="l">cells</span><span class="v">16</span></div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="meas-row" style="margin-top:10px">
+        <span class="meas"><b>8 / 4</b><span class="u">map / match-state span</span></span>
+        <span class="meas"><b>≥ 55%</b><span class="u">route height on the board</span></span>
+        <span class="meas"><b>11 / 15</b><span class="u">px HUD tiers · locked</span></span>
+        <span class="meas"><b>1 / 4 · [2, 3] · loop · 17:06:06</b><span class="u">fixture values</span></span>
+      </div>
+    </div>
+
+    <div class="rule-note" style="margin-top:20px">
+      <b>Map fit / centre rule (the fix).</b> The frame must never be larger than the content it
+      draws. Set the canvas <code>viewBox</code> to the board’s natural pixel size
+      (<code>mapPixelSize(map)</code>), give the canvas <code>width:100%; height:100%</code> of the
+      viewport and let <code>preserveAspectRatio="xMidYMid meet"</code> (SVG) / an equivalent
+      uniform scale + centring translate (WebGPU) do the work. Initial camera = uniform fit with a
+      <code>16px</code> mounting gap on every side — spacing, not a stroke; zoom clamps relative to
+      that fit scale; pan is clamped so at least 40 % of the board stays inside the frame.
+      <b>Corollary:</b> never pass a synthetic <code>width/height</code> (today’s
+      <code>800 × 420</code>) as the viewBox — that is exactly what pins the 4 × 3 and 8 × 6
+      boards to the top-left corner.
+    </div>
+  </section>
+
+  <!-- ====================================================================
+       04 — RESPONSIVE  (“does not break” tier)
+       ==================================================================== -->
+  <section class="spec" id="sec4">
+    <div class="spec-head">
+      <span class="spec-num">04</span>
+      <h2>Responsive</h2>
+      <span class="note">the same grid holds at 420 — sidebar becomes a horizontal bar</span>
+    </div>
+    <p class="lede">
+      <b>This is the “does not break” tier, not parity.</b> Per
+      <code>DESIGN-BRIEF.md → Decisions made: desktop-first</code>, the venue runs laptops; narrow
+      widths only have to keep information, order and reachability intact. The 12-column grid is
+      unchanged at 420 — tracks narrow and spans grow toward 12, but the ruler is the same ruler.
+      Panels keep their outlines and their internal hierarchy; only spans reflow.
+    </p>
+
+    <div class="resp-wrap">
+      <div class="phone">
+        <div class="frame-bar" style="padding:var(--s2) var(--s3) 0"><span class="frame-tag">420 PREVIEW · SHELL + /live</span></div>
+        <div class="m-shell">
+          <div class="m-hdr" style="padding:0 var(--s4)">
+            <div class="m-brand"><b>procon-2026</b><span>viewer</span></div>
+            <button class="m-theme" type="button"><svg class="ico" aria-hidden="true"><use href="#i-moon"/></svg><span>Dark mode</span></button>
+          </div>
+          <div class="m-body" style="flex-direction:column">
+            <!-- sidebar → horizontal bar. labels, order, destination and
+                 current-location indicator all preserved -->
+            <nav class="m-nav" aria-label="Primary (mock)">
+              <ul class="nav-list">
+                <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-name">Home</span></a></li>
+                <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li>
+                <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li>
+                <li><a class="nav-it st-selected" href="#" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li>
+              </ul>
+            </nav>
+            <div class="m-main">
+              <div class="m-col">
+
+                <section class="panel sp8">
+                  <div class="panel-bd tight">
+                    <h3 class="route-name">Live Match <span class="path">/live</span></h3>
+                  </div>
+                </section>
+
+                <section class="panel sp4">
+                  <div class="panel-bd tight" style="justify-content:center">
+                    <span class="chip" style="align-self:flex-start"><svg class="marker is-running" aria-hidden="true"><use href="#i-dot"/></svg>Running<span style="font-family:var(--mono);font-weight:500;letter-spacing:.02em;text-transform:none;font-size:11px;color:var(--muted)">1 Hz</span></span>
+                  </div>
+                </section>
+
+                <!-- HUD rows: same meaning groups, one line each -->
+                <section class="panel sp12">
+                  <div class="panel-bd tight">
+                    <div class="rows">
+                      <div class="grp">
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-day"/></svg>Day</span><span class="v">1 / 4</span></div>
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-revisions"/></svg>Revisions</span><span class="v">[2, 3]</span></div>
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>Last update</span><span class="v">17:06:06</span></div>
+                      </div>
+                      <div class="grp">
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg>Solver</span><span class="v">loop</span></div>
+                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-server"/></svg>Server</span><span class="v">http://127.0.0.1:8080</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="panel panel--inst sp12">
+                  <div class="map-inst">
+                    <div class="map-scale"></div>
+                    <div class="map-viewport" style="padding:12px">
+                      <svg class="board" viewBox="0 0 207.85 192" preserveAspectRatio="xMidYMid meet">
+                        <g fill="#8ed973">
+                          <use href="#hx" x="20.78" y="24"/><use href="#hx" x="62.35" y="24"/><use href="#hx" x="103.92" y="24"/><use href="#hx" x="145.49" y="24"/>
+                          <use href="#hx" x="41.57" y="60"/><use href="#hx" x="124.71" y="60"/><use href="#hx" x="166.27" y="60"/>
+                          <use href="#hx" x="20.78" y="96"/><use href="#hx" x="62.35" y="96"/><use href="#hx" x="103.92" y="96"/><use href="#hx" x="145.49" y="96"/>
+                          <use href="#hx" x="41.57" y="132"/><use href="#hx" x="83.14" y="132"/><use href="#hx" x="124.71" y="132"/><use href="#hx" x="166.27" y="132"/>
+                        </g>
+                        <g fill="#156082"><use href="#hx" x="83.14" y="60"/></g>
+                      </svg>
+                    </div>
+                    <div class="map-foot"><span class="k">4 × 4</span><span>fit + centre · inset 16</span></div>
+                  </div>
+                </section>
+
+                <section class="panel sp12 panel--quiet">
+                  <div class="panel-bd tight">
+                    <pre class="cmd" style="font-size:10.5px">procon coordinator --solver wait --state-output packages/frontend/public/match-state.json</pre>
+                  </div>
+                </section>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="resp-notes">
+        <span class="tier">tier · does not break</span>
+        <table class="bp">
+          <thead><tr><th scope="col">Stress point</th><th scope="col">Trigger</th><th scope="col">Transformation</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="w">960px<span>the HUD tiles stop fitting beside a readable board</span></td>
+              <td>content band &lt; 712px</td>
+              <td>Column gap steps 16 → 12; panels keep the 12 tracks. Page gutter 24 → 16.</td>
+            </tr>
+            <tr>
+              <td class="w">768px<span>the sidebar would squeeze the board below a readable cell size</span></td>
+              <td>content band &lt; 536px</td>
+              <td>Sidebar <b>repositions</b> to a horizontal bar under the header — icons and labels kept, relative order kept, destination kept, current-location indicator kept. No item is hidden. Role labels collapse; the selection tone and the running marker stay.</td>
+            </tr>
+            <tr>
+              <td class="w">560px<span>a 4-wide board plus labels cannot share a row</span></td>
+              <td>single column behaviour</td>
+              <td>Column gap 16 → 8, panel row gap 24 → 16. HUD tiles step up (4/4/4 → 6/6) on the <b>same</b> 12 tracks. Command wraps inside its panel — never the page.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="meas-row">
+          <span class="meas"><b>4</b><span class="u">nav labels kept at 420</span></span>
+          <span class="meas"><b>0</b><span class="u">hidden nav items</span></span>
+          <span class="meas"><b>0</b><span class="u">page-level h-scroll</span></span>
+        </div>
+        <div class="rule-note">
+          <b>What is allowed to wrap or scroll inside a band:</b> the command line and long path
+          strings — they wrap inside their panel. <b>What never is:</b> the page body, the header,
+          or the nav bar (four short labels fit at 420px).
+        </div>
+        <div class="rule-note">
+          <b>Stacking order at 420px</b> (DOM order preserved): header → nav bar → ROUTE → STATUS
+          → MATCH-STATE → MAP → COORDINATOR. The <b>same panel order as desktop</b> survives —
+          only the spans change. Nothing is reordered against reading / focus order and nothing
+          is deleted.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================================
+       05 — LAYOUT RULES + CONTRAST + CONTRADICTIONS
+       ==================================================================== -->
+  <section class="spec" id="sec5">
+    <div class="spec-head">
+      <span class="spec-num">05</span>
+      <h2>Layout rules</h2>
+      <span class="note">extracted, not invented — every value traces to brief v4 or Primer Primitives</span>
+    </div>
+
+    <ol class="rules">
+      <li><span class="n">1</span><b>Box only a unit. Divide with rows and hairlines. Label only
+        when the label carries meaning.</b> When a border is wanted, ask in order:
+        <b>(1)</b> is this one unit? if not, do not box it ·
+        <b>(2)</b> does the inside really need further division? usually a row plus a hairline
+        is enough instead of another box ·
+        <b>(3)</b> does its label change the reader’s understanding? if not, delete it.
+        A row states one fact completely — fold two rows that complete in one. Group by meaning,
+        not by visual evenness.</li>
+
+      <li><span class="n">2</span><b>One grid for the whole page and every section.</b>
+        <code>repeat(12, minmax(0, 1fr))</code>, column gap <code>space.lg 16</code>, panel row gap
+        <code>space.xl 24</code> — every gutter and gap is a Primer <code>space</code> token
+        (<code>xs 4 · sm 8 · md 12 · lg 16 · xl 24</code>). No absolute positioning, no
+        hard-coded pixel column width, no per-section freestyle layout. Nested components use
+        nested grid or flex and stay inside their outer column boundaries.</li>
+
+      <li><span class="n">3</span><b>Shell and routes are bounded regions, not a content flow.</b>
+        Every route is a set of regions on the grid; each closes its own hierarchy with tone,
+        gap and hairlines — not with an outline. Never stack “heading → prose → prose → table”
+        down the page (brief v4 禁止 7). Priority = <b>grid position</b> + <b>column span</b> +
+        <b>area</b>, never a nameplate.</li>
+
+      <li><span class="n">4</span><b>UI variant follows information priority.</b> Primary → wide
+        span + large value (<code>26px</code>). Secondary → one-line row, type locked to
+        <code>11px / 15px</code>. Tertiary → text link on a quiet region. Inside the match-state
+        HUD every row is the same variant and the same two tiers, so HUD priority is span +
+        position only.</li>
+
+      <li><span class="n">5</span><b>Shell.</b> Header fixed <code>56px</code>, sidebar fixed
+        <code>200px</code> with its own scroll, <b>main is the single page-scroll owner</b>. No
+        region overlays another. Content band <code>max-width 1080px</code>, <b>left-aligned,
+        never centred</b>.</li>
+
+      <li><span class="n">6</span><b>Navigation: role + priority + current location, by
+        composition and colour.</b> Role groups ORIENT / REVIEW / MONITOR above the fixed order
+        Home / Replays / Solvers / Live. The monitor destination carries a priority sub-line of
+        live values. Current item = selection tone (<code>surface → surface-2</code>) + weight +
+        <code>aria-current="page"</code>. Icon-led, inline SVG, <b>no left accent bar</b>, no
+        colour-only state.</li>
+
+      <li><span class="n">7</span><b>Map fit / centre rule.</b> <code>viewBox = mapPixelSize(map)</code>
+        (natural size), canvas <code>width:100%; height:100%</code>,
+        <code>preserveAspectRatio="xMidYMid meet"</code> / equivalent uniform transform in WebGPU.
+        Initial camera = uniform fit minus a <code>16px</code> mounting gap (spacing, not a stroke).
+        Never pass a synthetic <code>width/height</code> as the viewBox.</li>
+
+      <li><span class="n">8</span><b>Density is a contrast, not a scale-down.</b> Outer gutter
+        <code>space.xl 24</code> against dense gap <code>space.sm 8</code> is the density strategy —
+        the two must be separate tokens. Compressed: HUD rows, transport chrome, nav items.
+        Never compressed: page gutter, panel row gap, the board’s fit inset, label
+        letter-spacing.</li>
+
+      <li><span class="n">9</span><b>Breakpoints are content stress points, not device names.</b>
+        <code>960px</code> — gap steps, gutter 24 → 16.
+        <code>768px</code> — sidebar repositions to a horizontal bar (labels, order, destination,
+        current-state all preserved).
+        <code>560px</code> — gap <code>sm 8</code> / row gap <code>lg 16</code>, HUD spans step up
+        on the same 12 tracks.
+        Long commands and paths wrap inside their region; the page never scrolls horizontally.</li>
+
+      <li><span class="n">10</span><b>Chrome and content show different border density.</b>
+        Chrome closes its bounded regions (header bottom, sidebar right, the mock frame) with
+        <code>boxShadow.thin</code>. The content region carries <b>exactly one</b> boundary — the
+        map instrument, because it is a different layer — and is otherwise divided by rows and
+        hairlines only. Surface boundaries are drawn as
+        <code>box-shadow: inset 0 0 0 1px</code> (Primer <code>boxShadow.thin</code>), never a
+        layout-shifting border. Row hairlines are <code>borderWidth.thin 1px</code>. Accent marks
+        state only; shadows are for floating elements only.</li>
+
+      <li><span class="n">11</span><b>Annotations are values, not prose.</b> A note attached to a
+        region shows a number with its unit or a measured quantity —
+        <code>viewBox 207.85 × 192</code>, <code>inset 16</code>, <code>span 8/12</code>,
+        <code>11 / 15 px</code>, <code>30 · 31</code>. Prose labels stuck to framed regions
+        (brief v4 禁止 8) are deleted; if an explanation cannot be said as a number it goes in
+        this rules list, not on the mock.</li>
+
+      <li><span class="n">12</span><b>Contrast floor (WCAG 2.x).</b> Text and icons
+        <code>≥ 4.5:1</code> against their background (large text <code>3:1</code>); non-text
+        graphics, markers, boundary lines and focus rings <code>≥ 3:1</code>. Measured on this
+        sheet — see the table below. Low contrast is not a style choice.</li>
+    </ol>
+
+    <div class="spec-head" style="margin-top:32px">
+      <span class="spec-num">C</span>
+      <h2>Measured contrast</h2>
+      <span class="note">WCAG 2.x relative luminance · both themes on this sheet</span>
+    </div>
+
+    <div class="gspec">
+      <table class="bp">
+        <thead><tr><th scope="col">Pair</th><th scope="col">Light</th><th scope="col">Dark</th><th scope="col">Floor</th><th scope="col">Primer source</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="w">body text<span>fgColor.default on bgColor.default</span></td>
+            <td><code>15.80:1</code></td><td><code>17.39:1</code></td><td>4.5</td>
+            <td>neutral.13 / neutral.12</td>
+          </tr>
+          <tr>
+            <td class="w">body text<span>fgColor.default on bgColor.muted</span></td>
+            <td><code>14.84:1</code></td><td><code>15.91:1</code></td><td>4.5</td>
+            <td>black / white on neutral.1 / .2</td>
+          </tr>
+          <tr>
+            <td class="w">muted text<span>fgColor.muted on bgColor.default</span></td>
+            <td><code>6.11:1</code></td><td><code>6.50:1</code></td><td>4.5</td>
+            <td>neutral.9</td>
+          </tr>
+          <tr>
+            <td class="w">muted text<span>fgColor.muted on bgColor.muted</span></td>
+            <td><code>5.74:1</code></td><td><code>5.94:1</code></td><td>4.5</td>
+            <td>neutral.9 on neutral.1 / .2</td>
+          </tr>
+          <tr>
+            <td class="w">muted text<span>fgColor.muted on selection tone</span></td>
+            <td><code>5.51:1</code></td><td><code>5.09:1</code></td><td>4.5</td>
+            <td>control.transparent.bgColor.active</td>
+          </tr>
+          <tr>
+            <td class="w">body text<span>fgColor.default on selection tone</span></td>
+            <td><code>14.23:1</code></td><td><code>13.62:1</code></td><td>4.5</td>
+            <td>same</td>
+          </tr>
+          <tr>
+            <td class="w">unit boundary<span>borderColor.emphasis vs surface</span></td>
+            <td><code>3.45:1</code></td><td><code>3.57:1</code></td><td>3</td>
+            <td>neutral.8</td>
+          </tr>
+          <tr>
+            <td class="w">unit boundary<span>borderColor.emphasis vs surface-alt</span></td>
+            <td><code>3.24:1</code></td><td><code>3.26:1</code></td><td>3</td>
+            <td>neutral.8 on neutral.1 / .2</td>
+          </tr>
+          <tr>
+            <td class="w">running marker<span>fgColor.success vs surface</span></td>
+            <td><code>5.08:1</code></td><td><code>4.09:1</code></td><td>3</td>
+            <td>green.5</td>
+          </tr>
+          <tr>
+            <td class="w">row hairline<span>borderColor.default vs surface</span></td>
+            <td><code>1.43:1</code></td><td><code>1.92:1</code></td><td>n/a — EXC-3</td>
+            <td>neutral.6 / neutral.7</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="gspec">
+      <table class="bp">
+        <thead><tr><th scope="col">Token</th><th scope="col">Light</th><th scope="col">Dark</th><th scope="col">Primer alias</th></tr></thead>
+        <tbody>
+          <tr><td class="w">fg</td><td><code>#1f2328</code></td><td><code>#f0f6fc</code></td><td>fgColor.default</td></tr>
+          <tr><td class="w">muted</td><td><code>#59636e</code></td><td><code>#9198a1</code></td><td>fgColor.muted</td></tr>
+          <tr><td class="w">surface</td><td><code>#ffffff</code></td><td><code>#0d1117</code></td><td>bgColor.default</td></tr>
+          <tr><td class="w">surface-alt</td><td><code>#f6f8fa</code></td><td><code>#151b23</code></td><td>bgColor.muted</td></tr>
+          <tr><td class="w">surface-2</td><td><code>#f2f3f5</code></td><td><code>#23282f</code></td><td>control.transparent.bgColor.active</td></tr>
+          <tr><td class="w">edge</td><td><code>#818b98</code></td><td><code>#656c76</code></td><td>borderColor.emphasis</td></tr>
+          <tr><td class="w">hair</td><td><code>#d1d9e0</code></td><td><code>#3d444d</code></td><td>borderColor.default</td></tr>
+          <tr><td class="w">accent</td><td><code>#0969da</code></td><td><code>#1f6feb</code></td><td>fgColor.accent</td></tr>
+          <tr><td class="w">running</td><td><code>#1a7f37</code></td><td><code>#238636</code></td><td>fgColor.success</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rule-note" style="margin-top:16px">
+      <b>Documented exceptions to “use Primer as-is”.</b>
+      <b>EXC-1</b> — <code>--s6: 32px</code> for the design-sheet outer padding: Primer
+      <code>space</code> stops at <code>xl 24px</code>; <code>base.size.32</code> exists in the
+      base scale but has no functional alias. App UI does not use it.
+      <b>EXC-2</b> — control and panel radius are the same <code>borderRadius.medium 6px</code>:
+      Primer’s rule is “medium is the default for button, input, card, container”, not a
+      control/panel split. The former <code>4–6 / 6–8</code> split is dropped rather than
+      re-tuned. <code>borderRadius.small 3px</code> is used only for badges, tags and labels.
+      <b>EXC-3</b> — row hairlines use <code>borderColor.default</code> at
+      <code>1.43:1 / 1.92:1</code>, below the 3:1 non-text floor. Primer’s own divider token is
+      this light on purpose, and brief v4 asks for “hairline（1px、低コントラスト）” between rows.
+      A row hairline is a decorative separator, not a graphical object that conveys information,
+      so WCAG 1.4.11 does not apply; every boundary that <i>does</i> carry meaning (the map
+      instrument, focus rings) uses <code>borderColor.emphasis</code> at <code>≥ 3.24:1</code>.
+    </div>
+
+    <div class="spec-head" style="margin-top:32px">
+      <span class="spec-num" style="background:var(--surface-2)">!</span>
+      <h2>Contradictions found — DESIGN-BRIEF v4 vs current CSS</h2>
+      <span class="note">every claim points at source under <code style="font-family:var(--mono)">packages/frontend/src/</code></span>
+    </div>
+    <div class="findings">
+      <div class="finding">
+        <b>1 · The density contrast the brief requires has no token to express it</b>
+        Brief: “ページ外周は余白を取るが、HUD と表は詰める” and 外周ガター 24 / 密集部 8.
+        <code>theme.css</code> defines one value, <code>--app-pad: 1rem</code>, and
+        <code>layout.css</code> spends it on both the page gutter
+        (<code>.app-shell__main</code>) and the panel padding (<code>.page</code>). Outer and
+        inner density are the same number.
+      </div>
+      <div class="finding">
+        <b>2 · Radius ceiling is breached by the token itself</b>
+        Brief caps controls at 4–6px and panels at 6–8px.
+        <code>theme.css</code> defines <code>--app-radius: 8px</code>; it is applied to sidebar
+        links and the theme toggle (<code>layout.css</code>), transport buttons
+        (<code>replay-viewer.css</code>) and HUD cells (<code>live.css</code>) — every control
+        sits at the panel upper bound. One value, controls and panels both.
+      </div>
+      <div class="finding">
+        <b>3 · Static panels carry the elevation the brief reserves for floating elements</b>
+        Brief: “shadow は浮動要素のみ”. <code>.app-header</code> and <code>.page</code>
+        (<code>layout.css</code>) and <code>.replay-viewer</code>
+        (<code>replay-viewer.css</code>) all set <code>box-shadow: var(--app-shadow)</code>, so
+        every content card is raised — a second hierarchy channel competing with the board.
+      </div>
+      <div class="finding">
+        <b>4 · The “does not break” responsive tier is decided but not implemented</b>
+        Brief: desktop-first, responsive only needs to not break. There are
+        <b>zero <code>@media</code> rules</b> across <code>layout.css / live.css /
+        replay-viewer.css / map-viewer.css / theme.css / webgpu-map-viewer.css</code>. At 420px
+        today nothing reflows: the five-tile HUD and the 800px command line simply overflow.
+      </div>
+      <div class="finding">
+        <b>5 · Navigation: accent fill as the marker, no icons, and a vacant list</b>
+        Brief v3 禁止 2 / 9: 現在地は icon + 選択トーン、構成は色と形の両方.
+        <code>layout.css</code> paints <code>.app-sidebar__link--active</code> as a full-width
+        <code>--app-accent</code> block (the brightest object in the chrome), and
+        <code>Sidebar.tsx</code> renders flat text-only links — no icon, no role grouping, no
+        current-location composition.
+      </div>
+      <div class="finding">
+        <b>6 · Match-state HUD uses a type ladder inside one surface</b>
+        Brief v3 禁止 3 / 撤回 1: 同一 surface は同サイズ 2 段のみ. <code>live.css</code> sets
+        <code>.live__hud-value--large</code> at <code>1.8rem</code>,
+        <code>.live__hud-value--mono</code> at <code>0.95rem</code>, and leaves the plain value
+        at body size — three tiers across DAY / REVISIONS / SOLVER / SERVER / LAST UPDATE.
+      </div>
+      <div class="finding">
+        <b>7 · Status badge is a tinted fill with a same-colour border</b>
+        Brief v3 禁止 6 / 撤回 4: 無彩色 chip + marker. <code>live.css</code> gives each
+        <code>[data-status]</code> a coloured <code>background</code> <i>and</i> a matching
+        darker <code>border-color</code> (e.g. waiting <code>#f5c542</code> +
+        <code>#d6a82b</code>). The same block also holds the status L* spread the brief measures
+        (waiting L*81.7 vs error L*45.9).
+      </div>
+      <div class="finding">
+        <b>8 · The map viewBox is synthetic, not the board’s natural size</b>
+        Brief: <code>viewBox = mapPixelSize(map)</code>. <code>MapViewer.tsx</code> does
+        <code>props.width ?? dims().width</code> for both the attribute and the viewBox, and
+        <code>Live.tsx</code> / <code>Replays.tsx</code> / <code>Solvers.tsx</code> pass
+        <code>width={800} height={420}</code>. That synthetic size is exactly what pins the
+        4 × 3 and 8 × 6 boards to the top-left corner.
+      </div>
+      <div class="finding">
+        <b>9 · Data encoding borrows UI chrome tokens</b>
+        Brief: data encoding は UI chrome と完全に分離. <code>map-viewer.css</code> strokes
+        <code>.map-viewer__cell</code> with <code>var(--app-border-strong)</code>, and
+        <code>types/map.ts</code> sets <code>AGENT_COLORS.supply: '#0969da'</code> — byte-identical
+        to <code>--app-accent</code> in <code>theme.css</code>.
+      </div>
+      <div class="finding">
+        <b>10 · Dark muted text fails the contrast floor the brief itself states</b>
+        Brief v3 Typography: text/icon ≥ 4.5:1. Measured:
+        <code>--app-muted #7d8590</code> on <code>--app-surface #161b22</code> = <b>3.04:1</b>
+        (the brief’s own Evidence figure). Light <code>#59636e</code> on
+        <code>#161b22</code>-equivalent surface passes, dark does not — and several labels use
+        the even lighter end of the ramp. This sheet raises muted to
+        <code>8.5:1 / 7.3:1</code>.
+      </div>
+      <div class="finding">
+        <b>11 · Brief v3 禁止 5 forbids outlines; v3 shell rules require bounded panels</b>
+        禁止 5 says separate surfaces by tone + gap and keep strokes to the focus ring, while
+        “shell はサブパネルで構成する” and the user review ask for visible table / panel outlines.
+        Resolved here by explicit user instruction: hairline outlines at <b>≥ 3:1</b> bound
+        panels and tables, tone + gap still group them, and no outline carries accent or
+        decoration. Implemented as <code>1px solid var(--hair)</code> on <code>.panel</code> /
+        <code>table.bp</code>.
+      </div>
+    </div>
+  </section>
+
+  <footer class="doc-foot">
+    <p style="margin:0">
+      Single-file proposal · all CSS inline in one <code>&lt;style&gt;</code> · one vanilla-JS
+      handler (theme toggle) · zero network requests · system font stack only · icons are inline
+      SVG with <code>viewBox</code> 16 / 24. Real copy and fixture values from
+      <code>packages/frontend/src/pages/{Home,Replays,Solvers,Live}.tsx</code>,
+      <code>components/{Header,Sidebar,Layout,MapViewer,ReplayViewer}.tsx</code>,
+      <code>types/map.ts</code>, <code>styles/*.css</code>, and
+      <code>public/match-setting.example.json</code>.
+      Colour roles and interaction states → <code>design-system.html</code> /
+      <code>ux.html</code>.
+    </p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById('theme-toggle');
+  var lbl = btn.querySelector('.lbl');
+  var mode = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+
+  function apply() {
+    root.setAttribute('data-theme', mode);
+    var dark = mode === 'dark';
+    lbl.textContent = dark ? 'Light mode' : 'Dark mode';
+    btn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+    btn.querySelector('use').setAttribute('href', dark ? '#i-sun' : '#i-moon');
+    var mocks = document.querySelectorAll('.m-theme');
+    for (var i = 0; i < mocks.length; i++) {
+      mocks[i].querySelector('span').textContent = dark ? 'Light mode' : 'Dark mode';
+      mocks[i].querySelector('use').setAttribute('href', dark ? '#i-sun' : '#i-moon');
+    }
+  }
+
+  btn.addEventListener('click', function () {
+    mode = mode === 'dark' ? 'light' : 'dark';
+    apply();
+  });
+  apply();
+})();
+</script>
+</body>
+</html>
