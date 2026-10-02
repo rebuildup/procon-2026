@@ -1,6 +1,8 @@
 import type { Component, JSX } from 'solid-js';
 import { Route, Router } from '@solidjs/router';
 
+import { PrimerSpike } from '@/spike/PrimerSpike';
+
 /**
  * Route skeleton only. The previous UI (components/, pages/, styles/) has been
  * stripped so the rebuild can start from Primer rather than from the retired
@@ -11,7 +13,8 @@ import { Route, Router } from '@solidjs/router';
  */
 const Placeholder: Component<{ name: string }> = (props) => <p>{props.name}</p>;
 
-const Home: Component = () => <Placeholder name="Home" />;
+/** Home currently shows the stack proof — issue #269. */
+const Home: Component = () => <PrimerSpike />;
 const Replays: Component = () => <Placeholder name="Replays" />;
 const Solvers: Component = () => <Placeholder name="Solvers" />;
 const Live: Component = () => <Placeholder name="Live" />;

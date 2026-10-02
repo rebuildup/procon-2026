@@ -1,6 +1,12 @@
-/* Styling has been cleared — see issue #265.
+/* Primer is the design system — issue #269.
  *
- * The retired `--app-*` token system and the styles that consumed it are gone.
- * The rebuild layers Primer Primitives tokens and @primer/css instead of
- * reintroducing a project-owned stylesheet here.
+ * Tokens come from @primer/primitives and are referenced, never copied; its
+ * own rule is "Never use raw values (hex/px). Use semantic tokens ONLY."
+ * Theme colours are scoped to [data-color-mode] + [data-*-theme], so the
+ * theme attribute is set on <html>. Primer ships 14 variants including
+ * colourblind, tritanopia and high-contrast modes.
  */
+@import '@primer/primitives/dist/css/primitives.css';
+@import '@primer/primitives/dist/css/functional/themes/light.css';
+@import '@primer/primitives/dist/css/functional/themes/dark.css';
+@import '@primer/css/dist/primer.css';
