@@ -47,4 +47,17 @@ export default [
     files: ['**/*.tsx'],
     ...solid,
   },
+  {
+    // Playwright runs under Node, so the e2e harness may use Node globals
+    // (`process`, `__dirname`, `Buffer`) that the browser-targeted block
+    // above deliberately does not declare.
+    files: ['e2e/**/*.ts', 'playwright.config.ts'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        __dirname: 'readonly',
+        Buffer: 'readonly',
+      },
+    },
+  },
 ];
