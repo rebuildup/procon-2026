@@ -5,8 +5,9 @@
 //! 1. **Wait** — missing or invalid actions are downgraded to `Wait`.
 //! 2. **Move** — apply every agent's `Move` action (bounds/terrain/fuel).
 //! 3. **Spawn** — at day boundaries, refill every spot to `max_stock`.
-//! 4. **Acquire** — agents on stocked spots pick up one ball (capped at 1
-//!    per agent per spot per day).
+//! 4. **Acquire** — **Patrol** agents on stocked spots pick up one ball
+//!    (capped at 1 per agent per spot per day). `AgentKind::Supply` cannot
+//!    collect 玉 and is skipped entirely (issue #234).
 //! 5. **Fuel** — deduct move costs from patrols. Supply agents are
 //!    unaffected.
 //! 6. **Traffic update** — at end of day, recompute every road cell's
@@ -28,19 +29,29 @@ use std::collections::HashMap;
 use crate::model::{AgentActions, MatchSetting, MatchState, RunResult, Solver, SolverContext};
 use crate::rules::TrafficThresholds;
 use crate::transitions::{
-    MoveOutcome, StepEvent, apply_moves, begin_day, phase_acquire, phase_fuel, phase_spawn,
-    phase_traffic_update, phase_wait, record_traversal, refill_fuel_if_supply_present,
+    MoveOutcome, StepEvent, apply_moves, begin_day, phase_acquire, phase_fuel, phase_oracle_refill,
+    phase_spawn, phase_traffic_update, phase_wait, record_traversal, refill_fuel_if_supply_present,
 };
 
 /// Configuration for [`MatchSim`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SimConfig {
     pub traffic_thresholds: TrafficThresholds,
+    /// Counterfactual day-boundary tank refill (Issue #243, `oracle_refill`).
+    ///
+    /// `false` (the default) is the official rule and must stay
+    /// byte-identical: the only thing that ever refuels a Patrol tank in a
+    /// real match is supply contact ([`crate::transitions::
+    /// refill_fuel_if_supply_present`]). `true` additionally restores every
+    /// Patrol tank to its cap at each day boundary — an **analysis-only**
+    /// counterfactual used to measure how much of a result fuel exhaustion
+    /// explains, never a default evidence path.
+    pub oracle_refill: bool,
 }
 
 impl Default for SimConfig {
     fn default() -> Self {
-        Self { traffic_thresholds: TrafficThresholds::default() }
+        Self { traffic_thresholds: TrafficThresholds::default(), oracle_refill: false }
     }
 }
 
@@ -88,6 +99,12 @@ impl MatchSim {
         //    so this only fires from day 1 onwards.
         if state.day_step == 0 && state.day > 0 && state.day < state.num_days() {
             phase_spawn(&mut state.setting.map, &mut events);
+            // Counterfactual (Issue #243): only under `oracle_refill`, also
+            // top every Patrol tank up to its cap at the same boundary. Gated
+            // on the flag so the default path is untouched, byte for byte.
+            if self.config.oracle_refill {
+                phase_oracle_refill(&mut state.agents, &mut events);
+            }
         }
 
         // 1. Wait — filter unknown / duplicate ids.
@@ -120,7 +137,25 @@ impl MatchSim {
             let _ = id; // suppress unused
         }
 
-        // 4. Acquire — agents on stocked spots pick up.
+        // Record semantic validation failures. `MoveOutcome::Wait` downgraded
+        // these to a no-op so the match completes, but the official answer
+        // rules reject the whole answer on an invalid action (Q&A Q6) — so
+        // the evaluator must still see them.
+        for event in &events {
+            match event {
+                StepEvent::IllegalMove { .. } => {
+                    state.illegal_action_count = state.illegal_action_count.saturating_add(1);
+                }
+                StepEvent::FuelShort { .. } => {
+                    state.fuel_short_count = state.fuel_short_count.saturating_add(1);
+                }
+                _ => {}
+            }
+        }
+
+        // 4. Acquire — Patrol agents on stocked spots pick up. `phase_acquire`
+        //    itself skips Supply (issue #234), so looping every agent here
+        //    keeps the call site simple and kind-agnostic.
         let agents_for_acquire = state.agents.clone();
         for agent in &agents_for_acquire {
             phase_acquire(agent, state, &mut events);
@@ -153,13 +188,17 @@ impl MatchSim {
 
     /// Drive a full match from `setting` using `solver` for every day.
     ///
-    /// Returns the final state and a scoring summary aligned with
-    /// 募集要項「順位決定」:
+    /// Returns the final state and the three *deterministic* competitive
+    /// tallies of 募集要項「順位決定」:
     ///
     /// 1. `variety` (distinct series ever acquired) — primary.
-    /// 2. `daily_variety_sum` — secondary.
+    /// 2. `daily_variety_sum` (Σ per-day distinct series) — secondary.
     /// 3. `total_balls` — tertiary.
-    /// 4. `last_acquisition_at` (earlier is better) — quaternary.
+    ///
+    /// Tier 4 — cumulative per-day response time — is **not** produced here:
+    /// the simulator has no clock by design (see the determinism section
+    /// above). The evaluation layer measures solver latency and combines it
+    /// with these three into [`domain::Score`].
     ///
     /// `solver` may be a `Box<dyn Solver>` (typical) or any concrete type.
     pub fn run<S: Solver + ?Sized>(
@@ -170,12 +209,16 @@ impl MatchSim {
         let mut state = MatchState::new(setting)?;
         let last_acq = self.run_inner(&mut state, solver)?;
         let (variety, daily_variety_sum, total_balls) = score_state(&state);
+        let illegal_action_count = state.illegal_action_count;
+        let fuel_short_count = state.fuel_short_count;
         Ok(RunResult {
             final_state: state,
             variety,
             daily_variety_sum,
             total_balls,
             last_acquisition_at: last_acq,
+            illegal_action_count,
+            fuel_short_count,
         })
     }
 
@@ -188,12 +231,16 @@ impl MatchSim {
     ) -> Result<RunResult, String> {
         let last_acq = self.run_inner(state, solver)?;
         let (variety, daily_variety_sum, total_balls) = score_state(state);
+        let illegal_action_count = state.illegal_action_count;
+        let fuel_short_count = state.fuel_short_count;
         Ok(RunResult {
             final_state: state.clone(),
             variety,
             daily_variety_sum,
             total_balls,
             last_acquisition_at: last_acq,
+            illegal_action_count,
+            fuel_short_count,
         })
     }
 
@@ -206,7 +253,6 @@ impl MatchSim {
         // agent_count actions per step, day_steps blocks). We call
         // [`Self::step`] for each block.
         let total_days = state.num_days();
-        let day_steps = state.day_steps();
         for _ in 0..total_days {
             if state.is_finished() {
                 break;
@@ -216,9 +262,14 @@ impl MatchSim {
             // Slice the per-day plan into per-step blocks and feed each to
             // [`Self::step`]. An under-/over-sized plan is treated as
             // "all-wait" so a misbehaving solver cannot crash the match.
+            //
+            // Read the step count *inside* the day loop: `daySteps` is a
+            // per-day vector, so day 1 may allow a different number of steps
+            // from day 0. Hoisting this read above the loop was a real bug —
+            // `daySteps = [16, 24]` ran day 1 for only 16 steps.
             let agent_count = ctx.agent_ids.len();
             let agent_ids_owned = ctx.agent_ids.clone();
-            let per_step = day_steps as usize;
+            let per_step = ctx.day_steps as usize;
             for s in 0..per_step {
                 if state.is_finished() {
                     break;
@@ -238,16 +289,15 @@ impl MatchSim {
 }
 
 /// Compute the three integer scores from the final state.
+///
+/// `daily_variety_sum` is 募集要項「順位決定」tier 2 — 「各日の種類数の累積」:
+/// the number of distinct series acquired *that day*, summed over all days.
+/// A series re-acquired on a later day contributes again for that later day,
+/// so this is **not** the count of first-acquisition days.
 fn score_state(state: &MatchState) -> (u32, u32, u32) {
     let variety = state.series_taken.len() as u32;
     let total_balls: u32 = state.agents.iter().map(|a| a.total_inventory()).sum();
-    // Daily variety sum is computed from `series_first_taken_at`: distinct
-    // series taken per day, summed.
-    let mut per_day: HashMap<u32, u32> = HashMap::new();
-    for (day, _step) in state.series_first_taken_at.values() {
-        *per_day.entry(*day).or_insert(0) += 1;
-    }
-    let daily_variety_sum = per_day.values().sum::<u32>();
+    let daily_variety_sum: u32 = state.daily_varieties().iter().sum();
     (variety, daily_variety_sum, total_balls)
 }
 
@@ -344,6 +394,7 @@ mod tests {
             agents,
             day_steps,
             num_days,
+            day_steps_by_day: Vec::new(),
         }
     }
 
@@ -375,6 +426,55 @@ mod tests {
         assert_eq!(state.agents[0].pos, HexCoord::new(6, 7));
         assert_eq!(state.agents[0].fuel, 5 * 3 - 1);
         assert_eq!(state.day_step, 1);
+    }
+
+    /// Issue #243 — the `oracle_refill` counterfactual, both halves:
+    ///
+    /// 1. **Default is byte-identical** — `SimConfig::default()` carries the
+    ///    flag off, and an explicit `oracle_refill: false` config drives the
+    ///    exact same fuel trajectory (fuel carries across the day boundary
+    ///    unchanged, the official rule).
+    /// 2. **`true` refills at the day boundary** — the same steps with the
+    ///    flag on end day 1 with a full tank.
+    #[test]
+    fn oracle_refill_defaults_off_and_refills_patrol_tanks_at_the_day_boundary() {
+        // Drive one identical mini-match and report agent 0's fuel at the
+        // start of day 1 (after the boundary fired).
+        let fuel_at_day1_start = |config: SimConfig| -> u32 {
+            let map = one_spot_map();
+            // Patrol cap = day_steps(2) x multiplier(2) = 4.
+            let setting =
+                setting_with(map, vec![Agent::patrol(0, HexCoord::new(1, 0), 2, 2)], 2, 2);
+            let mut state = MatchState::new(setting).unwrap();
+            let sim = MatchSim::new(config);
+            let left = AgentActions::new(vec![
+                Action::step(0, Direction::Left),
+                Action::wait(1),
+                Action::wait(2),
+            ]);
+            let wait = AgentActions::wait_all(&[0, 1, 2], 1);
+
+            // Day 0 step 0: step onto the spot (plain, cost 1) -> 4 - 1 = 3.
+            sim.step(&mut state, &left);
+            // Day 0 step 1: wait out the rest of the day -> rollover to day 1.
+            sim.step(&mut state, &wait);
+            assert_eq!(state.day, 1, "the match must have crossed a day boundary");
+            // Day 1 step 0: spawn + (only if enabled) oracle refill, then wait.
+            sim.step(&mut state, &wait);
+            state.agents[0].fuel
+        };
+
+        // Half 1 — the default and an explicit off are the same trajectory.
+        assert!(!SimConfig::default().oracle_refill, "the counterfactual must default to off");
+        let off = fuel_at_day1_start(SimConfig::default());
+        let explicit_off =
+            fuel_at_day1_start(SimConfig { oracle_refill: false, ..SimConfig::default() });
+        assert_eq!(off, explicit_off, "default must be byte-identical to an explicit `false`");
+        assert_eq!(off, 3, "official rule: the day boundary does NOT refill a Patrol tank");
+
+        // Half 2 — the counterfactual refills to cap at the same boundary.
+        let on = fuel_at_day1_start(SimConfig { oracle_refill: true, ..SimConfig::default() });
+        assert_eq!(on, 4, "oracle_refill=true must restore the tank to cap at the day boundary");
     }
 
     #[test]
@@ -442,6 +542,155 @@ mod tests {
         // We expect at least the two distinct series to be picked.
         assert!(result.variety >= 2, "variety = {}", result.variety);
         assert!(result.total_balls >= 2);
+    }
+
+    /// 募集要項「順位決定」tier 2 is 「各日の種類数の累積」: the distinct
+    /// series acquired *that day*, summed over all days. A series that is
+    /// re-acquired on a later day contributes again for that later day —
+    /// so `daily_variety_sum` must exceed `variety` once a match spans more
+    /// than one day of collection. Regresses the older implementation that
+    /// counted each series only on the day of its *first* acquisition.
+    #[test]
+    fn daily_variety_sum_counts_reseries_each_day() {
+        let map = one_spot_map();
+        // One spot (series 1, stock 1, refilled each day). One patrol starts
+        // next to it at (1, 0) — spec forbids starting on a spot — and steps
+        // Left every step. Step 0 of each day lands on the spot and picks up;
+        // the following step's Left is out of bounds and degrades to Wait, so
+        // the agent stays put and re-picks after each day's spawn refill.
+        let setting = setting_with(map, vec![Agent::patrol(0, HexCoord::new(1, 0), 8, 3)], 2, 3);
+        struct AlwaysLeft;
+        impl Solver for AlwaysLeft {
+            fn name(&self) -> &'static str {
+                "always-left"
+            }
+            fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+                let mut actions = Vec::new();
+                for _ in 0..ctx.day_steps {
+                    for id in &ctx.agent_ids {
+                        actions.push(Action::step(*id, Direction::Left));
+                    }
+                }
+                AgentActions::new(actions)
+            }
+        }
+        let sim = MatchSim::default();
+        let result = sim.run(setting, &AlwaysLeft).unwrap();
+        // One distinct series ever -> variety == 1.
+        assert_eq!(result.variety, 1);
+        // But it is collected on more than one day, so the cumulative
+        // per-day variety must be strictly greater than `variety`.
+        assert!(
+            result.daily_variety_sum > result.variety,
+            "daily_variety_sum = {} must exceed variety = {} when a series \
+             is re-acquired on later days",
+            result.daily_variety_sum,
+            result.variety
+        );
+        // Per-day breakdown agrees with the aggregate.
+        assert_eq!(
+            result.daily_variety_sum,
+            result.final_state.daily_varieties().iter().sum::<u32>()
+        );
+    }
+
+    /// Plain 8x8 map with no spots, so nothing can interfere with the step
+    /// counting.
+    fn empty_plain_map() -> MapGrid {
+        let size = MapSize::new(8, 8).unwrap();
+        let cells = (0..8)
+            .flat_map(|row| {
+                (0..8).map(move |col| crate::model::Cell {
+                    coord: HexCoord::new(col, row),
+                    terrain: Terrain::Plain,
+                    spot: None,
+                })
+            })
+            .collect();
+        MapGrid::new(size, cells).unwrap()
+    }
+
+    /// Regression test for a real bug: `MatchSim::run_inner` read
+    /// `state.day_steps()` **once, outside** the day loop, so every day ran
+    /// for day 0's step count. With `daySteps = [16, 24]` day 1 executed
+    /// only 16 of its 24 steps, and the solver's plan was truncated with it.
+    ///
+    /// The assertion is on observed agent movement rather than on the
+    /// context: day 1 deliberately places its moves at step indices 16..=21,
+    /// which only exist if that day really runs 24 steps.
+    #[test]
+    fn run_honours_per_day_step_counts() {
+        let setting = MatchSetting {
+            match_id: MatchId::new("per-day-steps").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map: empty_plain_map(),
+            agents: vec![
+                Agent::patrol_with_fuel(0, HexCoord::new(0, 0), 100),
+                Agent::supply(1, HexCoord::new(7, 7)),
+                Agent::supply(2, HexCoord::new(7, 6)),
+            ],
+            day_steps: 16,
+            num_days: 2,
+            day_steps_by_day: vec![16, 24],
+        };
+
+        let recorder = RecordDaySteps { seen: std::sync::Mutex::new(Vec::new()) };
+
+        let sim = MatchSim::default();
+        let run = sim.run(setting, &recorder).unwrap();
+
+        // The solver was told the per-day budget for each day it planned.
+        assert_eq!(
+            *recorder.seen.lock().unwrap(),
+            vec![16, 24],
+            "day 0 plans 16 steps, day 1 plans 24"
+        );
+
+        // Day 1 ran all 24 steps: six Right moves were scheduled at indices
+        // 16..=21 and all of them happened. Had day 1 been cut to 16 steps,
+        // the agent would never have moved off its start cell.
+        let agent = run.final_state.agents.iter().find(|a| a.id == 0).unwrap();
+        assert_eq!(agent.pos, HexCoord::new(6, 0), "day 1 must run its full 24 steps");
+        assert_eq!(agent.fuel, 100 - 6, "exactly six moves were applied");
+
+        assert!(run.final_state.is_finished());
+        assert_eq!(run.final_state.day, 2);
+        assert_eq!(
+            run.illegal_action_count, 0,
+            "every scheduled move was legal, so this test is about step counts alone"
+        );
+    }
+
+    /// Records the `day_steps` each day was planned with, and emits a plan
+    /// whose meaningful actions sit *after* step 16.
+    struct RecordDaySteps {
+        seen: std::sync::Mutex<Vec<u32>>,
+    }
+
+    impl Solver for RecordDaySteps {
+        fn name(&self) -> &'static str {
+            "record-day-steps"
+        }
+
+        fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+            self.seen.lock().unwrap().push(ctx.day_steps);
+            let mut actions =
+                Vec::with_capacity(ctx.agent_ids.len().saturating_mul(ctx.day_steps as usize));
+            for step in 0..ctx.day_steps {
+                for id in &ctx.agent_ids {
+                    // Day 1 only: wait for the first 16 steps, then walk
+                    // agent 0 right for steps 16..=21. The other two agents
+                    // wait throughout so they never walk off the map.
+                    let walk = ctx.day == 1 && *id == 0 && (16..=21).contains(&step);
+                    actions.push(if walk {
+                        Action::step(*id, Direction::Right)
+                    } else {
+                        Action::wait(*id)
+                    });
+                }
+            }
+            AgentActions::new(actions)
+        }
     }
 
     #[test]

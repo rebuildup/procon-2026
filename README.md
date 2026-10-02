@@ -69,6 +69,11 @@ just warmup             # human-readable summary
 just warmup-json        # machine-readable JSON for CI / archiving
 # or: cargo run -q --bin procon -- warmup [--json] [--solvers greedy,astar,loop,mcts]
 
+# 4c. ソルバ比較評価（offline・公式スコア tuple・辞書順ランキング）
+just eval-list          # 登録済み candidate とパラメータ一覧
+just eval               # 全 fixture × 既定 candidate → target/eval/
+# → docs/evaluation.md が手順の SoT。procon tournament とは別物（そちらは wire smoke）
+
 # 5. フロントエンド起動
 (cd packages/frontend && bun run dev)
 ```

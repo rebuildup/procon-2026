@@ -32,6 +32,8 @@ domain = { path = "crates/domain" }
 protocol = { path = "crates/protocol" }
 engine = { path = "crates/engine" }
 solver-loop = { path = "crates/solver-loop" }
+solver-greedy = { path = "crates/solver-greedy" }
+solver-astar = { path = "crates/solver-astar" }
 
 # Serialization (core ↔ frontend wire format)
 serde = { version = "1", features = ["derive"] }
@@ -88,3 +90,8 @@ strip = "debuginfo"
 opt-level = 1
 debug = 1
 incremental = true
+
+# Measurement (#218 / ADR-0024 §6): workspace crates keep line-tables-only
+# (debug = 1), dependencies drop debuginfo to cut target footprint.
+[profile.dev.package."*"]
+debug = false

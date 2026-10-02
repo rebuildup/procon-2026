@@ -8,6 +8,7 @@
 //!    degrade to a no-op `Wait` and are reported as `StepEvent::IllegalMove`.
 //! 3. [`phase_spawn`] — refill spot stock at the start of a new day.
 //! 4. [`phase_acquire`] — pick up balls from spots the agents stand on.
+//!    Patrol only: `AgentKind::Supply` cannot collect 玉 (issue #234).
 //! 5. [`phase_fuel`] — deduct the fuel cost of the move that was applied in
 //!    phase 2 (separated so the move phase stays terrain/pure and the fuel
 //!    phase owns the "did we have enough?" decision).
@@ -208,6 +209,32 @@ pub fn phase_spawn(map: &mut MapGrid, events: &mut Vec<StepEvent>) {
     let _ = events; // Spawn is currently silent; kept for symmetry.
 }
 
+/// Counterfactual day-boundary tank refill (Issue #243's `oracle_refill`).
+///
+/// Restores every **Patrol** agent to `fuel_cap` at a day boundary, the way a
+/// hypothetical always-available supply point would. Supply agents are
+/// skipped (their tank is `u32::MAX` already, so topping up is a no-op that
+/// would only burn cycles).
+///
+/// This is **analysis-only**: the official rules refuel a Patrol tank only on
+/// supply contact ([`refill_fuel_if_supply_present`]), and the ablation in
+/// Issue #243 exists precisely to separate "fuel ran out" from "supply never
+/// came". The knob defaults to `false` everywhere, so no default evidence
+/// path can reach this function.
+pub fn phase_oracle_refill(agents: &mut [Agent], events: &mut Vec<StepEvent>) {
+    for agent in agents.iter_mut() {
+        if agent.kind != AgentKind::Patrol || agent.fuel >= agent.fuel_cap {
+            continue;
+        }
+        agent.fuel = agent.fuel_cap;
+        events.push(StepEvent::Picked {
+            agent_id: agent.id,
+            coord: agent.pos,
+            series: u32::MAX, // sentinel: refill, not a ball pick (same as supply refuel)
+        });
+    }
+}
+
 /// Reset the per-day traffic + pickup bookkeeping.
 pub fn begin_day(state: &mut MatchState) {
     state.traffic_yesterday = std::mem::take(&mut state.traffic_today);
@@ -215,12 +242,25 @@ pub fn begin_day(state: &mut MatchState) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Acquire — agents on spots pick up balls.
+// 4. Acquire — Patrol agents on spots pick up balls.
 // ---------------------------------------------------------------------------
 
 /// Attempt to acquire a ball from the spot at `agent.pos`. Records the
 /// per-day pickup count and emits the appropriate event.
+///
+/// Kind semantics (spec: `domain::AgentKind::Supply`, 募集要項 §エージェント) —
+/// Supply agents **cannot** collect 玉. Issue #234: before this guard the
+/// offline path let every agent collect, so a Supply standing on a stocked
+/// spot decremented `current_stock` (stealing from Patrol) and scored into
+/// `inventory` / `series_taken` / `series_acquired_by_day`, while live
+/// (`from_wire` alternation: 3 Patrol / 2 Supply on a 5-agent team) did not.
+/// The guard is the *first* statement so a Supply produces zero side effects:
+/// no stock decrement, no inventory, no `series_*` bookkeeping, no `Picked`
+/// event, and no `PickCapReached` event either.
 pub fn phase_acquire(agent: &Agent, state: &mut MatchState, events: &mut Vec<StepEvent>) {
+    if agent.kind == AgentKind::Supply {
+        return;
+    }
     let coord = agent.pos;
     let Some(cell) = state.setting.map.get(coord) else {
         return;
@@ -249,6 +289,7 @@ pub fn phase_acquire(agent: &Agent, state: &mut MatchState, events: &mut Vec<Ste
     }
     state.series_taken.insert(series);
     state.series_first_taken_at.entry(series).or_insert((state.day, state.day_step));
+    state.series_acquired_by_day.entry(state.day).or_default().insert(series);
     events.push(StepEvent::Picked { agent_id: agent.id, coord, series });
 }
 
@@ -510,6 +551,52 @@ mod tests {
         assert_eq!(agents[1].fuel, u32::MAX);
     }
 
+    /// Issue #243 — `phase_oracle_refill` tops up only Patrol tanks that are
+    /// actually below cap, leaves Supply alone, and says so with the same
+    /// refill sentinel the supply-contact path uses.
+    #[test]
+    fn phase_oracle_refill_refills_patrol_only_and_emits_the_refill_sentinel() {
+        let mut agents = vec![
+            Agent {
+                id: 0,
+                kind: AgentKind::Patrol,
+                pos: HexCoord::new(0, 0),
+                fuel: 3,
+                fuel_cap: 10,
+                inventory: Default::default(),
+            },
+            // A Patrol already at cap must not be touched (and must not
+            // produce a second event).
+            Agent {
+                id: 1,
+                kind: AgentKind::Patrol,
+                pos: HexCoord::new(1, 0),
+                fuel: 10,
+                fuel_cap: 10,
+                inventory: Default::default(),
+            },
+            Agent {
+                id: 2,
+                kind: AgentKind::Supply,
+                pos: HexCoord::new(0, 0),
+                fuel: u32::MAX,
+                fuel_cap: u32::MAX,
+                inventory: Default::default(),
+            },
+        ];
+        let mut events = Vec::new();
+        phase_oracle_refill(&mut agents, &mut events);
+        assert_eq!(agents[0].fuel, 10, "depleted patrol must be refilled to cap");
+        assert_eq!(agents[1].fuel, 10, "patrol at cap is untouched");
+        assert_eq!(agents[2].fuel, u32::MAX, "supply is never touched");
+        assert_eq!(events.len(), 1, "exactly the refilled patrol reports");
+        assert!(
+            events.iter().any(|e| matches!(e, StepEvent::Picked { agent_id: 0, series, .. }
+                if *series == u32::MAX)),
+            "refills use the u32::MAX sentinel, like supply refuelling"
+        );
+    }
+
     #[test]
     fn phase_acquire_enforces_daily_cap() {
         use crate::model::MatchSetting;
@@ -548,6 +635,7 @@ mod tests {
             ],
             day_steps: 5,
             num_days: 1,
+            day_steps_by_day: Vec::new(),
         };
         let mut state = MatchState::new(setting).unwrap();
         let mut events = Vec::new();
@@ -562,6 +650,144 @@ mod tests {
         phase_acquire(&agent_clone, &mut state, &mut events);
         assert!(events.iter().any(|e| matches!(e, StepEvent::PickCapReached { .. })));
         assert_eq!(state.agents[0].inventory.get(&1).copied().unwrap_or(0), 1);
+    }
+
+    /// Issue #234 — `AgentKind::Supply` "cannot collect 玉"
+    /// (`domain/src/agent.rs`). A Supply standing on a *stocked* spot must
+    /// produce **zero** side effects: no inventory, no `current_stock`
+    /// decrement (that ball belongs to Patrol), no `series_*` bookkeeping,
+    /// and no `Picked` **or** `PickCapReached` event.
+    #[test]
+    fn phase_acquire_skips_supply_with_zero_side_effects() {
+        use crate::model::MatchSetting;
+        use domain::PlayerId;
+        let size = MapSize::new(8, 8).unwrap();
+        let mut cells = Vec::new();
+        for row in 0..8 {
+            for col in 0..8 {
+                let (terrain, spot) = if (col, row) == (0, 0) {
+                    (
+                        Terrain::Plain,
+                        Some(Spot {
+                            series: 1,
+                            pos: HexCoord::new(0, 0),
+                            max_stock: 3,
+                            current_stock: 3,
+                        }),
+                    )
+                } else {
+                    (Terrain::Plain, None)
+                };
+                cells.push(crate::model::Cell { coord: HexCoord::new(col, row), terrain, spot });
+            }
+        }
+        let map = MapGrid::new(size, cells).unwrap();
+        let setting = MatchSetting {
+            match_id: domain::MatchId::new("match-supply").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                Agent::supply(0, HexCoord::new(1, 0)),
+                Agent::supply(1, HexCoord::new(3, 3)),
+                Agent::supply(2, HexCoord::new(3, 3)),
+            ],
+            day_steps: 5,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        };
+        let mut state = MatchState::new(setting).unwrap();
+        let mut events = Vec::new();
+        // The supply steps onto the stocked spot.
+        state.agents[0].pos = HexCoord::new(0, 0);
+        let supply_clone = state.agents[0].clone();
+
+        // Repeated calls (the Supply parks on the spot all day) stay inert —
+        // including when the Patrol daily cap would have fired.
+        for _ in 0..5 {
+            phase_acquire(&supply_clone, &mut state, &mut events);
+        }
+
+        assert!(events.is_empty(), "Supply must emit no events at all, got {events:?}");
+        assert_eq!(
+            state
+                .setting
+                .map
+                .get(HexCoord::new(0, 0))
+                .and_then(|c| c.spot.as_ref())
+                .map(|s| s.current_stock),
+            Some(3),
+            "Supply must not decrement spot stock"
+        );
+        assert!(state.agents[0].inventory.is_empty(), "Supply inventory must stay empty");
+        assert!(state.series_taken.is_empty(), "series_taken must not record a Supply pickup");
+        assert!(state.series_first_taken_at.is_empty(), "series_first_taken_at must stay empty");
+        assert!(state.series_acquired_by_day.is_empty(), "series_acquired_by_day must stay empty");
+        assert!(state.spot_picks_today.is_empty(), "no daily-cap bookkeeping for Supply");
+    }
+
+    /// Contrast for `phase_acquire_skips_supply_with_zero_side_effects`: a
+    /// Patrol on the *same* stocked spot still picks, so the inertness above
+    /// is a kind guard rather than a dead code path.
+    #[test]
+    fn phase_acquire_still_collects_for_patrol_on_the_same_spot() {
+        use crate::model::MatchSetting;
+        use domain::PlayerId;
+        let size = MapSize::new(8, 8).unwrap();
+        let mut cells = Vec::new();
+        for row in 0..8 {
+            for col in 0..8 {
+                let (terrain, spot) = if (col, row) == (0, 0) {
+                    (
+                        Terrain::Plain,
+                        Some(Spot {
+                            series: 1,
+                            pos: HexCoord::new(0, 0),
+                            max_stock: 3,
+                            current_stock: 3,
+                        }),
+                    )
+                } else {
+                    (Terrain::Plain, None)
+                };
+                cells.push(crate::model::Cell { coord: HexCoord::new(col, row), terrain, spot });
+            }
+        }
+        let map = MapGrid::new(size, cells).unwrap();
+        let setting = MatchSetting {
+            match_id: domain::MatchId::new("match-patrol").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                Agent::patrol(0, HexCoord::new(1, 0), 5, 3),
+                Agent::supply(1, HexCoord::new(3, 3)),
+                Agent::supply(2, HexCoord::new(3, 3)),
+            ],
+            day_steps: 5,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        };
+        let mut state = MatchState::new(setting).unwrap();
+        let mut events = Vec::new();
+        state.agents[0].pos = HexCoord::new(0, 0);
+        let patrol_clone = state.agents[0].clone();
+        phase_acquire(&patrol_clone, &mut state, &mut events);
+
+        assert!(
+            events.iter().any(|e| matches!(e, StepEvent::Picked { agent_id: 0, series: 1, .. }))
+        );
+        assert_eq!(state.agents[0].inventory.get(&1).copied(), Some(1));
+        assert_eq!(
+            state
+                .setting
+                .map
+                .get(HexCoord::new(0, 0))
+                .and_then(|c| c.spot.as_ref())
+                .map(|s| s.current_stock),
+            Some(2),
+            "Patrol still decrements spot stock"
+        );
+        assert!(state.series_taken.contains(&1));
+        assert_eq!(state.series_acquired_by_day.get(&0).map(|s| s.len()), Some(1));
     }
 
     #[test]
@@ -596,6 +822,7 @@ mod tests {
             ],
             day_steps: 5,
             num_days: 2,
+            day_steps_by_day: Vec::new(),
         };
         let mut state = MatchState::new(setting).unwrap();
         state.traffic_yesterday.insert(HexCoord::new(0, 0), 3); // yesterday was Busy

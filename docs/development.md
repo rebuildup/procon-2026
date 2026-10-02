@@ -48,7 +48,7 @@ cargo run -q --bin procon -- warmup        # pre-match solver timing
 just --list             # 利用可能な recipe
 just fmt                # cargo fmt + bun format
 just check              # fmt --check + clippy + lint + typecheck
-just test               # cargo test + bun test
+just test               # cargo test + frontend bun run test
 just test-integration   # integration layer
 just ci                 # ローカル CI と同じフル検証
 ```
@@ -72,10 +72,26 @@ cargo build --release --workspace
 bun run check          # tsc --noEmit
 bun run lint           # ESLint
 bun run format:check   # Prettier
-bun test               # bun test runner
+bun run test           # bun test --conditions=browser
 bun run build          # vite build (型チェックも走る)
 bun run dev            # vite dev server (127.0.0.1:5173)
 ```
+
+## worktree build cache / 容量（Issue #217）
+
+Cargo `target/` は **worktree-local** が default（共有 `CARGO_TARGET_DIR` / symlink / 複数
+worktree で同一 build-dir は禁止 — project-init ADR-0024）。本 host は **ext4・reflink 非対応**
+（`cp --reflink=always` → Operation not supported）のため、`.config/wt.toml` の
+`[step.copy-ignored] exclude = ["target/"]` が機械的に host gate を担保し、
+`wt step copy-ignored` は常に `--require-include` + `.worktreeinclude` allowlist 経由。
+
+- worker spawn contract: disposable worktree の cargo 実行は `CARGO_INCREMENTAL=0` prefix
+  （人間の primary checkout は cargo default を維持）
+- reflink probe / seeding / selective clean / evidence signal:
+  [`.claude/skills/worktree-workflow/SKILL.md`](../.claude/skills/worktree-workflow/SKILL.md)
+  の `Cache isolation` 節
+- 方針の出典: project-init `docs/adr/ADR-0024.md`（branch `84`）
+- sccache 導入・`debug` profile 減量は計測 Issue #218（本 Issue の non-scope）
 
 ## ディレクトリ早見表
 
@@ -136,6 +152,56 @@ cargo run -q --bin procon -- warmup --solvers greedy,astar --json
 ```
 
 JSON レポートには p50 / p90 / max（µs 単位）とサンプル数が含まれる。スモーク p90 が `60_000_000 µs`（=60秒）を超えるソルバは試合投入前にチューニング必須。
+
+## ソルバ評価（Issue #178）
+
+解法の良し悪しを測るのは **offline の canonical evaluator** です。
+`engine::MatchSim` を唯一の採点 oracle とし、公式スコア tuple
+（`variety`, `daily_variety_sum`, `total_balls`, `response_time`）を
+**辞書順**で比較します。詳細と標準手順は [`docs/evaluation.md`](evaluation.md) が SoT。
+
+```bash
+just eval-list          # 登録済み candidate（loop / multiloop / greedy / wait とパラメータ）
+just eval               # 全 fixture × 既定 candidate、wait を baseline に
+                        # → target/eval/{runs.jsonl, aggregate.json, report.md}
+
+# 部分的に回す
+PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
+  cargo run -q -p bench --bin procon-eval -- \
+    --cases small-8x8,series-many \
+    --candidates 'loop:iterations=32:initial=greedy,greedy,wait' \
+    --baseline wait --output-dir target/eval
+```
+
+対照: `procon tournament` は**公式サーバに対する wire/protocol smoke harness** で、
+返るのは `protocol_progress = days_completed * 100 + sum(revisions)`（プロトコルが
+どこまで進んだか）です。競技性能ではありません。
+
+### offline candidate と live CLI の対応（Issue #170）
+
+offline で選んだ `loop:initial=<value>` は、同じ意味のまま live 側に持ち出せます。
+対応は 1:1 で、表の SoT は `crates/cli/src/initial_strategy.rs`
+（docs の表はその写し）:
+
+| offline candidate          | live `--loop-initial-strategy`（`tournament` / `coordinator` 共通） | `InitialStrategy`         |
+|----------------------------|---------------------------------------|---------------------------|
+| `initial=greedy`（既定）   | `greedy`（既定）                     | `GreedyNearestNeighbor`   |
+| `initial=identity`         | `identity`                           | `Identity`                |
+| `initial=reverse`          | `reverse`                            | `Reverse`                 |
+| `initial=sweep-row`        | `sweep-row`                          | `SweepRow`                |
+| `initial=sweep-col`        | `sweep-col`                          | `SweepCol`                |
+| `initial=random:seed=N`    | `random:N`                           | `Random { seed: N }`      |
+
+- seed だけ形が違います。offline は `seed=N` を独立パラメータにしますが、
+  live は 1 フラグ = 1 戦略を保つため `random:N` に畳み込みます。
+- 未知ラベルは**エラー**（以前の `Identity` への暗黙フォールバックは廃止）。
+- どちらのサブコマンドも同じ parser を `value_parser` で共有しているので、
+  protocol client は 1 本のままです。
+
+```bash
+cargo run -q --bin procon -- coordinator --loop-initial-strategy reverse
+cargo run -q --bin procon -- tournament --solvers loop --loop-initial-strategy random:42
+```
 
 ## 次の作業を探す
 

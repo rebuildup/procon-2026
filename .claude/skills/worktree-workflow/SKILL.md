@@ -145,6 +145,52 @@ workerがlocal API / server / database / queueを必要とする場合:
 - `.cache/` はworktree単位
 - 共有cacheが必要な場合は明示的に分離keyで管理
 
+Rust/Cargo capacityのoperational defaultsは project-init ADR-0024 に従う。
+
+**不変条件 (ADR-0024 §1)**
+
+- Cargo `target/` / `build.build-dir` / incremental stateはworktree-local mutable output
+- 共有 `CARGO_TARGET_DIR`・`target/` symlink・複数worktreeで同一のbuild-dirを禁止
+- Cargoのtarget-dir lockingは並列buildを直列化し得る。divergent worktree間の
+  fingerprint/artifact correctnessはcurrent Cargoが保証しない (cargo#16804 / cargo#17312)
+
+**共有してよいcacheable層 (ADR-0024 §2)**
+
+- CARGO_HOME registry/git download cache (defaultで既に共有)
+- read-only toolchain cache
+- bounded sccache — cross-worktreeのRust hitは計測必須 (SCCACHE_BASEDIRS:
+  mozilla/sccache#2652 未解決)。未検証はfuture-facing。計測は Issue #218
+
+**seedingはhost gate付き (ADR-0024 §3)**
+
+- probe: 同一fs上で `cp --reflink=always /tmp/.p /tmp/.p2` (`Operation not supported` なら非reflink)、またはfs type確認
+- reflink対応 (APFS / btrfs / XFS / ReFS) → warmなcompatible base worktreeから
+  `wt step copy-ignored --require-include` で `.worktreeinclude` allowlist分だけ
+  `target/` をCoW seed。Worktrunkが `(reflinked, no extra disk)` を報告するまで信用しない
+- 非reflink (本host: ext4、probe失敗) → `.config/wt.toml` の
+  `[step.copy-ignored] exclude = ["target/"]` を維持 (full copyは容量を悪化させる)
+- どちらの場合も symlink / 単一target-dir共有への置換は禁止
+- `.worktreeinclude` はsource worktree (`--from`、default = primary) から読まれる
+- seed後もCargoのfingerprintを通す。copied artifactを現在のsourceに対するvalidation evidenceにしない
+
+**spawn contract (disposable agent worktree)**
+
+- workerのcargo実行は `CARGO_INCREMENTAL=0` でprefix (短寿命 → incremental disk増幅が支配的。
+  sccache採用時も必須)
+- 人間のlong-lived primary checkoutをcargo defaultから機械的に外さない
+- project-wide profile設定 (`[profile.dev]` 等) は Issue #218 の計測なしにflipしない
+
+**selective reclamation (ADR-0024 §5)**
+
+- build/testの前後に `cargo clean` を儀式的に挿入しない。`wt remove` 直前にも不要
+  (`target/` はworktreeごと消える)
+- disk pressure時はまず `cargo clean --dry-run -v` / `--doc` / `--release` / `-p <pkg>` 等の狭いstep
+
+**evidence signal (ADR-0024 Evidence)**
+
+- worktree / target disk footprint、clean build time、incremental rebuild time、
+  sccache hit/miss、debug/test挙動、CI/local parity — tuning時は記録する
+
 ### Database isolation
 
 - 各workerに独立したlocal DB instanceを割り当てる

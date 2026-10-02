@@ -1,0 +1,16 @@
+# Safety boundary for `wt step copy-ignored --require-include` (ADR-0024 §3).
+#
+# A file copies only when it is BOTH gitignored AND matched here. Review rule:
+# only non-secret / cacheable / lifecycle-safe paths. Never `.env`, credentials,
+# tokens, sockets, DB data, or other mutable runtime state.
+#
+# `target/` seeds ONLY on verified-reflink hosts (APFS/btrfs/XFS/ReFS); on this
+# ext4 host it is currently excluded by `.config/wt.toml`
+# ([step.copy-ignored] exclude = ["target/"]) because a full copy would worsen
+# capacity. Copied artifacts are still fingerprinted by Cargo and are not
+# validation evidence for current source.
+target/
+
+# Not yet reviewed (kept out deliberately; add only after individual review):
+# node_modules/
+# .cache/

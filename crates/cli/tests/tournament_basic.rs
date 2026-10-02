@@ -171,7 +171,7 @@ async fn tournament_two_solvers_against_fresh_servers_produce_identical_scores()
         );
     }
 
-    let scores: Vec<u32> = entries.iter().map(|e| e.score).collect();
+    let scores: Vec<u32> = entries.iter().map(|e| e.protocol_progress).collect();
     assert_eq!(
         scores[0], scores[1],
         "both entries have identical scores (deterministic wait solver)"
@@ -188,7 +188,7 @@ async fn tournament_two_solvers_against_fresh_servers_produce_identical_scores()
     let md = render_markdown(&report);
     assert!(md.contains("# Tournament leaderboard"), "header present");
     assert!(
-        md.contains("| Rank | Solver | Days | Revisions | Score | Wall ms |"),
+        md.contains("| Rank | Solver | Days | Revisions | Protocol progress | Wall ms |"),
         "table header present"
     );
     assert!(md.contains("wait"), "solver name appears in the table");
@@ -248,10 +248,10 @@ async fn tournament_with_auto_restart_invokes_hook_between_solvers() {
         token: "test-token".to_owned(),
         solvers: vec!["wait".to_owned(), "wait".to_owned()],
         auto_restart_server: Some(format!(
-                "sh \"{}\" && curl -fsS -X POST \"{}/_test/reset\"",
-                script.display(),
-                url,
-            )),
+            "sh \"{}\" && curl -fsS -X POST \"{}/_test/reset\"",
+            script.display(),
+            url,
+        )),
         ..TournamentConfig::default()
     };
     assert!(!marker.exists(), "marker must not exist before the tournament runs");

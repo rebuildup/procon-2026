@@ -9,9 +9,17 @@
 //!   (`0` upper-left, `1` upper-right, `2` right, `3` lower-right,
 //!   `4` lower-left, `5` left).
 //!
-//! The total step sum of each agent's inner list **must** equal
-//! `ctx.day_steps[day]`, otherwise the server rejects the whole submission.
-//! The adapter validates this contract on both the encode and decode paths.
+//! The element sum of each agent's inner list (`-N` counts as `N`, a move
+//! as 1) **must** equal `ctx.day_steps[day]` — that is the *engine clock*
+//! this adapter encodes, validated on both the encode and decode paths.
+//!
+//! The **official** server rule is different: it sums terrain-weighted move
+//! costs (平地 2 / 山 3 / 道路 1-2-4, Q&A Q11) plus waits and requires that
+//! total to equal `daySteps` (Issue #226 probe evidence lives in
+//! `engine::wire_plan`). Candidate output is therefore normalized to the
+//! weighted budget at the submission boundary — see
+//! `crate::coordinator_loop::run_coordinator_loop` → `engine::wire_plan` —
+//! *after* this adapter has encoded it.
 //!
 //! `engine::SolverDecision` is **step-major**: the first `agent_count` entries
 //! cover step 0 (one `Action` per controlled agent, in

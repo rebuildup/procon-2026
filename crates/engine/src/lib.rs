@@ -7,20 +7,22 @@
 //! Modules:
 //! - [`match_table`] / [`replay`] / [`server`] — async match registry and
 //!   transport façade.
-//! - [`sim`] — the local, deterministic [`sim::MatchSim`] that drives a
-//!   match step-by-step without a network round-trip. Used by solvers and
-//!   the bench harness for offline planning.
-//! - [`solver`] — the unified `Solver` contract; every `solver-*` crate
-//!   implements `Solver`, so the engine can drive any strategy through
-//!   `dyn Solver` without depending on it.
+//! - [`model`] / [`rules`] / [`transitions`] / [`sim`] — the local,
+//!   deterministic [`sim::MatchSim`] that drives a match step-by-step
+//!   without a network round-trip. This is the **only** scoring oracle: it
+//!   produces [`model::RunResult`], from which the evaluation layer derives
+//!   the official score tuple. Solvers never score themselves.
+//! - [`from_wire`] — the single conversion from the official wire
+//!   [`protocol::match_config::MatchSetting`] into [`model::MatchSetting`].
+//!   Both the CLI coordinator and the offline evaluator go through it.
+//! - [`solver`] — the wire-facing `Solver` contract used by the coordinator
+//!   loop. The offline evaluator drives [`model::Solver`] instead, which is
+//!   what [`sim::MatchSim`] consumes.
 
 #![doc(test(attr(deny(warnings))))]
-// The new sim / model / rules / transitions modules are self-contained and
-// not yet integrated with the upstream `engine::Solver` / `domain` types
-// (issues #11, #12, #13, #53, #57). Until those merge, the modules
-// intentionally use simple `HashMap`, take small `Copy` types by value, and
-// use `as` casts that the upstream hex/cell domain will replace. The
-// pedantic lints below would otherwise block merge for stylistic reasons
+// The sim / model / rules / transitions modules take small `Copy` types by
+// value and use `as` casts on map coordinates bounded by `MapSize::MAX = 32`.
+// The pedantic lints below would otherwise block merge for stylistic reasons
 // unrelated to correctness.
 #![allow(
     clippy::cast_possible_truncation,
@@ -44,6 +46,7 @@
     clippy::missing_panics_doc
 )]
 
+pub mod from_wire;
 pub mod match_table;
 pub mod model;
 pub mod replay;
@@ -52,6 +55,7 @@ pub mod server;
 pub mod sim;
 pub mod solver;
 pub mod transitions;
+pub mod wire_plan;
 
 pub use match_table::{MatchTable, MatchTableError};
 pub use replay::{Replay, ReplayError};

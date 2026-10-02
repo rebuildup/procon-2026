@@ -509,14 +509,27 @@ async fn transient_500_retries_then_succeeds() {
 
 /// Per-day action plan: the production `EngineLoopAdapter` drives the
 /// loop solver, so every `POST /` body must contain one inner `Vec<i32>`
-/// per controlled agent, each with `step_sum == day_steps[day]`. We also
-/// assert at least one Move action (i.e. a non-negative token) to prove
-/// the planner is not just degenerating to `wait_all`.
+/// per controlled agent that satisfies the **official terrain-weighted
+/// step rule** (Issue #226: Σ origin-cell costs + waits `== day_steps[day]`;
+/// element sums alone are not the contract — the submission boundary
+/// normalizes whatever the planner produced). We also assert at least
+/// one Move action (i.e. a non-negative token) to prove the planner is
+/// not just degenerating to `wait_all`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn action_plan_body_captured_and_step_sum_correct() {
     let (url, state) = spawn_test_server(1).await;
     let outcome = run_with_loop_solver(&url, "test-token").await.expect("loop completes");
     assert_eq!(outcome.days_completed, DAY_SECONDS.len(), "all 4 days complete");
+
+    // Same official-rule implementation the boundary normalizes with and
+    // the E2E mock validates with (`engine::wire_plan`).
+    let wire_setting: protocol::match_config::MatchSetting =
+        serde_json::from_value(state.build_setting()).expect("setting deserialises");
+    let validation = cli::protocol_to_engine::protocol_setting_to_engine(
+        &wire_setting,
+        domain::PlayerId::new("mock-validator").expect("valid team id"),
+    )
+    .expect("setting converts");
 
     let bodies = state.captured_action_bodies.lock().await;
     assert_eq!(bodies.len(), DAY_SECONDS.len(), "captured one POST / body per day");
@@ -524,14 +537,21 @@ async fn action_plan_body_captured_and_step_sum_correct() {
     let mut saw_move = false;
     for (day_idx, body) in bodies.iter().enumerate() {
         assert!(!body.is_empty(), "day {day_idx}: at least one inner list");
+        let budget = u32::try_from(DAY_STEPS[day_idx]).expect("day budget fits u32");
         for (agent_idx, inner) in body.iter().enumerate() {
-            // Wire tokens: `-N` (N > 0) = wait N steps, `0..=5` = one move
-            // step in that direction. So the step sum is `(-x) for x<0,
-            // else 1`.
-            let step_sum: i32 = inner.iter().map(|&x| if x < 0 { -x } else { 1 }).sum();
+            let agent = validation
+                .agents
+                .get(agent_idx)
+                .unwrap_or_else(|| panic!("day {day_idx}: agent {agent_idx} missing"));
+            let weighted =
+                engine::wire_plan::validate_agent_plan(agent, &validation.map, budget, inner)
+                    .unwrap_or_else(|e| {
+                        panic!("day {day_idx} agent {agent_idx}: {e} (body = {inner:?})")
+                    });
             assert_eq!(
-                step_sum, DAY_STEPS[day_idx],
-                "day {day_idx} agent {agent_idx}: inner step sum mismatch (body = {inner:?})"
+                weighted, budget,
+                "day {day_idx} agent {agent_idx}: weighted step sum must equal day_steps \
+                 (body = {inner:?})"
             );
             if inner.iter().any(|&x| x >= 0) {
                 saw_move = true;

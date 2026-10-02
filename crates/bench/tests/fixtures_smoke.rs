@@ -150,7 +150,13 @@ fn series_few_fixtures_have_at_most_one_brand() {
 fn road_heavy_fixtures_have_above_average_road_share() {
     for fx in every_bundled_fixture() {
         if matches!(fx.category, FixtureCategory::RoadHeavy) {
-            let road_cells = fx.cell_type_count(protocol::match_config::CellType::TYPE_2);
+            // TYPE_1 = Road under the official table (Issue #226:
+            // 0=平地, 1=道路, 2=山地, 3=池). (Before #187 this assertion read
+            // `TYPE_2` — the *Pond* code under the pre-#226 table — so the
+            // pre-#187 `road-heavy` — Road 4/256 — passed a "road share"
+            // gate it never satisfied. Issue #187 fixed the cell code and
+            // moved the same 15% floor into `validate_category`.)
+            let road_cells = fx.cell_type_count(protocol::match_config::CellType::TYPE_1);
             let total_cells = u64::try_from(fx.cell_count()).expect("cell count is non-negative");
             assert!(
                 u64::try_from(road_cells).expect("road cell count fits in u64") * 100
@@ -166,7 +172,7 @@ fn road_heavy_fixtures_have_above_average_road_share() {
 fn mountain_heavy_fixtures_have_above_average_mountain_share() {
     for fx in every_bundled_fixture() {
         if matches!(fx.category, FixtureCategory::MountainHeavy) {
-            let mountain_cells = fx.cell_type_count(protocol::match_config::CellType::TYPE_1);
+            let mountain_cells = fx.cell_type_count(protocol::match_config::CellType::TYPE_2);
             let total_cells = u64::try_from(fx.cell_count()).expect("cell count is non-negative");
             assert!(
                 u64::try_from(mountain_cells).expect("mountain cell count fits in u64") * 100
@@ -193,4 +199,51 @@ fn fixture_round_trips_through_json() {
     let json = serde_json::to_string(&fx).expect("serialize");
     let back: MatchFixture = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(fx, back);
+}
+
+/// Issue #226 equivalence proof (machine-checked): every bundled fixture's
+/// **terrain histogram** still equals the pre-#226 world.
+///
+/// The constants below were computed from `origin/release-0-2-0`'s fixture
+/// files read through the *old* (permuted) table — i.e. the terrain these
+/// maps were authored to contain. #226 re-coded every authored cell
+/// (`0→0, 1→2, 2→3, 3→1`, `openapi-sample` included: its 8 code-`1` ridge
+/// cells became code-`2` mountains), so raw codes changed while terrain did
+/// not. A mismatch here means the permutation was applied inconsistently —
+/// evidence would silently describe a different board.
+///
+/// Order per fixture: `[Plain, Mountain, Pond, Road]` (wire codes
+/// `0, 2, 3, 1` under the official table).
+#[test]
+fn terrain_histograms_match_the_old_world_constants() {
+    const EXPECTED: &[(&str, [u64; 4])] = &[
+        ("small-8x8", [56, 8, 0, 0]),
+        ("medium-16x16", [174, 22, 60, 0]),
+        ("large-32x32", [853, 38, 124, 9]),
+        ("road-heavy", [198, 0, 54, 4]),
+        ("road-heavy-v2", [140, 15, 21, 80]),
+        ("mountain-heavy", [52, 142, 60, 2]),
+        ("series-many", [96, 4, 44, 0]),
+        ("series-few", [86, 8, 44, 6]),
+        ("openapi-sample", [56, 8, 0, 0]),
+    ];
+
+    let fixtures = every_bundled_fixture();
+    assert_eq!(fixtures.len(), EXPECTED.len(), "every bundled fixture must be covered");
+    for (name, want) in EXPECTED {
+        let fx = fixtures
+            .iter()
+            .find(|f| f.name == *name)
+            .unwrap_or_else(|| panic!("bundled fixture {name} missing"));
+        let plain = fx.cell_type_count(protocol::match_config::CellType::TYPE_0);
+        let road = fx.cell_type_count(protocol::match_config::CellType::TYPE_1);
+        let mountain = fx.cell_type_count(protocol::match_config::CellType::TYPE_2);
+        let pond = fx.cell_type_count(protocol::match_config::CellType::TYPE_3);
+        let got = [plain as u64, mountain as u64, pond as u64, road as u64];
+        assert_eq!(
+            got, *want,
+            "{name}: terrain histogram drifted from the pre-#226 world \
+             (expected [Plain, Mountain, Pond, Road] = {want:?})"
+        );
+    }
 }

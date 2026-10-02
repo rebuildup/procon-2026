@@ -12,12 +12,20 @@
 //!    A `403 AccessTimeError` envelope is treated the same as a setting
 //!    with `starts_at == 0`: we back off and retry.
 //! 2. **Agent submit.** `POST /agent` with retry-on-`AccessTime`. The
-//!    kinds vector is chosen from [`CoordinatorLoopConfig::solver_name`]:
-//!    real solvers (`"loop"`, `"mcts"`, anything other than the
-//!    debug-only `"wait"`) alternate `KIND_0` / `KIND_1` so half the
-//!    agents patrol and half supply, which gives a richer test of the
-//!    full protocol than the MVP's all-`KIND_0` placeholder.
+//!    kinds vector is chosen by [`agent_kinds_for`]: an explicit
+//!    [`CoordinatorLoopConfig::agent_kinds`] pattern (the live
+//!    `--kinds` flag, Issue #238/#243) is expanded over the team's
+//!    slots and wins for **every** solver; when it is `None` the
+//!    historical rule from `solver_name` applies unchanged — real
+//!    solvers (`"loop"`, `"mcts"`, anything other than the debug-only
+//!    `"wait"`) alternate `KIND_0` / `KIND_1` so half the agents
+//!    patrol and half supply, which gives a richer test of the full
+//!    protocol than the MVP's all-`KIND_0` placeholder.
 //! 3. **Wire -> engine.** Convert the setting, build team + match ids.
+//!    With an explicit `--kinds` the composition that was just posted is
+//!    handed to `protocol_setting_to_engine_with_kinds`, so the planning
+//!    model (patrol fuel caps included) describes the team the server was
+//!    told about; without the flag the historical conversion is unchanged.
 //! 4. **Start wait.** Re-poll `GET /setting` until `starts_at > 0`.
 //! 5. **Per-day loop.** `GET /` -> `solver.decide(&ctx)` -> adapter ->
 //!    `POST /`. If `revision < 0`, return [`CoordinatorLoopError::Rejected`]
@@ -37,19 +45,27 @@
 //!
 //! [`protocol::MatchClient`]: protocol::MatchClient
 
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::Utc;
 use domain::{MatchId, PlayerId};
+use engine::model::AgentKind as EngineAgentKind;
 use engine::model::MatchSetting as EngineSetting;
 use protocol::http_client::SubmitAck;
-use protocol::match_config::AgentKind;
-use serde::Serialize;
+use protocol::match_config::{
+    ActionPlanBody, AgentKind, AgentState as WireAgentState, MatchState as WireMatchState,
+};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::action_adapter::{AdapterError, decision_to_actions};
-use crate::protocol_to_engine::protocol_setting_to_engine;
+use crate::arena::Secret;
+use crate::candidate_bridge::{apply_live_agents, apply_live_traffic};
+use crate::protocol_to_engine::{
+    protocol_setting_to_engine, protocol_setting_to_engine_with_kinds,
+};
 use crate::solver_adapter::{dummy_match_snapshot, match_state_to_snapshot};
 
 /// Behavioural knobs for the coordinator loop. Server URL is carried by the
@@ -63,7 +79,8 @@ pub struct CoordinatorLoopConfig {
     /// Sleep between `GET /setting` polls while `starts_at == 0`.
     pub setting_poll_interval: Duration,
     /// Stable identifier of the solver the CLI wired up. Used only to
-    /// decide what `POST /agent` kinds vector to send: real solvers
+    /// decide what `POST /agent` kinds vector to send **when
+    /// [`agent_kinds`](Self::agent_kinds) is `None`**: real solvers
     /// (`"loop"`, `"mcts"`, anything other than `"wait"`) alternate
     /// `KIND_0` / `KIND_1`; the debug `WaitSolver` sticks to all `KIND_0`
     /// to keep its degenerate contract observable on the wire.
@@ -71,6 +88,20 @@ pub struct CoordinatorLoopConfig {
     /// Defaults to `"loop"` so the production path matches the documented
     /// Phase 2 strategy (`docs/contest/strategy.md`).
     pub solver_name: String,
+    /// Explicit agent-kind composition (live `--kinds <pattern>`,
+    /// Issues #238/#243): the parsed pattern, one kind per pattern slot,
+    /// cycled over the team's `n` agent slots by [`agent_kinds_for`].
+    ///
+    /// `None` (the default, i.e. the flag was omitted) keeps today's
+    /// rule exactly — `solver_name` decides, byte for byte as before.
+    /// `Some` wins for **every** solver, including the debug `wait` /
+    /// `wait-mvp` pair: the operator asked for a composition, so the
+    /// composition is what gets submitted.
+    ///
+    /// The parsed pattern is what [`bench::kinds::parse_kinds`] produces,
+    /// so the live flag and the offline `procon-eval --kinds` axis share
+    /// one grammar and one rejection set.
+    pub agent_kinds: Option<Vec<EngineAgentKind>>,
     /// Maximum number of `POST /agent` attempts before giving up. Each
     /// attempt that returns `403 AccessTimeError` (kind window not yet
     /// open, or already closed) is retried up to this many times before
@@ -134,6 +165,19 @@ pub struct CoordinatorLoopConfig {
     /// type-erased boundary. When `None`, no injection happens (the
     /// solver falls back to its legacy, map-blind mode).
     pub engine_setting_slot: Option<Arc<Mutex<Option<EngineSetting>>>>,
+    /// Optional shared slot the loop refreshes with the **live** wire
+    /// `MatchState` at the start of every day (Phase 5, after `GET /`).
+    /// Solvers that mirror the offline candidate model (see
+    /// [`crate::candidate_bridge::CandidateBridge`]) clone this slot so
+    /// each day's plan starts from the server's agent positions, fuel and
+    /// traffic instead of day-0 defaults. `None` on every default path —
+    /// injecting into a slot nobody reads cannot change behaviour.
+    pub live_state_slot: Option<Arc<Mutex<Option<protocol::match_config::MatchState>>>>,
+    /// Optional secret scrubbed out of snapshot error text before it is
+    /// written (the arena token in arena mode). `None` outside arena runs;
+    /// [`Secret`]'s redacted `Debug` keeps the token out of any render of
+    /// this config either way.
+    pub secret_redaction: Option<Secret>,
 }
 
 impl Default for CoordinatorLoopConfig {
@@ -142,6 +186,7 @@ impl Default for CoordinatorLoopConfig {
             team_id: "mvp-player".to_owned(),
             setting_poll_interval: Duration::from_secs(2),
             solver_name: "loop".to_owned(),
+            agent_kinds: None,
             kind_submit_max_attempts: 30,
             kind_submit_backoff: Duration::from_millis(500),
             match_state_max_attempts: 30,
@@ -150,6 +195,8 @@ impl Default for CoordinatorLoopConfig {
             server_url: None,
             days_total_hint: None,
             engine_setting_slot: None,
+            live_state_slot: None,
+            secret_redaction: None,
         }
     }
 }
@@ -181,6 +228,9 @@ impl CoordinatorLoopConfig {
             team_id,
             setting_poll_interval: Duration::from_secs(2),
             solver_name: "loop".to_owned(),
+            // No env override for the composition: `--kinds` is a CLI flag
+            // so an invocation records exactly what it asked for.
+            agent_kinds: None,
             // Use the documented defaults: 30 attempts × 500ms = 15s of
             // retry budget on `POST /agent`, which covers the official
             // 5s/60s `kind-deadline` plus poll jitter. Tweakable later via
@@ -198,17 +248,132 @@ impl CoordinatorLoopConfig {
             server_url,
             days_total_hint: None,
             engine_setting_slot: None,
+            live_state_slot: None,
+            secret_redaction: None,
         })
     }
 }
 
 /// Aggregated result of a single match run.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Per-day evidence sits **alongside** the revisions (Issue #236): the
+/// coordinator already sees everything a postmortem needs — the day-start
+/// `GET /` state and the plan it submitted — so it is summarised here
+/// instead of being re-fetchable only as a replay JSON download.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CoordinatorOutcome {
     /// Number of days that completed (revision >= 0 returned).
     pub days_completed: usize,
     /// Per-day revision id (as returned by `POST /`).
     pub revisions: Vec<i32>,
+    /// `GET /setting`'s `daySteps` — the per-day step budget, recorded once
+    /// from the same setting fetch that drove the loop.
+    pub day_steps: Vec<i32>,
+    /// `GET /setting`'s `daySeconds` — the per-day answer window.
+    pub day_seconds: Vec<i32>,
+    /// One [`DaySummary`] per completed day (Issue #236).
+    pub days: Vec<DaySummary>,
+    /// The agent-kind composition this run actually declared in
+    /// `POST /agent`, one entry per agent slot (Issue #243): what the
+    /// server was told, expanded — so an arena evidence line can be
+    /// compared with the offline `RunRecord.agent_kinds` that selected
+    /// the candidate without replaying the match.
+    ///
+    /// Empty only when the run never reached Phase 2 (the match loop
+    /// failed before `POST /agent`).
+    pub kinds: Vec<EngineAgentKind>,
+}
+
+/// Day-start state of one of our agents, taken verbatim from the wire
+/// `GET /` payload of that day (Issue #236).
+///
+/// `kind / pos / fuel` are game state, never account data — the same three
+/// fields the spec's `AgentState` carries — so this is safe by construction
+/// to persist in evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DayAgentState {
+    /// Agent kind as reported when the day opened (the kind we declared in
+    /// `POST /agent`, echoed back by the server).
+    pub kind: AgentKind,
+    /// Cell index at day start (row-major linearisation of `Map.cells`).
+    pub pos: i32,
+    /// Fuel at day start — the first sample of this day's fuel timeline;
+    /// consecutive days' values give the per-day fuel delta a postmortem
+    /// needs (#233: diagnosing a fuel-exhaustion loss without replay JSON).
+    pub fuel: i32,
+}
+
+/// Movement summary of the plan **we submitted** for one agent on one day
+/// (Issue #236).
+///
+/// Deliberately a summary, never the raw answer body: a 9..=10-day plan
+/// would cost hundreds of bytes per agent per day, while these four counters
+/// carry what a postmortem actually asks — did the agent move at all, how
+/// much of the day was spent waiting, and which direction it walked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DayMovement {
+    /// Directional move actions (wire codes `0..=5`) — one count per element.
+    pub moves: u32,
+    /// Total wait steps: the summed length of the `-N` runs.
+    pub waits: u32,
+    /// Number of wait runs (negative entries), i.e. how often we idled.
+    pub runs: u32,
+    /// Move-direction histogram indexed by the official wire code
+    /// (`0` 左上, `1` 右上, `2` 右, `3` 右下, `4` 左下, `5` 左).
+    pub dirs: [u16; 6],
+}
+
+/// Per-day evidence for one played day (Issue #236): our agents' state at
+/// day start plus a movement summary of the plan submitted that day.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaySummary {
+    /// 0-based day index — the wire `GET /` `day` of that day.
+    pub day: u32,
+    /// Our agents at day start, in the wire `GET /` order.
+    pub agents: Vec<DayAgentState>,
+    /// Movement summary of that day's submitted plan — one entry per agent
+    /// of the answer body, in submission order. This matches `agents.len()`
+    /// on a real server; a test double that omits `agents` shortens that
+    /// side only, never this one.
+    pub movement: Vec<DayMovement>,
+}
+
+impl DaySummary {
+    /// Summarise one day from the wire day state and the plan we are about
+    /// to submit. Pure and total: an out-of-range direction code (which the
+    /// server can only reject anyway) is skipped rather than panicking, and
+    /// a plan shorter than the agent list simply yields fewer summaries.
+    #[must_use]
+    pub fn new(day: u32, wire_agents: &[WireAgentState], plan: &ActionPlanBody) -> Self {
+        Self {
+            day,
+            agents: wire_agents
+                .iter()
+                .map(|a| DayAgentState { kind: a.kind, pos: a.pos, fuel: a.fuel })
+                .collect(),
+            movement: plan.iter().map(|actions| summarise_actions(actions)).collect(),
+        }
+    }
+}
+
+/// Fold one agent's wire plan into a [`DayMovement`] (see the field docs
+/// for the counting rules).
+#[must_use]
+fn summarise_actions(actions: &[i32]) -> DayMovement {
+    let mut m = DayMovement { moves: 0, waits: 0, runs: 0, dirs: [0; 6] };
+    for &code in actions {
+        if code <= -1 {
+            m.waits = m.waits.saturating_add(code.unsigned_abs());
+            m.runs = m.runs.saturating_add(1);
+        } else if let Some(idx) = usize::try_from(code).ok().filter(|c| *c < 6) {
+            m.moves = m.moves.saturating_add(1);
+            m.dirs[idx] = m.dirs[idx].saturating_add(1);
+        }
+        // `code >= 6` is not a legal wire action; skip it silently — the
+        // server's revision carries the verdict and evidence building must
+        // never panic on a payload.
+    }
+    m
 }
 
 /// Top-level status of a single coordinator run, as observed by the CLI.
@@ -316,7 +481,20 @@ fn write_snapshot(cfg: &CoordinatorLoopConfig, snap: &MatchStateSnapshot) {
     let Some(path) = cfg.state_output_path.as_ref() else {
         return;
     };
-    let Ok(json) = serde_json::to_vec_pretty(snap) else {
+    // Arena mode may register a secret (the arena token). Server-provided
+    // error text lands in `snap.error`, so scrub the secret before this
+    // durable artifact can contain it.
+    let redacted;
+    let payload: &MatchStateSnapshot = match cfg.secret_redaction.as_ref() {
+        Some(secret) => {
+            let mut copy = snap.clone();
+            copy.error = copy.error.map(|e| secret.redact(&e));
+            redacted = copy;
+            &redacted
+        }
+        None => snap,
+    };
+    let Ok(json) = serde_json::to_vec_pretty(payload) else {
         tracing::warn!("state snapshot: serde_json serialization failed");
         return;
     };
@@ -481,10 +659,12 @@ where
     // Phase 2 (kinds accepted) below.
     snap.days_total = u32::try_from(wire_setting.day_steps.len()).unwrap_or(0);
 
-    // Phase 2: declare agent kinds. Real solvers alternate KIND_0 / KIND_1
-    // so half the agents patrol and half supply; the debug `WaitSolver`
-    // keeps the MVP's all-`KIND_0` placeholder so the wire shape stays
-    // degenerate and trivially debuggable.
+    // Phase 2: declare agent kinds. An explicit `--kinds` composition
+    // (`cfg.agent_kinds`) is submitted verbatim for **every** solver;
+    // without one the historical rule applies — real solvers alternate
+    // KIND_0 / KIND_1 so half the agents patrol and half supply, and the
+    // debug `WaitSolver` keeps the MVP's all-`KIND_0` placeholder so the
+    // wire shape stays degenerate and trivially debuggable.
     //
     // We submit DURING the kind window (right after Phase 1 succeeds)
     // rather than waiting for `starts_at > 0`, because `starts_at` flips
@@ -495,9 +675,24 @@ where
     // window between "server became responsive" and "server flipped
     // starts_at", which is exactly the open kind window.
     let n_agents = wire_setting.agents.len();
-    let kinds = agent_kinds_for(n_agents, &cfg.solver_name);
-    submit_agent_with_retry(&client, kinds, cfg.kind_submit_max_attempts, cfg.kind_submit_backoff)
-        .await?;
+    let submitted_kinds = agent_kinds_for(n_agents, &cfg.solver_name, cfg.agent_kinds.as_deref());
+    // Evidence (Issue #243): log the composition being declared in the same
+    // `P,S,…` spelling `--kinds` takes, so a run log and the flag that
+    // produced it read the same words. Agent kinds are game state, never
+    // secrets — no token material reaches this line.
+    tracing::info!(
+        n_agents,
+        kinds = %bench::kinds::render_kinds(&submitted_kinds),
+        solver = %cfg.solver_name,
+        "agent kinds selected for POST /agent"
+    );
+    submit_agent_with_retry(
+        &client,
+        to_wire_kinds(&submitted_kinds),
+        cfg.kind_submit_max_attempts,
+        cfg.kind_submit_backoff,
+    )
+    .await?;
 
     // Kinds accepted -> Running snapshot. `day` stays `None` because
     // we have not yet entered the per-day driver.
@@ -507,10 +702,27 @@ where
     write_snapshot(&cfg, snap);
 
     // Phase 3: convert wire -> engine setting, build team + match ids.
+    //
+    // An explicit `--kinds` feeds the composition just declared into the
+    // conversion: the planning model (patrol fuel caps above all) must
+    // describe the team the server was told about, so the flag changes
+    // `POST /agent` and the solver's world together. Without the flag this
+    // is the historical call, verbatim — including its `wait` quirk, where
+    // `POST /agent` sends all patrol while the local model keeps the
+    // alternation; `WaitSolver` never plans against that model.
     let team = PlayerId::new(&cfg.team_id)
         .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
-    let engine_setting = protocol_setting_to_engine(&wire_setting, team.clone())
-        .map_err(CoordinatorLoopError::Conversion)?;
+    let engine_setting = if cfg.agent_kinds.is_some() {
+        protocol_setting_to_engine_with_kinds(
+            &wire_setting,
+            team.clone(),
+            Some(submitted_kinds.as_slice()),
+        )
+        .map_err(CoordinatorLoopError::Conversion)?
+    } else {
+        protocol_setting_to_engine(&wire_setting, team.clone())
+            .map_err(CoordinatorLoopError::Conversion)?
+    };
     let agent_ids: Vec<u8> = engine_setting.agent_ids();
 
     // Hand the parsed engine setting (real map + agent positions) to any
@@ -548,6 +760,9 @@ where
     }
 
     let mut revisions: Vec<i32> = Vec::with_capacity(total_days);
+    // Issue #236 — per-day evidence collected next to the revisions, from
+    // the very same `GET /` state and submitted plan the loop already has.
+    let mut day_summaries: Vec<DaySummary> = Vec::with_capacity(total_days);
     let mut days_completed = 0_usize;
 
     // Phase 5: per-day loop.
@@ -567,6 +782,15 @@ where
             )));
         }
 
+        // Hand the live wire state to solvers that registered a slot
+        // (candidate bridge). Default path: no slot, nothing happens.
+        if let Some(slot) = cfg.live_state_slot.as_ref() {
+            let mut guard = slot.lock().map_err(|_| {
+                CoordinatorLoopError::Conversion("live state slot mutex poisoned".to_owned())
+            })?;
+            *guard = Some(state.clone());
+        }
+
         let snapshot =
             match_state_to_snapshot(&state, &match_id, &team).unwrap_or_else(dummy_match_snapshot);
         let remaining_ms = u64::try_from(day_seconds.saturating_mul(1000)).unwrap_or(60_000);
@@ -583,12 +807,47 @@ where
         let actions = decision_to_actions(&decision, &ctx)
             .map_err(|source| CoordinatorLoopError::Adapter { day, source })?;
 
+        // Issue #226 — official conformance at the submission boundary.
+        // The server judges a *terrain-weighted* step sum
+        // (Σ origin-cell costs + waits == daySteps, see `engine::wire_plan`),
+        // while candidates and `decision_to_actions` speak the engine's
+        // element clock. Normalize here: both solver paths (CandidateBridge
+        // and EngineLoopAdapter) funnel through this single point, so the
+        // body we actually POST always fits the official budget — candidate
+        // output and offline scoring are untouched.
+        let actions = normalize_submission(&engine_setting, &state, day_steps, &actions)
+            .map_err(CoordinatorLoopError::Conversion)?;
+
+        // Issue #236 — summarise the day *before* `actions` is moved into
+        // the submit call: day-start agent state (kind / pos / fuel) plus
+        // the movement shape of the normalized plan we are about to send.
+        let summary = DaySummary::new(day, &state.agents, &actions);
+
         // Operator visibility: when DEBUG logging is on, dump the
         // exact wire payload we are about to send. Gated by the
         // `tracing::enabled!` check so the per-step formatting cost
         // stays out of the hot path in production.
+        //
+        // The `traffics` snapshot rides along (Issue #245): the body's
+        // weighted sum only makes sense next to the road states the
+        // normalizer billed, and a live `revision=-1` is otherwise
+        // unexplainable from the log alone. Only non-smooth roads are
+        // spelled out — the rest bill 1 either way — and the entry count
+        // records how complete the payload was.
         if tracing::enabled!(tracing::Level::DEBUG) {
-            tracing::debug!(day, body = ?actions, "submitting plan");
+            let non_smooth: Vec<(i32, i32)> = state
+                .traffics
+                .iter()
+                .filter(|t| t.status.value() != 0)
+                .map(|t| (t.pos, t.status.value()))
+                .collect();
+            tracing::debug!(
+                day,
+                traffic_entries = state.traffics.len(),
+                non_smooth = ?non_smooth,
+                body = ?actions,
+                "submitting plan"
+            );
         }
 
         let accepted = match client.submit_actions(actions).await {
@@ -605,6 +864,7 @@ where
         // submit_actions returns Err on revision<0, so reaching here means
         // the revision is non-negative. Store it and continue.
         revisions.push(accepted.revision);
+        day_summaries.push(summary);
         days_completed += 1;
 
         // Per-day Running snapshot. The closure mutates `snap` and
@@ -621,7 +881,54 @@ where
         }
     }
 
-    Ok(CoordinatorOutcome { days_completed, revisions })
+    Ok(CoordinatorOutcome {
+        days_completed,
+        revisions,
+        day_steps: wire_setting.day_steps.clone(),
+        day_seconds: wire_setting.day_seconds.clone(),
+        days: day_summaries,
+        kinds: submitted_kinds,
+    })
+}
+
+/// Normalize one day's answer body to the official terrain-weighted step
+/// budget (Issue #226).
+///
+/// Builds the live engine state the plan will be judged against: the static
+/// setting overlaid with the current `GET /` payload — road traffic always
+/// (it changes the step cost of a road cell), agent positions and fuel when
+/// the server reports them (the real server always does; some test doubles
+/// omit `agents`, in which case the match-start setting stands in).
+///
+/// This is the single choke point both solver paths flow through
+/// (`CandidateBridge::decide` and `EngineLoopAdapter` decisions both arrive
+/// here via [`decision_to_actions`]); see [`engine::wire_plan`] for the rule
+/// itself and the localhost probe evidence behind it.
+fn normalize_submission(
+    engine_setting: &EngineSetting,
+    wire_state: &WireMatchState,
+    day_steps: u32,
+    body: &ActionPlanBody,
+) -> Result<ActionPlanBody, String> {
+    // Live view: static setting + today's overlay. Built from the bare
+    // setting (no `MatchState::new`) so test-double settings that skip the
+    // 3..=8 agent rule still normalize — the plan rules themselves live in
+    // `engine::wire_plan`.
+    let mut setting = engine_setting.clone();
+    apply_live_traffic(&mut setting.map, wire_state)
+        .map_err(|e| format!("traffic overlay: {e}"))?;
+    if wire_state.agents.len() == setting.agents.len() {
+        apply_live_agents(&mut setting.agents, setting.map.size, wire_state)
+            .map_err(|e| format!("agent overlay: {e}"))?;
+    } else {
+        tracing::debug!(
+            declared = setting.agents.len(),
+            reported = wire_state.agents.len(),
+            "live state carries no agent entries; normalizing from match-start positions"
+        );
+    }
+    let ids = engine_setting.agent_ids();
+    engine::wire_plan::normalize_day_plan(&setting.map, &setting.agents, &ids, day_steps, body)
 }
 
 /// Submit the agent-kind vector to `POST /agent`, retrying on
@@ -648,27 +955,59 @@ async fn submit_agent_with_retry(
     max_attempts: u32,
     backoff: Duration,
 ) -> Result<SubmitAck, CoordinatorLoopError> {
+    retry_on_access_time(
+        "POST /agent",
+        max_attempts,
+        backoff,
+        "kind window did not open within retry budget",
+        || client.submit_agent(kinds.clone()),
+    )
+    .await
+    .map_err(CoordinatorLoopError::AgentSubmit)
+}
+
+/// Bounded retry on `403 AccessTimeError` — the shared semantics fixed in
+/// PR #165 for the coordinator's pre-start windows (issue #156 kind window,
+/// issue #164 `-match-start-delay`).
+///
+/// `op` is attempted up to `max_attempts` times, sleeping `backoff` between
+/// attempts. An [`protocol::HttpClientError::AccessTime`] means "the window
+/// is not open yet / already closed" and is retried; **every other error is
+/// propagated immediately** (auth, drift, transport — those must not be
+/// retried blindly). When the budget runs out the last `AccessTime`
+/// message is surfaced, or `exhausted_hint` if no attempt ran at all.
+///
+/// This is the *one* `AccessTime` retry path in the CLI: the arena's
+/// pre-match registration phase reuses it instead of inventing a second
+/// retry loop (Issue #179).
+pub async fn retry_on_access_time<T, F, Fut>(
+    what: &str,
+    max_attempts: u32,
+    backoff: Duration,
+    exhausted_hint: &str,
+    mut op: F,
+) -> Result<T, protocol::HttpClientError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, protocol::HttpClientError>>,
+{
     let mut last_access_time: Option<String> = None;
     for attempt in 0..max_attempts {
-        match client.submit_agent(kinds.clone()).await {
-            Ok(ack) => return Ok(ack),
+        match op().await {
+            Ok(value) => return Ok(value),
             Err(protocol::HttpClientError::AccessTime { message }) => {
-                // The kind window is either not yet open (server still
-                // in pre-start) or just closed (race against deadline).
-                // Either way, retrying with backoff is the documented
-                // behaviour. Cache the last message so we can surface
-                // it once the budget is exhausted.
-                tracing::debug!(attempt, message = %message, "POST /agent 403 AccessTime, retrying");
+                tracing::debug!(attempt, what, message = %message, "403 AccessTime, retrying");
                 last_access_time = Some(message);
-                tokio::time::sleep(backoff).await;
+                if attempt + 1 < max_attempts {
+                    tokio::time::sleep(backoff).await;
+                }
             }
-            Err(e) => return Err(CoordinatorLoopError::AgentSubmit(e)),
+            Err(e) => return Err(e),
         }
     }
-    Err(CoordinatorLoopError::AgentSubmit(protocol::HttpClientError::AccessTime {
-        message: last_access_time
-            .unwrap_or_else(|| "kind window did not open within retry budget".to_owned()),
-    }))
+    Err(protocol::HttpClientError::AccessTime {
+        message: last_access_time.unwrap_or_else(|| exhausted_hint.to_owned()),
+    })
 }
 
 /// Retry `GET /` while the server is still in the pre-start window
@@ -684,87 +1023,288 @@ async fn fetch_state_with_retry(
     max_attempts: u32,
     backoff: Duration,
 ) -> Result<protocol::match_config::MatchState, CoordinatorLoopError> {
-    let mut last_access_time: Option<String> = None;
-    for attempt in 0..max_attempts {
-        match client.get_match_state().await {
-            Ok(state) => return Ok(state),
-            Err(protocol::HttpClientError::AccessTime { message }) => {
-                // The match has been announced via `starts_at > 0` but
-                // the server's `-match-start-delay` (default 1s,
-                // configurable up to 5s) has not yet elapsed. Retry
-                // with backoff until the budget is exhausted; cache
-                // the last message so the terminal error is meaningful.
-                tracing::debug!(attempt, message = %message, "GET / 403 AccessTime, retrying");
-                last_access_time = Some(message);
-                tokio::time::sleep(backoff).await;
-            }
-            Err(e) => return Err(CoordinatorLoopError::State(e)),
-        }
-    }
-    Err(CoordinatorLoopError::State(protocol::HttpClientError::AccessTime {
-        message: last_access_time
-            .unwrap_or_else(|| "match-start-delay did not elapse within retry budget".to_owned()),
-    }))
+    retry_on_access_time(
+        "GET /",
+        max_attempts,
+        backoff,
+        "match-start-delay did not elapse within retry budget",
+        || client.get_match_state(),
+    )
+    .await
+    .map_err(CoordinatorLoopError::State)
 }
 
-/// Build the `POST /agent` kinds vector for a given solver name.
+/// Resolve the `POST /agent` composition for a team of `n_agents`.
 ///
-/// - `"wait"` / `"wait-mvp"` → all `KIND_0` (degenerate MVP placeholder).
-/// - anything else (including the default `"loop"`) → alternating
-///   `KIND_0` / `KIND_1` so half the agents patrol and half supply. This
-///   exercises a wider surface of the contest server than the all-`KIND_0`
-///   placeholder, catching kind-handling bugs early.
-fn agent_kinds_for(n_agents: usize, solver_name: &str) -> Vec<AgentKind> {
-    if solver_name == "wait" || solver_name == "wait-mvp" {
-        return vec![AgentKind::KIND_0; n_agents];
+/// The result is in engine spelling ([`EngineAgentKind`]); pass it through
+/// [`to_wire_kinds`] to get the `0 | 1` body the server accepts.
+///
+/// - **Explicit pattern** (live `--kinds <pattern>`, Issues #238/#243):
+///   the pattern wins for **every** solver — `wait` / `wait-mvp`
+///   included — cycled over the agent slots by
+///   [`bench::kinds::resolve_kinds`], exactly like the offline
+///   `procon-eval --kinds` axis. The operator asked for a composition, so
+///   the composition is what goes on the wire.
+/// - **No pattern** (flag omitted): today's rule, byte for byte —
+///   `"wait"` / `"wait-mvp"` submit all patrol so the debug solver's
+///   degenerate contract stays observable, and anything else (including
+///   the default `"loop"`) alternates patrol/supply. The alternation comes
+///   from [`engine::from_wire::default_agent_kinds`], the same function
+///   the offline evaluator's default expands through, so the two defaults
+///   cannot drift.
+///
+/// The `wait` special case is therefore *only* a no-`--kinds` behaviour;
+/// an explicit pattern overrides it (documented on
+/// [`CoordinatorLoopConfig::agent_kinds`] and in the `--kinds` flag help).
+fn agent_kinds_for(
+    n_agents: usize,
+    solver_name: &str,
+    pattern: Option<&[EngineAgentKind]>,
+) -> Vec<EngineAgentKind> {
+    match pattern {
+        Some(pattern) if !pattern.is_empty() => {
+            bench::kinds::resolve_kinds(Some(pattern), n_agents)
+        }
+        _ => {
+            if solver_name == "wait" || solver_name == "wait-mvp" {
+                vec![EngineAgentKind::Patrol; n_agents]
+            } else {
+                engine::from_wire::default_agent_kinds(n_agents)
+            }
+        }
     }
-    (0..n_agents).map(|i| if i % 2 == 0 { AgentKind::KIND_0 } else { AgentKind::KIND_1 }).collect()
+}
+
+/// Map a resolved composition onto the wire's `0 | 1` spelling for
+/// `POST /agent`: `Patrol` → `KIND_0`, `Supply` → `KIND_1`.
+///
+/// This is the mapping the coordinator has always used implicitly (even
+/// slot → `KIND_0` → patrol, the `OpenAPI` `[0, 1, 0, 1]` example), and it
+/// is what makes the omitted `--kinds` byte-identical to today's body —
+/// pinned by `default_is_the_historical_alternation_for_every_team_size`.
+fn to_wire_kinds(kinds: &[EngineAgentKind]) -> Vec<AgentKind> {
+    kinds
+        .iter()
+        .map(|&kind| match kind {
+            EngineAgentKind::Patrol => AgentKind::KIND_0,
+            EngineAgentKind::Supply => AgentKind::KIND_1,
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The wire body for one team size, spelled out the way the pre-#243
+    /// coordinator did: even slot `KIND_0`, odd slot `KIND_1`.
+    fn historical_alternation(n: usize) -> Vec<AgentKind> {
+        (0..n).map(|i| if i % 2 == 0 { AgentKind::KIND_0 } else { AgentKind::KIND_1 }).collect()
+    }
+
+    fn pattern(spec: &str) -> Vec<EngineAgentKind> {
+        bench::kinds::parse_kinds(spec).unwrap_or_else(|e| panic!("{spec}: {e}"))
+    }
+
     #[test]
-    fn wait_solver_name_yields_all_kind_0() {
-        let kinds = agent_kinds_for(5, "wait");
+    fn wait_solver_name_yields_all_kind_0_without_an_explicit_pattern() {
+        let kinds = to_wire_kinds(&agent_kinds_for(5, "wait", None));
         assert_eq!(kinds, vec![AgentKind::KIND_0; 5]);
-        let kinds = agent_kinds_for(3, "wait-mvp");
+        let kinds = to_wire_kinds(&agent_kinds_for(3, "wait-mvp", None));
         assert_eq!(kinds, vec![AgentKind::KIND_0; 3]);
+    }
+
+    /// The AC of Issues #238/#243: an omitted `--kinds` must POST exactly
+    /// the body today's coordinator posts, for every official team size —
+    /// both on the wire (`0 | 1`) and in the engine view the solver plans
+    /// against.
+    #[test]
+    fn default_is_the_historical_alternation_for_every_team_size() {
+        for n in 3..=8 {
+            assert_eq!(
+                to_wire_kinds(&agent_kinds_for(n, "loop", None)),
+                historical_alternation(n),
+                "n={n}: the omitted flag must be byte-identical to today's POST body"
+            );
+            assert_eq!(
+                agent_kinds_for(n, "loop", None),
+                engine::from_wire::default_agent_kinds(n),
+                "n={n}: the live default must equal the offline default"
+            );
+            // Spelling the default out explicitly changes nothing.
+            assert_eq!(
+                agent_kinds_for(n, "loop", Some(&pattern(bench::kinds::DEFAULT_KINDS_PATTERN))),
+                engine::from_wire::default_agent_kinds(n),
+                "n={n}: `--kinds P,S` must equal the omitted flag"
+            );
+            // An unknown solver keeps the same default (no special case).
+            assert_eq!(
+                agent_kinds_for(n, "mcts", None),
+                engine::from_wire::default_agent_kinds(n),
+                "n={n}: unknown solver names stay on the alternating default"
+            );
+        }
     }
 
     #[test]
     fn loop_solver_name_alternates_kind_0_and_kind_1() {
-        let kinds = agent_kinds_for(4, "loop");
-        assert_eq!(
-            kinds,
-            vec![AgentKind::KIND_0, AgentKind::KIND_1, AgentKind::KIND_0, AgentKind::KIND_1,]
-        );
+        assert_eq!(to_wire_kinds(&agent_kinds_for(4, "loop", None)), historical_alternation(4));
         // Odd count: last agent is KIND_0.
-        let kinds = agent_kinds_for(5, "loop");
-        assert_eq!(
-            kinds,
-            vec![
-                AgentKind::KIND_0,
-                AgentKind::KIND_1,
-                AgentKind::KIND_0,
-                AgentKind::KIND_1,
-                AgentKind::KIND_0,
-            ]
-        );
+        assert_eq!(to_wire_kinds(&agent_kinds_for(5, "loop", None)), historical_alternation(5));
     }
 
     #[test]
     fn unknown_solver_name_treated_as_real_solver() {
         // Anything other than "wait"/"wait-mvp" gets the alternating vector
         // so a future solver can ship without touching this helper.
-        let kinds = agent_kinds_for(2, "mcts");
+        let kinds = to_wire_kinds(&agent_kinds_for(2, "mcts", None));
         assert_eq!(kinds, vec![AgentKind::KIND_0, AgentKind::KIND_1]);
     }
 
     #[test]
     fn zero_agents_yields_empty_kinds() {
-        let kinds = agent_kinds_for(0, "loop");
-        assert!(kinds.is_empty());
+        assert!(agent_kinds_for(0, "loop", None).is_empty());
+        assert!(agent_kinds_for(0, "loop", Some(&pattern("P,S"))).is_empty());
+    }
+
+    /// Issue #238's composition AC, live: `P,P,P,P,S` fields 4 patrol +
+    /// 1 supply on a 5-agent team, and — unlike the offline axis — it wins
+    /// for **every** solver, `wait` included.
+    #[test]
+    fn an_explicit_pattern_wins_for_every_solver() {
+        let pat = pattern("P,P,P,P,S");
+        let expected = vec![
+            EngineAgentKind::Patrol,
+            EngineAgentKind::Patrol,
+            EngineAgentKind::Patrol,
+            EngineAgentKind::Patrol,
+            EngineAgentKind::Supply,
+        ];
+        for solver in ["loop", "wait", "wait-mvp", "mcts", "candidate:loop:seed=1"] {
+            assert_eq!(
+                agent_kinds_for(5, solver, Some(&pat)),
+                expected,
+                "an explicit --kinds must override the wait special case ({solver})"
+            );
+        }
+        assert_eq!(
+            to_wire_kinds(&agent_kinds_for(5, "wait", Some(&pat))),
+            vec![
+                AgentKind::KIND_0,
+                AgentKind::KIND_0,
+                AgentKind::KIND_0,
+                AgentKind::KIND_0,
+                AgentKind::KIND_1,
+            ]
+        );
+    }
+
+    /// Slot cycling + the two single-kind extremes, at the live boundary.
+    #[test]
+    fn patterns_cycle_over_agent_slots() {
+        // `P` → all patrol (the official deadline-miss default is legal).
+        let all_patrol = agent_kinds_for(5, "loop", Some(&pattern("P")));
+        assert_eq!(all_patrol, vec![EngineAgentKind::Patrol; 5]);
+        // `S` → all supply.
+        let all_supply = agent_kinds_for(5, "loop", Some(&pattern("supply")));
+        assert_eq!(all_supply, vec![EngineAgentKind::Supply; 5]);
+        // `P,S` cycles: 3 agents → P,S,P (an odd team stays patrol-heavy).
+        assert_eq!(
+            agent_kinds_for(3, "loop", Some(&pattern("P,S"))),
+            vec![EngineAgentKind::Patrol, EngineAgentKind::Supply, EngineAgentKind::Patrol]
+        );
+        // A pattern longer than the team is its prefix.
+        assert_eq!(
+            agent_kinds_for(3, "loop", Some(&pattern("P,P,P,P,S"))),
+            vec![EngineAgentKind::Patrol; 3]
+        );
+    }
+
+    /// Grammar parity with `procon-eval --kinds` (Issue #238): the live
+    /// flag parses through `bench::kinds`, so a typo here is rejected with
+    /// the offline parser's message rather than a second, drifting parser.
+    #[test]
+    fn the_live_flag_uses_the_offline_grammar() {
+        for ok in ["P,S", "p, S ,Patrol,supply", "P,P,P,P,S", "P"] {
+            assert!(bench::kinds::parse_kinds(ok).is_ok(), "{ok} must parse");
+        }
+        for bad in ["", "3p2s", "X", "P,S,", ",P", "patroll", "P,S,P,S,P,S,P,S,P"] {
+            match bench::kinds::parse_kinds(bad) {
+                Ok(ok) => panic!("{bad} must be rejected, got {ok:?}"),
+                Err(err) => assert!(err.contains("--kinds"), "{bad} → {err}"),
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Issue #236 — per-day evidence summaries.
+    // ------------------------------------------------------------------
+
+    fn wire_agent(kind: AgentKind, pos: i32, fuel: i32) -> WireAgentState {
+        WireAgentState { kind, pos, fuel }
+    }
+
+    #[test]
+    fn day_summary_records_day_start_kind_pos_and_fuel() {
+        let state = [wire_agent(AgentKind::KIND_0, 0, 30), wire_agent(AgentKind::KIND_1, 8, 12)];
+        let plan: ActionPlanBody = vec![vec![-16]];
+        let summary = DaySummary::new(3, &state, &plan);
+        assert_eq!(summary.day, 3);
+        assert_eq!(summary.agents.len(), 2);
+        assert_eq!(summary.agents[0].kind, AgentKind::KIND_0);
+        assert_eq!(summary.agents[0].pos, 0);
+        assert_eq!(summary.agents[0].fuel, 30, "fuel timeline's first sample");
+        assert_eq!(summary.agents[1].kind, AgentKind::KIND_1);
+        assert_eq!(summary.agents[1].pos, 8);
+        assert_eq!(summary.agents[1].fuel, 12);
+        // One movement summary per submitted agent, in submission order.
+        assert_eq!(summary.movement.len(), 1);
+    }
+
+    #[test]
+    fn day_movement_summarises_moves_waits_runs_and_directions() {
+        // 3 moves (right, right, upper-right) + a 4-step wait run + one
+        // more move, then an 8-step trailing wait — the shape
+        // `normalize_day_plan` produces (#226).
+        let actions = [2_i32, 2, 1, -4, 0, -8];
+        let m = summarise_actions(&actions);
+        assert_eq!(m.moves, 4);
+        assert_eq!(m.waits, 12, "wait steps are summed, not run-counted");
+        assert_eq!(m.runs, 2, "two wait runs");
+        assert_eq!(m.moves + m.waits, 16, "element sum of the plan");
+        assert_eq!(m.dirs, [1, 1, 2, 0, 0, 0], "official wire order 0..=5");
+    }
+
+    #[test]
+    fn day_movement_is_a_summary_not_the_raw_plan() {
+        // The whole point of Issue #236: a full day plan collapses into a
+        // fixed four-field record no matter how long the answer body was.
+        let mut actions = vec![2_i32; 70];
+        actions.push(-76);
+        let m = summarise_actions(&actions);
+        assert_eq!(m.moves, 70);
+        assert_eq!(m.waits, 76);
+        assert_eq!(m.runs, 1);
+        // No plan elements survive into the summary struct itself.
+        let json = serde_json::to_string(&m).expect("serialises");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parses");
+        assert_eq!(
+            value.as_object().expect("object").len(),
+            4,
+            "movement summary must stay a fixed four fields: {json}"
+        );
+        assert!(json.len() < 96, "summary bytes must not track plan length: {json}");
+    }
+
+    #[test]
+    fn day_movement_skips_illegal_direction_codes_without_panicking() {
+        let m = summarise_actions(&[6, -1, 99]);
+        assert_eq!(m.moves, 0, "out-of-range codes are not moves");
+        assert_eq!(m.waits, 1);
+        assert_eq!(m.runs, 1);
+        assert_eq!(m.dirs, [0; 6]);
+        // i32::MIN must not overflow the wait sum either.
+        let m = summarise_actions(&[i32::MIN]);
+        assert_eq!(m.runs, 1);
     }
 }
