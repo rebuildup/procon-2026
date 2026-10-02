@@ -1,14 +1,22 @@
 import type { Component, JSX } from 'solid-js';
 import { Route, Router } from '@solidjs/router';
 
-import { Layout } from '@/components/Layout';
-import { Home } from '@/pages/Home';
-import { Live } from '@/pages/Live';
-import { Replays } from '@/pages/Replays';
-import { Solvers } from '@/pages/Solvers';
-import '@/styles/theme.css';
+/**
+ * Route skeleton only. The previous UI (components/, pages/, styles/) has been
+ * stripped so the rebuild can start from Primer rather than from the retired
+ * `--app-*` token system — see issue #265.
+ *
+ * Each route renders a placeholder. The screens are reintroduced by the
+ * rebuild in the order layout frame → tokens → UI placement.
+ */
+const Placeholder: Component<{ name: string }> = (props) => <p>{props.name}</p>;
 
-const Shell: Component<{ children?: JSX.Element }> = (props) => <Layout>{props.children}</Layout>;
+const Home: Component = () => <Placeholder name="Home" />;
+const Replays: Component = () => <Placeholder name="Replays" />;
+const Solvers: Component = () => <Placeholder name="Solvers" />;
+const Live: Component = () => <Placeholder name="Live" />;
+
+const Shell: Component<{ children?: JSX.Element }> = (props) => <main>{props.children}</main>;
 
 export function App() {
   return (
