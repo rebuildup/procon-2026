@@ -161,6 +161,18 @@ protocol-consistency:
     bash scripts/check-protocol-consistency.sh
 
 # ----------------------------------------------------------------
+# Screen recording (Playwright) — see docs/development.md § 画面録画
+# ----------------------------------------------------------------
+
+# One-time browser setup (skipped when ~/.cache/ms-playwright is warm):
+#   cd packages/frontend && bun run record:install
+# Opt-in only — never part of `just ci`. See docs/development.md § 画面録画.
+# Artifacts: target/recordings/{home,replays,solvers,live}.{webm,png} + manifest.json
+# Record the frontend screens (home / replays / solvers / live) as video
+record:
+    cd packages/frontend && bun run record
+
+# ----------------------------------------------------------------
 # Cleanup
 # ----------------------------------------------------------------
 
