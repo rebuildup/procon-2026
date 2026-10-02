@@ -382,18 +382,18 @@ td,th{overflow-wrap:anywhere}
    pattern. The heading INSIDE the box is the unit's title and stays; labels
    outside or beside a box that restate its contents stay deleted. Inside the
    box: rows + hairlines only, never nested boxes. --- */
-.ibox{
+.Box{
   background:var(--surface);box-shadow:var(--edge-inset);
   border-radius:var(--r-panel);overflow:hidden;
   display:flex;flex-direction:column;min-width:0;
 }
-.ibox-h{
+.Box-header{
   flex:none;
   margin:0;padding:var(--s2) var(--s3);
   font-size:12.5px;font-weight:650;letter-spacing:-.005em;
   color:var(--fg);border-bottom:1px solid var(--hair);
 }
-.ibox-bd{padding:var(--s1) var(--s3) var(--s2);display:flex;flex-direction:column;min-width:0}
+.Box-body{padding:var(--s1) var(--s3) var(--s2);display:flex;flex-direction:column;min-width:0}
 
 /* --- masthead row: ROUTE + STATUS folded into one line, no box --- */
 .masthead{
@@ -1048,9 +1048,9 @@ footer.doc-foot code{font-family:var(--mono)}
                      groups: match values / link values. Rows + hairlines
                      inside; the sidebar's live values (1 / 4 · [2, 3]) live
                      here, not on a nav sub-line. -->
-                <section class="ibox sp4">
-                  <h4 class="ibox-h">Match state</h4>
-                  <div class="ibox-bd">
+                <section class="Box sp4">
+                  <h4 class="Box-header">Match state</h4>
+                  <div class="Box-body">
                     <div class="rows">
                       <div class="grp">
                         <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-day"/></svg>Day</span><span class="v">1 / 4</span></div>
@@ -1073,9 +1073,9 @@ footer.doc-foot code{font-family:var(--mono)}
                 </section>
 
                 <!-- FIXTURE — one information unit = one box, title inside -->
-                <section class="ibox sp4">
-                  <h4 class="ibox-h">Fixture</h4>
-                  <div class="ibox-bd">
+                <section class="Box sp4">
+                  <h4 class="Box-header">Fixture</h4>
+                  <div class="Box-body">
                     <div class="rows">
                       <div class="grp">
                         <div class="row"><span class="l">poll</span><span class="v">1 s</span></div>
@@ -1118,86 +1118,38 @@ footer.doc-foot code{font-family:var(--mono)}
     <div class="spec-head" style="margin-top:12px">
       <span class="spec-num">02b</span>
       <h2>Sidebar composition</h2>
-      <span class="note">role · priority · current location — colour and composition together</span>
+      <span class="note">one line per item · state by icon · selection tone + bold</span>
     </div>
     <p class="lede">
-      The rail is not a vacant list. Destination order is fixed — Home / Replays / Solvers /
-      Live — and is never re-sorted; structure comes from three <b>role groups</b> (ORIENT /
-      REVIEW / MONITOR), a <b>priority sub-line</b> on the monitor destination carrying live
-      values, and the <b>selection tone</b> on the current item. Icon-led, no left accent bar,
-      selection is <code>aria-current="page"</code> plus a surface step and weight change.
+      GitHub tabs: one line per item — <b>icon + label, never two lines</b>. No role headings
+      (Orient / Review / Monitor were text decoration); no second line — live values
+      (1 / 4 · [2, 3]) live on the right-hand information rail. Destination order is fixed —
+      Home / Replays / Solvers / Live. State is shown by icon (dot-fill marker for running);
+      current item = selection tone (surface step) + bold weight, <code>aria-current="page"</code>,
+      no left accent bar.
     </p>
 
     <div class="nav-states">
       <div class="nav-state">
         <h3>default</h3>
-        <div class="nav-grp">
-          <p class="nav-role">Review</p>
-          <ul>
-            <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-txt"><span class="nav-name">Replays</span></span></a></li>
-            <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-txt"><span class="nav-name">Solvers</span></span></a></li>
-          </ul>
-        </div>
-        <div class="nav-grp" style="margin-top:10px">
-          <p class="nav-role">Monitor</p>
-          <ul>
-            <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-txt"><span class="nav-name">Live</span><span class="nav-sub">1 / 4 · [2, 3]</span></span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li>
-          </ul>
-        </div>
+        <ul class="nav-list"><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li></ul>
       </div>
       <div class="nav-state">
         <h3>hover</h3>
-        <div class="nav-grp">
-          <p class="nav-role">Review</p>
-          <ul>
-            <li><a class="nav-it st-hover" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-txt"><span class="nav-name">Replays</span></span></a></li>
-            <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-txt"><span class="nav-name">Solvers</span></span></a></li>
-          </ul>
-        </div>
-        <div class="nav-grp" style="margin-top:10px">
-          <p class="nav-role">Monitor</p>
-          <ul>
-            <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-txt"><span class="nav-name">Live</span><span class="nav-sub">1 / 4 · [2, 3]</span></span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li>
-          </ul>
-        </div>
+        <ul class="nav-list"><li><a class="nav-it st-hover" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li></ul>
       </div>
       <div class="nav-state">
         <h3>selected</h3>
-        <div class="nav-grp">
-          <p class="nav-role">Review</p>
-          <ul>
-            <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-txt"><span class="nav-name">Replays</span></span></a></li>
-            <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-txt"><span class="nav-name">Solvers</span></span></a></li>
-          </ul>
-        </div>
-        <div class="nav-grp" style="margin-top:10px">
-          <p class="nav-role">Monitor</p>
-          <ul>
-            <li><a class="nav-it st-selected" href="#" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-txt"><span class="nav-name">Live</span><span class="nav-sub">1 / 4 · [2, 3]</span></span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li>
-          </ul>
-        </div>
+        <ul class="nav-list"><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li><li><a class="nav-it st-selected" href="#" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li></ul>
       </div>
       <div class="nav-state">
         <h3>focus</h3>
-        <div class="nav-grp">
-          <p class="nav-role">Review</p>
-          <ul>
-            <li><a class="nav-it st-focus" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-txt"><span class="nav-name">Replays</span></span></a></li>
-            <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-txt"><span class="nav-name">Solvers</span></span></a></li>
-          </ul>
-        </div>
-        <div class="nav-grp" style="margin-top:10px">
-          <p class="nav-role">Monitor</p>
-          <ul>
-            <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-txt"><span class="nav-name">Live</span><span class="nav-sub">1 / 4 · [2, 3]</span></span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li>
-          </ul>
-        </div>
+        <ul class="nav-list"><li><a class="nav-it st-focus" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li><li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li></ul>
       </div>
     </div>
-
     <div class="meas-row">
-      <span class="meas"><b>ORIENT / REVIEW / MONITOR</b><span class="u">role groups · order preserved</span></span>
-      <span class="meas"><b>1 / 4 · [2, 3]</b><span class="u">priority sub-line values</span></span>
+      <span class="meas"><b>4</b><span class="u">items · 1 line each · no role headings</span></span>
+      <span class="meas"><b>1 / 4 · [2, 3]</b><span class="u">lives on the right rail, not the nav</span></span>
       <span class="meas"><b>surface → surface-2</b><span class="u">selection tone · no accent bar</span></span>
       <span class="meas"><b>2</b><span class="u">px focus · borderWidth.thick · tonal</span></span>
       <span class="meas"><b>dot-fill</b><span class="u">octicon running marker</span></span>
@@ -1431,20 +1383,28 @@ footer.doc-foot code{font-family:var(--mono)}
               </div>
             </section>
 
-            <!-- score: one kind of value on one line; fixture numbers in rows -->
+            <!-- right rail: one info unit per box, title inside -->
             <section class="panel sp4">
               <div class="panel-bd tight">
-                <div class="grp">
+                <div class="Box">
+                  <h4 class="Box-header">Score</h4>
+                  <div class="Box-body">
                   <div class="score-row">
                     <span class="who"><span class="l">alice</span><span class="v">30</span></span>
                     <span class="who"><span class="l">bob</span><span class="v">31</span></span>
                   </div>
+                  </div>
                 </div>
-                <div class="rows">
-                  <div class="grp">
-                    <div class="row"><span class="l">id</span><span class="v">demo</span></div>
-                    <div class="row"><span class="l">steps</span><span class="v">5</span></div>
-                    <div class="row"><span class="l">players</span><span class="v">2</span></div>
+<div class="Box">
+                  <h4 class="Box-header">Replay</h4>
+                  <div class="Box-body">
+                    <div class="rows">
+                      <div class="grp">
+                        <div class="row"><span class="l">id</span><span class="v">demo</span></div>
+                        <div class="row"><span class="l">steps</span><span class="v">5</span></div>
+                        <div class="row"><span class="l">players</span><span class="v">2</span></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1554,18 +1514,23 @@ footer.doc-foot code{font-family:var(--mono)}
               </div>
             </section>
 
-            <!-- fixture: geometry and objects are different kinds = two groups -->
+            <!-- right rail: one info unit per box, title inside -->
             <section class="panel sp4">
               <div class="panel-bd tight">
-                <div class="rows">
-                  <div class="grp">
-                    <div class="row"><span class="l">width</span><span class="v">8</span></div>
-                    <div class="row"><span class="l">height</span><span class="v">6</span></div>
-                    <div class="row"><span class="l">cells</span><span class="v">48</span></div>
-                  </div>
-                  <div class="grp">
-                    <div class="row"><span class="l">spots</span><span class="v">4</span></div>
-                    <div class="row"><span class="l">agents</span><span class="v">3</span></div>
+<div class="Box">
+                  <h4 class="Box-header">Fixture</h4>
+                  <div class="Box-body">
+                    <div class="rows">
+                      <div class="grp">
+                        <div class="row"><span class="l">width</span><span class="v">8</span></div>
+                        <div class="row"><span class="l">height</span><span class="v">6</span></div>
+                        <div class="row"><span class="l">cells</span><span class="v">48</span></div>
+                      </div>
+                      <div class="grp">
+                        <div class="row"><span class="l">spots</span><span class="v">4</span></div>
+                        <div class="row"><span class="l">agents</span><span class="v">3</span></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1631,20 +1596,25 @@ footer.doc-foot code{font-family:var(--mono)}
               </div>
             </section>
 
-            <!-- HUD: two meaning groups, one-line rows + hairlines -->
+            <!-- right rail: one info unit per box, title inside -->
             <section class="panel sp4">
               <div class="panel-bd tight">
-                <div class="rows">
-                  <div class="grp">
-                    <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-day"/></svg>Day</span><span class="v">1 / 4</span></div>
-                    <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-revisions"/></svg>Revisions</span><span class="v">[2, 3]</span></div>
-                    <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>Last update</span><span class="v">17:06:06</span></div>
-                  </div>
-                  <div class="grp">
-                    <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg>Solver</span><span class="v">loop</span></div>
-                    <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-server"/></svg>Server</span><span class="v">http://127.0.0.1:8080</span></div>
-                  </div>
-                </div>
+                <div class="Box">
+                                  <h4 class="Box-header">Match state</h4>
+                                  <div class="Box-body">
+                                    <div class="rows">
+                                      <div class="grp">
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-day"/></svg>Day</span><span class="v">1 / 4</span></div>
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-revisions"/></svg>Revisions</span><span class="v">[2, 3]</span></div>
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>Last update</span><span class="v">17:06:06</span></div>
+                                      </div>
+                                      <div class="grp">
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg>Solver</span><span class="v">loop</span></div>
+                                        <div class="row hud-t"><span class="l"><svg class="ico" aria-hidden="true"><use href="#i-server"/></svg>Server</span><span class="v">http://127.0.0.1:8080</span></div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
               </div>
             </section>
 
@@ -1654,17 +1624,19 @@ footer.doc-foot code{font-family:var(--mono)}
               </div>
             </section>
 
-            <section class="panel sp4">
-              <div class="panel-bd tight">
-                <div class="rows">
-                  <div class="grp">
-                    <div class="row"><span class="l">poll</span><span class="v">1 s</span></div>
-                    <div class="row"><span class="l">map</span><span class="v">4 × 4</span></div>
-                    <div class="row"><span class="l">cells</span><span class="v">16</span></div>
-                  </div>
-                </div>
-              </div>
-            </section>
+                <div class="Box">
+                                  <h4 class="Box-header">Fixture</h4>
+                                  <div class="Box-body">
+                                    <div class="rows">
+                                      <div class="grp">
+                                        <div class="row"><span class="l">poll</span><span class="v">1 s</span></div>
+                                        <div class="row"><span class="l">map</span><span class="v">4 × 4</span></div>
+                                        <div class="row"><span class="l">cells</span><span class="v">16</span></div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
 
           </div>
         </div>
@@ -1720,22 +1692,12 @@ footer.doc-foot code{font-family:var(--mono)}
             <!-- sidebar → horizontal bar. labels, order, destination and
                  current-location indicator all preserved -->
             <nav class="m-nav" aria-label="Primary (mock)">
-              <div class="nav-grp">
-                <ul>
-                  <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-txt"><span class="nav-name">Home</span></span></a></li>
-                </ul>
-              </div>
-              <div class="nav-grp">
-                <ul>
-                  <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-txt"><span class="nav-name">Replays</span></span></a></li>
-                  <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-txt"><span class="nav-name">Solvers</span></span></a></li>
-                </ul>
-              </div>
-              <div class="nav-grp">
-                <ul>
-                  <li><a class="nav-it st-selected" href="#" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-txt"><span class="nav-name">Live</span></span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li>
-                </ul>
-              </div>
+              <ul class="nav-list">
+                <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-name">Home</span></a></li>
+                <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-replays"/></svg><span class="nav-name">Replays</span></a></li>
+                <li><a class="nav-it st-default" href="#"><svg class="ico" aria-hidden="true"><use href="#i-solvers"/></svg><span class="nav-name">Solvers</span></a></li>
+                <li><a class="nav-it st-selected" href="#" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-live"/></svg><span class="nav-name">Live</span><svg class="nav-dot" aria-hidden="true"><use href="#i-dot"/></svg></a></li>
+              </ul>
             </nav>
             <div class="m-main">
               <div class="m-col">
