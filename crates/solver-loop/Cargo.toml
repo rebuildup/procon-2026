@@ -1,0 +1,19 @@
+[package]
+name = "solver-loop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Iterative improvement loop solver: greedy initial solution + 2-opt/3-opt refinement against the contest ranking criteria."
+
+[lints]
+workspace = true
+
+[dependencies]
+# Local stubs (HexCoord / Spot / Series / Agent / Action) live inside this crate.
+# EXPECTED INTEGRATION: domain — once #57 lands, replace stubs with `domain::*`.
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

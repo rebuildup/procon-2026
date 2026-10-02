@@ -1,0 +1,49 @@
+{
+  "name": "medium-16x16",
+  "description": "16x16 reference map: 4 agents at the corners, 12 spots covering 4 brands (kake / bukkake / kamatama / zaru), a central mountain cross, and a road loop on the perimeter.",
+  "category": "medium",
+  "startsAt": 0,
+  "daySeconds": [60],
+  "daySteps": [32],
+  "map": {
+    "height": 16,
+    "width": 16,
+    "cells": [
+      [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+      [2, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+    ]
+  },
+  "spots": [
+    { "brand": 0, "pos":  34, "stocks": 2 },
+    { "brand": 0, "pos":  41, "stocks": 1 },
+    { "brand": 1, "pos":  74, "stocks": 1 },
+    { "brand": 1, "pos":  81, "stocks": 2 },
+    { "brand": 2, "pos": 114, "stocks": 1 },
+    { "brand": 2, "pos": 121, "stocks": 1 },
+    { "brand": 3, "pos": 194, "stocks": 2 },
+    { "brand": 3, "pos": 201, "stocks": 1 },
+    { "brand": 0, "pos":  18, "stocks": 1 },
+    { "brand": 1, "pos":  98, "stocks": 1 },
+    { "brand": 2, "pos": 178, "stocks": 2 },
+    { "brand": 3, "pos": 218, "stocks": 1 }
+  ],
+  "agents": [17, 30, 225, 238],
+  "fuelLimits": 64,
+  "players": 1,
+  "busyThreshold": 1,
+  "jammedThreshold": 2
+}

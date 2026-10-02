@@ -34,6 +34,7 @@ cargo build --workspace
 # 4. CLI smoke
 cargo run -q --bin procon -- version
 cargo run -q --bin procon -- hello
+cargo run -q --bin procon -- warmup        # pre-match solver timing
 
 # 5. Frontend smoke
 (cd packages/frontend && bun run dev)   # http://127.0.0.1:5173
@@ -112,6 +113,29 @@ gh pr ready
 - `RUST_LOG=engine=debug,domain=info` で tracing 詳細表示。
 - WebGPU エラーは `console.error('WebGPU device lost', err)` 経由で出る。
 - protocol mismatch が出たら `cargo run -q --bin procon -- hello | jq .` で実物 JSON を確認する。
+
+## Pre-match warmup (Issue #56)
+
+`procon warmup` は試合直前にソルバ起動時間（cold / warm / 1 day smoke）を測定する ops コマンド。
+`docs/contest/strategy.md` のリアルタイム要件（1日 ≒ 60秒）に対し、cold start が予算を食っていないかを毎回確認する。
+
+3 つの pass:
+
+| pass | 内容 | 用途 |
+|---|---|---|
+| `cold` | ソルバを毎回新規生成し `prepare() + decide()` を 1 回 | first-touch / page-fault 回帰の検知 |
+| `warm` | 同一インスタンスを再利用、`decide()` のみ測定 | per-call アルゴリズム回帰の検知 |
+| `smoke` | `day_steps` × `agents` 回 `decide()` を end-to-end | スケール時のみ顕在化する回帰の検知 |
+
+運用レシピ:
+
+```bash
+just warmup                  # human-readable summary table
+just warmup-json > bench.json # CI / アーカイブ用 JSON
+cargo run -q --bin procon -- warmup --solvers greedy,astar --json
+```
+
+JSON レポートには p50 / p90 / max（µs 単位）とサンプル数が含まれる。スモーク p90 が `60_000_000 µs`（=60秒）を超えるソルバは試合投入前にチューニング必須。
 
 ## 次の作業を探す
 

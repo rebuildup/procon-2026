@@ -1,5 +1,7 @@
 # procon-2026
 
+[![CI](https://github.com/rebuildup/procon-2026/actions/workflows/ci.yml/badge.svg)](https://github.com/rebuildup/procon-2026/actions/workflows/ci.yml)
+
 全国高専プロコン 競技部門の monorepo。Rust の core / engine / protocol / cli と、 SolidJS + WebGPU の viewer / UI を1つの repository で統合管理する。
 
 > **Status**: 初期化済み。ドメインルール・問題文は GitHub Issue と ADR で順次追加。
@@ -61,6 +63,11 @@ just ci             # ローカル CI と同じ
 # 4. CLI 動作確認
 cargo run -q --bin procon -- hello
 cargo run -q --bin procon -- version
+
+# 4b. Pre-match warmup (cold/warm/smoke timing for every solver)
+just warmup             # human-readable summary
+just warmup-json        # machine-readable JSON for CI / archiving
+# or: cargo run -q --bin procon -- warmup [--json] [--solvers greedy,astar,loop,mcts]
 
 # 5. フロントエンド起動
 (cd packages/frontend && bun run dev)

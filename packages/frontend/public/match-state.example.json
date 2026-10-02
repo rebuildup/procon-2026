@@ -1,0 +1,11 @@
+{
+  "endsAt": 1735689600000,
+  "day": 1,
+  "agents": [
+    { "id": 0, "kind": 0, "pos": { "q": 0, "r": 0 }, "stock": 10 },
+    { "id": 1, "kind": 1, "pos": { "q": 1, "r": 0 }, "stock": 8 },
+    { "id": 2, "kind": 0, "pos": { "q": 2, "r": 1 }, "stock": 6 }
+  ],
+  "others": [],
+  "traffics": []
+}

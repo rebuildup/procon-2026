@@ -1,0 +1,16 @@
+[package]
+name = "solver-greedy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Greedy solver skeleton for procon-2026 (variety-first tie-break)."
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+tracing = { workspace = true }

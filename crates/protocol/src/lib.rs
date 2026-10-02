@@ -16,10 +16,13 @@ use serde::{Deserialize, Serialize};
 pub mod envelope;
 pub mod event;
 pub mod frame;
+pub mod http_client;
+pub mod match_config;
 
 pub use envelope::{Envelope, ProtocolVersion};
 pub use event::{ClientEvent, ServerEvent};
 pub use frame::{ClientFrame, MatchSummary, ServerFrame};
+pub use http_client::{HttpClientError, MatchClient, MatchClientBuilder, RetryPolicy, SubmitAck};
 
 /// Initial protocol version. Bumped per release.
 pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };

@@ -4,7 +4,17 @@ members = [
     "crates/domain",
     "crates/protocol",
     "crates/engine",
+    "crates/coordinator",
+    "crates/solver-mcts",
+    "crates/bench",
     "crates/cli",
+    "crates/solver-greedy",
+    "crates/solver-localsearch",
+    "crates/solver-ilp-cross",
+    "crates/solver-gpu",
+    "crates/solver-loop",
+    "crates/solver-series-clustered",
+    "crates/solver-astar",
 ]
 exclude = [".tmp/**"]
 
@@ -21,6 +31,7 @@ publish = false
 domain = { path = "crates/domain" }
 protocol = { path = "crates/protocol" }
 engine = { path = "crates/engine" }
+solver-loop = { path = "crates/solver-loop" }
 
 # Serialization (core ↔ frontend wire format)
 serde = { version = "1", features = ["derive"] }
@@ -35,10 +46,17 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
+
+# Archive
+zip = { version = "3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # Async runtime (engine server / protocol)
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
+
+# HTTP client (coordinator / /agent POST with retry + timeout).
+# Sync API — used inside spawn_blocking from async contexts.
+ureq = { version = "2.10", default-features = false, features = ["tls", "json"] }
 
 # Time
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }

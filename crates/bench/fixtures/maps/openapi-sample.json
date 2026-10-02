@@ -1,0 +1,130 @@
+{
+  "name": "openapi-sample",
+  "description": "Minimal 8x8 sample mirroring the official Procon 37 \u8a66\u5408\u8a2d\u5b9a\u7528JSON\u30d5\u30a1\u30a4\u30eb shape. Three-agent fixture used to verify the loader round-trips end-to-end. Mirrors the warmup default in crates/cli/src/fixtures.rs.",
+  "category": "official_sample",
+  "startsAt": 0,
+  "daySeconds": [
+    60
+  ],
+  "daySteps": [
+    16
+  ],
+  "map": {
+    "height": 8,
+    "width": 8,
+    "cells": [
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    ]
+  },
+  "spots": [
+    {
+      "brand": 0,
+      "pos": 9,
+      "stocks": 2
+    },
+    {
+      "brand": 1,
+      "pos": 14,
+      "stocks": 1
+    },
+    {
+      "brand": 0,
+      "pos": 49,
+      "stocks": 1
+    },
+    {
+      "brand": 1,
+      "pos": 54,
+      "stocks": 2
+    }
+  ],
+  "agents": [
+    0,
+    7,
+    56,
+    63
+  ],
+  "fuelLimits": 24,
+  "players": 1,
+  "busyThreshold": 1,
+  "jammedThreshold": 2
+}

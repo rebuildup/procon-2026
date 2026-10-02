@@ -5,6 +5,7 @@ on:
     branches: [main, 'release-*-*-*']
   pull_request:
     branches: [main, 'release-*-*-*']
+    types: [opened, synchronize, reopened]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,10 +25,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
         toolchain: [stable]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -45,6 +46,12 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --workspace --locked
+      - name: Test (ignored / heavy property tests)
+        # `cargo test --workspace -- --ignored` exercises integration suites
+        # marked #[ignore] (e.g. large-scale property tests in
+        # crates/domain and crates/protocol). Keeping this in a separate step
+        # lets the fast suite stay under the main "Test" gate.
+        run: cargo test --workspace --locked -- --ignored --nocapture
       - name: Build release
         run: cargo build --workspace --release --locked
 
@@ -52,15 +59,15 @@ jobs:
     name: Frontend (bun)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Cache bun modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: packages/frontend/node_modules
           key: ${{ runner.os }}-bun-${{ hashFiles('packages/frontend/bun.lock') }}
@@ -84,7 +91,7 @@ jobs:
         working-directory: packages/frontend
         run: bun run build
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist-${{ github.sha }}
           path: packages/frontend/dist
@@ -94,7 +101,7 @@ jobs:
     name: Protocol consistency check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Check that protocol version matches across crates

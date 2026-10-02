@@ -1,0 +1,98 @@
+{
+  "$comment": "Tournament fixture consumed by crates/bench/tests/tournament.rs. Each match setting is paired with the solver under test and a known-good score report used as a regression oracle.",
+  "config": {
+    "sequential": true,
+    "title": "fixtures/tournament_matches.json — rank regression"
+  },
+  "settings": [
+    {
+      "match_id": "match-1",
+      "days": 2,
+      "day_steps": 30,
+      "day_seconds": 60,
+      "player": "player-a",
+      "opponents": ["player-b"],
+      "scenario": "tiny"
+    },
+    {
+      "match_id": "match-2",
+      "days": 3,
+      "day_steps": 45,
+      "day_seconds": 90,
+      "player": "player-a",
+      "opponents": ["player-c"],
+      "scenario": "mid"
+    },
+    {
+      "match_id": "match-3",
+      "days": 5,
+      "day_steps": 60,
+      "day_seconds": 120,
+      "player": "player-a",
+      "opponents": ["player-d"],
+      "scenario": "wide"
+    }
+  ],
+  "reports": [
+    {
+      "solver": "alpha",
+      "match_id": "match-1",
+      "variety": 3,
+      "daily_variety": 5,
+      "total": 20,
+      "response_time_ms": 100,
+      "elapsed_ms": 110,
+      "timed_out": false
+    },
+    {
+      "solver": "beta",
+      "match_id": "match-1",
+      "variety": 2,
+      "daily_variety": 6,
+      "total": 25,
+      "response_time_ms": 200,
+      "elapsed_ms": 220,
+      "timed_out": false
+    },
+    {
+      "solver": "alpha",
+      "match_id": "match-2",
+      "variety": 4,
+      "daily_variety": 9,
+      "total": 40,
+      "response_time_ms": 150,
+      "elapsed_ms": 160,
+      "timed_out": false
+    },
+    {
+      "solver": "beta",
+      "match_id": "match-2",
+      "variety": 4,
+      "daily_variety": 11,
+      "total": 38,
+      "response_time_ms": 180,
+      "elapsed_ms": 190,
+      "timed_out": false
+    },
+    {
+      "solver": "alpha",
+      "match_id": "match-3",
+      "variety": 5,
+      "daily_variety": 14,
+      "total": 60,
+      "response_time_ms": 220,
+      "elapsed_ms": 230,
+      "timed_out": false
+    },
+    {
+      "solver": "beta",
+      "match_id": "match-3",
+      "variety": 5,
+      "daily_variety": 15,
+      "total": 58,
+      "response_time_ms": 250,
+      "elapsed_ms": 260,
+      "timed_out": false
+    }
+  ]
+}

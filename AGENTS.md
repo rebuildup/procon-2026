@@ -116,6 +116,14 @@ Project-local Agent Skills (Japanese descriptions, English body) are under `.cla
 | `security-maintenance` | tracking framework / dependency advisories |
 | `onboarding` | writing / updating onboarding docs |
 | `agent-recovery` | recovering work after session / sandbox / context loss |
+| `agent-delivery-estimation` | release / roadmap / capacity / throughput forecasting for AI-agent-driven delivery |
+| `correctness-assurance` | extracting invariants and selecting minimum-sufficient assurance mechanisms (type / runtime / test / property / formal / review) |
+| `design-refinement` | reading relentlessly and asking minimally to turn requirements into an implementable specification |
+| `interaction-discipline` | composing active-work messages (handoff / checkpoint / brief) with minimal noise and maximum signal |
+| `linear-release-control` | using Linear as a release-level planning / portfolio control plane alongside GitHub Issues (optional) |
+| `policy-evaluation` | deciding between deterministic and latent (LLM-as-judge / human) evaluation per policy property |
+| `worktree-workflow` | providing per-worker isolated mutable runtime via Worktrunk / git worktree (filesystem / branch / port / db / cache isolation) |
+| `writing-discipline` | applying Select → Compose → Reread pipeline to Issue / PR / ADR / doc prose |
 
 Do not re-read the full `project-init` prompt for routine tasks — load only the Skill(s) that match the current objective.
 
@@ -129,7 +137,6 @@ Do not re-read the full `project-init` prompt for routine tasks — load only th
 - ADRs: `docs/adr/`
 - Troubleshooting: `docs/troubleshooting.md`
 - Roles / responsibilities: `docs/roles/`
-
 ## Constitution / operating profile
 
 - 最上位 contract: [`constitution/CONSTITUTION.md`](constitution/CONSTITUTION.md)

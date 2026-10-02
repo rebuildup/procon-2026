@@ -1,28 +1,23 @@
-import { createResource, Match, Switch } from 'solid-js';
+import type { Component, JSX } from 'solid-js';
+import { Route, Router } from '@solidjs/router';
 
-import { GpuCanvas } from '@/components/GpuCanvas';
-import { detectWebGpuSupport, type WebGpuSupport } from '@/lib/webgpu/support';
+import { Layout } from '@/components/Layout';
+import { Home } from '@/pages/Home';
+import { Live } from '@/pages/Live';
+import { Replays } from '@/pages/Replays';
+import { Solvers } from '@/pages/Solvers';
+import '@/styles/theme.css';
+
+const Shell: Component<{ children?: JSX.Element }> = (props) => <Layout>{props.children}</Layout>;
 
 export function App() {
-  const [support] = createResource<WebGpuSupport>(detectWebGpuSupport);
-
   return (
-    <main class="app">
-      <header class="app__header">
-        <h1>procon-2026</h1>
-        <p class="app__tagline">Rust core + SolidJS + WebGPU viewer</p>
-      </header>
-      <Switch fallback={<p class="app__status">Detecting WebGPU support…</p>}>
-        <Match when={support.state === 'errored'}>
-          <p class="app__status app__status--error">WebGPU detection failed.</p>
-        </Match>
-        <Match when={support()?.available === false}>
-          <p class="app__status app__status--error">WebGPU unavailable in this browser.</p>
-        </Match>
-        <Match when={support()?.available === true}>
-          <GpuCanvas />
-        </Match>
-      </Switch>
-    </main>
+    <Router root={Shell}>
+      <Route path="/" component={Home} />
+      <Route path="/replays" component={Replays} />
+      <Route path="/solvers" component={Solvers} />
+      <Route path="/live" component={Live} />
+      <Route path="*" component={Home} />
+    </Router>
   );
 }
