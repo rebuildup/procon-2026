@@ -1,1 +1,6 @@
-@import './styles/layout.css';
+/* Styling has been cleared — see issue #265.
+ *
+ * The retired `--app-*` token system and the styles that consumed it are gone.
+ * The rebuild layers Primer Primitives tokens and @primer/css instead of
+ * reintroducing a project-owned stylesheet here.
+ */
