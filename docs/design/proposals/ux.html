@@ -1,558 +1,475 @@
 <!doctype html>
-<!--
-  Interaction / UX proposal — procon-2026 viewer  (v3 revision)
-  ============================================================================
-
-  SCOPE
-    Interaction & UX proposal for the SolidJS + WebGPU contest viewer.
-    Covers: replay transport state model (states, events, per-control
-    enable/disable set, anchored to real data-testids), SVG⇄WebGPU renderer
-    switch branches (including the silent-blank GPU case, Issue #259), live
-    status lifecycle (RUNNING / IDLE / COMPLETED / ERROR / STALE), keyboard
-    model and a quiet focus specification, the single-family transport /
-    renderer icon set with clear-space tokens, the map data palette and
-    motif-first visualizer marks (kanji overlay optional, default off),
-    the motion spec, accessibility findings, and the alice/bob score table.
-
-  SKILLS USED
-    interaction-state · iconography-system · color-system · table-design
-
-  v3 変更点 (DESIGN-BRIEF.md v3「v3 で反転した判断」対応)
-    1. Marks: 幾何形 (circle / rect / triangle / diamond / hex / plus) の
-       3 families を撤回。モチーフ起点に再設計 — 山は山 (稜線 / 雪冠峰 /
-       等高線)、水は波 / 雫 / 漣、道路は帯 / 点線路 / 両線、巡回車は軽トラ /
-       巡回ルート / 走行タイヤ、補給車は車両 / 燃料缶 / 配送箱。代替案は
-       別モチーフで並べる (同一モチーフの簡略化度違いは出さない)。系列は
-       うどんの種類 = 器 / 道具 / 具材のモチーフ。実サイズ Ø15px で併置検証。
-    2. Palette: 低彩度 (C* 24–30)・同明度パレットを撤回 (識別が逆に悪化)。
-       公式図の実測色に再構築 — 平地 #8ed973 / 山 #bfbfbf / 水 #46b1e1
-       (薄 #9bc2e6) / 道路 #156082 / 系列 #cc9900・#c04f15 + 同系 4 色 /
-       巡回 #00b050 / 補給 #e59edd / 移動強調 #ffff00。L* 揃えは撤回
-       (明度差は識別に有効)。実測 L*/C* とコントラスト比を計測値として併記。
-    3. Contrast: --faint 3.04:1 → 4.51:1 (light) / 3.77:1 → 4.95:1 (dark)、
-       dark --muted 4.08:1 (surface-alt 上) → 5.73:1。text ≥4.5:1、
-       marker / 境界線 / focus ring ≥3:1 を表に実測値で明示。
-    4. Annotations: パネル・表に貼る平文注釈を監査。不要なものは削除、
-       残すものは prose ではなく計測値 (単位・桁・比) で見せる。
-    5. 保持 (v2 から改変なし): transport state model と event / guard 表、
-       renderer switch 分岐 (Issue #259 blank-frame 含む)、live status
-       lifecycle、keyboard / focus model、motion spec (prefers-reduced-motion
-       含む)、a11y findings、quiet button-tone focus ring、
-       icon clear-space token set (--icon-size-sm / --icon-size-lg /
-       --icon-clear-space / --icon-label-gap / --icon-control-min /
-       --icon-stroke / --focus-ring)、neutral chip + tone-matched marker の
-       badge、HUD / score は 2 段のみ (label 11px / value 15px)。
-
-  EVIDENCE
-    DESIGN-BRIEF.md v3 (「v3 で反転した判断」/ marks / contrast 下限)、
-    公式仕様の図1–図4 をピクセル実測 (terrain / spot / agent / movement 色)、
-    packages/frontend/src/types/map.ts (SPOT_SERIES_COLORS, TERRAIN_COLORS,
-    AGENT_COLORS), components/{ReplayViewer,WebGpuMapViewer,MapViewer}.tsx
-    (HEX_SIZE=24, spot r=0.32·hex), pages/{Solvers,Live,Replays}.tsx,
-    stores/replay.ts, lib/live.ts,
-    styles/{replay-viewer,live,webgpu-map-viewer}.css,
-    e2e/fixtures/match-state.snapshot.json, docs/evidence/258/README.md.
-
-  DELIBERATELY NOT COVERED HERE
-    - Colour tokens / palette derivation beyond the data marks -> design-system.html
-    - Page layout / shell / route geometry                      -> layout.html
-    - Typography scale & mixed-script typesetting               -> design-system.html
-    - Control chrome (radius / border / target geometry)        -> kept as-is
-      (user: 「他のコントロールは大体整っている」 — only icons + focus move)
-
-  RENDERING
-    Standalone. All CSS inline. Vanilla JS only for the light/dark toggle and
-    the small transport demo. Zero network requests. System font stack.
-    Designed for 1280x800, no page-level horizontal scroll (wide tables own
-    their scroll region). SVG diagrams size via CSS, never height="auto".
--->
-<html lang="en" data-theme="light">
+<html lang="ja" data-theme="light" data-color-mode="light" data-light-theme="light" data-dark-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Interaction / UX proposal — procon-2026 viewer</title>
-<style>
-/* ==========================================================================
-   TOKENS — carried over from design-system.html so this file renders
-   standalone. Canonical definitions live in design-system.html; do not
-   treat this block as a token source.
-   ========================================================================== */
-:root{
-  --bg:#f6f8fa; --fg:#1f2328; --muted:#59636e; --faint:#636d78;
-  --surface:#ffffff; --surface-alt:#eaeef2;
-  --border:#d0d7de; --border-strong:#afb8c1;
-  --accent:#0969da; --accent-fg:#ffffff;
-  /* focus: button-tone neutral, NOT the accent (v2, kept) */
-  --focus-ring:#6e7781;
-  /* status marker tones — chip stays neutral; markers carry the tone */
-  --mk-run:#2e7c48; --mk-idle:#8f680c; --mk-done:#3370b8;
-  --mk-err:#ba4550; --mk-stale:#8f680c; --mk-boot:#6e7781;
-  --shadow:0 1px 2px rgba(31,35,40,.08);
-  --r-xs:3px; --r-sm:4px; --r-md:6px; --r-pill:999px;
-  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
-  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  /* type: two tiers only (v2) */
-  --t-label:11px; --t-value:15px;
-  /* icon clear-space set — consumed by design-system.html (v2) */
-  --icon-size-sm:16px; --icon-size-lg:24px;
-  --icon-clear-space:2px; --icon-label-gap:6px;
-  --icon-control-min:32px; --icon-stroke:1.5px;
-  /* motion */
-  --m-feedback:90ms; --m-state:120ms; --m-swap:140ms;
-  --ease-out:cubic-bezier(0.2,0,0,1);
+<style id="primer-tokens">
+/* Generated by embed-primer.py from @primer/primitives 11.10.0.
+   Dependency closure of upstream dist/css declarations; values are unmodified.
+The MIT License (MIT)
+
+Copyright (c) 2018 GitHub Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+:root {
+  --base-size-2: 0.125rem;
+  --base-size-32: 2rem;
+  --base-size-36: 2.25rem;
+  --base-size-6: 0.375rem;
+  --base-size-64: 4rem;
+  --base-size-8: 0.5rem;
+  --base-size-96: 6rem;
+  --base-text-size-lg: 1.25rem;
+  --base-text-size-sm: 0.875rem;
+  --base-text-size-xs: 0.75rem;
+  --borderRadius-medium: 0.375rem;
+  --borderRadius-small: 0.1875rem;
+  --borderWidth-thick: 0.125rem;
+  --borderWidth-thin: 0.0625rem;
+  --boxShadow-thin: inset 0 0 0 var(--borderWidth-thin);
+  --focus-outline-offset: -0.125rem;
+  --fontStack-monospace: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  --fontStack-sansSerif: "Mona Sans VF", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Backtick Fix", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --space-lg: 1rem;
+  --space-md: 0.75rem;
+  --space-sm: 0.5rem;
+  --space-xl: 1.5rem;
+  --space-xs: 0.25rem;
+  --space-xxs: 0.125rem;
+  --text-body-size-medium: var(--base-text-size-sm);
+  --text-body-size-small: var(--base-text-size-xs);
+  --text-title-size-medium: var(--base-text-size-lg);
 }
-:root[data-theme="dark"]{
-  --bg:#0d1117; --fg:#e6edf3; --muted:#96a0aa; --faint:#8c959f;
-  --surface:#161b22; --surface-alt:#21262d;
-  --border:#30363d; --border-strong:#484f58;
-  --accent:#2f81f7; --accent-fg:#ffffff;
-  --focus-ring:#8c959f;
-  --mk-run:#519f68; --mk-idle:#bb8b22; --mk-done:#5e95d2;
-  --mk-err:#e06b72; --mk-stale:#bb8b22; --mk-boot:#8c959f;
-  --shadow:0 1px 2px rgba(1,4,9,.6);
+[data-color-mode="light"][data-light-theme="light"] {
+  --bgColor-accent-emphasis: #0969da;
+  --bgColor-default: #ffffff;
+  --bgColor-muted: #f6f8fa;
+  --borderColor-default: #d1d9e0;
+  --borderColor-emphasis: #818b98;
+  --fgColor-accent: #0969da;
+  --fgColor-attention: #9a6700;
+  --fgColor-danger: #d1242f;
+  --fgColor-default: #1f2328;
+  --fgColor-muted: #59636e;
+  --fgColor-onEmphasis: #ffffff;
+  --fgColor-success: #1a7f37;
 }
+[data-color-mode="dark"][data-dark-theme="dark"] {
+  --bgColor-accent-emphasis: #1f6feb;
+  --bgColor-default: #0d1117;
+  --bgColor-muted: #151b23;
+  --borderColor-default: #3d444d;
+  --borderColor-emphasis: #656c76;
+  --fgColor-accent: #4493f8;
+  --fgColor-attention: #d29922;
+  --fgColor-danger: #f85149;
+  --fgColor-default: #f0f6fc;
+  --fgColor-muted: #9198a1;
+  --fgColor-onEmphasis: #ffffff;
+  --fgColor-success: #3fb950;
+}
+</style>
+<style id="proposal-styles">
+/* UI declarations refer directly to Primer Primitives. No project token scale.
+   EXC-UX-TYPE: the handout requires HUD/score labels 11px and values 15px;
+   Primer has no exact two-tier pair. Only those two instrument roles retain
+   literal font sizes. Diagram coordinates are document geometry, not UI tokens.
+   Motion durations are the interaction specification, not a design system. */
+:root{--m-feedback:90ms; --m-state:120ms; --m-swap:140ms;
+  --ease-out:cubic-bezier(0.2,0,0,1)}
 *{box-sizing:border-box}
 html{color-scheme:light}
 html[data-theme="dark"]{color-scheme:dark}
 body{
-  margin:0; background:var(--bg); color:var(--fg);
-  font-family:var(--sans); font-size:14px; line-height:1.55;
+  margin:0; background:var(--bgColor-muted); color:var(--fgColor-default);
+  font-family:var(--fontStack-sansSerif); font-size:var(--text-body-size-medium); line-height:1.55;
 }
-code,.mono{font-family:var(--mono)}
+code,.mono{font-family:var(--fontStack-monospace)}
 code{
-  font-size:12px; background:var(--surface-alt);
-  border:1px solid var(--border); border-radius:var(--r-xs);
-  padding:1px 5px;
+  font-size:var(--text-body-size-small); background:var(--bgColor-muted);
+  border:var(--borderWidth-thin) solid var(--borderColor-default); border-radius:var(--borderRadius-small);
+  padding:var(--space-xxs) var(--space-xs);
 }
-a{color:var(--accent); text-decoration:none}
+a{color:var(--fgColor-accent); text-decoration:none}
 a:hover{text-decoration:underline}
-:focus-visible{outline:2px solid var(--focus-ring); outline-offset:1px}
+:focus-visible{outline:var(--borderWidth-thick) solid var(--borderColor-emphasis); outline-offset:var(--borderWidth-thin)}
 
 /* ---------- masthead ---------- */
 .masthead{
-  border-bottom:1px solid var(--border); background:var(--surface);
-  padding:var(--s5) var(--s6) var(--s4);
+  border-bottom:var(--borderWidth-thin) solid var(--borderColor-default); background:var(--bgColor-default);
+  padding:var(--space-xl) var(--space-xl) var(--space-lg);
 }
-.masthead__inner{max-width:1240px; margin:0 auto; display:flex; gap:var(--s5); align-items:flex-start; flex-wrap:wrap}
-.masthead__brand{font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.04em}
-.masthead h1{margin:2px 0 6px; font-size:22px; line-height:1.25; font-weight:650; letter-spacing:-.01em}
-.masthead__lede{margin:0; color:var(--muted); max-width:72ch; font-size:13px}
-.masthead__side{margin-left:auto; display:flex; flex-direction:column; gap:var(--s2); align-items:flex-end}
-.skills{display:flex; flex-wrap:wrap; gap:var(--s1); margin-top:var(--s3); max-width:800px}
+.masthead__inner{max-width:77.5rem; margin:0; display:flex; gap:var(--space-xl); align-items:flex-start; flex-wrap:wrap}
+.masthead__brand{font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); color:var(--fgColor-muted); letter-spacing:.04em}
+.masthead h1{margin:var(--space-xxs) 0 var(--space-xs); font-size:var(--text-title-size-medium); line-height:1.25; font-weight:650; letter-spacing:-.01em}
+.masthead__lede{margin:0; color:var(--fgColor-muted); max-width:72ch; font-size:var(--text-body-size-small)}
+.masthead__side{margin-left:auto; display:flex; flex-direction:column; gap:var(--space-sm); align-items:flex-end}
+.skills{display:flex; flex-wrap:wrap; gap:var(--space-xs); margin-top:var(--space-md); max-width:50.0rem}
 .chip{
-  font-family:var(--mono); font-size:11px; color:var(--muted);
-  border:1px solid var(--border); border-radius:var(--r-pill);
-  padding:2px 9px; background:var(--bg);
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); color:var(--fgColor-muted);
+  border:var(--borderWidth-thin) solid var(--borderColor-default); border-radius:var(--borderRadius-small);
+  padding:var(--space-xxs) var(--space-sm); background:var(--bgColor-muted);
 }
 .toggle{
-  display:inline-flex; align-items:center; gap:var(--s2);
-  font:inherit; font-size:13px; cursor:pointer;
-  background:var(--surface-alt); color:var(--fg);
-  border:1px solid var(--border); border-radius:var(--r-sm);
-  padding:6px 12px; min-height:32px;
+  display:inline-flex; align-items:center; gap:var(--space-sm);
+  font:inherit; font-size:var(--text-body-size-small); cursor:pointer;
+  background:var(--bgColor-muted); color:var(--fgColor-default);
+  border:var(--borderWidth-thin) solid var(--borderColor-default); border-radius:var(--borderRadius-medium);
+  padding:var(--space-xs) var(--space-md); min-height:var(--base-size-32);
   transition:background-color var(--m-feedback) var(--ease-out),
              border-color var(--m-feedback) var(--ease-out);
 }
-.toggle:hover{border-color:var(--border-strong)}
-.toggle .dot{width:8px; height:8px; border-radius:50%; background:var(--fg)}
+.toggle:hover{border-color:var(--borderColor-emphasis)}
+.toggle .dot{width:var(--base-size-8); height:var(--base-size-8); border-radius:var(--borderRadius-small); background:var(--fgColor-default)}
 
 /* ---------- page grid ---------- */
 .page{
-  max-width:1240px; margin:0 auto; padding:var(--s5) var(--s6) 64px;
-  display:grid; grid-template-columns:216px minmax(0,1fr); gap:var(--s6);
+  max-width:77.5rem; margin:0; padding:var(--space-xl) var(--space-xl) var(--space-xl);
+  display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:var(--space-xl);
   align-items:start;
 }
-.index{position:sticky; top:var(--s5); font-size:12px}
+.index{grid-column:span 2;position:sticky; top:var(--space-xl); font-size:var(--text-body-size-small)}
 .index__t{
-  font-family:var(--mono); font-size:10px; letter-spacing:.08em;
-  text-transform:uppercase; color:var(--faint); margin:0 0 var(--s2);
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); letter-spacing:.08em;
+  text-transform:uppercase; color:var(--fgColor-muted); margin:0 0 var(--space-sm);
 }
 .index ol{list-style:none; margin:0; padding:0}
 .index a{
-  display:block; padding:5px 10px; color:var(--muted);
-  border-radius:var(--r-sm);
+  display:block; padding:var(--space-xs) var(--space-sm); color:var(--fgColor-muted);
+  border-radius:var(--borderRadius-medium);
   transition:background-color var(--m-feedback) var(--ease-out),
              color var(--m-feedback) var(--ease-out);
 }
-.index a:hover{color:var(--fg); background:var(--surface-alt); text-decoration:none}
-.index a .n{font-family:var(--mono); font-size:10px; color:var(--faint); margin-right:6px}
+.index a:hover{color:var(--fgColor-default); background:var(--bgColor-muted); text-decoration:none}
+.index a .n{font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); color:var(--fgColor-muted); margin-right:var(--space-xs)}
 
 /* ---------- sections ---------- */
-section.spec{margin:0 0 56px; scroll-margin-top:var(--s5)}
-.sec-head{display:flex; align-items:baseline; gap:var(--s3); margin-bottom:var(--s3); flex-wrap:wrap}
-.sec-num{font-family:var(--mono); font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.06em}
-.sec-head h2{margin:0; font-size:18px; font-weight:650; letter-spacing:-.01em}
-.lede{margin:0 0 var(--s4); color:var(--muted); max-width:78ch; font-size:13px}
-.lede b{color:var(--fg); font-weight:600}
+main{grid-column:span 10;min-width:0}section.spec{margin:0 0 var(--space-xl); scroll-margin-top:var(--space-xl)}
+.sec-head{display:flex; align-items:baseline; gap:var(--space-md); margin-bottom:var(--space-md); flex-wrap:wrap}
+.sec-num{font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); font-weight:700; color:var(--fgColor-muted); letter-spacing:.06em}
+.sec-head h2{margin:0; font-size:var(--text-title-size-medium); font-weight:650; letter-spacing:-.01em}
+.lede{margin:0 0 var(--space-lg); color:var(--fgColor-muted); max-width:78ch; font-size:var(--text-body-size-small)}
+.lede b{color:var(--fgColor-default); font-weight:600}
 
 .block{
-  background:var(--surface); border:1px solid var(--border);
-  border-radius:var(--r-md); padding:var(--s4); margin:0 0 var(--s4);
+  background:var(--bgColor-default); box-shadow:var(--boxShadow-thin) var(--borderColor-default);
+  border-radius:var(--borderRadius-medium); padding:var(--space-lg); margin:0 0 var(--space-lg);
 }
 .block__t{
-  margin:0 0 var(--s3); font-family:var(--mono); font-size:10px;
-  letter-spacing:.08em; text-transform:uppercase; color:var(--faint);
+  margin:0 0 var(--space-md); font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small);
+  letter-spacing:.08em; text-transform:uppercase; color:var(--fgColor-muted);
 }
-.grid2{display:grid; grid-template-columns:1fr 1fr; gap:var(--s4)}
-.grid2 > .block{margin:0}
+.grid2{display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:var(--space-lg)}
+.grid2 > *{grid-column:span 6;min-width:0}.grid2 > .block{margin:0}
 
 /* ---------- tables ---------- */
-.tw{overflow-x:auto; border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface)}
-.tw:focus-visible{outline:2px solid var(--focus-ring); outline-offset:1px}
-table.spec{border-collapse:collapse; width:100%; min-width:640px; font-size:12.5px}
+.tw{overflow-x:auto; box-shadow:var(--boxShadow-thin) var(--borderColor-default); border-radius:var(--borderRadius-medium); background:var(--bgColor-default)}
+.tw:focus-visible{outline:var(--borderWidth-thick) solid var(--borderColor-emphasis); outline-offset:var(--borderWidth-thin)}
+table.spec{border-collapse:collapse; width:100%; min-width:40.0rem; font-size:var(--text-body-size-small)}
 table.spec caption{
-  caption-side:top; text-align:left; padding:10px 12px;
-  font-family:var(--mono); font-size:10px; letter-spacing:.08em;
-  text-transform:uppercase; color:var(--faint);
-  border-bottom:1px solid var(--border); background:var(--surface-alt);
+  caption-side:top; text-align:left; padding:var(--space-sm) var(--space-md);
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); letter-spacing:.08em;
+  text-transform:uppercase; color:var(--fgColor-muted);
+  border-bottom:var(--borderWidth-thin) solid var(--borderColor-default); background:var(--bgColor-muted);
 }
 table.spec th,table.spec td{
-  border-bottom:1px solid var(--border); padding:8px 10px;
+  border-bottom:var(--borderWidth-thin) solid var(--borderColor-default); padding:var(--space-sm) var(--space-sm);
   text-align:left; vertical-align:top;
 }
 table.spec thead th{
-  font-family:var(--mono); font-size:10px; letter-spacing:.06em;
-  text-transform:uppercase; color:var(--muted); font-weight:600;
-  white-space:nowrap; border-bottom:1px solid var(--border-strong);
-  background:var(--surface);
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); letter-spacing:.06em;
+  text-transform:uppercase; color:var(--fgColor-muted); font-weight:600;
+  white-space:nowrap; border-bottom:var(--borderWidth-thin) solid var(--borderColor-emphasis);
+  background:var(--bgColor-default);
 }
 table.spec tbody tr:last-child th,table.spec tbody tr:last-child td{border-bottom:0}
 table.spec td.num,table.spec th.num{
-  text-align:right; font-variant-numeric:tabular-nums; font-family:var(--mono);
+  text-align:right; font-variant-numeric:tabular-nums; font-family:var(--fontStack-monospace);
 }
 table.spec .rowhead{font-weight:600; white-space:nowrap}
-table.spec .sm{color:var(--muted); font-size:11px}
-table.spec td.on{color:var(--fg)}
-table.spec td.off{color:var(--faint)}
+table.spec .sm{color:var(--fgColor-muted); font-size:var(--text-body-size-small)}
+table.spec td.on{color:var(--fgColor-default)}
+table.spec td.off{color:var(--fgColor-muted)}
 
 /* ---------- severity chips: neutral chip + tone marker (v2) ---------- */
 .sev{
-  display:inline-flex; align-items:center; gap:6px;
-  font-family:var(--mono); font-size:10px;
+  display:inline-flex; align-items:center; gap:var(--space-xs);
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small);
   letter-spacing:.06em; text-transform:uppercase; font-weight:700;
-  border-radius:var(--r-pill); padding:2px 9px; white-space:nowrap;
-  background:var(--surface-alt); color:var(--fg);
+  border-radius:var(--borderRadius-small); padding:var(--space-xxs) var(--space-sm); white-space:nowrap;
+  background:var(--bgColor-muted); color:var(--fgColor-default);
 }
-.sev .mk{width:7px; height:7px; border-radius:50%; flex:none; background:var(--mk-boot)}
-.sev.crit .mk{background:var(--mk-err)}
-.sev.ser .mk{background:var(--mk-idle)}
-.sev.mod .mk{background:var(--mk-boot)}
-.sev.fix .mk{background:var(--mk-done)}
+.sev .mk{width:var(--base-size-6); height:var(--base-size-6); border-radius:var(--borderRadius-small); flex:none; background:var(--fgColor-muted)}
+.sev.crit .mk{background:var(--fgColor-danger)}
+.sev.ser .mk{background:var(--fgColor-attention)}
+.sev.mod .mk{background:var(--fgColor-muted)}
+.sev.fix .mk{background:var(--fgColor-accent)}
 
 /* ---------- badges: neutral chip + tone-matched marker (v2) ---------- */
 .badge{
-  display:inline-flex; align-items:center; gap:6px;
-  border-radius:var(--r-pill); padding:3px 11px;
-  font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
-  background:var(--surface-alt); color:var(--fg);
+  display:inline-flex; align-items:center; gap:var(--space-xs);
+  border-radius:var(--borderRadius-small); padding:var(--space-xxs) var(--space-md);
+  font-size:var(--text-body-size-small); font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  background:var(--bgColor-muted); color:var(--fgColor-default);
   white-space:nowrap;
 }
-.badge .mk{width:8px; height:8px; border-radius:50%; flex:none; background:var(--mk-boot)}
-.badge.run .mk{background:var(--mk-run)}
-.badge.idle .mk{background:var(--mk-idle)}
-.badge.done .mk{background:var(--mk-done)}
-.badge.err .mk{background:var(--mk-err)}
-.badge.stale .mk{background:transparent; border:2px solid var(--mk-stale)}
-.badge.boot .mk{border-radius:1px; width:8px; height:2px}
-.badge .tail{font-weight:500; letter-spacing:.02em; color:var(--muted); text-transform:none}
+.badge .mk{width:var(--base-size-8); height:var(--base-size-8); border-radius:var(--borderRadius-small); flex:none; background:var(--fgColor-muted)}
+.badge.run .mk{background:var(--fgColor-success)}
+.badge.idle .mk{background:var(--fgColor-attention)}
+.badge.done .mk{background:var(--fgColor-accent)}
+.badge.err .mk{background:var(--fgColor-danger)}
+.badge.stale .mk{background:transparent; border:var(--borderWidth-thick) solid var(--fgColor-attention)}
+.badge.boot .mk{border-radius:var(--borderRadius-small); width:var(--base-size-8); height:var(--base-size-2)}
+.badge .tail{font-weight:500; letter-spacing:.02em; color:var(--fgColor-muted); text-transform:none}
 
-.theme-row{display:flex; flex-wrap:wrap; gap:var(--s2); align-items:center}
+.theme-row{display:flex; flex-wrap:wrap; gap:var(--space-sm); align-items:center}
 .theme-sample{
-  border:1px solid var(--border); border-radius:var(--r-md);
-  padding:var(--s3); flex:1 1 320px; min-width:0;
+  background:var(--bgColor-default);color:var(--fgColor-default);
+  box-shadow:var(--boxShadow-thin) var(--borderColor-default); border-radius:var(--borderRadius-medium);
+  padding:var(--space-md); flex:1 1 20rem; min-width:0;
 }
 .theme-sample__cap{
-  font-family:var(--mono); font-size:10px; letter-spacing:.08em;
-  text-transform:uppercase; color:var(--faint); margin:0 0 var(--s2);
-}
-.theme-sample[data-sample-theme="light"]{
-  background:#f6f8fa; color:#1f2328; --surface-alt:#eaeef2; --fg:#1f2328;
-  --muted:#59636e; --mk-run:#2e7c48; --mk-idle:#8f680c; --mk-done:#3370b8;
-  --mk-err:#ba4550; --mk-stale:#8f680c; --mk-boot:#6e7781;
-}
-.theme-sample[data-sample-theme="dark"]{
-  background:#0d1117; color:#e6edf3; --surface-alt:#21262d; --fg:#e6edf3;
-  --muted:#96a0aa; --mk-run:#519f68; --mk-idle:#bb8b22; --mk-done:#5e95d2;
-  --mk-err:#e06b72; --mk-stale:#bb8b22; --mk-boot:#8c959f;
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); letter-spacing:.08em;
+  text-transform:uppercase; color:var(--fgColor-muted); margin:0 0 var(--space-sm);
 }
 
-.tiles{display:flex; flex-wrap:wrap; gap:var(--s2)}
+
+
+.tiles{display:flex; flex-wrap:wrap; gap:var(--space-sm)}
 .tile{
-  background:var(--surface-alt); border-radius:var(--r-md);
-  padding:8px 14px; min-width:96px;
+  background:var(--bgColor-muted); border-radius:var(--borderRadius-medium);
+  padding:var(--space-sm) var(--space-md); min-width:var(--base-size-96);
 }
 .tile .l{
-  display:block; font-family:var(--mono); font-size:var(--t-label);
-  letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+  display:block; font-family:var(--fontStack-monospace); font-size:11px;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--fgColor-muted);
 }
 .tile .v{
-  display:block; font-size:var(--t-value); font-weight:650;
+  display:block; font-size:15px; font-weight:650;
   font-variant-numeric:tabular-nums; line-height:1.3;
 }
-.tile .v.mono{font-family:var(--mono); font-weight:600}
+.tile .v.mono{font-family:var(--fontStack-monospace); font-weight:600}
 kbd{
-  font-family:var(--mono); font-size:11px; color:var(--fg);
-  background:var(--surface); border:1px solid var(--border-strong);
-  border-bottom-width:2px; border-radius:var(--r-xs);
-  padding:1px 6px; white-space:nowrap;
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); color:var(--fgColor-default);
+  background:var(--bgColor-default); border:var(--borderWidth-thin) solid var(--borderColor-emphasis);
+  border-bottom-width:var(--borderWidth-thick); border-radius:var(--borderRadius-small);
+  padding:var(--space-xxs) var(--space-xs); white-space:nowrap;
 }
 .note{
-  background:var(--surface-alt); padding:10px 14px; margin:0 0 var(--s4);
-  font-size:12.5px; border-radius:var(--r-sm);
-  display:flex; gap:10px; align-items:flex-start;
+  background:var(--bgColor-muted); padding:var(--space-sm) var(--space-md); margin:0 0 var(--space-lg);
+  font-size:var(--text-body-size-small); border-radius:var(--borderRadius-medium);
+  display:flex; gap:var(--space-sm); align-items:flex-start;
 }
 .note .mk{
-  width:8px; height:8px; border-radius:50%; flex:none; margin-top:5px;
-  background:var(--mk-boot);
+  width:var(--base-size-8); height:var(--base-size-8); border-radius:var(--borderRadius-small); flex:none; margin-top:var(--space-xs);
+  background:var(--fgColor-muted);
 }
-.note.issue .mk{background:var(--mk-err)}
-.note b{color:var(--fg)}
-ul.tight{margin:0; padding-left:18px; font-size:12.5px}
-ul.tight li{margin:0 0 6px}
-ul.tight li::marker{color:var(--faint)}
-ol.tight{margin:0; padding-left:20px; font-size:12.5px}
-ol.tight li{margin:0 0 8px}
+.note.issue .mk{background:var(--fgColor-danger)}
+.note b{color:var(--fgColor-default)}
+ul.tight{margin:0; padding-left:var(--space-lg); font-size:var(--text-body-size-small)}
+ul.tight li{margin:0 0 var(--space-xs)}
+ul.tight li::marker{color:var(--fgColor-muted)}
+ol.tight{margin:0; padding-left:var(--space-lg); font-size:var(--text-body-size-small)}
+ol.tight li{margin:0 0 var(--space-sm)}
 .hint{
-  color:var(--muted); font-family:var(--mono); font-size:11px;
+  color:var(--fgColor-muted); font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small);
 }
 
 /* ---------- state diagram ---------- */
 .diagram{
-  background:var(--surface); border:1px solid var(--border);
-  border-radius:var(--r-md); padding:var(--s3); margin:0 0 var(--s4);
+  background:var(--bgColor-default); box-shadow:var(--boxShadow-thin) var(--borderColor-default);
+  border-radius:var(--borderRadius-medium); padding:var(--space-md); margin:0 0 var(--space-lg);
   overflow-x:auto;
 }
-.diagram svg{display:block; width:100%; height:auto; min-width:640px}
-.d-node{fill:var(--surface); stroke:var(--border-strong); stroke-width:1}
-.d-node-label{fill:var(--fg); font:600 12px var(--sans)}
-.d-node-sub{fill:var(--muted); font:10px var(--mono)}
-.d-edge{fill:none; stroke:var(--fg); stroke-width:1.2}
-.d-edge-label{fill:var(--fg); font:600 10.5px var(--sans)}
-.d-edge-sub{fill:var(--muted); font:10px var(--mono)}
-.d-overlay{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:4 3}
-.d-overlay-label{fill:var(--muted); font:600 11px var(--sans)}
-.d-overlay-sub{fill:var(--faint); font:10px var(--mono)}
+.diagram svg{display:block; width:100%; height:auto; min-width:40.0rem}
+.d-node{fill:var(--bgColor-default); stroke:var(--borderColor-emphasis); stroke-width:1}
+.d-node-label{fill:var(--fgColor-default); font:600 var(--text-body-size-small) var(--fontStack-sansSerif)}
+.d-node-sub{fill:var(--fgColor-muted); font:10px var(--fontStack-monospace)}
+.d-edge{fill:none; stroke:var(--fgColor-default); stroke-width:1.2}
+.d-edge-label{fill:var(--fgColor-default); font:600 10.5px var(--fontStack-sansSerif)}
+.d-edge-sub{fill:var(--fgColor-muted); font:10px var(--fontStack-monospace)}
+.d-overlay{fill:none; stroke:var(--fgColor-muted); stroke-width:1; stroke-dasharray:4 3}
+.d-overlay-label{fill:var(--fgColor-muted); font:600 11px var(--fontStack-sansSerif)}
+.d-overlay-sub{fill:var(--fgColor-muted); font:10px var(--fontStack-monospace)}
 
 /* ---------- state table highlight (demo): tone only, no accent band (v2) ---------- */
-tr.is-current{background:var(--surface-alt)}
+tr.is-current{background:var(--bgColor-muted)}
 tr.is-current > th:first-child{font-weight:700}
 .state-pip{
-  display:inline-block; width:8px; height:8px; border-radius:2px;
-  background:var(--border-strong); margin-right:6px; vertical-align:baseline;
+  display:inline-block; width:var(--base-size-8); height:var(--base-size-8); border-radius:var(--borderRadius-small);
+  background:var(--borderColor-emphasis); margin-right:var(--space-xs); vertical-align:baseline;
 }
-tr.is-current .state-pip{background:var(--fg)}
+tr.is-current .state-pip{background:var(--fgColor-default)}
 
 /* ---------- transport demo ---------- */
 .demo{
-  border:1px solid var(--border-strong); border-radius:var(--r-md);
-  background:var(--bg); padding:var(--s4); margin:0 0 var(--s4);
+  box-shadow:var(--boxShadow-thin) var(--borderColor-emphasis); border-radius:var(--borderRadius-medium);
+  background:var(--bgColor-muted); padding:var(--space-lg); margin:0 0 var(--space-lg);
 }
-.demo__row{display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap}
+.demo__row{display:flex; align-items:center; gap:var(--space-sm); flex-wrap:wrap}
 .demo__meta{
-  margin-left:auto; display:flex; align-items:baseline; gap:var(--s2);
+  margin-left:auto; display:flex; align-items:baseline; gap:var(--space-sm);
 }
 .demo__meta .l{
-  font-family:var(--mono); font-size:var(--t-label); letter-spacing:.08em;
-  text-transform:uppercase; color:var(--muted);
+  font-family:var(--fontStack-monospace); font-size:11px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--fgColor-muted);
 }
 .demo__meta .v{
-  font-family:var(--mono); font-size:var(--t-value); font-weight:650;
+  font-family:var(--fontStack-monospace); font-size:15px; font-weight:650;
   font-variant-numeric:tabular-nums;
 }
 .demo__state{
-  font-family:var(--mono); font-size:11px; letter-spacing:.05em;
-  text-transform:uppercase; color:var(--muted); font-weight:700;
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); letter-spacing:.05em;
+  text-transform:uppercase; color:var(--fgColor-muted); font-weight:700;
 }
 .tbtn{
   display:inline-flex; align-items:center; justify-content:center;
-  width:36px; height:32px; padding:0;
-  background:var(--surface-alt); color:var(--fg);
-  border:1px solid var(--border); border-radius:var(--r-sm);
+  width:var(--base-size-36); height:var(--base-size-32); padding:0;
+  background:var(--bgColor-muted); color:var(--fgColor-default);
+  border:var(--borderWidth-thin) solid var(--borderColor-default); border-radius:var(--borderRadius-medium);
   cursor:pointer;
   transition:background-color var(--m-feedback) var(--ease-out),
              border-color var(--m-feedback) var(--ease-out);
 }
-.tbtn:hover:not(:disabled){border-color:var(--border-strong)}
+.tbtn:hover:not(:disabled){border-color:var(--borderColor-emphasis)}
 .tbtn:disabled{opacity:.45; cursor:not-allowed}
-.rates{display:inline-flex; gap:var(--s1); margin-left:var(--s2)}
+.rates{display:inline-flex; gap:var(--space-xs); margin-left:var(--space-sm)}
 .rbtn{
-  min-width:36px; height:32px; padding:0 8px;
-  font:inherit; font-size:12px; font-variant-numeric:tabular-nums;
-  background:var(--surface-alt); color:var(--fg);
-  border:1px solid var(--border); border-radius:var(--r-sm); cursor:pointer;
+  min-width:var(--base-size-36); height:var(--base-size-32); padding:0 var(--space-sm);
+  font:inherit; font-size:var(--text-body-size-small); font-variant-numeric:tabular-nums;
+  background:var(--bgColor-muted); color:var(--fgColor-default);
+  border:var(--borderWidth-thin) solid var(--borderColor-default); border-radius:var(--borderRadius-medium); cursor:pointer;
   transition:background-color var(--m-feedback) var(--ease-out),
              color var(--m-feedback) var(--ease-out),
              border-color var(--m-feedback) var(--ease-out);
 }
-.rbtn:hover{border-color:var(--border-strong)}
-.rbtn[aria-pressed="true"]{background:var(--accent); color:var(--accent-fg); border-color:var(--accent)}
-.scrub{width:100%; margin-top:var(--s3); accent-color:var(--accent)}
+.rbtn:hover{border-color:var(--borderColor-emphasis)}
+.rbtn[aria-checked="true"]{background:var(--bgColor-accent-emphasis); color:var(--fgColor-onEmphasis); border-color:var(--bgColor-accent-emphasis)}
+.scrub{width:100%; margin-top:var(--space-md); accent-color:var(--bgColor-accent-emphasis)}
 .score-table{
-  border-collapse:collapse; width:100%; margin-top:var(--s3);
+  border-collapse:collapse; width:100%; margin-top:var(--space-md);
 }
 .score-table caption{
-  caption-side:top; text-align:left; color:var(--muted); font-size:var(--t-label);
-  font-family:var(--mono); letter-spacing:.05em; text-transform:uppercase;
-  padding-bottom:6px;
+  caption-side:top; text-align:left; color:var(--fgColor-muted); font-size:11px;
+  font-family:var(--fontStack-monospace); letter-spacing:.05em; text-transform:uppercase;
+  padding-bottom:var(--space-xs);
 }
 .score-table th,.score-table td{
-  border-bottom:1px solid var(--border); padding:6px 8px; height:32px;
+  border-bottom:var(--borderWidth-thin) solid var(--borderColor-default); padding:var(--space-xs) var(--space-sm); height:var(--base-size-32);
 }
 .score-table th{
-  color:var(--muted); font-weight:600; font-size:var(--t-label);
+  color:var(--fgColor-muted); font-weight:600; font-size:11px;
   letter-spacing:.05em; text-transform:uppercase;
 }
 .score-table tbody th{
-  text-align:left; color:var(--fg); font-size:var(--t-value);
+  text-align:left; color:var(--fgColor-default); font-size:15px;
   text-transform:none; letter-spacing:0; font-weight:600;
 }
 .score-table td.num{
   text-align:right; font-variant-numeric:tabular-nums;
-  font-family:var(--mono); font-size:var(--t-value); font-weight:600;
+  font-family:var(--fontStack-monospace); font-size:15px; font-weight:600;
 }
 
 /* ---------- renderer flow: tone + text marker, no colour bands (v2) ---------- */
-.flow{display:flex; flex-direction:column; gap:0; font-size:12px}
+.flow{display:flex; flex-direction:column; gap:0; font-size:var(--text-body-size-small)}
 .flow .node{
-  border:1px solid var(--border); border-radius:var(--r-sm);
-  background:var(--surface-alt); padding:8px 12px; position:relative;
+  border:var(--borderWidth-thin) solid var(--borderColor-default); border-radius:var(--borderRadius-medium);
+  background:var(--bgColor-muted); padding:var(--space-sm) var(--space-md); position:relative;
 }
-.flow .node .t{font-weight:650; font-size:12px}
-.flow .node .s{color:var(--muted); font-family:var(--mono); font-size:11px}
+.flow .node .t{font-weight:650; font-size:var(--text-body-size-small)}
+.flow .node .s{color:var(--fgColor-muted); font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small)}
 .flow .tag{
-  display:inline-flex; align-items:center; gap:5px; margin-left:8px;
-  font-family:var(--mono); font-size:10px; letter-spacing:.05em;
-  text-transform:uppercase; color:var(--muted);
-  background:var(--surface); border-radius:var(--r-pill); padding:1px 8px;
+  display:inline-flex; align-items:center; gap:var(--space-xs); margin-left:var(--space-sm);
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); letter-spacing:.05em;
+  text-transform:uppercase; color:var(--fgColor-muted);
+  background:var(--bgColor-default); border-radius:var(--borderRadius-small); padding:var(--space-xxs) var(--space-sm);
 }
-.flow .tag .mk{width:6px; height:6px; border-radius:50%; background:var(--mk-boot)}
-.flow .tag.prop .mk{background:var(--mk-done)}
-.flow .tag.bad .mk{background:var(--mk-err)}
+.flow .tag .mk{width:var(--base-size-6); height:var(--base-size-6); border-radius:var(--borderRadius-small); background:var(--fgColor-muted)}
+.flow .tag.prop .mk{background:var(--fgColor-accent)}
+.flow .tag.bad .mk{background:var(--fgColor-danger)}
 .flow .arrow{
-  align-self:center; color:var(--faint); font-family:var(--mono);
-  font-size:10px; letter-spacing:.04em; padding:3px 0;
+  align-self:center; color:var(--fgColor-muted); font-family:var(--fontStack-monospace);
+  font-size:var(--text-body-size-small); letter-spacing:.04em; padding:var(--space-xxs) 0;
 }
 .flow .branch{
-  font-family:var(--mono); font-size:10px; color:var(--muted);
-  margin:0 0 4px 2px;
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); color:var(--fgColor-muted);
+  margin:0 0 var(--space-xs) var(--space-xxs);
 }
-.seg{display:inline-flex; border:1px solid var(--border); border-radius:var(--r-sm); overflow:hidden}
+.seg{display:inline-flex; box-shadow:var(--boxShadow-thin) var(--borderColor-default); border-radius:var(--borderRadius-medium); overflow:hidden}
 .seg button{
-  font:inherit; font-size:12px; padding:6px 14px; min-height:32px;
-  background:var(--surface-alt); color:var(--fg); border:0;
-  border-right:1px solid var(--border); cursor:pointer;
-  display:inline-flex; align-items:center; gap:var(--icon-label-gap);
+  font:inherit; font-size:var(--text-body-size-small); padding:var(--space-xs) var(--space-md); min-height:var(--base-size-32);
+  background:var(--bgColor-muted); color:var(--fgColor-default); border:0;
+  border-right:var(--borderWidth-thin) solid var(--borderColor-default); cursor:pointer;
+  display:inline-flex; align-items:center; gap:var(--space-sm);
   transition:background-color var(--m-feedback) var(--ease-out),
              color var(--m-feedback) var(--ease-out);
 }
 .seg button:last-child{border-right:0}
-.seg button[aria-pressed="true"]{background:var(--accent); color:var(--accent-fg)}
+.seg button[aria-pressed="true"]{background:var(--bgColor-accent-emphasis); color:var(--fgColor-onEmphasis)}
 
-/* ---------- icon specimens + clear-space box (v2) ---------- */
-.icon-grid{
-  display:grid; grid-template-columns:132px 72px 1fr;
-  gap:var(--s2) var(--s3); align-items:center; font-size:12px;
-}
-.icon-grid .h{
-  font-family:var(--mono); font-size:10px; letter-spacing:.06em;
-  text-transform:uppercase; color:var(--faint); text-align:center;
-}
-.icon-grid .name{font-family:var(--mono); font-size:11px; color:var(--fg)}
-.icon-grid .cell{display:flex; justify-content:center; align-items:center}
-.icon-grid .rule{color:var(--muted); font-size:11px}
-.ic{color:var(--fg); display:block}
-/* padding box = glyph + --icon-clear-space on four sides */
-.icon-box{
-  display:inline-flex; align-items:center; justify-content:center;
-  padding:var(--icon-clear-space);
-  outline:1px dashed var(--border-strong); outline-offset:0;
-  border-radius:2px;
-}
-.icon-strip{
-  display:flex; align-items:center; gap:var(--s2);
-  border:1px solid var(--border); border-radius:var(--r-md);
-  background:var(--surface-alt); padding:var(--s3);
-}
-.icon-strip .lbl{font-family:var(--mono); font-size:11px; color:var(--muted); margin-right:var(--s2)}
-
+.ic{color:inherit;display:block}
 /* ---------- focus state comparison (v2) ---------- */
-.fstate-row{display:flex; gap:var(--s4); flex-wrap:wrap; align-items:flex-start}
-.fstate{display:flex; flex-direction:column; gap:6px; align-items:center}
+.fstate-row{display:flex; gap:var(--space-lg); flex-wrap:wrap; align-items:flex-start}
+.fstate{display:flex; flex-direction:column; gap:var(--space-xs); align-items:center}
 .fstate .cap{
-  font-family:var(--mono); font-size:10px; letter-spacing:.06em;
-  text-transform:uppercase; color:var(--muted);
+  font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small); letter-spacing:.06em;
+  text-transform:uppercase; color:var(--fgColor-muted);
 }
 .fbtn{
-  display:inline-flex; align-items:center; justify-content:center; gap:var(--icon-label-gap);
-  min-height:var(--icon-control-min); padding:0 12px;
-  font:inherit; font-size:13px; cursor:pointer;
-  background:var(--surface-alt); color:var(--fg);
-  border:1px solid var(--border); border-radius:var(--r-sm);
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--space-sm);
+  min-height:var(--base-size-32); padding:0 var(--space-md);
+  font:inherit; font-size:var(--text-body-size-small); cursor:pointer;
+  background:var(--bgColor-muted); color:var(--fgColor-default);
+  border:var(--borderWidth-thin) solid var(--borderColor-default); border-radius:var(--borderRadius-medium);
   transition:background-color var(--m-feedback) var(--ease-out),
              border-color var(--m-feedback) var(--ease-out);
 }
-.fbtn.is-hover{border-color:var(--border-strong)}
-.fbtn.is-focus{outline:2px solid var(--focus-ring); outline-offset:1px}
-.fbtn.is-active{background:var(--border); border-color:var(--border-strong)}
-:root[data-theme="dark"] .fbtn.is-active{background:var(--border-strong)}
+.fbtn.is-hover{border-color:var(--borderColor-emphasis)}
+.fbtn.is-focus{outline:var(--borderWidth-thick) solid var(--borderColor-emphasis); outline-offset:var(--borderWidth-thin)}
+.fbtn.is-active{background:var(--borderColor-default); border-color:var(--borderColor-emphasis)}
+:root[data-theme="dark"] .fbtn.is-active{background:var(--borderColor-emphasis)}
 
 .pill-note{
-  display:inline-block; font-family:var(--mono); font-size:10px;
-  letter-spacing:.05em; color:var(--muted);
-  border:1px dashed var(--border-strong); border-radius:var(--r-pill);
-  padding:2px 9px;
+  display:inline-block; font-family:var(--fontStack-monospace); font-size:var(--text-body-size-small);
+  letter-spacing:.05em; color:var(--fgColor-muted);
+  border:var(--borderWidth-thin) dashed var(--borderColor-emphasis); border-radius:var(--borderRadius-small);
+  padding:var(--space-xxs) var(--space-sm);
 }
 footer.end{
-  margin-top:var(--s6); padding-top:var(--s4); border-top:1px solid var(--border);
-  color:var(--muted); font-size:12px;
+  margin-top:var(--space-xl); padding-top:var(--space-lg); border-top:var(--borderWidth-thin) solid var(--borderColor-default);
+  color:var(--fgColor-muted); font-size:var(--text-body-size-small);
 }
 
-/* ---------- v3: data palette + motif marks ---------- */
-.pal-row{display:flex; flex-wrap:wrap; gap:var(--s2); align-items:center}
-.pal{
-  display:inline-flex; align-items:center; gap:8px;
-  font-family:var(--mono); font-size:11px;
-}
-.sw{
-  width:15px; height:15px; border-radius:3px; flex:none;
-  display:inline-block; vertical-align:-2px;
-  outline:1px solid #1f2328; outline-offset:0;
-}
-.pal .v{font-weight:700; color:var(--fg)}
-.pal .m{color:var(--muted); font-variant-numeric:tabular-nums}
-.mark-strip{
-  display:flex; align-items:center; gap:3px; flex-wrap:wrap;
-  background:var(--surface-alt); border-radius:var(--r-sm); padding:8px 10px;
-}
-.mark-strip.on-plain{background:#8ed973}
-.mark-strip.on-road{background:#156082}
-.mk15{width:15px; height:15px; display:block; flex:none}
-.mk32{width:32px; height:32px; display:block; flex:none}
-.mark-grid{
-  display:grid; grid-template-columns:96px repeat(3, minmax(0,1fr));
-  gap:var(--s2) var(--s3); align-items:center; font-size:12px;
-}
-.mark-grid .h{
-  font-family:var(--mono); font-size:10px; letter-spacing:.06em;
-  text-transform:uppercase; color:var(--faint);
-}
-.mark-grid .name{font-family:var(--mono); font-size:11px; color:var(--fg)}
-.mark-grid .cell{display:flex; align-items:center; gap:8px}
-.mark-grid .cell .nm{font-family:var(--mono); font-size:10px; color:var(--muted)}
 
 /* ==========================================================================
    RESPONSIVE — DEGRADATION BELOW 900px
    ========================================================================== */
-@media (max-width:900px){
-  .page{grid-template-columns:minmax(0,1fr); gap:var(--s5); padding:var(--s4) var(--s4) 48px}
-  .masthead{padding:var(--s4)}
+@media (max-width:56.25rem){
+  .page{grid-template-columns:minmax(0,1fr); gap:var(--space-xl); padding:var(--space-lg) var(--space-lg) var(--space-xl)}
+  .masthead{padding:var(--space-lg)}
   .index{position:static}
-  .index ol{display:flex; flex-wrap:wrap; gap:var(--s1)}
-  .index a{border:1px solid var(--border); border-radius:var(--r-pill); padding:4px 10px}
-  .grid2{grid-template-columns:minmax(0,1fr)}
-  .icon-grid{grid-template-columns:110px 60px;}
-  .icon-grid .rule{grid-column:1/-1}
+  .index ol{display:flex; flex-wrap:wrap; gap:var(--space-xs)}
+  .index a{border:var(--borderWidth-thin) solid var(--borderColor-default); border-radius:var(--borderRadius-small); padding:var(--space-xs) var(--space-sm)}
+  .grid2 > *{grid-column:1/-1} main,.index{grid-column:1/-1}
   .demo__meta{margin-left:0; width:100%}
 }
 @media (prefers-reduced-motion:reduce){
@@ -562,6 +479,30 @@ footer.end{
   }
 }
 </style>
+<!-- Inline SVG paths: @primer/octicons 19.38.0, unmodified.
+MIT License
+
+Copyright (c) 2026 GitHub Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-->
 </head>
 <body>
 
@@ -569,13 +510,13 @@ footer.end{
 <header class="masthead">
   <div class="masthead__inner">
     <div>
-      <div class="masthead__brand">procon-2026 viewer · design proposals · v3</div>
+      <div class="masthead__brand">procon-2026 viewer · design proposals · v5</div>
       <h1>Interaction / UX proposal</h1>
       <p class="masthead__lede">
         State models and interaction rules for the surfaces a contest team reads under time
         pressure: the replay transport, the SVG⇄WebGPU renderer switch, the live status HUD,
         and the map’s data marks. Every state below is anchored to a <code>data-testid</code>
-        that already exists in <code>packages/frontend/src</code>; live values come from
+        from the retired UI (PR #266); these names are proposed rebuild contracts; live values come from
         <code>e2e/fixtures/match-state.snapshot.json</code>.
       </p>
       <div class="skills" aria-label="Skills used">
@@ -605,7 +546,7 @@ footer.end{
       <li><a href="#live"><span class="n">03</span>Live status lifecycle</a></li>
       <li><a href="#keyboard"><span class="n">04</span>Keyboard &amp; focus</a></li>
       <li><a href="#icons"><span class="n">05</span>Iconography</a></li>
-      <li><a href="#marks"><span class="n">06</span>Data marks &amp; legend</a></li>
+      <li><a href="#maplayer"><span class="n">06</span>Map layer boundary</a></li>
       <li><a href="#motion"><span class="n">07</span>Motion spec</a></li>
       <li><a href="#a11y"><span class="n">08</span>Accessibility</a></li>
       <li><a href="#score"><span class="n">09</span>Score table</a></li>
@@ -629,7 +570,7 @@ footer.end{
       <svg viewBox="0 0 760 366" aria-hidden="true">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0 0 10 5 0 10Z" fill="var(--fg)"></path>
+            <path d="M0 0 10 5 0 10Z" fill="var(--fgColor-default)"></path>
           </marker>
         </defs>
         <rect class="d-node" x="20" y="20" width="132" height="46" rx="6"></rect>
@@ -655,8 +596,8 @@ footer.end{
         <text class="d-edge-label" x="522" y="34">Pause</text>
 
         <path class="d-edge" d="M674 66 C 674 108, 330 108, 330 70" marker-end="url(#ah)"></path>
-        <text class="d-edge-label" x="502" y="112">Play</text>
-        <text class="d-edge-sub" x="502" y="126">resume from current step</text>
+        <text class="d-edge-label" x="550" y="112">Play</text>
+        <text class="d-edge-sub" x="550" y="126">resume from current step</text>
 
         <line class="d-edge" x1="414" y1="66" x2="414" y2="160" marker-end="url(#ah)"></line>
         <text class="d-edge-label" x="426" y="112">EndReached</text>
@@ -673,7 +614,7 @@ footer.end{
         <text class="d-overlay-sub" x="72" y="128">applies to any state above</text>
 
         <rect class="d-overlay" x="20" y="318" width="728" height="36" rx="6"></rect>
-        <text class="d-overlay-sub" x="34" y="340">S5 rate-changed — transient feedback only (≤90ms): aria-pressed + fill. Sticky flag across every state; not a resting state (interaction-state: no phantom states).</text>
+        <text class="d-overlay-sub" x="34" y="340">S5 rate-changed — transient feedback only (≤90ms): aria-checked + fill. Sticky flag across every state; not a resting state (interaction-state: no phantom states).</text>
       </svg>
     </div>
 
@@ -721,12 +662,12 @@ footer.end{
           </tr>
           <tr data-state-row="S3">
             <th scope="row" class="rowhead"><code>replay-rate-1</code> / <code>-2</code> / <code>-4</code><div class="sm">values · 1× 2× 4×</div></th>
-            <td class="on"><span class="state-pip"></span>enabled · one <code>aria-pressed=true</code></td>
+            <td class="on"><span class="state-pip"></span>enabled · one <code>aria-checked=true</code></td>
             <td class="on"><span class="state-pip"></span>enabled · rate change re-arms timer</td>
             <td class="on"><span class="state-pip"></span>enabled</td>
             <td class="on"><span class="state-pip"></span>enabled</td>
             <td class="sm">enabled</td>
-            <td class="sm">pressed flips now · interval period = <code>max(50, round(1000/rate))</code></td>
+            <td class="sm">checked selection changes now · interval period = <code>max(50, round(1000/rate))</code></td>
           </tr>
           <tr data-state-row="S4">
             <th scope="row" class="rowhead"><code>replay-scrub</code><div class="sm">input[type=range]</div></th>
@@ -750,23 +691,23 @@ footer.end{
       </table>
     </div>
 
-    <div class="block" style="margin-top:16px">
+    <div class="block" style="margin-top:var(--space-lg)">
       <p class="block__t">Demo — drive the transport below; the state table rows highlight live</p>
       <div class="demo">
         <div class="demo__row">
           <button class="tbtn" type="button" data-testid="replay-step-back" aria-label="Step backward" title="Step backward" id="d-back">
-            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.6 3.6 3.2 8 7.6 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path><path d="M13 3.6 8.6 8 13 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z"/></svg>
           </button>
           <button class="tbtn" type="button" data-testid="replay-toggle" aria-label="Play" title="Play" id="d-toggle">
-            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" id="d-toggle-icon"><path d="M5.2 3.4 12.4 8 5.2 12.6Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+            <svg class="ic" id="d-toggle-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M13.378 6.948a1.2 1.2 0 0 1 0 2.103l-8 4.397A1.2 1.2 0 0 1 3.6 12.397V3.602A1.2 1.2 0 0 1 5.378 2.55z"/></svg>
           </button>
           <button class="tbtn" type="button" data-testid="replay-step-forward" aria-label="Step forward" title="Step forward" id="d-fwd">
-            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.6 7.4 8 3 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path><path d="M8.4 3.6 12.8 8 8.4 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z"/></svg>
           </button>
-          <div class="rates" role="group" aria-label="Playback rate">
-            <button class="rbtn" type="button" data-testid="replay-rate-1" aria-pressed="true" data-rate="1">1×</button>
-            <button class="rbtn" type="button" data-testid="replay-rate-2" aria-pressed="false" data-rate="2">2×</button>
-            <button class="rbtn" type="button" data-testid="replay-rate-4" aria-pressed="false" data-rate="4">4×</button>
+          <div class="rates" role="radiogroup" aria-label="Playback rate">
+            <button class="rbtn" type="button" data-testid="replay-rate-1" role="radio" aria-checked="true" tabindex="0" data-rate="1">1×</button>
+            <button class="rbtn" type="button" data-testid="replay-rate-2" role="radio" aria-checked="false" tabindex="-1" data-rate="2">2×</button>
+            <button class="rbtn" type="button" data-testid="replay-rate-4" role="radio" aria-checked="false" tabindex="-1" data-rate="4">4×</button>
           </div>
           <div class="demo__meta">
             <span class="l">Step</span>
@@ -774,7 +715,7 @@ footer.end{
             <span class="demo__state" id="d-state">S0 idle-at-step-1</span>
           </div>
         </div>
-        <label class="hint" for="d-scrub" style="display:block;margin-top:12px">Scrub</label>
+        <label class="hint" for="d-scrub" style="display:block;margin-top:var(--space-md)">Scrub</label>
         <input class="scrub" id="d-scrub" data-testid="replay-scrub" type="range" min="0" max="4" step="1" value="0" aria-valuetext="Step 1 of 5">
         <table class="score-table" id="d-scores">
           <caption>Scores — demo-match</caption>
@@ -791,7 +732,7 @@ footer.end{
       </p>
     </div>
 
-    <div class="tw" tabindex="0" style="margin-top:16px">
+    <div class="tw" tabindex="0" style="margin-top:var(--space-lg)">
       <table class="spec">
         <caption>Events — legality, guards, and intentional no-ops</caption>
         <thead>
@@ -964,7 +905,7 @@ footer.end{
     <div class="block">
       <p class="block__t">Badge specimens — neutral chip + tone-matched marker (v2), both themes at once</p>
       <div class="theme-row">
-        <div class="theme-sample" data-sample-theme="light">
+        <div class="theme-sample" data-sample-theme="light" data-color-mode="light" data-light-theme="light">
           <p class="theme-sample__cap">Light</p>
           <div class="theme-row">
             <span class="badge boot"><span class="mk"></span>—</span>
@@ -975,7 +916,7 @@ footer.end{
             <span class="badge stale"><span class="mk"></span>Stale<span class="tail">· 00:00:00</span></span>
           </div>
         </div>
-        <div class="theme-sample" data-sample-theme="dark">
+        <div class="theme-sample" data-sample-theme="dark" data-color-mode="dark" data-dark-theme="dark">
           <p class="theme-sample__cap">Dark</p>
           <div class="theme-row">
             <span class="badge boot"><span class="mk"></span>—</span>
@@ -987,8 +928,8 @@ footer.end{
           </div>
         </div>
       </div>
-      <p class="hint" style="margin-top:12px">
-        chip <code>--surface-alt</code> · marker Ø 8 px · text 11 px · STALE marker = hollow ring Ø 8 px / stroke 2 px.
+      <p class="hint" style="margin-top:var(--space-md)">
+        chip <code>bgColor.muted</code> · marker <code>base.size.8</code> · STALE ring <code>borderWidth.thick</code>.
       </p>
     </div>
 
@@ -996,48 +937,48 @@ footer.end{
       <table class="spec">
         <caption>Lifecycle — label, marker tone, meaning, and what the user should do</caption>
         <thead>
-          <tr><th scope="col">Badge</th><th scope="col">Wire status</th><th scope="col">Marker tone (light / dark, Lab L*)</th><th scope="col">Meaning</th><th scope="col">User action</th></tr>
+          <tr><th scope="col">Badge</th><th scope="col">Wire status</th><th scope="col">Primer semantic role (theme-resolved)</th><th scope="col">Meaning</th><th scope="col">User action</th></tr>
         </thead>
         <tbody>
           <tr>
             <th scope="row" class="rowhead"><span class="badge boot"><span class="mk"></span>—</span></th>
             <td class="sm">(none yet — <code>STATUS_PLACEHOLDER</code>, Live.tsx:71)</td>
-            <td class="sm"><code>#6e7781</code> L* 49.6 / <code>#8c959f</code> L* 61.3</td>
+            <td class="sm"><code>fgColor.muted</code></td>
             <td>First poll has not resolved.</td>
             <td>Poll period <b>1000 ms</b>; treat as empty after <b>5 × 1000 ms</b> — check <code>public/match-state.json</code> exists.</td>
           </tr>
           <tr>
             <th scope="row" class="rowhead"><span class="badge idle"><span class="mk"></span>Idle</span></th>
             <td class="sm"><code>waiting</code></td>
-            <td class="sm"><code>#8f680c</code> L* 46.7 / <code>#bb8b22</code> L* 60.9</td>
+            <td class="sm"><code>fgColor.attention</code></td>
             <td>Day window has not opened yet (<code>classifyStatus</code>).</td>
             <td>None. Confirm the coordinator start time if the day is overdue.</td>
           </tr>
           <tr>
             <th scope="row" class="rowhead"><span class="badge run"><span class="mk"></span>Running</span></th>
             <td class="sm"><code>running</code></td>
-            <td class="sm"><code>#2e7c48</code> L* 46.3 / <code>#519f68</code> L* 59.5</td>
+            <td class="sm"><code>fgColor.success</code></td>
             <td>Within the day window; revisions are being accepted.</td>
             <td>Watch the HUD. No action.</td>
           </tr>
           <tr>
             <th scope="row" class="rowhead"><span class="badge done"><span class="mk"></span>Completed</span></th>
             <td class="sm"><code>completed</code></td>
-            <td class="sm"><code>#3370b8</code> L* 46.6 / <code>#5e95d2</code> L* 60.4</td>
+            <td class="sm"><code>fgColor.accent</code></td>
             <td>Match finished (terminal).</td>
             <td>Go to <code>/replays</code> and review.</td>
           </tr>
           <tr>
             <th scope="row" class="rowhead"><span class="badge err"><span class="mk"></span>Error</span></th>
             <td class="sm"><code>rejected</code> / <code>error</code></td>
-            <td class="sm"><code>#ba4550</code> L* 46.0 / <code>#e06b72</code> L* 59.5</td>
+            <td class="sm"><code>fgColor.danger</code></td>
             <td>Submission rejected or coordinator error; <code>snapshot.error</code> is set.</td>
             <td>Read the <code>live-error</code> message (<code>role="alert"</code>) and check CLI output.</td>
           </tr>
           <tr>
             <th scope="row" class="rowhead"><span class="badge stale"><span class="mk"></span>Stale</span> <span class="pill-note">proposed</span></th>
             <td class="sm">any of the above — <b>derived overlay</b></td>
-            <td class="sm">hollow ring · <code>#8f680c</code> / <code>#bb8b22</code> (idle tone)</td>
+            <td class="sm">hollow ring · <code>fgColor.attention</code> (idle tone)</td>
             <td><code>now − lastSuccessAt ≥ 5 × DEFAULT_POLL_MS</code> (5000ms). Polls are failing but the last snapshot is still on screen (<code>fetchLiveSnapshot</code> returns <code>null</code> on failure and the poller keeps the previous value — <code>lib/live.ts:130–142, 314–317</code>).</td>
             <td>Do <b>not</b> trust the values below. Check the CLI is still writing <code>packages/frontend/public/match-state.json</code>. Values are last-known, not live.</td>
           </tr>
@@ -1049,7 +990,7 @@ footer.end{
       <span class="mk" aria-hidden="true"></span>
       <div>
         <b>Stale clock source = receipt, not the wire field.</b>
-        <span class="mono" style="font-size:11px">
+        <span class="mono" style="font-size:var(--text-body-size-small)">
           fixture <code>lastUpdateUnix: 0</code> → <code>formatClock(0) = 00:00:00</code> ·
           stale threshold <code>5 × 1000 ms = 5000 ms</code> after <code>lastSuccessAt</code>.
         </span>
@@ -1065,7 +1006,7 @@ footer.end{
         <div class="tile"><span class="l">Server</span><span class="v mono">http://127.0.0.1:8080</span></div>
         <div class="tile"><span class="l">Last update</span><span class="v mono">00:00:00</span></div>
       </div>
-      <p class="hint" style="margin-top:12px">
+      <p class="hint" style="margin-top:var(--space-md)">
         Type: label 11 px + value 15 px, two tiers, uniform.
         Mapping <code>live-day ← day/daysTotal</code> · <code>live-revisions ← revisions</code> ·
         <code>live-solver ← solver</code> · <code>live-server ← server</code> ·
@@ -1076,7 +1017,7 @@ footer.end{
     <div class="block">
       <p class="block__t">UI variant chosen by information priority (v2 — variant is never arbitrary)</p>
       <div class="tw" style="border:0">
-        <table class="spec" style="min-width:520px">
+        <table class="spec" style="min-width:32.5rem">
           <thead>
             <tr><th scope="col">Priority</th><th scope="col">Variant</th><th scope="col">Used for</th><th scope="col">Why this variant</th></tr>
           </thead>
@@ -1129,20 +1070,12 @@ footer.end{
     <div class="block">
       <p class="block__t">Focus ring spec (v2 — button tone, not the accent)</p>
       <ul class="tight">
-        <li><b>Exact values:</b> <code>outline: 2px solid var(--focus-ring); outline-offset: 1px;</code>
-          where <code>--focus-ring</code> = <code>#6e7781</code> (light) / <code>#8c959f</code> (dark).
-          A button-tone neutral — the same grey family as <code>--border-strong</code> / <code>--muted</code>,
-          one step darker on light and one step lighter on dark. The accent (<code>#0969da</code> / <code>#2f81f7</code>)
-          is <b>withdrawn</b> from focus (v1 used <code>2px</code> + <code>offset 2px</code> + accent).</li>
-        <li><b>Functional requirement, not a preference.</b> The indicator must remain
-          distinguishable from the unfocused state, or keyboard operation breaks. This is why the
-          ring is toned down to a button tone but <i>not</i> removed or faded into the border:
-          measured against the control surface the ring holds <b>4.3:1</b> (light, <code>#6e7781</code>
-          on <code>#f6f8fa</code>) / <b>5.7:1</b> (dark, <code>#8c959f</code> on <code>#161b22</code>)
-          — above the 3:1 non-text floor — while sitting clearly apart from the hover
-          border (a brightness step, not a hue change).</li>
-        <li><b>Inside <code>.map-viewer</code></b> (<code>overflow: hidden</code>) use
-          <code>outline-offset: -2px</code> so the 2px ring is fully inside and never clipped.</li>
+        <li><b>Token references:</b> <code>outline: var(--borderWidth-thick) solid var(--borderColor-emphasis)</code>;
+          offset <code>var(--borderWidth-thin)</code>. No accent focus ring.</li>
+        <li><b>Functional requirement:</b> verify the focus indicator against the actual
+          <code>bgColor.default</code> and <code>bgColor.muted</code> backgrounds in both themes;
+          non-text contrast must be at least 3:1. Earlier custom-palette measurements do not apply.</li>
+        <li><b>Clipped map viewport:</b> use <code>var(--focus-outline-offset)</code> to keep the ring inside.</li>
         <li><b>Never animate</b> the ring (0ms) — it must appear in the same frame as focus.</li>
         <li>Never use <code>:focus</code> — a mouse click must not leave a ring on a button.</li>
         <li>Disabled controls keep the native disabled look (<code>opacity: .45</code>,
@@ -1170,11 +1103,9 @@ footer.end{
           <span class="cap">active</span>
         </div>
       </div>
-      <p class="hint" style="margin-top:12px">
-        rest 1 px <code>--border</code> · hover 1 px <code>--border-strong</code> ·
-        focus 2 px <code>--focus-ring</code> @ offset 1 px · active fill, no ring.
-        Ring vs rest <b>4.27:1</b> (light) / <b>5.70:1</b> (dark) — above the 3:1 non-text floor,
-        below a highlight. Toggle the header control and re-check.
+      <p class="hint" style="margin-top:var(--space-md)">
+        Rest: <code>borderWidth.thin / borderColor.default</code>; hover: <code>borderColor.emphasis</code>;
+        focus: <code>borderWidth.thick / borderColor.emphasis</code>. 両テーマの実背景で contrast を検証する。
       </p>
     </div>
 
@@ -1230,6 +1161,53 @@ footer.end{
       </table>
     </div>
 
+    <div class="tw" tabindex="0" style="margin-top:var(--space-lg)">
+      <table class="spec" style="min-width:38.75rem">
+        <caption>Primitive mapping — @kobalte/core (unstyled) + @primer/css vs bespoke Solid</caption>
+        <thead>
+          <tr><th scope="col">Interaction</th><th scope="col">Maps to</th><th scope="col">Why</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row" class="rowhead">rate radiogroup <code>replay-rate-*</code></th>
+            <td><b>Kobalte</b> <code>RadioGroup</code></td>
+            <td class="sm">roving tabindex + arrow keys + aria-checked come with the primitive; selection follows focus per section 04</td></tr>
+          <tr><th scope="row" class="rowhead">renderer segmented <code>solvers-renderer-*</code></th>
+            <td><b>Kobalte</b> <code>ToggleButton</code> (segmented skin)</td>
+            <td class="sm">mutually exclusive pressed states follow the <i>effective</i> renderer (section 02); requested mode and async fallback remain domain state</td></tr>
+          <tr><th scope="row" class="rowhead">theme toggle <code>theme-toggle</code></th>
+            <td><b>Kobalte</b> <code>ToggleButton</code></td>
+            <td class="sm">pressed state is the primitive’s; rest/hover/focus tiers stay Primer CSS</td></tr>
+          <tr><th scope="row" class="rowhead">sidebar / route nav <code>app-sidebar</code></th>
+            <td><b>Kobalte</b> <code>Tabs</code> (link list) or plain <code>&lt;a&gt;</code></td>
+            <td class="sm">if route switching is in-place, Tabs owns arrow-key movement; if full nav, native links (section 04 tab order)</td></tr>
+          <tr><th scope="row" class="rowhead">future row actions / ActionMenu</th>
+            <td><b>Kobalte</b> <code>DropdownMenu</code> / <code>Popover</code> / <code>Dialog</code></td>
+            <td class="sm">focus management, Escape, restore-to-trigger are exactly the behaviour CSS cannot fake</td></tr>
+          <tr><th scope="row" class="rowhead">binary preference switch</th>
+            <td><b>Kobalte</b> <code>Switch</code></td>
+            <td class="sm">checked state, label association and keyboard activation; Primer classes supply appearance</td></tr>
+          <tr><th scope="row" class="rowhead">transport buttons + scrub</th>
+            <td><b>bespoke Solid</b> (native <code>&lt;button&gt;</code> / <code>&lt;input type=range&gt;</code>)</td>
+            <td class="sm">no primitive needed — plain semantics; state machine is <code>createReplayStore</code></td></tr>
+          <tr><th scope="row" class="rowhead">S4 scrub overlay · S5 rate-changed</th>
+            <td><b>bespoke Solid</b></td>
+            <td class="sm">orthogonal overlays over the store snapshot; no Kobalte primitive has this shape</td></tr>
+          <tr><th scope="row" class="rowhead">frame probe / blank-frame fallback</th>
+            <td><b>bespoke Solid</b> (WebGpuMapViewer)</td>
+            <td class="sm">rAF readback + <code>data-fallback-reason</code>; domain logic, not widget behaviour</td></tr>
+          <tr><th scope="row" class="rowhead">live status lifecycle + STALE</th>
+            <td><b>bespoke Solid</b> + <code>role="status"</code> live regions</td>
+            <td class="sm">poller owns <code>lastSuccessAt</code>; announcements use platform live regions</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint" style="margin-top:var(--space-sm)">
+      Rule: if Kobalte has the primitive, take the primitive and skin it with Primer classes
+      (@primer/css) — never rebuild its behaviour. If it does not (transport state machine,
+      scrub overlay, frame probe, poller), implement in Solid and keep the state tables above
+      as the contract.
+    </p>
+
     <div class="note">
       <span class="mk" aria-hidden="true"></span>
       <div>
@@ -1243,141 +1221,21 @@ footer.end{
   <!-- ================================================================== -->
   <section class="spec" id="icons">
     <div class="sec-head"><span class="sec-num">05</span><h2>Iconography — one family, icon-first</h2></div>
-    <p class="lede">
-      Replaces the current text glyphs (<code>◀◀</code> / <code>Play</code> / <code>▶▶</code>,
-      <code>ReplayViewer.tsx:145–162</code>) with a single family shared by the transport set
-      (play / pause / step / rewind) and the renderer set (SVG / WebGPU). Icons are the
-      <b>primary recognition axis</b>; text labels are secondary (accessible name via
-      <code>aria-label</code>, visible label only where it adds meaning). Density and restraint
-      follow GitHub’s toolbars — 16px control glyphs, monochrome <code>currentColor</code>,
-      few path nodes — without copying octicon shapes or GitHub brand colour.
-    </p>
-
-    <div class="block">
-      <p class="block__t">Family profile (transport + renderer = one family; v2 withdrew the fill/outline split)</p>
-      <ul class="tight">
-        <li><b>Artboards 16 and 24 only</b> (<code>viewBox="0 0 16 16"</code> /
-          <code>"0 0 24 24"</code>). No 20, no arbitrary scales. Render 16 from the 16 artboard,
-          24 from the 24 artboard.</li>
-        <li><b>One construction:</b> solid silhouette (<code>fill="currentColor"</code>) with a
-          same-colour rounding stroke — <code>stroke-width 1.5</code> on 16,
-          <code>2.25</code> on 24 (identical optical weight, 0.094 of the artboard),
-          <code>stroke-linejoin/linecap: round</code>.</li>
-        <li><b>Same corner treatment everywhere:</b> rounded joins on polygons, <code>rx 1.2</code>
-          (16) / <code>rx 1.8</code> (24) on rectangles. No square-corner icon sits next to a
-          rounded one.</li>
-        <li><b>Optical size:</b> painted content occupies 12u of the 16 artboard (75%), 18u of the
-          24. Play’s apex sits at x≈12.4 (16 grid) — right-biased so the solid triangle centres
-          optically. Path node count per icon ≤ 4.</li>
-        <li><b>Colour:</b> <code>currentColor</code> only. Disabled (opacity .45), hover and active
-          work without redrawing. No icon carries its own fill.</li>
-        <li><b>Selected state is not colour alone:</b> rate / renderer segments keep
-          <code>aria-pressed</code> + filled accent surface (active state — the one place accent is
-          allowed); glyph shape is unchanged.</li>
-        <li><b>Target ≠ glyph:</b> 16px glyph inside a 32–36px control. Never shrink the hit area
-          to the glyph.</li>
-        <li><b>Icon + text:</b> the icon leads; label is secondary. <code>1× 2× 4×</code> stay text
-          (they are values, not actions). Transport actions are icon-only with
-          <code>aria-label</code> + <code>title</code>.</li>
-        <li><b>Weight budget:</b> inline SVG only — no icon font, no external file, no network
-          fetch. This sheet carries 19 SVGs total (v1 had 29).</li>
-      </ul>
-    </div>
-
-    <div class="block">
-      <p class="block__t">Clear-space tokens — the icon + its margin is the component (consumed by design-system.html)</p>
-      <ul class="tight">
-        <li><code>--icon-size-sm: 16px</code> · <code>--icon-size-lg: 24px</code> — the only two
-          optical sizes. Do not render intermediate sizes; do not scale the 24 artboard down to 16.</li>
-        <li><code>--icon-clear-space: 2px</code> — four-sided clear space. The icon’s layout box is
-          glyph + 2px on every side; nothing (label, edge, badge) may enter it. Drawn as the
-          dashed box in the specimen below.</li>
-        <li><code>--icon-label-gap: 6px</code> — icon-to-label gap in an icon+text control
-          (dense toolbar rhythm; 4px collides, 8px reads as a separate item).</li>
-        <li><code>--icon-control-min: 32px</code> — minimum control dimension (hit target).</li>
-        <li><code>--icon-stroke: 1.5px</code> — effective stroke at size-sm; ×1.5 at size-lg.</li>
-        <li><b>Centring rule:</b> the control content box centres the icon with
-          <code>display:flex; align-items:center; justify-content:center</code>. No optical nudge
-          inside controls — silhouettes are pre-biased on the artboard (play’s apex etc.), so the
-          family centres as a set. The padding box above is what gets centred, not the raw path bounds.</li>
-      </ul>
-    </div>
-
-    <div class="block">
-      <p class="block__t">Family specimen — 24 artboard with the clear-space box drawn (dashed = padding boundary)</p>
-      <div class="icon-grid">
-        <div class="name">name</div><div class="h">24</div><div class="h rule">rule</div>
-
-        <div class="name">play</div>
-        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.8 5.1 18.6 12 7.8 18.9Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
-        <div class="rule">apex right of centre — optical centring pre-biased on the artboard</div>
-
-        <div class="name">pause</div>
-        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.6" y="5.1" width="4.2" height="13.8" rx="1.8" fill="currentColor"></rect><rect x="13.2" y="5.1" width="4.2" height="13.8" rx="1.8" fill="currentColor"></rect></svg></span></div>
-        <div class="rule">two bars, 1.6u gap — mass matches play</div>
-
-        <div class="name">step-back</div>
-        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.4 5.4 4.8 12 11.4 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path><path d="M19.5 5.4 12.9 12 19.5 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
-        <div class="rule">two left triangles — semantic “previous step”, not a physical arrow</div>
-
-        <div class="name">step-forward</div>
-        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.4 11.1 12 4.5 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path><path d="M12.6 5.4 19.2 12 12.6 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
-        <div class="rule">mirror of step-back — same construction</div>
-
-        <div class="name">rewind</div>
-        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="4.2" y="5.1" width="2.85" height="13.8" rx="1.35" fill="currentColor"></rect><path d="M19.5 5.4 9.3 12 19.5 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
-        <div class="rule">bar + one left triangle — “go to start”</div>
-
-        <div class="name">renderer-svg</div>
-        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2 19.35 8.4 19.35 15.6 12 19.8 4.65 15.6 4.65 8.4Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
-        <div class="rule">pointy-top hex — the map’s own geometry; same solid construction</div>
-
-        <div class="name">renderer-webgpu</div>
-        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M4.8 4.8h14.4v14.4H4.8V4.8Zm3 3v8.4h8.4V7.8H7.8Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
-        <div class="rule">die with a knocked-out core — GPU as silicon; 2 subpaths</div>
-      </div>
-      <p class="hint" style="margin-top:10px">
-        Specimen = 24 artboard (clear-space box drawn). 16 artboard = control glyph, true size in the row below.
-      </p>
-    </div>
-
-    <div class="block">
-      <p class="block__t">In context — transport row at 16px glyphs in 32px targets</p>
-      <div class="icon-strip">
-        <span class="lbl">transport</span>
-        <button class="tbtn" type="button" title="Step backward" aria-label="Step backward" disabled>
-          <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.6 3.6 3.2 8 7.6 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path><path d="M13 3.6 8.6 8 13 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
-        </button>
-        <button class="tbtn" type="button" title="Play" aria-label="Play">
-          <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.2 3.4 12.4 8 5.2 12.6Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
-        </button>
-        <button class="tbtn" type="button" title="Step forward" aria-label="Step forward">
-          <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.6 7.4 8 3 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path><path d="M8.4 3.6 12.8 8 8.4 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
-        </button>
-        <button class="tbtn" type="button" title="Rewind to start" aria-label="Rewind to start">
-          <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.8" y="3.4" width="1.9" height="9.2" rx=".9" fill="currentColor"></rect><path d="M13 3.6 6.2 8 13 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
-        </button>
-        <div class="rates" role="group" aria-label="Playback rate">
-          <button class="rbtn" type="button" aria-pressed="true">1×</button>
-          <button class="rbtn" type="button" aria-pressed="false">2×</button>
-          <button class="rbtn" type="button" aria-pressed="false">4×</button>
-        </div>
-        <span class="lbl" style="margin-left:auto">renderer</span>
-        <div class="seg" role="group" aria-label="Renderer mode">
-          <button type="button" aria-pressed="true">
-            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.8 12.9 5.6 12.9 10.4 8 13.2 3.1 10.4 3.1 5.6Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
-            SVG
-          </button>
-          <button type="button" aria-pressed="false">
-            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M3.2 3.2h9.6v9.6H3.2V3.2Zm2 2v5.6h5.6V5.2H5.2Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
-            WebGPU
-          </button>
-        </div>
-      </div>
-      <p class="hint" style="margin-top:10px">
-        RTL: step glyphs do not mirror (semantic step direction ≠ physical arrow). Renderer labels sit at the secondary tier.
-      </p>
-    </div>
+    <p class="lede">UI icon は <code>@primer/octicons</code> の inline SVG を使用する。
+      path は改変せず、<code>currentColor</code> を継承する。Play は <code>triangle-fill</code>、
+      <code>skip</code> は dependency skip なので使用しない。地図の符号は <a href="visualizer.html">visualizer.html</a> に属する。</p>
+    <div class="tw"><table class="spec"><caption>Octicons の役割対応</caption>
+      <thead><tr><th scope="col">役割</th><th scope="col">Octicon</th><th scope="col">16</th><th scope="col">24</th></tr></thead><tbody>
+<tr><th scope="row">Play</th><td><code>triangle-fill</code></td><td><svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M13.378 6.948a1.2 1.2 0 0 1 0 2.103l-8 4.397A1.2 1.2 0 0 1 3.6 12.397V3.602A1.2 1.2 0 0 1 5.378 2.55z"/></svg></td><td><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M20.067 10.421c1.243.684 1.243 2.471 0 3.155l-12 6.596A1.8 1.8 0 0 1 5.4 18.595V5.402a1.8 1.8 0 0 1 2.667-1.577z"/></svg></td></tr>
+<tr><th scope="row">Pause</th><td><code>pause</code></td><td><svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5 2h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm5 0h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z"/></svg></td><td><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M9 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21H9a1.5 1.5 0 0 0 1.5-1.5v-15A1.5 1.5 0 0 0 9 3Zm7.5 0H15a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 15 21h1.5a1.5 1.5 0 0 0 1.5-1.5v-15A1.5 1.5 0 0 0 16.5 3Z"/></svg></td></tr>
+<tr><th scope="row">Step back</th><td><code>chevron-left</code></td><td><svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z"/></svg></td><td><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M15.28 5.22a.75.75 0 0 1 0 1.06L9.56 12l5.72 5.72a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215l-6.25-6.25a.75.75 0 0 1 0-1.06l6.25-6.25a.75.75 0 0 1 1.06 0Z"/></svg></td></tr>
+<tr><th scope="row">Step forward</th><td><code>chevron-right</code></td><td><svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z"/></svg></td><td><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"/></svg></td></tr>
+<tr><th scope="row">Start</th><td><code>move-to-start</code></td><td><svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M5.22 7.47a.749.749 0 0 0 0 1.06l3.75 3.75a.749.749 0 1 0 1.06-1.06L7.561 8.75h6.689a.75.75 0 0 0 0-1.5H7.561l2.469-2.47a.749.749 0 1 0-1.06-1.06L5.22 7.47ZM3 3.75a.75.75 0 0 0-1.5 0v8.5a.75.75 0 0 0 1.5 0v-8.5Z"/></svg></td><td><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12.78 18.78a.749.749 0 0 1-1.06 0l-6.25-6.25a.749.749 0 0 1 0-1.06l6.25-6.25a.749.749 0 1 1 1.06 1.06l-4.969 4.97H22.25a.75.75 0 0 1 0 1.5H7.811l4.969 4.97a.749.749 0 0 1 0 1.06ZM2.75 3.75a.75.75 0 0 1 .75.75v15a.75.75 0 0 1-1.5 0v-15a.75.75 0 0 1 .75-.75Z"/></svg></td></tr>
+<tr><th scope="row">End</th><td><code>move-to-end</code></td><td><svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="m10.78 8.53-3.75 3.75a.749.749 0 1 1-1.06-1.06l2.469-2.47H1.75a.75.75 0 0 1 0-1.5h6.689L5.97 4.78a.749.749 0 1 1 1.06-1.06l3.75 3.75a.749.749 0 0 1 0 1.06ZM13 12.25v-8.5a.75.75 0 0 1 1.5 0v8.5a.75.75 0 0 1-1.5 0Z"/></svg></td><td><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M11.22 5.22a.749.749 0 0 1 1.06 0l6.25 6.25a.749.749 0 0 1 0 1.06l-6.25 6.25a.749.749 0 1 1-1.06-1.06l4.969-4.97H1.75a.75.75 0 0 1 0-1.5h14.439L11.22 6.28a.749.749 0 0 1 0-1.06Zm10.03-1.47a.75.75 0 0 1 .75.75v15a.75.75 0 0 1-1.5 0v-15a.75.75 0 0 1 .75-.75Z"/></svg></td></tr>
+<tr><th scope="row">SVG renderer</th><td><code>file-media</code></td><td><svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M16 13.25A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25V2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75ZM1.75 2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h.94l.03-.03 6.077-6.078a1.75 1.75 0 0 1 2.412-.06L14.5 10.31V2.75a.25.25 0 0 0-.25-.25Zm12.5 11a.25.25 0 0 0 .25-.25v-.917l-4.298-3.889a.25.25 0 0 0-.344.009L4.81 13.5ZM7 6a2 2 0 1 1-3.999.001A2 2 0 0 1 7 6ZM5.5 6a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0Z"/></svg></td><td><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M21.75 21.5H2.25A1.75 1.75 0 0 1 .5 19.75V4.25c0-.966.784-1.75 1.75-1.75h19.5c.966 0 1.75.784 1.75 1.75v15.5a1.75 1.75 0 0 1-1.75 1.75ZM2.25 4a.25.25 0 0 0-.25.25v15.5c0 .138.112.25.25.25h3.178L14 10.977a1.749 1.749 0 0 1 2.506-.032L22 16.44V4.25a.25.25 0 0 0-.25-.25ZM22 19.75v-1.19l-6.555-6.554a.248.248 0 0 0-.18-.073.247.247 0 0 0-.178.077L7.497 20H21.75a.25.25 0 0 0 .25-.25ZM10.5 9.25a3.25 3.25 0 1 1-6.5 0 3.25 3.25 0 0 1 6.5 0Zm-1.5 0a1.75 1.75 0 1 0-3.501.001A1.75 1.75 0 0 0 9 9.25Z"/></svg></td></tr>
+<tr><th scope="row">WebGPU renderer</th><td><code>cpu</code></td><td><svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M6.5.75V2h3V.75a.75.75 0 0 1 1.5 0V2h1.25c.966 0 1.75.784 1.75 1.75V5h1.25a.75.75 0 0 1 0 1.5H14v3h1.25a.75.75 0 0 1 0 1.5H14v1.25A1.75 1.75 0 0 1 12.25 14H11v1.25a.75.75 0 0 1-1.5 0V14h-3v1.25a.75.75 0 0 1-1.5 0V14H3.75A1.75 1.75 0 0 1 2 12.25V11H.75a.75.75 0 0 1 0-1.5H2v-3H.75a.75.75 0 0 1 0-1.5H2V3.75C2 2.784 2.784 2 3.75 2H5V.75a.75.75 0 0 1 1.5 0Zm5.75 11.75a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25h-8.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25ZM5.75 5h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.5A.75.75 0 0 1 5.75 5Zm.75 4.5h3v-3h-3Z"/></svg></td><td><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8.75 8h6.5a.75.75 0 0 1 .75.75v6.5a.75.75 0 0 1-.75.75h-6.5a.75.75 0 0 1-.75-.75v-6.5A.75.75 0 0 1 8.75 8Zm.75 6.5h5v-5h-5Z"/><path d="M15.25 1a.75.75 0 0 1 .75.75V4h2.25c.966 0 1.75.784 1.75 1.75V8h2.25a.75.75 0 0 1 0 1.5H20v5h2.25a.75.75 0 0 1 0 1.5H20v2.25A1.75 1.75 0 0 1 18.25 20H16v2.25a.75.75 0 0 1-1.5 0V20h-5v2.25a.75.75 0 0 1-1.5 0V20H5.75A1.75 1.75 0 0 1 4 18.25V16H1.75a.75.75 0 0 1 0-1.5H4v-5H1.75a.75.75 0 0 1 0-1.5H4V5.75C4 4.784 4.784 4 5.75 4H8V1.75a.75.75 0 0 1 1.5 0V4h5V1.75a.75.75 0 0 1 .75-.75Zm3 17.5a.25.25 0 0 0 .25-.25V5.75a.25.25 0 0 0-.25-.25H5.75a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25Z"/></svg></td></tr></tbody></table></div>
+    <p class="hint">光学サイズは Octicons の 16 / 24 viewBox。間隔は <code>space.xxs</code> / <code>space.sm</code>、
+      control の最小寸法は Primer <code>base.size.32</code>。独自の stroke / radius / icon scale は定義しない。</p>
   </section>
   <!-- ================================================================== -->
   <section class="spec" id="maplayer">
@@ -1390,7 +1248,7 @@ footer.end{
       artifacts cannot contradict each other.
     </p>
     <div class="tw" tabindex="0">
-      <table class="spec" style="min-width:620px">
+      <table class="spec" style="min-width:38.75rem">
         <caption>State-model touchpoints into the mark layer (implementation contract)</caption>
         <thead>
           <tr><th scope="col">Touchpoint</th><th scope="col">State authority</th><th scope="col">What the mark layer must expose</th></tr>
@@ -1437,7 +1295,7 @@ footer.end{
     </p>
 
     <div class="block">
-      <p class="block__t">Motion vocabulary (component-level; colour/type tokens stay in design-system.html)</p>
+      <p class="block__t">Motion vocabulary (component-level; colour/type tokens are Primer’s own)</p>
       <p class="hint" style="margin:0">
         <code>--m-feedback: 90ms</code> · <code>--m-state: 120ms</code> · <code>--m-swap: 140ms</code> ·
         <code>--ease-out: cubic-bezier(0.2, 0, 0, 1)</code> · <code>--ease-linear: linear</code> (progress fill only)
@@ -1453,7 +1311,7 @@ footer.end{
         <tbody>
           <tr><th scope="row" class="rowhead">Transport button hover / press</th><td><code>background-color, border-color</code></td><td class="num">90ms</td><td>ease-out</td><td>pointerenter / pointerdown</td><td class="sm">0ms — colour still changes</td></tr>
           <tr><th scope="row" class="rowhead">Focus ring</th><td><code>outline</code></td><td class="num">0ms</td><td>—</td><td><code>:focus-visible</code></td><td class="sm">unchanged — ring is not motion</td></tr>
-          <tr><th scope="row" class="rowhead">Rate select (<code>aria-pressed</code>)</th><td><code>background-color, color</code></td><td class="num">90ms</td><td>ease-out</td><td>click / keys 1·2·4</td><td class="sm">0ms</td></tr>
+          <tr><th scope="row" class="rowhead">Rate select (<code>aria-checked</code>)</th><td><code>background-color, color</code></td><td class="num">90ms</td><td>ease-out</td><td>click / keys 1·2·4</td><td class="sm">0ms</td></tr>
           <tr><th scope="row" class="rowhead">Scrub progress while playing</th><td><code>width</code> on fill</td><td class="num">100ms</td><td>linear</td><td>auto-advance tick (1000 / 500 / 250ms at 1× / 2× / 4×)</td><td class="sm">0ms</td></tr>
           <tr><th scope="row" class="rowhead">Scrub drag (pointer)</th><td>thumb / fill</td><td class="num">0ms</td><td>—</td><td>pointermove — must track the pointer</td><td class="sm">0ms (direct manipulation)</td></tr>
           <tr><th scope="row" class="rowhead">Scrub keyboard step</th><td>fill</td><td class="num">60ms</td><td>ease-out</td><td><kbd>←</kbd>/<kbd>→</kbd> on the range</td><td class="sm">0ms</td></tr>
@@ -1473,7 +1331,7 @@ footer.end{
         <li>Hover lift or scale · badge pulse · skeleton shimmer (static skeleton bars only)</li>
         <li>Loading spinner — use the existing <code>webgpu-map-loading</code> line or static skeletons</li>
       </ul>
-      <p class="hint" style="margin-top:10px">
+      <p class="hint" style="margin-top:var(--space-sm)">
         Reduced-motion: crossfade 140 ms → 0 ms (instant swap) · feedback colour retained · focus ring untouched.
         Enforced on this sheet by <code>@media (prefers-reduced-motion: reduce)</code>.
       </p>
@@ -1543,7 +1401,7 @@ footer.end{
             <td><span class="sev mod"><span class="mk"></span>Moderate · P2</span></td>
             <td><b>Renderer segment has no designed focus/selected treatment.</b> No rule exists for <code>.page__renderer-btn</code> anywhere in <code>src/styles/</code>; screenshot shows raw UA buttons (<code>uishots2/3</code>).</td>
             <td>Keyboard focus on the segment is inconsistent with every other control.</td>
-            <td>Same <code>:focus-visible</code> ring as section 04 (<code>2px --focus-ring / offset 1px</code>) + <code>[aria-pressed=true]</code> fill as <code>replay-viewer__rate-btn</code>.</td>
+            <td>Same <code>:focus-visible</code> ring as section 04 (<code>borderWidth.thick / borderColor.emphasis / offset borderWidth.thin</code>) + <code>[aria-pressed=true]</code> fill as <code>replay-viewer__rate-btn</code>.</td>
           </tr>
           <tr>
             <td><span class="sev mod"><span class="mk"></span>Moderate · P2</span></td>
@@ -1593,7 +1451,7 @@ footer.end{
           <li><b>Type: two tiers only (v2).</b> Labels (caption, column heads) at 11px; values (player name, score) at 15px. No third size for “emphasis” — the score’s priority comes from right alignment and column position, not a larger font.</li>
           <li><b>Missing value:</b> em dash <code>—</code> (same discipline as <code>STATUS_PLACEHOLDER</code>, Live.tsx:71). Never an empty cell.</li>
           <li><b>No delta column.</b> F1-style red/green deltas are explicitly out of the brief’s colour discipline (DESIGN-BRIEF, References — do not copy).</li>
-          <li><b>Density:</b> row height 32px (<code>--app-row-h</code>), 1px bottom border only, no zebra, no hover chrome — 2 rows, read-only.</li>
+          <li><b>Density:</b> row height <code>base.size.32</code>, <code>borderWidth.thin</code> / <code>borderColor.default</code> row divider, no zebra, no hover chrome — 2 rows, read-only.</li>
           <li><b>Growth:</b> if players &gt; 8 rows, sticky <code>thead</code> inside the table’s own scroll region (never hide the scrollbar).</li>
         </ul>
       </div>
@@ -1607,7 +1465,7 @@ footer.end{
             <tr><th scope="row">bob</th><td class="num">31</td></tr>
           </tbody>
         </table>
-        <p class="hint" style="margin-top:10px">
+        <p class="hint" style="margin-top:var(--space-sm)">
           <code>FIXTURE_REPLAY</code> series <code>turn × 10 + idx</code>:
           alice 0 · 10 · 20 · <b>30</b> · 40 &nbsp;/&nbsp; bob 1 · 11 · 21 · <b>31</b> · 41.
           Live tiles (section 03) source <code>match-state.snapshot.json</code> only.
@@ -1619,20 +1477,20 @@ footer.end{
       <p class="block__t">Empty / loading states</p>
       <div class="grid2">
         <div>
-          <p class="hint" style="margin:0 0 6px">Empty — no frame (<code>map-viewer-empty</code> is shown instead of the table)</p>
-          <div class="tile" style="width:100%; text-align:center"><span class="v mono" style="font-size:12px">No replay loaded.</span></div>
-          <p class="hint" style="margin-top:6px">When a frame exists but <code>scores</code> is empty: header + one row <code>—</code> spanning both columns with “No scores at this step.”</p>
+          <p class="hint" style="margin:0 0 var(--space-xs)">Empty — no frame (<code>map-viewer-empty</code> is shown instead of the table)</p>
+          <div class="tile" style="width:100%; text-align:center"><span class="v mono" style="font-size:var(--text-body-size-small)">No replay loaded.</span></div>
+          <p class="hint" style="margin-top:var(--space-xs)">When a frame exists but <code>scores</code> is empty: header + one row <code>—</code> spanning both columns with “No scores at this step.”</p>
         </div>
         <div>
-          <p class="hint" style="margin:0 0 6px">Loading — <code>aria-busy="true"</code>, static skeleton (no shimmer)</p>
+          <p class="hint" style="margin:0 0 var(--space-xs)">Loading — <code>aria-busy="true"</code>, static skeleton (no shimmer)</p>
           <table class="score-table" aria-busy="true">
             <caption>Scores — loading</caption>
             <thead><tr><th scope="col">Player</th><th scope="col" class="num">Score</th></tr></thead>
             <tbody>
-              <tr><th scope="row"><span style="display:inline-block;width:64px;height:10px;background:var(--surface-alt);border-radius:2px"></span><span class="sr-only" style="position:absolute;left:-9999px">Loading scores…</span></th>
-                  <td class="num"><span style="display:inline-block;width:32px;height:10px;background:var(--surface-alt);border-radius:2px"></span></td></tr>
-              <tr><th scope="row"><span style="display:inline-block;width:64px;height:10px;background:var(--surface-alt);border-radius:2px"></span></th>
-                  <td class="num"><span style="display:inline-block;width:32px;height:10px;background:var(--surface-alt);border-radius:2px"></span></td></tr>
+              <tr><th scope="row"><span style="display:inline-block;width:var(--base-size-64);height:var(--base-size-8);background:var(--bgColor-muted);border-radius:var(--borderRadius-small)"></span><span class="sr-only" style="position:absolute;left:-625rem">Loading scores…</span></th>
+                  <td class="num"><span style="display:inline-block;width:var(--base-size-32);height:var(--base-size-8);background:var(--bgColor-muted);border-radius:var(--borderRadius-small)"></span></td></tr>
+              <tr><th scope="row"><span style="display:inline-block;width:var(--base-size-64);height:var(--base-size-8);background:var(--bgColor-muted);border-radius:var(--borderRadius-small)"></span></th>
+                  <td class="num"><span style="display:inline-block;width:var(--base-size-32);height:var(--base-size-8);background:var(--bgColor-muted);border-radius:var(--borderRadius-small)"></span></td></tr>
             </tbody>
           </table>
         </div>
@@ -1641,25 +1499,25 @@ footer.end{
   </section>
 
   <footer class="end">
-    <p style="margin:0 0 8px">
-      <b>Evidence:</b> DESIGN-BRIEF.md v3 · official spec figures 図1–図4 (pixel-measured palette) ·
+    <p style="margin:0 0 var(--space-sm)">
+      <b>Evidence:</b> DESIGN-BRIEF.md v5 · official spec figures 図1–図4 (pixel-measured palette) ·
       ReplayViewer.tsx / WebGpuMapViewer.tsx / MapViewer.tsx ·
       Solvers.tsx / Live.tsx / Replays.tsx · stores/replay.ts · lib/live.ts · types/map.ts ·
       styles/{replay-viewer,live,webgpu-map-viewer}.css · e2e/fixtures/match-state.snapshot.json ·
       target/uishots2/*.png · docs/evidence/258/README.md (Issue #259).
     </p>
-    <p style="margin:0 0 8px">
-      Colour tokens &amp; palette → <code>design-system.html</code> (consumes the icon clear-space
-      tokens and the badge marker tones defined here) ·
-      Page layout &amp; shell → <code>layout.html</code> ·
-      This file covers interaction states, keyboard model, iconography, data marks, motion,
-      accessibility findings, and the score table only.
+    <p style="margin:0 0 var(--space-sm)">
+      UI の見た目は <code>@primer/css</code> の class、トークンは <code>@primer/primitives</code> の参照を使用する。
+      この単一 HTML は配布 CSS の使用トークンを <code>embed-primer.py</code> で機械抽出して埋め込む。
+      埋め込み領域は自動生成であり、アプリケーションの CSS へ値を書き写さない。
+      符号と地図色は <a href="visualizer.html">visualizer.html</a>、shell は <a href="layout.html">layout.html</a> を正とする。
     </p>
-    <p style="margin:0">
-      <b>Left alone deliberately:</b> control chrome (radius, borders, target geometry of the
-      transport / rate / scrub / renderer controls) — the user judged existing controls basically
-      correct; v2 only swaps in the icon family and the quiet focus ring.
-    </p>
+    <p>例外 <b>EXC-UX-TYPE</b>: 引き継ぎ資料で固定された HUD / score の label 11px + value 15px は
+      Primer に同じ組がないため維持する。他の文字サイズは Primer typography を参照する。
+      SVG 状態図の座標・viewBox・注記文字サイズと文書の幅は図とレイアウトの幾何であり、UI トークンではない。
+      Motion の時間はこの interaction spec で定義する。</p>
+    <p>この提案のデモは vanilla JS で状態モデルを示す。Kobalte 自体の動作確認は PR #270 の
+      <code>PrimerSpike.tsx</code> に属する。a11y 表の既存コードへの行参照は PR #266 撤去前の所見であり、再構築時の受け入れ条件として残す。</p>
   </footer>
 
   </main>
@@ -1686,6 +1544,7 @@ footer.end{
 
   function applyTheme(mode) {
     root.setAttribute('data-theme', mode);
+    root.setAttribute('data-color-mode', mode);
     root.style.colorScheme = mode;
     if (toggleLabel) toggleLabel.textContent = mode === 'dark' ? 'Light mode' : 'Dark mode';
     if (toggleBtn) toggleBtn.setAttribute('aria-pressed', mode === 'dark' ? 'true' : 'false');
@@ -1726,8 +1585,8 @@ footer.end{
   var stateRows = Array.prototype.slice.call(document.querySelectorAll('#state-table tr[data-state-row]'));
 
   /* 16-artboard family glyphs (same geometry as the specimens in section 05) */
-  var ICON_PLAY = '<path d="M5.2 3.4 12.4 8 5.2 12.6Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>';
-  var ICON_PAUSE = '<rect x="4.4" y="3.4" width="2.8" height="9.2" rx="1.2" fill="currentColor"/><rect x="8.8" y="3.4" width="2.8" height="9.2" rx="1.2" fill="currentColor"/>';
+  var ICON_PLAY = "<path d=\"M13.378 6.948a1.2 1.2 0 0 1 0 2.103l-8 4.397A1.2 1.2 0 0 1 3.6 12.397V3.602A1.2 1.2 0 0 1 5.378 2.55z\"/>";
+  var ICON_PAUSE = "<path d=\"M5 2h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm5 0h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z\"/>";
 
   function status() {
     if (playing) return 'S1';
@@ -1761,7 +1620,9 @@ footer.end{
     if (elAlice) elAlice.textContent = String(STEPS[step].alice);
     if (elBob) elBob.textContent = String(STEPS[step].bob);
     rateBtns.forEach(function (b) {
-      b.setAttribute('aria-pressed', String(Number(b.getAttribute('data-rate')) === rate));
+      var selected = Number(b.getAttribute('data-rate')) === rate;
+      b.setAttribute('aria-checked', String(selected));
+      b.tabIndex = selected ? 0 : -1;
     });
     var key = scrubbing ? 'S4' : st;
     stateRows.forEach(function (tr) {
@@ -1779,7 +1640,7 @@ footer.end{
     var period = Math.max(50, Math.round(1000 / rate));
     timerId = setInterval(function () {
       if (step >= maxStep) { playing = false; clearTimer(); render(); return; }
-      step += 1; render();
+      step += 1; if (step >= maxStep) { playing = false; clearTimer(); } render();
     }, period);
   }
 
@@ -1791,11 +1652,18 @@ footer.end{
     }
     render();
   });
-  if (elBack) elBack.addEventListener('click', function () { if (step > 0) { step -= 1; render(); } });
+  if (elBack) elBack.addEventListener('click', function () { if (step > 0) { playing = false; clearTimer(); step -= 1; render(); } });
   if (elFwd) elFwd.addEventListener('click', function () {
-    if (step < maxStep) { step += 1; render(); }
+    if (step < maxStep) { playing = false; clearTimer(); step += 1; render(); }
   });
-  rateBtns.forEach(function (b) {
+  rateBtns.forEach(function (b, index) {
+    b.addEventListener('keydown', function (event) {
+      var direction = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 0;
+      if (!direction && event.key !== 'Home' && event.key !== 'End') return;
+      event.preventDefault();
+      var next = event.key === 'Home' ? 0 : event.key === 'End' ? rateBtns.length - 1 : (index + direction + rateBtns.length) % rateBtns.length;
+      rateBtns[next].click(); rateBtns[next].focus();
+    });
     b.addEventListener('click', function () {
       rate = Number(b.getAttribute('data-rate'));
       if (playing) armTimer();
@@ -1803,17 +1671,23 @@ footer.end{
     });
   });
   if (elScrub) {
-    elScrub.addEventListener('pointerdown', function () {
+    var beginScrub = function () {
+      if (scrubbing) return;
       scrubbing = true; resumeAfterScrub = playing; playing = false; clearTimer(); render();
+    };
+    elScrub.addEventListener('pointerdown', beginScrub);
+    elScrub.addEventListener('keydown', function (event) {
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) beginScrub();
     });
     elScrub.addEventListener('input', function () {
       step = Number(elScrub.value); render();
     });
     var endScrub = function () {
       if (!scrubbing) return;
-      scrubbing = false; playing = resumeAfterScrub; armTimer(); render();
+      scrubbing = false; playing = resumeAfterScrub && step < maxStep; armTimer(); render();
     };
     elScrub.addEventListener('pointerup', endScrub);
+    elScrub.addEventListener('keyup', endScrub);
     elScrub.addEventListener('pointercancel', endScrub);
     elScrub.addEventListener('blur', endScrub);
   }
