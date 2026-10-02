@@ -1,10 +1,9 @@
-name: CI
+name: CI (manual fallback)
 
+# Full validation is enforced locally by the pre-push hook to avoid consuming
+# GitHub-hosted runner minutes during normal development.
 on:
-  push:
-    branches: [main, 'release-*-*-*']
-  pull_request:
-    branches: [main, 'release-*-*-*']
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
