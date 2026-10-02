@@ -86,8 +86,20 @@ fn build_solver(id: &str) -> Box<dyn Solver> {
 fn walk_is_the_last_canonical_parameter_of_both_factories() {
     let catalog = CandidateRegistry::builtin().catalog();
     for (algorithm, expected) in [
-        ("loop", vec!["iterations", "initial", "seed", "operators", "lookahead", "walk", "assign"]),
-        ("multiloop", vec!["grid", "kmeans", "seed", "refine", "walk", "assign"]),
+        (
+            "loop",
+            vec![
+                "iterations",
+                "initial",
+                "seed",
+                "operators",
+                "lookahead",
+                "walk",
+                "assign",
+                "budget",
+            ],
+        ),
+        ("multiloop", vec!["grid", "kmeans", "seed", "refine", "walk", "assign", "budget"]),
     ] {
         let entry = catalog
             .algorithms

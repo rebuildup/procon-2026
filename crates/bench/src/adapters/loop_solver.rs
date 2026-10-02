@@ -88,7 +88,10 @@ use solver_loop::{
     Series as LoopSeries, SolveProblem, Solver as _, Spot as LoopSpot,
 };
 
-use super::walk::{AssignMode, WalkMode, parse_assign, parse_walk, plan_walk_with, step_towards};
+use super::walk::{
+    AssignMode, BudgetMode, WalkMode, parse_assign, parse_budget, parse_walk, plan_walk_with,
+    step_towards,
+};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
 /// Parameter schema, in canonical id order.
@@ -136,6 +139,13 @@ pub const PARAMS: &[ParamSpec] = &[
               patrol (Supply agents get no target and wait, Issue #235) | \
               escort (Supply walks its paired Patrol's projected day path, Issue #248) | \
               all (every Patrol gets the union of every agent's share, Issue #253)",
+    },
+    ParamSpec {
+        key: "budget",
+        required: false,
+        doc: "day budget clock: element (default; daySteps movement elements, byte-identical) | \
+              official (truncate the finished plan to the official weighted budget before \
+              simulating, Issue #255)",
     },
 ];
 
@@ -207,6 +217,8 @@ pub struct LoopCandidate {
     walk: WalkMode,
     /// Which agents receive a target list at all ([`super::walk::AssignMode`]).
     assign: AssignMode,
+    /// Which clock the finished plan is checked against ([`super::walk::BudgetMode`]).
+    budget: BudgetMode,
 }
 
 impl LoopCandidate {
@@ -218,12 +230,14 @@ impl LoopCandidate {
         let lookahead = parse_lookahead(spec)?;
         let walk = parse_walk(spec)?;
         let assign = parse_assign(spec)?;
+        let budget = parse_budget(spec)?;
         Ok(Self {
             inner: LoopSolver::with_operators(initial, iterations, operators),
             id: spec.id(),
             lookahead,
             walk,
             assign,
+            budget,
         })
     }
 
@@ -290,7 +304,9 @@ impl Solver for LoopCandidate {
             // and consumes it with that walker's semantics (per-step pursuit
             // under `greedy`, ordered-waypoint replay under `astar`).
             Ok(targets) => {
-                plan_walk_with(ctx, &self.assign.apply(ctx, targets, self.walk), self.walk)
+                let plan =
+                    plan_walk_with(ctx, &self.assign.apply(ctx, targets, self.walk), self.walk);
+                self.budget.apply(ctx, plan)
             }
             Err(err) => {
                 tracing::debug!(candidate = %self.id, error = %err, "loop solve failed; waiting");
@@ -710,6 +726,7 @@ impl CandidateFactory for LoopFactory {
         parse_lookahead(spec)?;
         parse_walk(spec)?;
         parse_assign(spec)?;
+        parse_budget(spec)?;
         Ok(())
     }
 
@@ -1155,11 +1172,11 @@ mod tests {
         let cat = reg.catalog();
         let entry = cat.algorithms.iter().find(|a| a.algorithm == "loop").expect("loop listed");
         let keys: Vec<&str> = entry.params.iter().map(|p| p.key.as_str()).collect();
-        // `assign` (#235) is appended after `walk` (#215): every older
-        // canonical id keeps its exact shape.
+        // `assign` (#235) is appended after `walk` (#215), `budget` (#255)
+        // after `assign`: every older canonical id keeps its exact shape.
         assert_eq!(
             keys,
-            ["iterations", "initial", "seed", "operators", "lookahead", "walk", "assign"]
+            ["iterations", "initial", "seed", "operators", "lookahead", "walk", "assign", "budget"]
         );
     }
 

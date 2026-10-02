@@ -40,7 +40,9 @@ use engine::model::{AgentActions, Solver, SolverContext};
 use solver_loop::{ClusteringStrategy, MultiLoopComposer, Solver as _};
 
 use super::loop_solver::{agent_targets, problem_from_state};
-use super::walk::{AssignMode, WalkMode, parse_assign, parse_walk, plan_walk_with};
+use super::walk::{
+    AssignMode, BudgetMode, WalkMode, parse_assign, parse_budget, parse_walk, plan_walk_with,
+};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
 /// Parameter schema, in canonical id order.
@@ -82,6 +84,13 @@ pub const PARAMS: &[ParamSpec] = &[
               escort (Supply walks its paired Patrol's projected day path, Issue #248) | \
               all (every Patrol gets the union of every agent's share, Issue #253)",
     },
+    ParamSpec {
+        key: "budget",
+        required: false,
+        doc: "day budget clock: element (default; daySteps movement elements, byte-identical) | \
+              official (truncate the finished plan to the official weighted budget before \
+              simulating, Issue #255)",
+    },
 ];
 
 /// Widest accepted grid dimension: the contest map is at most
@@ -116,6 +125,8 @@ pub struct MultiLoopCandidate {
     walk: WalkMode,
     /// Which agents receive a target list at all ([`super::walk::AssignMode`]).
     assign: AssignMode,
+    /// Which clock the finished plan is checked against ([`super::walk::BudgetMode`]).
+    budget: BudgetMode,
 }
 
 impl MultiLoopCandidate {
@@ -126,12 +137,13 @@ impl MultiLoopCandidate {
         let refine = parse_refine(spec)?;
         let walk = parse_walk(spec)?;
         let assign = parse_assign(spec)?;
+        let budget = parse_budget(spec)?;
         let inner = if refine {
             MultiLoopComposer::new(num_regions, clustering)
         } else {
             MultiLoopComposer::without_refinement(num_regions, clustering)
         };
-        Ok(Self { inner, id: spec.id(), walk, assign })
+        Ok(Self { inner, id: spec.id(), walk, assign, budget })
     }
 }
 
@@ -147,7 +159,9 @@ impl Solver for MultiLoopCandidate {
         match self.inner.solve(&problem) {
             Ok(outcome) => {
                 let per_agent = agent_targets(ctx, &outcome);
-                plan_walk_with(ctx, &self.assign.apply(ctx, per_agent, self.walk), self.walk)
+                let plan =
+                    plan_walk_with(ctx, &self.assign.apply(ctx, per_agent, self.walk), self.walk);
+                self.budget.apply(ctx, plan)
             }
             Err(err) => {
                 tracing::debug!(candidate = %self.id, error = %err, "multiloop solve failed; waiting");
@@ -338,6 +352,7 @@ impl CandidateFactory for MultiLoopFactory {
         parse_refine(spec)?;
         parse_walk(spec)?;
         parse_assign(spec)?;
+        parse_budget(spec)?;
         Ok(())
     }
 
@@ -377,10 +392,9 @@ mod tests {
         let entry =
             cat.algorithms.iter().find(|a| a.algorithm == "multiloop").expect("multiloop listed");
         let keys: Vec<&str> = entry.params.iter().map(|p| p.key.as_str()).collect();
-        // `walk` is appended last (Issue #215) so pre-existing ids keep shape.
-        // `assign` (#235) is appended after `walk` (#215), so older
-        // canonical ids keep their exact shape.
-        assert_eq!(keys, ["grid", "kmeans", "seed", "refine", "walk", "assign"]);
+        // `walk` (#215), then `assign` (#235), then `budget` (#255):
+        // each is appended, so older canonical ids keep their exact shape.
+        assert_eq!(keys, ["grid", "kmeans", "seed", "refine", "walk", "assign", "budget"]);
     }
 
     #[test]

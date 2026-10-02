@@ -172,6 +172,27 @@ pub(crate) fn parse_walk(spec: &CandidateSpec) -> Result<WalkMode, CandidateErro
     }
 }
 
+/// Parse the `budget` parameter into a [`BudgetMode`].
+///
+/// Omitted means [`BudgetMode::Element`]: every pre-#255 id keeps its exact
+/// behaviour (the parameter is appended last in each factory's `PARAMS`, so
+/// existing canonical ids keep their shape).
+///
+/// # Errors
+/// [`CandidateError::InvalidParameter`] for any value other than
+/// `element` / `official`.
+pub(crate) fn parse_budget(spec: &CandidateSpec) -> Result<BudgetMode, CandidateError> {
+    match spec.param("budget") {
+        None | Some("element") => Ok(BudgetMode::Element),
+        Some("official") => Ok(BudgetMode::Official),
+        Some(other) => Err(CandidateError::InvalidParameter {
+            key: "budget".to_owned(),
+            value: other.to_owned(),
+            reason: "expected element | official".to_owned(),
+        }),
+    }
+}
+
 /// Build one day's plan with the selected walk mode.
 ///
 /// `WalkMode::Greedy` is exactly [`plan_walk`] (the dispatcher adds nothing
@@ -566,6 +587,141 @@ pub(crate) fn parse_assign(spec: &CandidateSpec) -> Result<AssignMode, Candidate
             reason: "expected agents | patrol | escort | all".to_owned(),
         }),
     }
+}
+
+/// Which clock a candidate plans its day against (the `budget=` parameter,
+/// Issue #255).
+///
+/// The engine's day is `day_steps` **elements** (one action per step); the
+/// official submission rule counts **weighted steps** (Issue #226,
+/// `engine::wire_plan`): the sum of origin step costs plus wait runs must
+/// equal `daySteps`. The wire boundary closes that gap today by truncating
+/// the plan's tail, so what live executes is only the budget-fitting prefix
+/// while offline evaluation runs the full element plan: the two disagree by
+/// construction (live match 701: 98 moves submitted vs a 146-element plan;
+/// offline dks 174 vs live 96).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum BudgetMode {
+    /// `budget=element` (default): plan `day_steps` movement elements and
+    /// hand the untouched plan to the wire — byte-identical to every
+    /// pre-#255 candidate id, truncation stays a wire-boundary concern.
+    #[default]
+    Element,
+    /// `budget=official`: truncate the finished plan to the official
+    /// terrain-weighted budget **before** simulation, using the very same
+    /// [`engine::wire_plan`] rule the wire applies. What `MatchSim` executes
+    /// is
+    /// then what the server would accept, and re-submitting it is a no-op
+    /// (`normalize` keeps every move and adds no pad).
+    Official,
+}
+
+impl BudgetMode {
+    /// Apply this budget accounting to a finished day plan.
+    ///
+    /// [`Self::Element`] returns `plan` untouched (the default path never
+    /// re-allocates). [`Self::Official`] re-runs the official wire
+    /// normalisation over the plan's per-agent action lists and rebuilds a
+    /// well-shaped step-major plan: the budget-fitting move prefix is kept,
+    /// everything after the first over-budget or officially-illegal action
+    /// becomes `Wait`, and the result is padded back to `day_steps` elements
+    /// per agent (the trailing waits are state-neutral idle, not budget).
+    ///
+    /// A plan that is not well-shaped (the candidate broke the day contract)
+    /// is returned unchanged so the evaluator's malformed-plan flag stays the
+    /// one that reports it.
+    #[must_use]
+    pub fn apply(self, ctx: &SolverContext<'_>, plan: AgentActions) -> AgentActions {
+        match self {
+            Self::Element => plan,
+            Self::Official => truncate_to_official_budget(ctx, plan),
+        }
+    }
+}
+
+/// Re-encode a step-major plan as per-agent wire bodies, run
+/// [`engine::wire_plan::normalize_day_plan`], and expand the result back into
+/// a well-shaped plan (single source of truth for the budget rule: Issue
+/// #255).
+fn truncate_to_official_budget(ctx: &SolverContext<'_>, plan: AgentActions) -> AgentActions {
+    let agent_count = ctx.agent_ids.len();
+    let day_steps = ctx.day_steps as usize;
+    if agent_count == 0 || day_steps == 0 || plan.actions.len() != agent_count * day_steps {
+        return plan; // malformed: the evaluator's shape flag reports it
+    }
+
+    // Step-major -> per-agent wire bodies (run-length encoded waits), the
+    // exact encoding `cli::action_adapter::decision_to_actions` builds.
+    let mut body: Vec<Vec<i32>> = Vec::with_capacity(agent_count);
+    for (index, _) in ctx.agent_ids.iter().enumerate() {
+        let mut codes: Vec<i32> = Vec::with_capacity(day_steps);
+        let mut wait_run = 0i32;
+        for step in 0..day_steps {
+            match plan.actions[step * agent_count + index].kind {
+                ActionKind::Wait => wait_run += 1,
+                ActionKind::Move(dir) => {
+                    if wait_run > 0 {
+                        codes.push(-wait_run);
+                        wait_run = 0;
+                    }
+                    codes.push(dir as i32);
+                }
+            }
+        }
+        if wait_run > 0 {
+            codes.push(-wait_run);
+        }
+        body.push(codes);
+    }
+
+    // The official rule: keep the prefix that fits the weighted budget and is
+    // legal, drop the rest (Issue #226). Failure here means the input was not
+    // a submittable list at all — fall back to the plan as written.
+    let Ok(normalized) = engine::wire_plan::normalize_day_plan(
+        &ctx.state.setting.map,
+        &ctx.state.agents,
+        &ctx.agent_ids,
+        ctx.day_steps,
+        &body,
+    ) else {
+        return plan;
+    };
+
+    // Wire bodies -> per-agent element sequences, padded with Wait to the
+    // engine's day contract (one action per agent per step).
+    let mut per_agent: Vec<Vec<ActionKind>> = Vec::with_capacity(agent_count);
+    for codes in &normalized {
+        let mut flat: Vec<ActionKind> = Vec::with_capacity(day_steps);
+        for &code in codes {
+            if code <= -1 {
+                for _ in 0..code.unsigned_abs() {
+                    flat.push(ActionKind::Wait);
+                }
+            } else if let Some(dir) =
+                Direction::ALL.get(usize::try_from(code).unwrap_or(usize::MAX))
+            {
+                flat.push(ActionKind::Move(*dir));
+            } else {
+                break; // unknown code: normalize never emits one; stop short
+            }
+            if flat.len() >= day_steps {
+                break;
+            }
+        }
+        while flat.len() < day_steps {
+            flat.push(ActionKind::Wait);
+        }
+        per_agent.push(flat);
+    }
+
+    // Back to step-major.
+    let mut out = Vec::with_capacity(agent_count * day_steps);
+    for step in 0..day_steps {
+        for (id, kinds) in ctx.agent_ids.iter().zip(&per_agent) {
+            out.push(Action { agent_id: *id, kind: kinds[step] });
+        }
+    }
+    AgentActions::new(out)
 }
 
 #[cfg(test)]
@@ -1231,6 +1387,193 @@ mod tests {
             applied.iter().all(Vec::is_empty),
             "nobody to walk, so everyone waits: {applied:?}"
         );
+    }
+
+    /// Issue #255 — the `budget` parameter is schema-gated: omitted and
+    /// `element` select the historical element clock (byte-identical),
+    /// `official` truncates to the terrain-weighted budget, anything else is
+    /// an `InvalidParameter`.
+    #[test]
+    fn budget_param_parses_element_official_and_rejects_anything_else() {
+        let parse = |id: &str| parse_budget(&CandidateSpec::parse(id).expect("id parses"));
+        assert_eq!(parse("loop"), Ok(BudgetMode::Element));
+        assert_eq!(parse("loop:budget=element"), Ok(BudgetMode::Element));
+        assert_eq!(parse("loop:budget=official"), Ok(BudgetMode::Official));
+        assert_eq!(
+            parse("multiloop:grid=2x2:walk=astar:assign=all:budget=official"),
+            Ok(BudgetMode::Official)
+        );
+        assert_eq!(parse("loop"), Ok(BudgetMode::default()), "element is default");
+        for id in ["loop:budget=Official", "loop:budget=wire", "loop:budget=2"] {
+            assert!(
+                matches!(parse(id), Err(CandidateError::InvalidParameter { key, .. }) if key == "budget"),
+                "{id} must be rejected as an invalid budget value"
+            );
+        }
+    }
+
+    /// Issue #255 byte-identical contract: `budget=element` (the default)
+    /// returns the plan untouched — the element clock is what every pre-#255
+    /// id already runs.
+    #[test]
+    fn budget_element_returns_the_plan_untouched() {
+        let st = state();
+        let ctx = SolverContext::from_state(&st);
+        let targets = vec![vec![HexCoord::new(2, 0)], vec![], vec![]];
+        let plan = plan_walk(&ctx, &targets);
+        assert_eq!(BudgetMode::Element.apply(&ctx, plan.clone()), plan, "element must be a no-op");
+        assert_eq!(BudgetMode::default(), BudgetMode::Element, "the default is element");
+    }
+
+    /// Issue #255 AC1 — `budget=official` plans only what the official
+    /// weighted budget can pay for. Replaying the emitted plan per agent:
+    ///
+    /// * every Move fits the remaining budget (Σ origin step cost never
+    ///   exceeds `daySteps`) and is legal on the live map;
+    /// * once the budget is exhausted, every remaining action is a `Wait`
+    ///   (nothing the official rule would reject is ever emitted);
+    /// * the budget-consuming prefix sums to **exactly** `daySteps` — the
+    ///   same equality the wire validates (`engine::wire_plan`), so the
+    ///   pad-append branch there never fires (AC2's `pad == 0`).
+    #[test]
+    fn budget_official_plan_fits_the_official_weighted_budget() {
+        let st = state(); // 8x8 plain map, day_steps = 4, 3 agents
+        let ctx = SolverContext::from_state(&st);
+        // A greedy tour towards far cells: element mode would emit 4 moves
+        // each, which on 平地 (step cost 2) is 8 weighted units — double the
+        // official budget of 4.
+        let targets =
+            vec![vec![HexCoord::new(7, 7)], vec![HexCoord::new(7, 7)], vec![HexCoord::new(6, 6)]];
+        let raw = plan_walk(&ctx, &targets);
+        let plan = BudgetMode::Official.apply(&ctx, raw.clone());
+        assert_ne!(plan, raw, "the element plan must not already fit the budget");
+        assert!(
+            plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps),
+            "truncation must preserve the engine day contract"
+        );
+
+        let agent_count = ctx.agent_ids.len();
+        for (index, id) in ctx.agent_ids.iter().enumerate() {
+            let agent =
+                ctx.state.agents.iter().find(|a| a.id == *id).expect("agent exists in state");
+            let mut pos = agent.pos;
+            let mut used: u32 = 0;
+            let mut exhausted = false;
+            let mut budget_units: u32 = 0;
+            for step in 0..ctx.day_steps as usize {
+                let action = &plan.actions[step * agent_count + index];
+                match action.kind {
+                    ActionKind::Move(dir) => {
+                        assert!(
+                            !exhausted,
+                            "agent {id} moved after the official budget was exhausted"
+                        );
+                        let origin = ctx.state.setting.map.get(pos).expect("agent is on the map");
+                        let cost = engine::wire_plan::terrain_step_cost(origin.terrain)
+                            .expect("agent never stands on impassable terrain");
+                        assert!(
+                            used + cost <= ctx.day_steps,
+                            "agent {id}: move would cost {used} + {cost} > {}",
+                            ctx.day_steps
+                        );
+                        used += cost;
+                        budget_units += cost;
+                        let to = dir.step(pos);
+                        assert!(
+                            ctx.state.setting.map.get(to).is_some_and(|c| c.terrain.traversable()),
+                            "agent {id} walked off the map or into a pond"
+                        );
+                        pos = to;
+                    }
+                    ActionKind::Wait => {
+                        if used < ctx.day_steps {
+                            used += 1;
+                            budget_units += 1;
+                        } else {
+                            exhausted = true;
+                        }
+                    }
+                }
+                if used >= ctx.day_steps {
+                    exhausted = true;
+                }
+            }
+            assert_eq!(
+                budget_units, ctx.day_steps,
+                "agent {id}: the budget-consuming prefix must spend the official day \
+                 exactly (this is the `pad == 0` property: normalize never appends)"
+            );
+        }
+    }
+
+    /// Issue #255 AC2 — re-submitting a `budget=official` plan is a no-op at
+    /// the wire: `normalize_day_plan` keeps every move, appends no pad, and
+    /// the result still validates under the official rule. The candidate's
+    /// tail is never lost because the plan already stops at the budget.
+    #[test]
+    fn budget_official_plan_survives_wire_normalize_unchanged() {
+        let st = state();
+        let ctx = SolverContext::from_state(&st);
+        let targets = vec![vec![HexCoord::new(7, 7)], Vec::new(), vec![HexCoord::new(6, 6)]];
+        let plan = BudgetMode::Official.apply(&ctx, plan_walk(&ctx, &targets));
+
+        // Element plan -> per-agent wire codes, the encoding
+        // `cli::action_adapter::decision_to_actions` produces.
+        let agent_count = ctx.agent_ids.len();
+        let mut body: Vec<Vec<i32>> = Vec::with_capacity(agent_count);
+        for index in 0..agent_count {
+            let mut codes: Vec<i32> = Vec::new();
+            let mut wait_run = 0i32;
+            for step in 0..ctx.day_steps as usize {
+                match plan.actions[step * agent_count + index].kind {
+                    ActionKind::Wait => wait_run += 1,
+                    ActionKind::Move(dir) => {
+                        if wait_run > 0 {
+                            codes.push(-wait_run);
+                            wait_run = 0;
+                        }
+                        codes.push(i32::try_from(usize::from(dir as u8)).expect("dir fits"));
+                    }
+                }
+            }
+            if wait_run > 0 {
+                codes.push(-wait_run);
+            }
+            body.push(codes);
+        }
+
+        let normalized = engine::wire_plan::normalize_day_plan(
+            &ctx.state.setting.map,
+            &ctx.state.agents,
+            &ctx.agent_ids,
+            ctx.day_steps,
+            &body,
+        )
+        .expect("a budget=official plan is submittable");
+
+        let moves = |body: &[Vec<i32>]| -> Vec<Vec<i32>> {
+            body.iter().map(|codes| codes.iter().copied().filter(|c| *c >= 0).collect()).collect()
+        };
+        assert_eq!(
+            moves(&normalized),
+            moves(&body),
+            "normalize must keep every move: no tail is lost"
+        );
+        for (index, id) in ctx.agent_ids.iter().enumerate() {
+            let agent =
+                ctx.state.agents.iter().find(|a| a.id == *id).expect("agent exists in state");
+            // `Ok(sum)` where sum == day_steps is exactly the `pad == 0`
+            // signal: normalize appended nothing, the plan already filled
+            // the official budget.
+            let sum = engine::wire_plan::validate_agent_plan(
+                agent,
+                &ctx.state.setting.map,
+                ctx.day_steps,
+                &normalized[index],
+            )
+            .unwrap_or_else(|e| panic!("agent {id} must be submittable: {e}"));
+            assert_eq!(sum, ctx.day_steps, "agent {id}: official equality, no pad appended");
+        }
     }
 
     /// Issue #215 AC — default equivalence: selecting `greedy` explicitly is
