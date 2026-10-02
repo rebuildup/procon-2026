@@ -69,13 +69,43 @@ cargo build --release --workspace
 
 ```bash
 (cd packages/frontend)
-bun run check          # tsc --noEmit
+bun run check          # tsc --noEmit（src + e2e）
 bun run lint           # ESLint
 bun run format:check   # Prettier
-bun run test           # bun test --conditions=browser
+bun run test           # bun test --conditions=browser src
 bun run build          # vite build (型チェックも走る)
 bun run dev            # vite dev server (127.0.0.1:5173)
+bun run record         # 画面録画（下記 §画面録画）
 ```
+
+## 画面録画（Playwright / Issue #258）
+
+frontend の画面を **webm 動画 + 最終フレーム PNG + manifest** として録画して視覚確認する。
+ローカル opt-in — `just ci` にも GitHub Actions にも含まれない。
+
+```bash
+# 初回のみ（~/.cache/ms-playwright に該当 chromium があれば不要）
+cd packages/frontend && bun run record:install
+
+just record                     # = cd packages/frontend && bun run record
+RECORD_MS=10000 just record     # 各シナリオの保持時間（ms、既定 6000）
+RECORD_OUT=/tmp/rec just record # 出力先の切り替え（既定 <repo>/target/recordings）
+```
+
+出力は `target/recordings/`（gitignore 済み。実行ごとに作り直す）:
+
+| file | 内容 |
+|---|---|
+| `home.{webm,png}` | `/` |
+| `replays.{webm,png}` | `/replays` — Play を押し、フィクスチャが終わったら巻き戻して再再生 |
+| `solvers.{webm,png}` | `/solvers` — SVG → WebGPU → SVG のレンダラー切替 |
+| `live.{webm,png}` | `/live` — `/match-state.json` を `e2e/fixtures/match-state.snapshot.json` で route 補完（gitignore 済みの CLI 出力が無くても決定的） |
+| `manifest.json` | chromium version / WebGPU 可否（`webgpu.api` / `webgpu.adapter`）/ git commit / 尺 / byte 数 |
+
+- 録画用 dev server は **5273**（`--strictPort`）。既存の 5173（dev）/ 4173（preview）と衝突しない。
+- headless での WebGPU は `--enable-unsafe-webgpu --enable-features=Vulkan --use-webgpu-adapter=swiftshader` で SwiftShader adapter を取得（localhost の secure context が必要）。取れない環境では各ページが SVG へ自動フォールバックし、manifest の `webgpu.adapter` に `false` が記録される。
+- 再生: WSL2 なら `explorer.exe $(wslpath -w target/recordings/home.webm)`。
+- 型検査は `bun run check`（`e2e/tsconfig.json`）に含まれる。`bun run lint` は #231（typescript-eslint の TS7 未対応）で現在 red — 本ハーネスとは独立。
 
 ## worktree build cache / 容量（Issue #217）
 
