@@ -827,8 +827,27 @@ where
         // exact wire payload we are about to send. Gated by the
         // `tracing::enabled!` check so the per-step formatting cost
         // stays out of the hot path in production.
+        //
+        // The `traffics` snapshot rides along (Issue #245): the body's
+        // weighted sum only makes sense next to the road states the
+        // normalizer billed, and a live `revision=-1` is otherwise
+        // unexplainable from the log alone. Only non-smooth roads are
+        // spelled out — the rest bill 1 either way — and the entry count
+        // records how complete the payload was.
         if tracing::enabled!(tracing::Level::DEBUG) {
-            tracing::debug!(day, body = ?actions, "submitting plan");
+            let non_smooth: Vec<(i32, i32)> = state
+                .traffics
+                .iter()
+                .filter(|t| t.status.value() != 0)
+                .map(|t| (t.pos, t.status.value()))
+                .collect();
+            tracing::debug!(
+                day,
+                traffic_entries = state.traffics.len(),
+                non_smooth = ?non_smooth,
+                body = ?actions,
+                "submitting plan"
+            );
         }
 
         let accepted = match client.submit_actions(actions).await {
