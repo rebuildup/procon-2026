@@ -17,6 +17,10 @@
     "record:install": "playwright install chromium"
   },
   "dependencies": {
+    "@kobalte/core": "^0.13.14",
+    "@primer/css": "^22.3.2",
+    "@primer/octicons": "^19.38.0",
+    "@primer/primitives": "^11.10.0",
     "@solidjs/router": "^1.0.0",
     "solid-js": "^1.9.0"
   },
