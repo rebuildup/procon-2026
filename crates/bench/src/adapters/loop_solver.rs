@@ -134,7 +134,8 @@ pub const PARAMS: &[ParamSpec] = &[
         required: false,
         doc: "who receives a tour target: agents (default; every agent, pre-#235) | \
               patrol (Supply agents get no target and wait, Issue #235) | \
-              escort (Supply walks its paired Patrol's projected day path, Issue #248)",
+              escort (Supply walks its paired Patrol's projected day path, Issue #248) | \
+              all (every Patrol gets the union of every agent's share, Issue #253)",
     },
 ];
 
@@ -699,7 +700,8 @@ impl CandidateFactory for LoopFactory {
          then walk the visit order. Supports initial=, iterations=, operators=, \
          lookahead=, walk= and assign= sweeps (lookahead=crossday plans the \
          remaining days; assign=patrol withholds the tour from Supply agents; \
-         assign=escort walks each Supply along its paired Patrol's path, Issue #248)."
+         assign=escort walks each Supply along its paired Patrol's path, Issue #248; \
+         assign=all unions every agent's share into every Patrol, Issue #253)."
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {

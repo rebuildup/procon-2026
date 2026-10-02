@@ -21,7 +21,8 @@
 //! [`AgentKind::Supply`] agents so they wait instead of walking a spot they
 //! could never collect from (Issue #235); `assign=escort` hands each Supply
 //! the projected day path of its paired Patrol so the two meet and refuel
-//! mid-day (Issue #248).
+//! mid-day (Issue #248); `assign=all` gives every Patrol the union of every
+//! agent's share so no spot is structurally unreachable (Issue #253).
 //!
 //! # Walk modes (`walk=`)
 //!
@@ -254,6 +255,25 @@ pub enum AssignMode {
     /// [`assign_escort_astar_walk_refuels_the_patrol_mid_day`]. A Supply whose
     /// paired Patrol has no tour still parks on that Patrol's start cell.
     Escort,
+    /// `assign=all` (Issue #253): every **Patrol** receives the **union of
+    /// every agent's target list** — its own list first (the own tour stays a
+    /// prefix), then the other agents' shares **rotated to start just after
+    /// the Patrol's own index**, duplicates skipped — and every Supply
+    /// follows the escort procedure on top of those unioned lists
+    /// (pair → project → replace, [`Self::Escort`]). The rotation keeps the
+    /// Patrols' tails from piling onto the same regions in the same order,
+    /// which is what the first A/B showed as a kinds drop.
+    ///
+    /// Why: a region partition hands each Patrol only its own slice (on a
+    /// 24-spot board roughly 8 spots/day per Patrol), which caps `total_balls`
+    /// far below what live r5 teams collect — match 696 saw 108 vs r5's 320
+    /// with `kinds` already tied. A Patrol that finishes its own region now
+    /// inherits every other region's leftovers instead of parking, and a
+    /// 1-spot region can no longer trap an agent on one cell (the match-692
+    /// defect). Supplies still cannot collect (Issue #234), so their shares
+    /// ride along exactly as [`Self::Escort`]'s handover would deliver them —
+    /// here the union delivers *all* shares to *all* Patrols at once.
+    All,
 }
 
 impl AssignMode {
@@ -266,8 +286,9 @@ impl AssignMode {
     /// default path never re-allocates or re-orders anything.
     ///
     /// `walk` selects the walker used to project the paired Patrol's path for
-    /// [`Self::Escort`]; the other modes ignore it (the caller still walks the
-    /// returned lists with the same `walk`, so the two stay consistent).
+    /// [`Self::Escort`] and [`Self::All`]; the other modes ignore it (the
+    /// caller still walks the returned lists with the same `walk`, so the two
+    /// stay consistent).
     #[must_use]
     pub fn apply(
         self,
@@ -291,64 +312,13 @@ impl AssignMode {
             }
             Self::Escort => {
                 // 1. Pair every Supply with its nearest Patrol (day-start
-                //    geometry only — no target lists involved) — subject to a
-                //    **capacity cap**: each Patrol escorts at most
-                //    ceil(n_supply / n_patrol) Supplies (Issue #250). Pure
-                //    nearest-neighbour can pile several Supplies onto one
-                //    Patrol — leaving another Patrol unescorted to starve at
-                //    fuel=1 mid-match — and its handed-over spot share piles
-                //    onto the same over-walked Patrol. With the cap,
-                //    n_supplies ≥ n_patrol guarantees every Patrol gets an
-                //    escort and the shares spread across Patrols.
-                //    (With n_supply < n_patrol — e.g. live attempt8's P,P,P,S
-                //    — capacity is 1 and the cap binds nothing: the unescorted
-                //    Patrols are a kinds-composition problem, fixed by fielding
-                //    at least one Supply per Patrol, e.g. `P,S`.)
-                let patrols: Vec<usize> = ctx
-                    .agent_ids
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, id)| kind_of(ctx, **id) == Some(AgentKind::Patrol))
-                    .map(|(index, _)| index)
-                    .collect();
-                let n_supplies = ctx
-                    .agent_ids
-                    .iter()
-                    .filter(|id| kind_of(ctx, **id) == Some(AgentKind::Supply))
-                    .count();
-                let capacity =
-                    if patrols.is_empty() { 0 } else { n_supplies.div_ceil(patrols.len()) };
-                let mut escorting = vec![0usize; patrols.len()];
-                let mut pairs: Vec<(usize, usize)> = Vec::new(); // (supply index, patrol index)
-                for (index, id) in ctx.agent_ids.iter().enumerate() {
-                    if kind_of(ctx, *id) != Some(AgentKind::Supply) {
-                        continue;
+                //    geometry only, capacity-capped — Issue #250, see
+                //    [`pair_supplies`]). Supplies nobody can escort wait.
+                let (pairs, wait) = pair_supplies(ctx);
+                for index in wait {
+                    if let Some(list) = targets.get_mut(index) {
+                        list.clear();
                     }
-                    let Some(supply_pos) = pos_of(ctx, *id) else {
-                        continue;
-                    };
-                    let Some(paired) = patrols
-                        .iter()
-                        .copied()
-                        .enumerate()
-                        .filter(|(slot, _)| escorting[*slot] < capacity)
-                        .map(|(_, patrol)| patrol)
-                        .min_by_key(|&patrol| {
-                            let patrol_pos =
-                                ctx.agent_ids.get(patrol).and_then(|pid| pos_of(ctx, *pid));
-                            (patrol_pos.map_or(u32::MAX, |p| hex_distance(supply_pos, p)), patrol)
-                        })
-                    else {
-                        // No Patrol to escort: wait, exactly like `assign=patrol`.
-                        if let Some(list) = targets.get_mut(index) {
-                            list.clear();
-                        }
-                        continue;
-                    };
-                    if let Some(slot) = patrols.iter().position(|&p| p == paired) {
-                        escorting[slot] += 1;
-                    }
-                    pairs.push((index, paired));
                 }
 
                 // 2. Handover (Issue #250): the Supply's own spot share — which
@@ -379,8 +349,152 @@ impl AssignMode {
                 }
                 targets
             }
+            Self::All => {
+                // Snapshot the pre-handover shares: the tail below must be
+                // built from each agent's *original* list, not from a
+                // neighbour's already-extended one.
+                let original = targets.clone();
+                // 1. Escort first (Issue #253): pair (same geometry, same
+                //    capacity cap) and hand each paired Supply's share over
+                //    — this reproduces `assign=escort`'s Patrol lists
+                //    *exactly*, so they become the prefix below and kinds
+                //    can never regress against escort under `walk=astar`
+                //    (the ordered walk visits the prefix identically, then
+                //    keeps going where escort would have parked).
+                let (pairs, wait) = pair_supplies(ctx);
+                for index in wait {
+                    if let Some(list) = targets.get_mut(index) {
+                        list.clear();
+                    }
+                }
+                for &(supply, patrol) in &pairs {
+                    let own = targets.get(supply).cloned().unwrap_or_default();
+                    if let Some(patrol_list) = targets.get_mut(patrol) {
+                        for spot in own {
+                            if !patrol_list.contains(&spot) {
+                                patrol_list.push(spot);
+                            }
+                        }
+                    }
+                }
+
+                // 2. Extend every Patrol with **every other agent's share** —
+                //    own/handed prefix kept, then the remaining shares
+                //    **rotated to start just after the Patrol's own index**
+                //    (`(index + 1 + k) % n`), duplicates skipped. A Supply's
+                //    share is included even though a Supply can never collect
+                //    it (Issue #234): under `assign=all` it is every Patrol,
+                //    not just the paired one, that can reach those spots —
+                //    this is what breaks the region-partition balls ceiling
+                //    (live 696: 108 vs r5's 320) and the 1-spot-region park
+                //    (live 692).
+                //
+                //    The rotation is load-bearing: the first A/B (agent
+                //    order for everyone) made every Patrol walk the same tail
+                //    in the same order, so they piled onto the early regions
+                //    and later ones starved — kinds fell (665: 18 -> 13) even
+                //    though balls rose. Rotating diverges the tails while the
+                //    escort prefix stays common.
+                let n = ctx.agent_ids.len();
+                for (index, id) in ctx.agent_ids.iter().enumerate() {
+                    if kind_of(ctx, *id) != Some(AgentKind::Patrol) {
+                        continue;
+                    }
+                    let Some(list) = targets.get_mut(index) else {
+                        continue;
+                    };
+                    let mut union: Vec<HexCoord> = list.clone();
+                    for k in 1..n {
+                        let other = (index + k) % n;
+                        let Some(share) = original.get(other) else {
+                            continue;
+                        };
+                        for spot in share {
+                            if !union.contains(spot) {
+                                union.push(*spot);
+                            }
+                        }
+                    }
+                    *list = union;
+                }
+
+                // 3. Project AFTER the extension so each Supply follows the
+                //    final post-union path of its paired Patrol.
+                let paths = day_paths(ctx, &targets, walk);
+                for &(supply, patrol) in &pairs {
+                    if let Some(list) = targets.get_mut(supply) {
+                        *list = paths.get(patrol).cloned().unwrap_or_default();
+                    }
+                }
+                targets
+            }
         }
     }
+}
+
+/// Pair every [`AgentKind::Supply`] with an escorting [`AgentKind::Patrol`] —
+/// the shared phase-1 of [`AssignMode::Escort`] and [`AssignMode::All`].
+///
+/// Pairing uses day-start geometry only ([`hex_distance`], ties broken by the
+/// smaller position in `ctx.agent_ids`) — no target lists are involved — and
+/// is subject to a **capacity cap**: each Patrol escorts at most
+/// `ceil(n_supply / n_patrol)` Supplies (Issue #250). Pure nearest-neighbour
+/// can pile several Supplies onto one Patrol, leaving another Patrol
+/// unescorted to starve at fuel=1 mid-match — and its handed-over spot share
+/// piles onto the same over-walked Patrol. With the cap,
+/// `n_supplies >= n_patrol` guarantees every Patrol gets an escort and the
+/// shares spread across Patrols. (With `n_supply < n_patrol` — e.g. live
+/// attempt8's `P,P,P,S` — capacity is 1 and the cap binds nothing: the
+/// unescorted Patrols are a kinds-composition problem, fixed by fielding at
+/// least one Supply per Patrol, e.g. `P,S`.)
+///
+/// Returns `(pairs, wait)`: `pairs` are `(supply index, patrol index)`, and
+/// `wait` holds the indices of Supplies with no Patrol to escort (the caller
+/// empties their lists so they wait, exactly like `assign=patrol`). A Supply
+/// whose day-start cell is unknown appears in neither — it keeps its own
+/// list, as `assign=escort` has always done.
+fn pair_supplies(ctx: &SolverContext<'_>) -> (Vec<(usize, usize)>, Vec<usize>) {
+    let patrols: Vec<usize> = ctx
+        .agent_ids
+        .iter()
+        .enumerate()
+        .filter(|(_, id)| kind_of(ctx, **id) == Some(AgentKind::Patrol))
+        .map(|(index, _)| index)
+        .collect();
+    let n_supplies =
+        ctx.agent_ids.iter().filter(|id| kind_of(ctx, **id) == Some(AgentKind::Supply)).count();
+    let capacity = if patrols.is_empty() { 0 } else { n_supplies.div_ceil(patrols.len()) };
+    let mut escorting = vec![0usize; patrols.len()];
+    let mut pairs: Vec<(usize, usize)> = Vec::new(); // (supply index, patrol index)
+    let mut wait: Vec<usize> = Vec::new();
+    for (index, id) in ctx.agent_ids.iter().enumerate() {
+        if kind_of(ctx, *id) != Some(AgentKind::Supply) {
+            continue;
+        }
+        let Some(supply_pos) = pos_of(ctx, *id) else {
+            continue;
+        };
+        let Some(paired) = patrols
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(slot, _)| escorting[*slot] < capacity)
+            .map(|(_, patrol)| patrol)
+            .min_by_key(|&patrol| {
+                let patrol_pos = ctx.agent_ids.get(patrol).and_then(|pid| pos_of(ctx, *pid));
+                (patrol_pos.map_or(u32::MAX, |p| hex_distance(supply_pos, p)), patrol)
+            })
+        else {
+            // No Patrol to escort: wait, exactly like `assign=patrol`.
+            wait.push(index);
+            continue;
+        };
+        if let Some(slot) = patrols.iter().position(|&p| p == paired) {
+            escorting[slot] += 1;
+        }
+        pairs.push((index, paired));
+    }
+    (pairs, wait)
 }
 
 /// Look up a controlled agent's kind by id through `ctx.state`.
@@ -439,16 +553,17 @@ fn day_paths(
 ///
 /// # Errors
 /// [`CandidateError::InvalidParameter`] for any value other than
-/// `agents` / `patrol` / `escort`.
+/// `agents` / `patrol` / `escort` / `all`.
 pub(crate) fn parse_assign(spec: &CandidateSpec) -> Result<AssignMode, CandidateError> {
     match spec.param("assign") {
         None | Some("agents") => Ok(AssignMode::Agents),
         Some("patrol") => Ok(AssignMode::Patrol),
         Some("escort") => Ok(AssignMode::Escort),
+        Some("all") => Ok(AssignMode::All),
         Some(other) => Err(CandidateError::InvalidParameter {
             key: "assign".to_owned(),
             value: other.to_owned(),
-            reason: "expected agents | patrol | escort".to_owned(),
+            reason: "expected agents | patrol | escort | all".to_owned(),
         }),
     }
 }
@@ -576,7 +691,8 @@ mod tests {
     /// `assign` is a schema-gated value: omitted and `agents` select the
     /// all-agents assignment, `patrol` withholds the tour from Supply agents
     /// (Issue #235), `escort` walks each Supply along its paired Patrol's
-    /// projected path (Issue #248), anything else is an `InvalidParameter`.
+    /// projected path (Issue #248), `all` unions every agent's share into
+    /// every Patrol (Issue #253), anything else is an `InvalidParameter`.
     #[test]
     fn assign_param_parses_agents_patrol_escort_and_rejects_anything_else() {
         let parse = |id: &str| parse_assign(&CandidateSpec::parse(id).expect("id parses"));
@@ -584,6 +700,8 @@ mod tests {
         assert_eq!(parse("loop:assign=agents"), Ok(AssignMode::Agents));
         assert_eq!(parse("loop:assign=patrol"), Ok(AssignMode::Patrol));
         assert_eq!(parse("loop:assign=escort"), Ok(AssignMode::Escort));
+        assert_eq!(parse("loop:assign=all"), Ok(AssignMode::All));
+        assert_eq!(parse("multiloop:kmeans=4:seed=42:walk=astar:assign=all"), Ok(AssignMode::All));
         assert_eq!(
             parse("multiloop:kmeans=4:seed=42:walk=astar:assign=patrol"),
             Ok(AssignMode::Patrol)
@@ -851,6 +969,13 @@ mod tests {
 
         let waiting = run(AssignMode::Patrol);
         assert!(waiting.is_none(), "assign=patrol must never meet the patrol, so no refill");
+
+        // Issue #253 — `assign=all` runs the same escort procedure (pair →
+        // project → replace) on top of the unioned lists, so the rendezvous
+        // and its refill must survive the switch.
+        let all = run(AssignMode::All)
+            .expect("assign=all keeps the escort projection, so the refill must still fire");
+        assert_eq!(all, 12, "assign=all must refill exactly as escort does");
     }
 
     /// PR #249 review AC — the live-favoured `walk=astar` needs its own
@@ -973,6 +1098,138 @@ mod tests {
         assert!(
             waiting.is_none(),
             "assign=patrol must never meet the patrol under walk=astar either"
+        );
+    }
+
+    /// Issue #253 AC — under `assign=all` every Patrol's target list is the
+    /// **union of every agent's share**: its own list first (the own tour
+    /// stays a prefix), then the other agents in `ctx.agent_ids` order,
+    /// duplicates skipped. Checked on the live kinds compositions (4a / 5a /
+    /// 7a), because those are the shapes the arena fields.
+    ///
+    /// Supplies are not unioned — they still follow the escort projection of
+    /// their paired Patrol (asserted here through the shared [`pair_supplies`]
+    /// so the test pins *this* mode's pairing, not a re-implementation).
+    #[test]
+    fn assign_all_unions_every_patrol_list_for_live_kinds() {
+        for pattern in ["P,S,P,S", "P,S,S,P,S", "P,S,P,S,P,S,P"] {
+            let kinds = crate::kinds::parse_kinds(pattern).expect("pattern parses");
+            let map = map_with_spots();
+            let agents = kinds
+                .iter()
+                .enumerate()
+                .map(|(i, kind)| {
+                    let id = u8::try_from(i).unwrap_or(u8::MAX);
+                    // Spread along row 1 so pairing distances stay distinct
+                    // and nobody starts on the (2, 0) spot cell.
+                    let pos = HexCoord::new(i32::try_from(i).unwrap_or(0), 1);
+                    match kind {
+                        AgentKind::Patrol => Agent::patrol(id, pos, 4, 3),
+                        AgentKind::Supply => Agent::supply(id, pos),
+                    }
+                })
+                .collect();
+            let st = MatchState::new(MatchSetting {
+                match_id: MatchId::new("assign-all").unwrap(),
+                team: PlayerId::new("player-a").unwrap(),
+                map,
+                agents,
+                day_steps: 4,
+                num_days: 1,
+                day_steps_by_day: Vec::new(),
+            })
+            .unwrap();
+            let ctx = SolverContext::from_state(&st);
+            // Each agent owns one distinct spot; every list also carries the
+            // shared spot (2, 0) to pin dedup.
+            let shared = HexCoord::new(2, 0);
+            let targets: Vec<Vec<HexCoord>> = (0..kinds.len())
+                .map(|i| vec![HexCoord::new(i32::try_from(i).unwrap_or(0), 7), shared])
+                .collect();
+            let all_spots: Vec<HexCoord> = (0..kinds.len())
+                .map(|i| HexCoord::new(i32::try_from(i).unwrap_or(0), 7))
+                .chain([shared])
+                .collect();
+
+            let applied = AssignMode::All.apply(&ctx, targets.clone(), WalkMode::Greedy);
+            // The escort lists are `assign=all`'s prefix — that is the
+            // non-regression contract against kinds.
+            let escorted = AssignMode::Escort.apply(&ctx, targets.clone(), WalkMode::Greedy);
+
+            for (index, kind) in kinds.iter().enumerate() {
+                if *kind != AgentKind::Patrol {
+                    continue;
+                }
+                let list = &applied[index];
+                assert_eq!(
+                    &list[..escorted[index].len()],
+                    escorted[index].as_slice(),
+                    "{pattern} patrol {index} must keep the escort list as its prefix"
+                );
+                // …then every other agent's share, rotated to start just
+                // after this Patrol's index, deduped.
+                let mut expected = escorted[index].clone();
+                for k in 1..kinds.len() {
+                    let other = (index + k) % kinds.len();
+                    for spot in &targets[other] {
+                        if !expected.contains(spot) {
+                            expected.push(*spot);
+                        }
+                    }
+                }
+                assert_eq!(list, &expected, "{pattern} patrol {index} must hold the full union");
+                for spot in &all_spots {
+                    assert!(list.contains(spot), "{pattern} patrol {index} misses {spot:?}");
+                }
+            }
+
+            // Supplies: escort projection over the unioned Patrol lists.
+            let (pairs, wait) = pair_supplies(&ctx);
+            assert!(wait.is_empty(), "{pattern}: capacity covers every Supply here");
+            let paths = day_paths(&ctx, &applied, WalkMode::Greedy);
+            for (supply, patrol) in pairs {
+                assert_eq!(
+                    applied[supply], paths[patrol],
+                    "{pattern} supply {supply} must walk patrol {patrol}'s projected path"
+                );
+                assert_ne!(
+                    applied[supply], targets[supply],
+                    "{pattern} supply {supply} must not keep its own tour"
+                );
+            }
+
+            // The mode is a real switch, not a synonym for the default.
+            let default = AssignMode::Agents.apply(&ctx, targets.clone(), WalkMode::Greedy);
+            assert_ne!(applied, default, "{pattern}: assign=all must change the lists");
+        }
+    }
+
+    /// Issue #253 — with no Patrol in the team there is nobody to union into
+    /// and nobody to escort: every Supply waits (the `assign=patrol` contract).
+    #[test]
+    fn assign_all_without_a_patrol_makes_supplies_wait() {
+        let map = map_with_spots();
+        let st = MatchState::new(MatchSetting {
+            match_id: MatchId::new("assign-all-solo").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                Agent::supply(0, HexCoord::new(0, 0)),
+                Agent::supply(1, HexCoord::new(3, 3)),
+                Agent::supply(2, HexCoord::new(7, 7)),
+            ],
+            day_steps: 4,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        })
+        .unwrap();
+        let ctx = SolverContext::from_state(&st);
+        let targets =
+            vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(5, 5)], vec![HexCoord::new(6, 6)]];
+        let applied = AssignMode::All.apply(&ctx, targets, WalkMode::Greedy);
+        assert!(
+            applied.iter().all(Vec::is_empty),
+            "nobody to walk, so everyone waits: {applied:?}"
         );
     }
 
