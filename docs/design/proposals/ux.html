@@ -1,0 +1,1825 @@
+<!doctype html>
+<!--
+  Interaction / UX proposal — procon-2026 viewer  (v3 revision)
+  ============================================================================
+
+  SCOPE
+    Interaction & UX proposal for the SolidJS + WebGPU contest viewer.
+    Covers: replay transport state model (states, events, per-control
+    enable/disable set, anchored to real data-testids), SVG⇄WebGPU renderer
+    switch branches (including the silent-blank GPU case, Issue #259), live
+    status lifecycle (RUNNING / IDLE / COMPLETED / ERROR / STALE), keyboard
+    model and a quiet focus specification, the single-family transport /
+    renderer icon set with clear-space tokens, the map data palette and
+    motif-first visualizer marks (kanji overlay optional, default off),
+    the motion spec, accessibility findings, and the alice/bob score table.
+
+  SKILLS USED
+    interaction-state · iconography-system · color-system · table-design
+
+  v3 変更点 (DESIGN-BRIEF.md v3「v3 で反転した判断」対応)
+    1. Marks: 幾何形 (circle / rect / triangle / diamond / hex / plus) の
+       3 families を撤回。モチーフ起点に再設計 — 山は山 (稜線 / 雪冠峰 /
+       等高線)、水は波 / 雫 / 漣、道路は帯 / 点線路 / 両線、巡回車は軽トラ /
+       巡回ルート / 走行タイヤ、補給車は車両 / 燃料缶 / 配送箱。代替案は
+       別モチーフで並べる (同一モチーフの簡略化度違いは出さない)。系列は
+       うどんの種類 = 器 / 道具 / 具材のモチーフ。実サイズ Ø15px で併置検証。
+    2. Palette: 低彩度 (C* 24–30)・同明度パレットを撤回 (識別が逆に悪化)。
+       公式図の実測色に再構築 — 平地 #8ed973 / 山 #bfbfbf / 水 #46b1e1
+       (薄 #9bc2e6) / 道路 #156082 / 系列 #cc9900・#c04f15 + 同系 4 色 /
+       巡回 #00b050 / 補給 #e59edd / 移動強調 #ffff00。L* 揃えは撤回
+       (明度差は識別に有効)。実測 L*/C* とコントラスト比を計測値として併記。
+    3. Contrast: --faint 3.04:1 → 4.51:1 (light) / 3.77:1 → 4.95:1 (dark)、
+       dark --muted 4.08:1 (surface-alt 上) → 5.73:1。text ≥4.5:1、
+       marker / 境界線 / focus ring ≥3:1 を表に実測値で明示。
+    4. Annotations: パネル・表に貼る平文注釈を監査。不要なものは削除、
+       残すものは prose ではなく計測値 (単位・桁・比) で見せる。
+    5. 保持 (v2 から改変なし): transport state model と event / guard 表、
+       renderer switch 分岐 (Issue #259 blank-frame 含む)、live status
+       lifecycle、keyboard / focus model、motion spec (prefers-reduced-motion
+       含む)、a11y findings、quiet button-tone focus ring、
+       icon clear-space token set (--icon-size-sm / --icon-size-lg /
+       --icon-clear-space / --icon-label-gap / --icon-control-min /
+       --icon-stroke / --focus-ring)、neutral chip + tone-matched marker の
+       badge、HUD / score は 2 段のみ (label 11px / value 15px)。
+
+  EVIDENCE
+    DESIGN-BRIEF.md v3 (「v3 で反転した判断」/ marks / contrast 下限)、
+    公式仕様の図1–図4 をピクセル実測 (terrain / spot / agent / movement 色)、
+    packages/frontend/src/types/map.ts (SPOT_SERIES_COLORS, TERRAIN_COLORS,
+    AGENT_COLORS), components/{ReplayViewer,WebGpuMapViewer,MapViewer}.tsx
+    (HEX_SIZE=24, spot r=0.32·hex), pages/{Solvers,Live,Replays}.tsx,
+    stores/replay.ts, lib/live.ts,
+    styles/{replay-viewer,live,webgpu-map-viewer}.css,
+    e2e/fixtures/match-state.snapshot.json, docs/evidence/258/README.md.
+
+  DELIBERATELY NOT COVERED HERE
+    - Colour tokens / palette derivation beyond the data marks -> design-system.html
+    - Page layout / shell / route geometry                      -> layout.html
+    - Typography scale & mixed-script typesetting               -> design-system.html
+    - Control chrome (radius / border / target geometry)        -> kept as-is
+      (user: 「他のコントロールは大体整っている」 — only icons + focus move)
+
+  RENDERING
+    Standalone. All CSS inline. Vanilla JS only for the light/dark toggle and
+    the small transport demo. Zero network requests. System font stack.
+    Designed for 1280x800, no page-level horizontal scroll (wide tables own
+    their scroll region). SVG diagrams size via CSS, never height="auto".
+-->
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interaction / UX proposal — procon-2026 viewer</title>
+<style>
+/* ==========================================================================
+   TOKENS — carried over from design-system.html so this file renders
+   standalone. Canonical definitions live in design-system.html; do not
+   treat this block as a token source.
+   ========================================================================== */
+:root{
+  --bg:#f6f8fa; --fg:#1f2328; --muted:#59636e; --faint:#636d78;
+  --surface:#ffffff; --surface-alt:#eaeef2;
+  --border:#d0d7de; --border-strong:#afb8c1;
+  --accent:#0969da; --accent-fg:#ffffff;
+  /* focus: button-tone neutral, NOT the accent (v2, kept) */
+  --focus-ring:#6e7781;
+  /* status marker tones — chip stays neutral; markers carry the tone */
+  --mk-run:#2e7c48; --mk-idle:#8f680c; --mk-done:#3370b8;
+  --mk-err:#ba4550; --mk-stale:#8f680c; --mk-boot:#6e7781;
+  --shadow:0 1px 2px rgba(31,35,40,.08);
+  --r-xs:3px; --r-sm:4px; --r-md:6px; --r-pill:999px;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  /* type: two tiers only (v2) */
+  --t-label:11px; --t-value:15px;
+  /* icon clear-space set — consumed by design-system.html (v2) */
+  --icon-size-sm:16px; --icon-size-lg:24px;
+  --icon-clear-space:2px; --icon-label-gap:6px;
+  --icon-control-min:32px; --icon-stroke:1.5px;
+  /* motion */
+  --m-feedback:90ms; --m-state:120ms; --m-swap:140ms;
+  --ease-out:cubic-bezier(0.2,0,0,1);
+}
+:root[data-theme="dark"]{
+  --bg:#0d1117; --fg:#e6edf3; --muted:#96a0aa; --faint:#8c959f;
+  --surface:#161b22; --surface-alt:#21262d;
+  --border:#30363d; --border-strong:#484f58;
+  --accent:#2f81f7; --accent-fg:#ffffff;
+  --focus-ring:#8c959f;
+  --mk-run:#519f68; --mk-idle:#bb8b22; --mk-done:#5e95d2;
+  --mk-err:#e06b72; --mk-stale:#bb8b22; --mk-boot:#8c959f;
+  --shadow:0 1px 2px rgba(1,4,9,.6);
+}
+*{box-sizing:border-box}
+html{color-scheme:light}
+html[data-theme="dark"]{color-scheme:dark}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:var(--sans); font-size:14px; line-height:1.55;
+}
+code,.mono{font-family:var(--mono)}
+code{
+  font-size:12px; background:var(--surface-alt);
+  border:1px solid var(--border); border-radius:var(--r-xs);
+  padding:1px 5px;
+}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--focus-ring); outline-offset:1px}
+
+/* ---------- masthead ---------- */
+.masthead{
+  border-bottom:1px solid var(--border); background:var(--surface);
+  padding:var(--s5) var(--s6) var(--s4);
+}
+.masthead__inner{max-width:1240px; margin:0 auto; display:flex; gap:var(--s5); align-items:flex-start; flex-wrap:wrap}
+.masthead__brand{font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.04em}
+.masthead h1{margin:2px 0 6px; font-size:22px; line-height:1.25; font-weight:650; letter-spacing:-.01em}
+.masthead__lede{margin:0; color:var(--muted); max-width:72ch; font-size:13px}
+.masthead__side{margin-left:auto; display:flex; flex-direction:column; gap:var(--s2); align-items:flex-end}
+.skills{display:flex; flex-wrap:wrap; gap:var(--s1); margin-top:var(--s3); max-width:800px}
+.chip{
+  font-family:var(--mono); font-size:11px; color:var(--muted);
+  border:1px solid var(--border); border-radius:var(--r-pill);
+  padding:2px 9px; background:var(--bg);
+}
+.toggle{
+  display:inline-flex; align-items:center; gap:var(--s2);
+  font:inherit; font-size:13px; cursor:pointer;
+  background:var(--surface-alt); color:var(--fg);
+  border:1px solid var(--border); border-radius:var(--r-sm);
+  padding:6px 12px; min-height:32px;
+  transition:background-color var(--m-feedback) var(--ease-out),
+             border-color var(--m-feedback) var(--ease-out);
+}
+.toggle:hover{border-color:var(--border-strong)}
+.toggle .dot{width:8px; height:8px; border-radius:50%; background:var(--fg)}
+
+/* ---------- page grid ---------- */
+.page{
+  max-width:1240px; margin:0 auto; padding:var(--s5) var(--s6) 64px;
+  display:grid; grid-template-columns:216px minmax(0,1fr); gap:var(--s6);
+  align-items:start;
+}
+.index{position:sticky; top:var(--s5); font-size:12px}
+.index__t{
+  font-family:var(--mono); font-size:10px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--faint); margin:0 0 var(--s2);
+}
+.index ol{list-style:none; margin:0; padding:0}
+.index a{
+  display:block; padding:5px 10px; color:var(--muted);
+  border-radius:var(--r-sm);
+  transition:background-color var(--m-feedback) var(--ease-out),
+             color var(--m-feedback) var(--ease-out);
+}
+.index a:hover{color:var(--fg); background:var(--surface-alt); text-decoration:none}
+.index a .n{font-family:var(--mono); font-size:10px; color:var(--faint); margin-right:6px}
+
+/* ---------- sections ---------- */
+section.spec{margin:0 0 56px; scroll-margin-top:var(--s5)}
+.sec-head{display:flex; align-items:baseline; gap:var(--s3); margin-bottom:var(--s3); flex-wrap:wrap}
+.sec-num{font-family:var(--mono); font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.06em}
+.sec-head h2{margin:0; font-size:18px; font-weight:650; letter-spacing:-.01em}
+.lede{margin:0 0 var(--s4); color:var(--muted); max-width:78ch; font-size:13px}
+.lede b{color:var(--fg); font-weight:600}
+
+.block{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r-md); padding:var(--s4); margin:0 0 var(--s4);
+}
+.block__t{
+  margin:0 0 var(--s3); font-family:var(--mono); font-size:10px;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--faint);
+}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:var(--s4)}
+.grid2 > .block{margin:0}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto; border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface)}
+.tw:focus-visible{outline:2px solid var(--focus-ring); outline-offset:1px}
+table.spec{border-collapse:collapse; width:100%; min-width:640px; font-size:12.5px}
+table.spec caption{
+  caption-side:top; text-align:left; padding:10px 12px;
+  font-family:var(--mono); font-size:10px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--faint);
+  border-bottom:1px solid var(--border); background:var(--surface-alt);
+}
+table.spec th,table.spec td{
+  border-bottom:1px solid var(--border); padding:8px 10px;
+  text-align:left; vertical-align:top;
+}
+table.spec thead th{
+  font-family:var(--mono); font-size:10px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--muted); font-weight:600;
+  white-space:nowrap; border-bottom:1px solid var(--border-strong);
+  background:var(--surface);
+}
+table.spec tbody tr:last-child th,table.spec tbody tr:last-child td{border-bottom:0}
+table.spec td.num,table.spec th.num{
+  text-align:right; font-variant-numeric:tabular-nums; font-family:var(--mono);
+}
+table.spec .rowhead{font-weight:600; white-space:nowrap}
+table.spec .sm{color:var(--muted); font-size:11px}
+table.spec td.on{color:var(--fg)}
+table.spec td.off{color:var(--faint)}
+
+/* ---------- severity chips: neutral chip + tone marker (v2) ---------- */
+.sev{
+  display:inline-flex; align-items:center; gap:6px;
+  font-family:var(--mono); font-size:10px;
+  letter-spacing:.06em; text-transform:uppercase; font-weight:700;
+  border-radius:var(--r-pill); padding:2px 9px; white-space:nowrap;
+  background:var(--surface-alt); color:var(--fg);
+}
+.sev .mk{width:7px; height:7px; border-radius:50%; flex:none; background:var(--mk-boot)}
+.sev.crit .mk{background:var(--mk-err)}
+.sev.ser .mk{background:var(--mk-idle)}
+.sev.mod .mk{background:var(--mk-boot)}
+.sev.fix .mk{background:var(--mk-done)}
+
+/* ---------- badges: neutral chip + tone-matched marker (v2) ---------- */
+.badge{
+  display:inline-flex; align-items:center; gap:6px;
+  border-radius:var(--r-pill); padding:3px 11px;
+  font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  background:var(--surface-alt); color:var(--fg);
+  white-space:nowrap;
+}
+.badge .mk{width:8px; height:8px; border-radius:50%; flex:none; background:var(--mk-boot)}
+.badge.run .mk{background:var(--mk-run)}
+.badge.idle .mk{background:var(--mk-idle)}
+.badge.done .mk{background:var(--mk-done)}
+.badge.err .mk{background:var(--mk-err)}
+.badge.stale .mk{background:transparent; border:2px solid var(--mk-stale)}
+.badge.boot .mk{border-radius:1px; width:8px; height:2px}
+.badge .tail{font-weight:500; letter-spacing:.02em; color:var(--muted); text-transform:none}
+
+.theme-row{display:flex; flex-wrap:wrap; gap:var(--s2); align-items:center}
+.theme-sample{
+  border:1px solid var(--border); border-radius:var(--r-md);
+  padding:var(--s3); flex:1 1 320px; min-width:0;
+}
+.theme-sample__cap{
+  font-family:var(--mono); font-size:10px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--faint); margin:0 0 var(--s2);
+}
+.theme-sample[data-sample-theme="light"]{
+  background:#f6f8fa; color:#1f2328; --surface-alt:#eaeef2; --fg:#1f2328;
+  --muted:#59636e; --mk-run:#2e7c48; --mk-idle:#8f680c; --mk-done:#3370b8;
+  --mk-err:#ba4550; --mk-stale:#8f680c; --mk-boot:#6e7781;
+}
+.theme-sample[data-sample-theme="dark"]{
+  background:#0d1117; color:#e6edf3; --surface-alt:#21262d; --fg:#e6edf3;
+  --muted:#96a0aa; --mk-run:#519f68; --mk-idle:#bb8b22; --mk-done:#5e95d2;
+  --mk-err:#e06b72; --mk-stale:#bb8b22; --mk-boot:#8c959f;
+}
+
+.tiles{display:flex; flex-wrap:wrap; gap:var(--s2)}
+.tile{
+  background:var(--surface-alt); border-radius:var(--r-md);
+  padding:8px 14px; min-width:96px;
+}
+.tile .l{
+  display:block; font-family:var(--mono); font-size:var(--t-label);
+  letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+}
+.tile .v{
+  display:block; font-size:var(--t-value); font-weight:650;
+  font-variant-numeric:tabular-nums; line-height:1.3;
+}
+.tile .v.mono{font-family:var(--mono); font-weight:600}
+kbd{
+  font-family:var(--mono); font-size:11px; color:var(--fg);
+  background:var(--surface); border:1px solid var(--border-strong);
+  border-bottom-width:2px; border-radius:var(--r-xs);
+  padding:1px 6px; white-space:nowrap;
+}
+.note{
+  background:var(--surface-alt); padding:10px 14px; margin:0 0 var(--s4);
+  font-size:12.5px; border-radius:var(--r-sm);
+  display:flex; gap:10px; align-items:flex-start;
+}
+.note .mk{
+  width:8px; height:8px; border-radius:50%; flex:none; margin-top:5px;
+  background:var(--mk-boot);
+}
+.note.issue .mk{background:var(--mk-err)}
+.note b{color:var(--fg)}
+ul.tight{margin:0; padding-left:18px; font-size:12.5px}
+ul.tight li{margin:0 0 6px}
+ul.tight li::marker{color:var(--faint)}
+ol.tight{margin:0; padding-left:20px; font-size:12.5px}
+ol.tight li{margin:0 0 8px}
+.hint{
+  color:var(--muted); font-family:var(--mono); font-size:11px;
+}
+
+/* ---------- state diagram ---------- */
+.diagram{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r-md); padding:var(--s3); margin:0 0 var(--s4);
+  overflow-x:auto;
+}
+.diagram svg{display:block; width:100%; height:auto; min-width:640px}
+.d-node{fill:var(--surface); stroke:var(--border-strong); stroke-width:1}
+.d-node-label{fill:var(--fg); font:600 12px var(--sans)}
+.d-node-sub{fill:var(--muted); font:10px var(--mono)}
+.d-edge{fill:none; stroke:var(--fg); stroke-width:1.2}
+.d-edge-label{fill:var(--fg); font:600 10.5px var(--sans)}
+.d-edge-sub{fill:var(--muted); font:10px var(--mono)}
+.d-overlay{fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:4 3}
+.d-overlay-label{fill:var(--muted); font:600 11px var(--sans)}
+.d-overlay-sub{fill:var(--faint); font:10px var(--mono)}
+
+/* ---------- state table highlight (demo): tone only, no accent band (v2) ---------- */
+tr.is-current{background:var(--surface-alt)}
+tr.is-current > th:first-child{font-weight:700}
+.state-pip{
+  display:inline-block; width:8px; height:8px; border-radius:2px;
+  background:var(--border-strong); margin-right:6px; vertical-align:baseline;
+}
+tr.is-current .state-pip{background:var(--fg)}
+
+/* ---------- transport demo ---------- */
+.demo{
+  border:1px solid var(--border-strong); border-radius:var(--r-md);
+  background:var(--bg); padding:var(--s4); margin:0 0 var(--s4);
+}
+.demo__row{display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap}
+.demo__meta{
+  margin-left:auto; display:flex; align-items:baseline; gap:var(--s2);
+}
+.demo__meta .l{
+  font-family:var(--mono); font-size:var(--t-label); letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted);
+}
+.demo__meta .v{
+  font-family:var(--mono); font-size:var(--t-value); font-weight:650;
+  font-variant-numeric:tabular-nums;
+}
+.demo__state{
+  font-family:var(--mono); font-size:11px; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--muted); font-weight:700;
+}
+.tbtn{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:36px; height:32px; padding:0;
+  background:var(--surface-alt); color:var(--fg);
+  border:1px solid var(--border); border-radius:var(--r-sm);
+  cursor:pointer;
+  transition:background-color var(--m-feedback) var(--ease-out),
+             border-color var(--m-feedback) var(--ease-out);
+}
+.tbtn:hover:not(:disabled){border-color:var(--border-strong)}
+.tbtn:disabled{opacity:.45; cursor:not-allowed}
+.rates{display:inline-flex; gap:var(--s1); margin-left:var(--s2)}
+.rbtn{
+  min-width:36px; height:32px; padding:0 8px;
+  font:inherit; font-size:12px; font-variant-numeric:tabular-nums;
+  background:var(--surface-alt); color:var(--fg);
+  border:1px solid var(--border); border-radius:var(--r-sm); cursor:pointer;
+  transition:background-color var(--m-feedback) var(--ease-out),
+             color var(--m-feedback) var(--ease-out),
+             border-color var(--m-feedback) var(--ease-out);
+}
+.rbtn:hover{border-color:var(--border-strong)}
+.rbtn[aria-pressed="true"]{background:var(--accent); color:var(--accent-fg); border-color:var(--accent)}
+.scrub{width:100%; margin-top:var(--s3); accent-color:var(--accent)}
+.score-table{
+  border-collapse:collapse; width:100%; margin-top:var(--s3);
+}
+.score-table caption{
+  caption-side:top; text-align:left; color:var(--muted); font-size:var(--t-label);
+  font-family:var(--mono); letter-spacing:.05em; text-transform:uppercase;
+  padding-bottom:6px;
+}
+.score-table th,.score-table td{
+  border-bottom:1px solid var(--border); padding:6px 8px; height:32px;
+}
+.score-table th{
+  color:var(--muted); font-weight:600; font-size:var(--t-label);
+  letter-spacing:.05em; text-transform:uppercase;
+}
+.score-table tbody th{
+  text-align:left; color:var(--fg); font-size:var(--t-value);
+  text-transform:none; letter-spacing:0; font-weight:600;
+}
+.score-table td.num{
+  text-align:right; font-variant-numeric:tabular-nums;
+  font-family:var(--mono); font-size:var(--t-value); font-weight:600;
+}
+
+/* ---------- renderer flow: tone + text marker, no colour bands (v2) ---------- */
+.flow{display:flex; flex-direction:column; gap:0; font-size:12px}
+.flow .node{
+  border:1px solid var(--border); border-radius:var(--r-sm);
+  background:var(--surface-alt); padding:8px 12px; position:relative;
+}
+.flow .node .t{font-weight:650; font-size:12px}
+.flow .node .s{color:var(--muted); font-family:var(--mono); font-size:11px}
+.flow .tag{
+  display:inline-flex; align-items:center; gap:5px; margin-left:8px;
+  font-family:var(--mono); font-size:10px; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--muted);
+  background:var(--surface); border-radius:var(--r-pill); padding:1px 8px;
+}
+.flow .tag .mk{width:6px; height:6px; border-radius:50%; background:var(--mk-boot)}
+.flow .tag.prop .mk{background:var(--mk-done)}
+.flow .tag.bad .mk{background:var(--mk-err)}
+.flow .arrow{
+  align-self:center; color:var(--faint); font-family:var(--mono);
+  font-size:10px; letter-spacing:.04em; padding:3px 0;
+}
+.flow .branch{
+  font-family:var(--mono); font-size:10px; color:var(--muted);
+  margin:0 0 4px 2px;
+}
+.seg{display:inline-flex; border:1px solid var(--border); border-radius:var(--r-sm); overflow:hidden}
+.seg button{
+  font:inherit; font-size:12px; padding:6px 14px; min-height:32px;
+  background:var(--surface-alt); color:var(--fg); border:0;
+  border-right:1px solid var(--border); cursor:pointer;
+  display:inline-flex; align-items:center; gap:var(--icon-label-gap);
+  transition:background-color var(--m-feedback) var(--ease-out),
+             color var(--m-feedback) var(--ease-out);
+}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent); color:var(--accent-fg)}
+
+/* ---------- icon specimens + clear-space box (v2) ---------- */
+.icon-grid{
+  display:grid; grid-template-columns:132px 72px 1fr;
+  gap:var(--s2) var(--s3); align-items:center; font-size:12px;
+}
+.icon-grid .h{
+  font-family:var(--mono); font-size:10px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--faint); text-align:center;
+}
+.icon-grid .name{font-family:var(--mono); font-size:11px; color:var(--fg)}
+.icon-grid .cell{display:flex; justify-content:center; align-items:center}
+.icon-grid .rule{color:var(--muted); font-size:11px}
+.ic{color:var(--fg); display:block}
+/* padding box = glyph + --icon-clear-space on four sides */
+.icon-box{
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:var(--icon-clear-space);
+  outline:1px dashed var(--border-strong); outline-offset:0;
+  border-radius:2px;
+}
+.icon-strip{
+  display:flex; align-items:center; gap:var(--s2);
+  border:1px solid var(--border); border-radius:var(--r-md);
+  background:var(--surface-alt); padding:var(--s3);
+}
+.icon-strip .lbl{font-family:var(--mono); font-size:11px; color:var(--muted); margin-right:var(--s2)}
+
+/* ---------- focus state comparison (v2) ---------- */
+.fstate-row{display:flex; gap:var(--s4); flex-wrap:wrap; align-items:flex-start}
+.fstate{display:flex; flex-direction:column; gap:6px; align-items:center}
+.fstate .cap{
+  font-family:var(--mono); font-size:10px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--muted);
+}
+.fbtn{
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--icon-label-gap);
+  min-height:var(--icon-control-min); padding:0 12px;
+  font:inherit; font-size:13px; cursor:pointer;
+  background:var(--surface-alt); color:var(--fg);
+  border:1px solid var(--border); border-radius:var(--r-sm);
+  transition:background-color var(--m-feedback) var(--ease-out),
+             border-color var(--m-feedback) var(--ease-out);
+}
+.fbtn.is-hover{border-color:var(--border-strong)}
+.fbtn.is-focus{outline:2px solid var(--focus-ring); outline-offset:1px}
+.fbtn.is-active{background:var(--border); border-color:var(--border-strong)}
+:root[data-theme="dark"] .fbtn.is-active{background:var(--border-strong)}
+
+.pill-note{
+  display:inline-block; font-family:var(--mono); font-size:10px;
+  letter-spacing:.05em; color:var(--muted);
+  border:1px dashed var(--border-strong); border-radius:var(--r-pill);
+  padding:2px 9px;
+}
+footer.end{
+  margin-top:var(--s6); padding-top:var(--s4); border-top:1px solid var(--border);
+  color:var(--muted); font-size:12px;
+}
+
+/* ---------- v3: data palette + motif marks ---------- */
+.pal-row{display:flex; flex-wrap:wrap; gap:var(--s2); align-items:center}
+.pal{
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:var(--mono); font-size:11px;
+}
+.sw{
+  width:15px; height:15px; border-radius:3px; flex:none;
+  display:inline-block; vertical-align:-2px;
+  outline:1px solid #1f2328; outline-offset:0;
+}
+.pal .v{font-weight:700; color:var(--fg)}
+.pal .m{color:var(--muted); font-variant-numeric:tabular-nums}
+.mark-strip{
+  display:flex; align-items:center; gap:3px; flex-wrap:wrap;
+  background:var(--surface-alt); border-radius:var(--r-sm); padding:8px 10px;
+}
+.mark-strip.on-plain{background:#8ed973}
+.mark-strip.on-road{background:#156082}
+.mk15{width:15px; height:15px; display:block; flex:none}
+.mk32{width:32px; height:32px; display:block; flex:none}
+.mark-grid{
+  display:grid; grid-template-columns:96px repeat(3, minmax(0,1fr));
+  gap:var(--s2) var(--s3); align-items:center; font-size:12px;
+}
+.mark-grid .h{
+  font-family:var(--mono); font-size:10px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--faint);
+}
+.mark-grid .name{font-family:var(--mono); font-size:11px; color:var(--fg)}
+.mark-grid .cell{display:flex; align-items:center; gap:8px}
+.mark-grid .cell .nm{font-family:var(--mono); font-size:10px; color:var(--muted)}
+
+/* ==========================================================================
+   RESPONSIVE — DEGRADATION BELOW 900px
+   ========================================================================== */
+@media (max-width:900px){
+  .page{grid-template-columns:minmax(0,1fr); gap:var(--s5); padding:var(--s4) var(--s4) 48px}
+  .masthead{padding:var(--s4)}
+  .index{position:static}
+  .index ol{display:flex; flex-wrap:wrap; gap:var(--s1)}
+  .index a{border:1px solid var(--border); border-radius:var(--r-pill); padding:4px 10px}
+  .grid2{grid-template-columns:minmax(0,1fr)}
+  .icon-grid{grid-template-columns:110px 60px;}
+  .icon-grid .rule{grid-column:1/-1}
+  .demo__meta{margin-left:0; width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    transition-duration:0ms !important;
+    animation-duration:0ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== header: title, scope, skills, theme toggle ===== -->
+<header class="masthead">
+  <div class="masthead__inner">
+    <div>
+      <div class="masthead__brand">procon-2026 viewer · design proposals · v3</div>
+      <h1>Interaction / UX proposal</h1>
+      <p class="masthead__lede">
+        State models and interaction rules for the surfaces a contest team reads under time
+        pressure: the replay transport, the SVG⇄WebGPU renderer switch, the live status HUD,
+        and the map’s data marks. Every state below is anchored to a <code>data-testid</code>
+        that already exists in <code>packages/frontend/src</code>; live values come from
+        <code>e2e/fixtures/match-state.snapshot.json</code>.
+      </p>
+      <div class="skills" aria-label="Skills used">
+        <span class="chip">interaction-state</span>
+        <span class="chip">iconography-system</span>
+        <span class="chip">color-system</span>
+        <span class="chip">table-design</span>
+      </div>
+    </div>
+    <div class="masthead__side">
+      <button class="toggle" id="theme-toggle" type="button" data-testid="theme-toggle" aria-label="Toggle theme">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="theme-toggle-label">Dark mode</span>
+      </button>
+      <span class="pill-note">light/dark both specified · same component states</span>
+    </div>
+  </div>
+</header>
+
+<div class="page">
+
+  <nav class="index" aria-label="Proposal contents">
+    <p class="index__t">Contents</p>
+    <ol>
+      <li><a href="#state"><span class="n">01</span>State model</a></li>
+      <li><a href="#renderer"><span class="n">02</span>Renderer switch</a></li>
+      <li><a href="#live"><span class="n">03</span>Live status lifecycle</a></li>
+      <li><a href="#keyboard"><span class="n">04</span>Keyboard &amp; focus</a></li>
+      <li><a href="#icons"><span class="n">05</span>Iconography</a></li>
+      <li><a href="#marks"><span class="n">06</span>Data marks &amp; legend</a></li>
+      <li><a href="#motion"><span class="n">07</span>Motion spec</a></li>
+      <li><a href="#a11y"><span class="n">08</span>Accessibility</a></li>
+      <li><a href="#score"><span class="n">09</span>Score table</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+  <!-- ================================================================== -->
+  <section class="spec" id="state">
+    <div class="sec-head"><span class="sec-num">01</span><h2>State model — replay transport</h2></div>
+    <p class="lede">
+      <b>Authority:</b> <code>createReplayStore</code> (<code>stores/replay.ts</code>) owns
+      <code>currentStep</code> / <code>isPlaying</code> / <code>rate</code>; the status label is
+      <i>derived</i>, never stored. The UI never invents a second truth — the disable set of every
+      control is a pure function of <code>(currentStep, stepCount)</code>. Below: the state graph,
+      the per-control contract per state, and the event table.
+    </p>
+
+    <div class="diagram" role="img" aria-label="Replay transport state graph: idle-at-step-1 to playing to paused to at-end, with scrubbing as an orthogonal overlay and rate-changed as a transient flag.">
+      <svg viewBox="0 0 760 366" aria-hidden="true">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 10 5 0 10Z" fill="var(--fg)"></path>
+          </marker>
+        </defs>
+        <rect class="d-node" x="20" y="20" width="132" height="46" rx="6"></rect>
+        <text class="d-node-label" x="34" y="38">S0 idle-at-step-1</text>
+        <text class="d-node-sub" x="34" y="53">step 0 · status=idle</text>
+
+        <rect class="d-node" x="314" y="20" width="132" height="46" rx="6"></rect>
+        <text class="d-node-label" x="328" y="38">S1 playing</text>
+        <text class="d-node-sub" x="328" y="53">isPlaying · timer armed</text>
+
+        <rect class="d-node" x="608" y="20" width="132" height="46" rx="6"></rect>
+        <text class="d-node-label" x="622" y="38">S2 paused</text>
+        <text class="d-node-sub" x="622" y="53">mid · status=paused</text>
+
+        <rect class="d-node" x="314" y="164" width="132" height="46" rx="6"></rect>
+        <text class="d-node-label" x="328" y="182">S3 at-end</text>
+        <text class="d-node-sub" x="328" y="197">status=finished</text>
+
+        <line class="d-edge" x1="152" y1="43" x2="310" y2="43" marker-end="url(#ah)"></line>
+        <text class="d-edge-label" x="228" y="34">Play</text>
+
+        <line class="d-edge" x1="446" y1="43" x2="604" y2="43" marker-end="url(#ah)"></line>
+        <text class="d-edge-label" x="522" y="34">Pause</text>
+
+        <path class="d-edge" d="M674 66 C 674 108, 330 108, 330 70" marker-end="url(#ah)"></path>
+        <text class="d-edge-label" x="502" y="112">Play</text>
+        <text class="d-edge-sub" x="502" y="126">resume from current step</text>
+
+        <line class="d-edge" x1="414" y1="66" x2="414" y2="160" marker-end="url(#ah)"></line>
+        <text class="d-edge-label" x="426" y="112">EndReached</text>
+        <text class="d-edge-sub" x="426" y="126">timer next &gt; last → pause()</text>
+
+        <path class="d-edge" d="M314 187 H 236 V 58 H 310" marker-end="url(#ah)"></path>
+        <text class="d-edge-label" x="60" y="180">Play — auto-rewind to step 1</text>
+        <text class="d-edge-sub" x="60" y="195">store.play(): setCurrentStep(0) first</text>
+
+        <rect class="d-overlay" x="20" y="252" width="728" height="52" rx="6"></rect>
+        <text class="d-overlay-label" x="34" y="272">S4 scrubbing — orthogonal overlay</text>
+        <text class="d-overlay-sub" x="34" y="288">base state preserved · auto-advance held while pointer/key is down · releases back to S0/S1/S2/S3</text>
+        <line class="d-overlay" x1="62" y1="252" x2="62" y2="88" marker-start="url(#ah)" marker-end="url(#ah)"></line>
+        <text class="d-overlay-sub" x="72" y="128">applies to any state above</text>
+
+        <rect class="d-overlay" x="20" y="318" width="728" height="36" rx="6"></rect>
+        <text class="d-overlay-sub" x="34" y="340">S5 rate-changed — transient feedback only (≤90ms): aria-pressed + fill. Sticky flag across every state; not a resting state (interaction-state: no phantom states).</text>
+      </svg>
+    </div>
+
+    <div class="tw" tabindex="0">
+      <table class="spec" id="state-table">
+        <caption>Control contract per state — labels and enabled/disabled set (real data-testids)</caption>
+        <thead>
+          <tr>
+            <th scope="col">Control (data-testid)</th>
+            <th scope="col">S0 idle-at-step-1</th>
+            <th scope="col">S1 playing</th>
+            <th scope="col">S2 paused</th>
+            <th scope="col">S3 at-end</th>
+            <th scope="col">S4 scrubbing (overlay)</th>
+            <th scope="col">S5 rate-changed (transient)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr data-state-row="S0">
+            <th scope="row" class="rowhead"><code>replay-step-back</code><div class="sm">icon · step-back</div></th>
+            <td class="off"><span class="state-pip"></span>disabled — step ≤ 0</td>
+            <td class="on"><span class="state-pip"></span>enabled</td>
+            <td class="on"><span class="state-pip"></span>enabled</td>
+            <td class="on"><span class="state-pip"></span>enabled</td>
+            <td class="sm">base value (commit step on release)</td>
+            <td class="sm">unchanged</td>
+          </tr>
+          <tr data-state-row="S1">
+            <th scope="row" class="rowhead"><code>replay-toggle</code><div class="sm">icon · play / pause</div></th>
+            <td class="on"><span class="state-pip"></span>label “Play”</td>
+            <td class="on"><span class="state-pip"></span>label “Pause”</td>
+            <td class="on"><span class="state-pip"></span>label “Play” (resume)</td>
+            <td class="on"><span class="state-pip"></span>label “Play from start” <span class="sm">(proposed; DOM text is “Play”, action rewinds)</span></td>
+            <td class="sm">keeps base label · interval suspended</td>
+            <td class="sm">unchanged</td>
+          </tr>
+          <tr data-state-row="S2">
+            <th scope="row" class="rowhead"><code>replay-step-forward</code><div class="sm">icon · step-forward</div></th>
+            <td class="on"><span class="state-pip"></span>enabled <span class="sm">(unless stepCount ≤ 1)</span></td>
+            <td class="on"><span class="state-pip"></span>enabled</td>
+            <td class="on"><span class="state-pip"></span>enabled</td>
+            <td class="off"><span class="state-pip"></span>disabled — step = max</td>
+            <td class="sm">base value</td>
+            <td class="sm">unchanged</td>
+          </tr>
+          <tr data-state-row="S3">
+            <th scope="row" class="rowhead"><code>replay-rate-1</code> / <code>-2</code> / <code>-4</code><div class="sm">values · 1× 2× 4×</div></th>
+            <td class="on"><span class="state-pip"></span>enabled · one <code>aria-pressed=true</code></td>
+            <td class="on"><span class="state-pip"></span>enabled · rate change re-arms timer</td>
+            <td class="on"><span class="state-pip"></span>enabled</td>
+            <td class="on"><span class="state-pip"></span>enabled</td>
+            <td class="sm">enabled</td>
+            <td class="sm">pressed flips now · interval period = <code>max(50, round(1000/rate))</code></td>
+          </tr>
+          <tr data-state-row="S4">
+            <th scope="row" class="rowhead"><code>replay-scrub</code><div class="sm">input[type=range]</div></th>
+            <td class="on"><span class="state-pip"></span>value 0</td>
+            <td class="on"><span class="state-pip"></span>follows tick</td>
+            <td class="on"><span class="state-pip"></span>value mid</td>
+            <td class="on"><span class="state-pip"></span>value max</td>
+            <td class="sm">follows pointer · <code>aria-valuetext</code> live</td>
+            <td class="sm">unchanged</td>
+          </tr>
+          <tr data-state-row="S5">
+            <th scope="row" class="rowhead"><code>replay-current-step</code><div class="sm">readout</div></th>
+            <td class="sm">“step 1 / 5”</td>
+            <td class="sm">“step n / 5” ticking</td>
+            <td class="sm">“step n / 5”</td>
+            <td class="sm">“step 5 / 5”</td>
+            <td class="sm">live while dragging</td>
+            <td class="sm">unchanged</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="block" style="margin-top:16px">
+      <p class="block__t">Demo — drive the transport below; the state table rows highlight live</p>
+      <div class="demo">
+        <div class="demo__row">
+          <button class="tbtn" type="button" data-testid="replay-step-back" aria-label="Step backward" title="Step backward" id="d-back">
+            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.6 3.6 3.2 8 7.6 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path><path d="M13 3.6 8.6 8 13 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+          </button>
+          <button class="tbtn" type="button" data-testid="replay-toggle" aria-label="Play" title="Play" id="d-toggle">
+            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" id="d-toggle-icon"><path d="M5.2 3.4 12.4 8 5.2 12.6Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+          </button>
+          <button class="tbtn" type="button" data-testid="replay-step-forward" aria-label="Step forward" title="Step forward" id="d-fwd">
+            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.6 7.4 8 3 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path><path d="M8.4 3.6 12.8 8 8.4 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+          </button>
+          <div class="rates" role="group" aria-label="Playback rate">
+            <button class="rbtn" type="button" data-testid="replay-rate-1" aria-pressed="true" data-rate="1">1×</button>
+            <button class="rbtn" type="button" data-testid="replay-rate-2" aria-pressed="false" data-rate="2">2×</button>
+            <button class="rbtn" type="button" data-testid="replay-rate-4" aria-pressed="false" data-rate="4">4×</button>
+          </div>
+          <div class="demo__meta">
+            <span class="l">Step</span>
+            <span class="v" data-testid="replay-current-step" id="d-step">1 / 5</span>
+            <span class="demo__state" id="d-state">S0 idle-at-step-1</span>
+          </div>
+        </div>
+        <label class="hint" for="d-scrub" style="display:block;margin-top:12px">Scrub</label>
+        <input class="scrub" id="d-scrub" data-testid="replay-scrub" type="range" min="0" max="4" step="1" value="0" aria-valuetext="Step 1 of 5">
+        <table class="score-table" id="d-scores">
+          <caption>Scores — demo-match</caption>
+          <thead><tr><th scope="col">Player</th><th scope="col" class="num">Score</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">alice</th><td class="num" id="d-alice">0</td></tr>
+            <tr><th scope="row">bob</th><td class="num" id="d-bob">1</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">
+        Fixture <code>FIXTURE_REPLAY</code> (Replays.tsx) — 5 steps · alice <code>turn × 10</code> · bob <code>turn × 10 + 1</code> ·
+        step 4/5 → <b>30</b> / <b>31</b> (value tier 15 px).
+      </p>
+    </div>
+
+    <div class="tw" tabindex="0" style="margin-top:16px">
+      <table class="spec">
+        <caption>Events — legality, guards, and intentional no-ops</caption>
+        <thead>
+          <tr>
+            <th scope="col">Event</th><th scope="col">Source</th><th scope="col">Valid in</th>
+            <th scope="col">Guard</th><th scope="col">Result</th><th scope="col">Invalid →</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row" class="rowhead">Play</th><td><code>replay-toggle</code> click · proposed <kbd>Space</kbd></td><td>S0 S2 S3</td>
+            <td><code>stepCount() &gt; 0</code></td><td>S1; from S3 first <code>setCurrentStep(0)</code> — this is the auto-rewind</td>
+            <td>empty replay: silent no-op (store guard)</td></tr>
+          <tr><th scope="row" class="rowhead">Pause</th><td><code>replay-toggle</code></td><td>S1</td><td>—</td>
+            <td>S2 (S3 if already at last step)</td><td>not playing → no-op</td></tr>
+          <tr><th scope="row" class="rowhead">EndReached</th><td>auto-advance timer (<code>ReplayViewer.tsx</code> <code>setInterval</code>)</td><td>S1</td>
+            <td><code>next &gt; stepCount()-1</code></td>
+            <td>S3 — <code>store.pause()</code>. <b>No auto-restart</b>: the loop stops and waits for Play (which rewinds).</td>
+            <td>—</td></tr>
+          <tr><th scope="row" class="rowhead">Step −</th><td><code>replay-step-back</code> · proposed <kbd>←</kbd></td><td>any</td><td>clamped to 0</td>
+            <td>step−1, status re-derived</td><td>at 0: button disabled; store clamps (silent)</td></tr>
+          <tr><th scope="row" class="rowhead">Step +</th><td><code>replay-step-forward</code> · proposed <kbd>→</kbd></td><td>any</td><td>clamped to max</td>
+            <td>step+1; at max → S3</td><td>at max: button disabled</td></tr>
+          <tr><th scope="row" class="rowhead">Scrub</th><td><code>replay-scrub</code> input / drag</td><td>any</td><td>—</td>
+            <td>S4 during gesture; base restored on release (S1 resumes playing)</td>
+            <td>stepCount ≤ 1: min == max, no movement</td></tr>
+          <tr><th scope="row" class="rowhead">Rate</th><td><code>replay-rate-N</code> · proposed <kbd>1</kbd> <kbd>2</kbd> <kbd>4</kbd></td><td>any</td>
+            <td>rate ∈ {1,2,4}</td><td>S5 feedback; if S1, interval re-armed at new period</td>
+            <td>unsupported rate → no-op (<code>setRate</code> guard)</td></tr>
+          <tr><th scope="row" class="rowhead">load / reset</th><td>replay swap (<code>store.load</code>)</td><td>any</td><td>—</td>
+            <td>S0, rate → 1</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="block">
+      <p class="block__t">Invariants</p>
+      <ul class="tight">
+        <li><b>One authority.</b> <code>createReplayStore</code> is the single source of truth. Controls render from the snapshot; none of them derives play state independently (interaction-state: state authority).</li>
+        <li><b>Mutual exclusion.</b> <code>status</code> is derived: <code>playing</code> XOR {<code>idle</code>, <code>paused</code>, <code>finished</code>}. <code>finished</code> requires <code>stepCount-1 &gt; 0</code> — single-step replays never reach S3 (observed guard in <code>stores/replay.ts</code> <code>status()</code>).</li>
+        <li><b>Orthogonal overlays.</b> S4 (scrubbing) and S5 (rate) never replace the base state. S4 exists precisely to forbid the impossible combination the current code allows: a drag that the timer overwrites on its next tick.</li>
+        <li><b>Disable set is pure.</b> Derived from <code>(currentStep, stepCount)</code> only — never from rate, theme, or renderer mode.</li>
+        <li><b>Single-slot timer.</b> The effect clears the previous interval before arming (<code>ReplayViewer.tsx:58–75</code>); rate spam cannot stack intervals.</li>
+        <li><b>Rapid input is normal path.</b> Step ± while playing does not pause; the timer continues from the new step. Pause then Play within one tick resumes from the same step.</li>
+        <li><b>Transient ≠ state.</b> S5 has identical interaction rules to any other state — modelled as feedback so it cannot produce a phantom state.</li>
+      </ul>
+    </div>
+  </section>
+  <!-- ================================================================== -->
+  <section class="spec" id="renderer">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Renderer switch — SVG ⇄ WebGPU</h2></div>
+    <p class="lede">
+      The segmented control on <code>/solvers</code> (<code>solvers-renderer-svg</code> /
+      <code>solvers-renderer-webgpu</code>) picks a renderer; <code>WebGpuMapViewer</code> decides
+      what is <i>actually</i> painted. Those two answers can disagree — and under headless
+      SwiftShader they do, silently. This section defines every branch, including the one the
+      current code has no name for.
+    </p>
+
+    <div class="note issue">
+      <span class="mk" aria-hidden="true"></span>
+      <div>
+        <b>Known bug — Issue #259.</b> The WebGPU canvas renders blank under headless SwiftShader
+        (<code>docs/evidence/258/README.md:14–16</code>, visible in
+        <code>target/uishots2/3-solvers-webgpu.png</code> as an empty 800×420 region). The GPU path
+        initializes fine, so <i>no</i> fallback and <i>no</i> loading branch is shown — the user gets
+        an empty box and no signal. This proposal gives that outcome a designed state:
+        <code>data-fallback-reason="blank-frame"</code>.
+      </div>
+    </div>
+
+    <div class="tw" tabindex="0">
+      <table class="spec">
+        <caption>Branches — condition in source, what renders, what is announced</caption>
+        <thead>
+          <tr><th scope="col">Branch</th><th scope="col">Condition (source)</th><th scope="col">Visible testids</th><th scope="col">User sees</th><th scope="col">Announced today</th><th scope="col">Proposed</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" class="rowhead">SVG active</th>
+            <td><code>mode() === 'svg'</code> <span class="sm">Solvers.tsx:98</span></td>
+            <td><code>map-viewer</code>, <code>map-viewer-svg</code></td>
+            <td>hex map, painting</td><td class="sm">—</td><td class="sm">unchanged</td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead">WebGPU pending</th>
+            <td><code>hasWebGpu() &amp;&amp; renderer()==null &amp;&amp; error()==null</code> <span class="sm">WebGpuMapViewer.tsx:140</span></td>
+            <td><code>webgpu-map-loading</code></td>
+            <td>“Loading WebGPU renderer…”</td><td class="sm">nothing</td>
+            <td class="sm"><code>role="status"</code> on the loading line</td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead">WebGPU active</th>
+            <td><code>hasWebGpu() &amp;&amp; renderer()!==null &amp;&amp; error()===null</code> <span class="sm">:138</span></td>
+            <td><code>webgpu-map-canvas-wrap</code>, <code>webgpu-map-canvas</code></td>
+            <td>canvas, painting frames</td><td class="sm">—</td><td class="sm">unchanged</td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead">Fallback — adapter absent</th>
+            <td><code>!hasWebGpu()</code> → <code>data-fallback-reason="webgpu-unavailable"</code> <span class="sm">:167</span></td>
+            <td><code>webgpu-map-fallback</code> + SVG</td>
+            <td>SVG map</td><td class="sm">nothing</td>
+            <td class="sm">reason chip + <code>role="status"</code></td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead">Fallback — init error</th>
+            <td>catch → <code>setError</code>; reason = message or <code>init-failed</code> <span class="sm">:110–115, :168–169</span></td>
+            <td><code>webgpu-map-fallback</code> + SVG</td>
+            <td>SVG map, no explanation</td><td class="sm">nothing</td>
+            <td class="sm">reason chip + <code>role="status"</code></td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead"><b>Blank frame — Issue #259</b></th>
+            <td>adapter present, init resolves, <code>renderer()</code> set, frames paint nothing (SwiftShader / headless)</td>
+            <td><b>today: only <code>webgpu-map-canvas-wrap</code></b> — fallback <i>and</i> loading are both hidden</td>
+            <td><b>empty 800×420 box</b></td><td><b>nothing</b></td>
+            <td><b>frame probe → <code>webgpu-map-fallback[data-fallback-reason="blank-frame"]</code> + SVG + <code>role="status"</code> strip “WebGPU produced no frames — showing SVG (Issue #259)”</b></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="block">
+      <p class="block__t">Frame probe — proposed detection for the silent blank path</p>
+      <div class="flow">
+        <div class="node"><div class="t">probe <code>navigator.gpu</code></div><div class="s">isWebGpuAvailable() — sync, on mount</div></div>
+        <div class="arrow">↓ no</div>
+        <div class="branch">→ FALLBACK · data-fallback-reason="webgpu-unavailable" · SVG</div>
+        <div class="arrow">↓ yes</div>
+        <div class="node"><div class="t">createWebGpuContext + init()</div><div class="s">adapter / device / pipeline</div></div>
+        <div class="arrow">↓ reject</div>
+        <div class="branch">→ FALLBACK · data-fallback-reason=&lt;error message | init-failed&gt; · SVG</div>
+        <div class="arrow">↓ resolve</div>
+        <div class="node"><div class="t">PENDING · webgpu-map-loading</div><div class="s">“Loading WebGPU renderer…”</div></div>
+        <div class="arrow">↓ renderer() set</div>
+        <div class="node"><div class="t">frame probe<span class="tag prop"><span class="mk"></span>proposed</span></div><div class="s">after 10 rAF or 400ms: read back a sample of the frame. All clear-colour? → blank</div></div>
+        <div class="arrow">↓ all pixels clear</div>
+        <div class="node"><div class="t">BLANK (Issue #259)<span class="tag bad"><span class="mk"></span>fallback</span></div><div class="s">→ FALLBACK · data-fallback-reason="blank-frame" · SVG + role="status" strip</div></div>
+        <div class="arrow">↓ pixels present</div>
+        <div class="node"><div class="t">ACTIVE · webgpu-map-canvas</div><div class="s">webgpu-map-canvas-wrap display:block</div></div>
+      </div>
+    </div>
+
+    <div class="tw" tabindex="0">
+      <table class="spec">
+        <caption>Segmented control state — requested vs effective renderer</caption>
+        <thead>
+          <tr><th scope="col">Situation</th><th scope="col"><code>solvers-renderer-svg</code></th><th scope="col"><code>solvers-renderer-webgpu</code></th><th scope="col">Effective pixels</th><th scope="col">Note</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row" class="rowhead">SVG chosen</th><td><code>aria-pressed=true</code></td><td><code>false</code></td><td>SVG</td>
+            <td class="sm">default when <code>isWebGpuAvailable()</code> is false <span class="sm">(Solvers.tsx:59)</span></td></tr>
+          <tr><th scope="row" class="rowhead">WebGPU active</th><td><code>false</code></td><td><code>aria-pressed=true</code></td><td>canvas</td><td class="sm">—</td></tr>
+          <tr><th scope="row" class="rowhead">WebGPU + fallback / blank</th><td><code>false</code> (today)</td><td><code>true</code> (today)</td><td>SVG</td>
+            <td><b>mismatch</b>: AT hears “WebGPU pressed” over SVG pixels. Proposal: <code>aria-pressed</code> follows the <i>effective</i> renderer; a <code>data-degraded</code> chip keeps the user’s requested mode visible.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section class="spec" id="live">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Live status lifecycle</h2></div>
+    <p class="lede">
+      <code>/live</code> polls <code>/match-state.json</code> once per second
+      (<code>DEFAULT_POLL_MS = 1000</code>, <code>lib/live.ts</code>). The badge carries the match
+      phase; a second, <b>orthogonal</b> signal carries feed health. Both are needed: a match can
+      be RUNNING on a dead feed, and that is the dangerous case.
+    </p>
+
+    <div class="block">
+      <p class="block__t">Badge specimens — neutral chip + tone-matched marker (v2), both themes at once</p>
+      <div class="theme-row">
+        <div class="theme-sample" data-sample-theme="light">
+          <p class="theme-sample__cap">Light</p>
+          <div class="theme-row">
+            <span class="badge boot"><span class="mk"></span>—</span>
+            <span class="badge idle"><span class="mk"></span>Idle</span>
+            <span class="badge run"><span class="mk"></span>Running</span>
+            <span class="badge done"><span class="mk"></span>Completed</span>
+            <span class="badge err"><span class="mk"></span>Error</span>
+            <span class="badge stale"><span class="mk"></span>Stale<span class="tail">· 00:00:00</span></span>
+          </div>
+        </div>
+        <div class="theme-sample" data-sample-theme="dark">
+          <p class="theme-sample__cap">Dark</p>
+          <div class="theme-row">
+            <span class="badge boot"><span class="mk"></span>—</span>
+            <span class="badge idle"><span class="mk"></span>Idle</span>
+            <span class="badge run"><span class="mk"></span>Running</span>
+            <span class="badge done"><span class="mk"></span>Completed</span>
+            <span class="badge err"><span class="mk"></span>Error</span>
+            <span class="badge stale"><span class="mk"></span>Stale<span class="tail">· 00:00:00</span></span>
+          </div>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:12px">
+        chip <code>--surface-alt</code> · marker Ø 8 px · text 11 px · STALE marker = hollow ring Ø 8 px / stroke 2 px.
+      </p>
+    </div>
+
+    <div class="tw" tabindex="0">
+      <table class="spec">
+        <caption>Lifecycle — label, marker tone, meaning, and what the user should do</caption>
+        <thead>
+          <tr><th scope="col">Badge</th><th scope="col">Wire status</th><th scope="col">Marker tone (light / dark, Lab L*)</th><th scope="col">Meaning</th><th scope="col">User action</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" class="rowhead"><span class="badge boot"><span class="mk"></span>—</span></th>
+            <td class="sm">(none yet — <code>STATUS_PLACEHOLDER</code>, Live.tsx:71)</td>
+            <td class="sm"><code>#6e7781</code> L* 49.6 / <code>#8c959f</code> L* 61.3</td>
+            <td>First poll has not resolved.</td>
+            <td>Poll period <b>1000 ms</b>; treat as empty after <b>5 × 1000 ms</b> — check <code>public/match-state.json</code> exists.</td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead"><span class="badge idle"><span class="mk"></span>Idle</span></th>
+            <td class="sm"><code>waiting</code></td>
+            <td class="sm"><code>#8f680c</code> L* 46.7 / <code>#bb8b22</code> L* 60.9</td>
+            <td>Day window has not opened yet (<code>classifyStatus</code>).</td>
+            <td>None. Confirm the coordinator start time if the day is overdue.</td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead"><span class="badge run"><span class="mk"></span>Running</span></th>
+            <td class="sm"><code>running</code></td>
+            <td class="sm"><code>#2e7c48</code> L* 46.3 / <code>#519f68</code> L* 59.5</td>
+            <td>Within the day window; revisions are being accepted.</td>
+            <td>Watch the HUD. No action.</td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead"><span class="badge done"><span class="mk"></span>Completed</span></th>
+            <td class="sm"><code>completed</code></td>
+            <td class="sm"><code>#3370b8</code> L* 46.6 / <code>#5e95d2</code> L* 60.4</td>
+            <td>Match finished (terminal).</td>
+            <td>Go to <code>/replays</code> and review.</td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead"><span class="badge err"><span class="mk"></span>Error</span></th>
+            <td class="sm"><code>rejected</code> / <code>error</code></td>
+            <td class="sm"><code>#ba4550</code> L* 46.0 / <code>#e06b72</code> L* 59.5</td>
+            <td>Submission rejected or coordinator error; <code>snapshot.error</code> is set.</td>
+            <td>Read the <code>live-error</code> message (<code>role="alert"</code>) and check CLI output.</td>
+          </tr>
+          <tr>
+            <th scope="row" class="rowhead"><span class="badge stale"><span class="mk"></span>Stale</span> <span class="pill-note">proposed</span></th>
+            <td class="sm">any of the above — <b>derived overlay</b></td>
+            <td class="sm">hollow ring · <code>#8f680c</code> / <code>#bb8b22</code> (idle tone)</td>
+            <td><code>now − lastSuccessAt ≥ 5 × DEFAULT_POLL_MS</code> (5000ms). Polls are failing but the last snapshot is still on screen (<code>fetchLiveSnapshot</code> returns <code>null</code> on failure and the poller keeps the previous value — <code>lib/live.ts:130–142, 314–317</code>).</td>
+            <td>Do <b>not</b> trust the values below. Check the CLI is still writing <code>packages/frontend/public/match-state.json</code>. Values are last-known, not live.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <span class="mk" aria-hidden="true"></span>
+      <div>
+        <b>Stale clock source = receipt, not the wire field.</b>
+        <span class="mono" style="font-size:11px">
+          fixture <code>lastUpdateUnix: 0</code> → <code>formatClock(0) = 00:00:00</code> ·
+          stale threshold <code>5 × 1000 ms = 5000 ms</code> after <code>lastSuccessAt</code>.
+        </span>
+      </div>
+    </div>
+
+    <div class="block">
+      <p class="block__t">Stat tiles — real values from match-state.snapshot.json, two type tiers only</p>
+      <div class="tiles">
+        <div class="tile"><span class="l">Day</span><span class="v">1 / 4</span></div>
+        <div class="tile"><span class="l">Revisions</span><span class="v mono">[2, 3]</span></div>
+        <div class="tile"><span class="l">Solver</span><span class="v">loop</span></div>
+        <div class="tile"><span class="l">Server</span><span class="v mono">http://127.0.0.1:8080</span></div>
+        <div class="tile"><span class="l">Last update</span><span class="v mono">00:00:00</span></div>
+      </div>
+      <p class="hint" style="margin-top:12px">
+        Type: label 11 px + value 15 px, two tiers, uniform.
+        Mapping <code>live-day ← day/daysTotal</code> · <code>live-revisions ← revisions</code> ·
+        <code>live-solver ← solver</code> · <code>live-server ← server</code> ·
+        <code>live-last-poll ← lastUpdateUnix</code> → <code>HH:MM:SS</code> (<code>0</code> → <code>00:00:00</code>).
+      </p>
+    </div>
+
+    <div class="block">
+      <p class="block__t">UI variant chosen by information priority (v2 — variant is never arbitrary)</p>
+      <div class="tw" style="border:0">
+        <table class="spec" style="min-width:520px">
+          <thead>
+            <tr><th scope="col">Priority</th><th scope="col">Variant</th><th scope="col">Used for</th><th scope="col">Why this variant</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row" class="rowhead">Primary</th>
+              <td>Value tile / table value<br><span class="sm">label 11px + value 15px</span></td>
+              <td>DAY · REVISIONS · scores · step counter</td>
+              <td>Numeric readout is the reading surface. Biggest area, first in scan order, tabular figures.</td>
+            </tr>
+            <tr>
+              <th scope="row" class="rowhead">Primary (action)</th>
+              <td>Icon button / segmented control</td>
+              <td>transport · rate · renderer switch</td>
+              <td>Repeated physical target under time pressure. Icon is the recognition axis; label is secondary.</td>
+            </tr>
+            <tr>
+              <th scope="row" class="rowhead">Secondary</th>
+              <td>Neutral chip + tone marker</td>
+              <td>live status · stale · fallback reason · severity</td>
+              <td>Must stay scannable next to numbers without competing with them. Chip is quiet; the marker carries the tone.</td>
+            </tr>
+            <tr>
+              <th scope="row" class="rowhead">Tertiary</th>
+              <td>Text link</td>
+              <td>“Go to /replays”, hint lines, source references</td>
+              <td>Low-frequency exits. A chip or button would over-rank them against the numbers.</td>
+            </tr>
+            <tr>
+              <th scope="row" class="rowhead">Optional overlay</th>
+              <td>Text label beside a mark</td>
+              <td>kanji series labels on the map (section 06)</td>
+              <td>Not the encoding — a lookup aid. Off by default so the map stays mark-first.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  <!-- ================================================================== -->
+  <section class="spec" id="keyboard">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Keyboard &amp; focus</h2></div>
+    <p class="lede">
+      Tab moves <b>between</b> meaningful components; composites own their internal keys
+      (keyboard-interface: page traversal ≠ component-internal navigation). Every action stays
+      reachable without shortcuts — shortcuts are an optional acceleration layer, documented in
+      the UI, never a hidden requirement.
+    </p>
+
+    <div class="block">
+      <p class="block__t">Focus ring spec (v2 — button tone, not the accent)</p>
+      <ul class="tight">
+        <li><b>Exact values:</b> <code>outline: 2px solid var(--focus-ring); outline-offset: 1px;</code>
+          where <code>--focus-ring</code> = <code>#6e7781</code> (light) / <code>#8c959f</code> (dark).
+          A button-tone neutral — the same grey family as <code>--border-strong</code> / <code>--muted</code>,
+          one step darker on light and one step lighter on dark. The accent (<code>#0969da</code> / <code>#2f81f7</code>)
+          is <b>withdrawn</b> from focus (v1 used <code>2px</code> + <code>offset 2px</code> + accent).</li>
+        <li><b>Functional requirement, not a preference.</b> The indicator must remain
+          distinguishable from the unfocused state, or keyboard operation breaks. This is why the
+          ring is toned down to a button tone but <i>not</i> removed or faded into the border:
+          measured against the control surface the ring holds <b>4.3:1</b> (light, <code>#6e7781</code>
+          on <code>#f6f8fa</code>) / <b>5.7:1</b> (dark, <code>#8c959f</code> on <code>#161b22</code>)
+          — above the 3:1 non-text floor — while sitting clearly apart from the hover
+          border (a brightness step, not a hue change).</li>
+        <li><b>Inside <code>.map-viewer</code></b> (<code>overflow: hidden</code>) use
+          <code>outline-offset: -2px</code> so the 2px ring is fully inside and never clipped.</li>
+        <li><b>Never animate</b> the ring (0ms) — it must appear in the same frame as focus.</li>
+        <li>Never use <code>:focus</code> — a mouse click must not leave a ring on a button.</li>
+        <li>Disabled controls keep the native disabled look (<code>opacity: .45</code>,
+          <code>replay-viewer.css:136–139</code>) and leave the tab sequence — correct for plain buttons.</li>
+      </ul>
+    </div>
+
+    <div class="block">
+      <p class="block__t">Same control, four states side by side — judge the contrast relationship here</p>
+      <div class="fstate-row">
+        <div class="fstate">
+          <button class="fbtn" type="button">Play</button>
+          <span class="cap">rest</span>
+        </div>
+        <div class="fstate">
+          <button class="fbtn is-hover" type="button">Play</button>
+          <span class="cap">hover</span>
+        </div>
+        <div class="fstate">
+          <button class="fbtn is-focus" type="button">Play</button>
+          <span class="cap">focus-visible</span>
+        </div>
+        <div class="fstate">
+          <button class="fbtn is-active" type="button">Play</button>
+          <span class="cap">active</span>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:12px">
+        rest 1 px <code>--border</code> · hover 1 px <code>--border-strong</code> ·
+        focus 2 px <code>--focus-ring</code> @ offset 1 px · active fill, no ring.
+        Ring vs rest <b>4.27:1</b> (light) / <b>5.70:1</b> (dark) — above the 3:1 non-text floor,
+        below a highlight. Toggle the header control and re-check.
+      </p>
+    </div>
+
+    <div class="grid2">
+      <div class="block">
+        <p class="block__t">Tab order (proposed, matches DOM order)</p>
+        <ol class="tight">
+          <li><code>theme-toggle</code> — app header, first stop on every route <span class="sm">Header.tsx:11–19</span></li>
+          <li><code>app-sidebar</code> links — Home, Replays, Solvers, Live (nav landmark)</li>
+          <li><b>[proposed]</b> <code>map-viewer-svg</code> — one composite stop: arrows pan, <kbd>+</kbd>/<kbd>−</kbd> zoom, <kbd>0</kbd> resets camera</li>
+          <li><code>replay-step-back</code></li>
+          <li><code>replay-toggle</code></li>
+          <li><code>replay-step-forward</code></li>
+          <li><code>replay-rate-1</code> → arrows → <code>replay-rate-2</code> / <code>replay-rate-4</code> — <b>one</b> tab stop, roving tabindex</li>
+          <li><code>replay-scrub</code></li>
+          <li>following page content</li>
+        </ol>
+        <p class="hint">Stops today <b>8</b> → proposed <b>7</b> (map +1, rates −2).</p>
+      </div>
+      <div class="block">
+        <p class="block__t">Composite model (unchanged from v1 — keyboard behaviour was accepted)</p>
+        <ul class="tight">
+          <li>Transport buttons: native <code>&lt;button&gt;</code>, activation via <kbd>Enter</kbd>/<kbd>Space</kbd>.</li>
+          <li>Rate group: APG radio-group — <code>role="radiogroup"</code>/<code>radio</code>, roving tabindex, arrows move, selection follows focus (no expensive side effect).</li>
+          <li>Map: one composite stop, arrow keys pan, <kbd>+</kbd>/<kbd>−</kbd> zoom, <kbd>0</kbd> reset; focus entry lands on the composite, not on each hex.</li>
+          <li>Overlay lifecycle (scrub drag): pointerdown suspends auto-advance; release restores the base state; <kbd>Escape</kbd> cancels a keyboard scrub back to the committed step.</li>
+          <li>Pointer and keyboard share one active model — dragging the scrub updates the same <code>currentStep</code> the arrow keys write.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="tw" tabindex="0">
+      <table class="spec">
+        <caption>Shortcut table — proposed keys and their guards</caption>
+        <thead>
+          <tr><th scope="col">Key</th><th scope="col">Action</th><th scope="col">Store API</th><th scope="col">Fires when</th><th scope="col">Suppressed when</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row" class="rowhead"><kbd>Space</kbd></th><td>Play ↔ Pause</td><td><code>play()</code> / <code>pause()</code></td>
+            <td>focus on page ground or a link (<code>preventDefault</code> stops scroll)</td>
+            <td>text field / contenteditable / on a <code>&lt;button&gt;</code> (native activation already handles it)</td></tr>
+          <tr><th scope="row" class="rowhead"><kbd>←</kbd> <kbd>→</kbd></th><td>Step −1 / +1</td><td><code>stepBackward()</code> / <code>stepForward()</code></td>
+            <td>focus on page ground</td>
+            <td>scrub (native range), rate radiogroup (arrow = select), map (arrow = pan), text field</td></tr>
+          <tr><th scope="row" class="rowhead"><kbd>Home</kbd> <kbd>End</kbd></th><td>Jump to first / last step</td><td><code>setStep(0)</code> / <code>setStep(max)</code></td>
+            <td>focus on page ground</td>
+            <td>text field; on the scrub these are native range behaviour</td></tr>
+          <tr><th scope="row" class="rowhead"><kbd>1</kbd> <kbd>2</kbd> <kbd>4</kbd></th><td>Rate 1× / 2× / 4×</td><td><code>setRate</code></td>
+            <td>anywhere outside text entry</td><td>text field</td></tr>
+          <tr><th scope="row" class="rowhead"><kbd>0</kbd></th><td>Reset map camera</td><td>MapViewer camera</td>
+            <td>map composite focused only</td><td>elsewhere</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <span class="mk" aria-hidden="true"></span>
+      <div>
+        <b>Discoverability.</b> Persistent hint line under the transport (same treatment as
+        <code>map-viewer__hint</code>): <code>Space play/pause · ← → step · 1 2 4 rate</code>.
+        Keyboard-only path = Tab → Enter/Space on the native buttons; no action is shortcut-only.
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section class="spec" id="icons">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Iconography — one family, icon-first</h2></div>
+    <p class="lede">
+      Replaces the current text glyphs (<code>◀◀</code> / <code>Play</code> / <code>▶▶</code>,
+      <code>ReplayViewer.tsx:145–162</code>) with a single family shared by the transport set
+      (play / pause / step / rewind) and the renderer set (SVG / WebGPU). Icons are the
+      <b>primary recognition axis</b>; text labels are secondary (accessible name via
+      <code>aria-label</code>, visible label only where it adds meaning). Density and restraint
+      follow GitHub’s toolbars — 16px control glyphs, monochrome <code>currentColor</code>,
+      few path nodes — without copying octicon shapes or GitHub brand colour.
+    </p>
+
+    <div class="block">
+      <p class="block__t">Family profile (transport + renderer = one family; v2 withdrew the fill/outline split)</p>
+      <ul class="tight">
+        <li><b>Artboards 16 and 24 only</b> (<code>viewBox="0 0 16 16"</code> /
+          <code>"0 0 24 24"</code>). No 20, no arbitrary scales. Render 16 from the 16 artboard,
+          24 from the 24 artboard.</li>
+        <li><b>One construction:</b> solid silhouette (<code>fill="currentColor"</code>) with a
+          same-colour rounding stroke — <code>stroke-width 1.5</code> on 16,
+          <code>2.25</code> on 24 (identical optical weight, 0.094 of the artboard),
+          <code>stroke-linejoin/linecap: round</code>.</li>
+        <li><b>Same corner treatment everywhere:</b> rounded joins on polygons, <code>rx 1.2</code>
+          (16) / <code>rx 1.8</code> (24) on rectangles. No square-corner icon sits next to a
+          rounded one.</li>
+        <li><b>Optical size:</b> painted content occupies 12u of the 16 artboard (75%), 18u of the
+          24. Play’s apex sits at x≈12.4 (16 grid) — right-biased so the solid triangle centres
+          optically. Path node count per icon ≤ 4.</li>
+        <li><b>Colour:</b> <code>currentColor</code> only. Disabled (opacity .45), hover and active
+          work without redrawing. No icon carries its own fill.</li>
+        <li><b>Selected state is not colour alone:</b> rate / renderer segments keep
+          <code>aria-pressed</code> + filled accent surface (active state — the one place accent is
+          allowed); glyph shape is unchanged.</li>
+        <li><b>Target ≠ glyph:</b> 16px glyph inside a 32–36px control. Never shrink the hit area
+          to the glyph.</li>
+        <li><b>Icon + text:</b> the icon leads; label is secondary. <code>1× 2× 4×</code> stay text
+          (they are values, not actions). Transport actions are icon-only with
+          <code>aria-label</code> + <code>title</code>.</li>
+        <li><b>Weight budget:</b> inline SVG only — no icon font, no external file, no network
+          fetch. This sheet carries 19 SVGs total (v1 had 29).</li>
+      </ul>
+    </div>
+
+    <div class="block">
+      <p class="block__t">Clear-space tokens — the icon + its margin is the component (consumed by design-system.html)</p>
+      <ul class="tight">
+        <li><code>--icon-size-sm: 16px</code> · <code>--icon-size-lg: 24px</code> — the only two
+          optical sizes. Do not render intermediate sizes; do not scale the 24 artboard down to 16.</li>
+        <li><code>--icon-clear-space: 2px</code> — four-sided clear space. The icon’s layout box is
+          glyph + 2px on every side; nothing (label, edge, badge) may enter it. Drawn as the
+          dashed box in the specimen below.</li>
+        <li><code>--icon-label-gap: 6px</code> — icon-to-label gap in an icon+text control
+          (dense toolbar rhythm; 4px collides, 8px reads as a separate item).</li>
+        <li><code>--icon-control-min: 32px</code> — minimum control dimension (hit target).</li>
+        <li><code>--icon-stroke: 1.5px</code> — effective stroke at size-sm; ×1.5 at size-lg.</li>
+        <li><b>Centring rule:</b> the control content box centres the icon with
+          <code>display:flex; align-items:center; justify-content:center</code>. No optical nudge
+          inside controls — silhouettes are pre-biased on the artboard (play’s apex etc.), so the
+          family centres as a set. The padding box above is what gets centred, not the raw path bounds.</li>
+      </ul>
+    </div>
+
+    <div class="block">
+      <p class="block__t">Family specimen — 24 artboard with the clear-space box drawn (dashed = padding boundary)</p>
+      <div class="icon-grid">
+        <div class="name">name</div><div class="h">24</div><div class="h rule">rule</div>
+
+        <div class="name">play</div>
+        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.8 5.1 18.6 12 7.8 18.9Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
+        <div class="rule">apex right of centre — optical centring pre-biased on the artboard</div>
+
+        <div class="name">pause</div>
+        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.6" y="5.1" width="4.2" height="13.8" rx="1.8" fill="currentColor"></rect><rect x="13.2" y="5.1" width="4.2" height="13.8" rx="1.8" fill="currentColor"></rect></svg></span></div>
+        <div class="rule">two bars, 1.6u gap — mass matches play</div>
+
+        <div class="name">step-back</div>
+        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.4 5.4 4.8 12 11.4 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path><path d="M19.5 5.4 12.9 12 19.5 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
+        <div class="rule">two left triangles — semantic “previous step”, not a physical arrow</div>
+
+        <div class="name">step-forward</div>
+        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.4 11.1 12 4.5 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path><path d="M12.6 5.4 19.2 12 12.6 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
+        <div class="rule">mirror of step-back — same construction</div>
+
+        <div class="name">rewind</div>
+        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="4.2" y="5.1" width="2.85" height="13.8" rx="1.35" fill="currentColor"></rect><path d="M19.5 5.4 9.3 12 19.5 18.6Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
+        <div class="rule">bar + one left triangle — “go to start”</div>
+
+        <div class="name">renderer-svg</div>
+        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2 19.35 8.4 19.35 15.6 12 19.8 4.65 15.6 4.65 8.4Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
+        <div class="rule">pointy-top hex — the map’s own geometry; same solid construction</div>
+
+        <div class="name">renderer-webgpu</div>
+        <div class="cell"><span class="icon-box"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M4.8 4.8h14.4v14.4H4.8V4.8Zm3 3v8.4h8.4V7.8H7.8Z" fill="currentColor" stroke="currentColor" stroke-width="2.25" stroke-linejoin="round"></path></svg></span></div>
+        <div class="rule">die with a knocked-out core — GPU as silicon; 2 subpaths</div>
+      </div>
+      <p class="hint" style="margin-top:10px">
+        Specimen = 24 artboard (clear-space box drawn). 16 artboard = control glyph, true size in the row below.
+      </p>
+    </div>
+
+    <div class="block">
+      <p class="block__t">In context — transport row at 16px glyphs in 32px targets</p>
+      <div class="icon-strip">
+        <span class="lbl">transport</span>
+        <button class="tbtn" type="button" title="Step backward" aria-label="Step backward" disabled>
+          <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.6 3.6 3.2 8 7.6 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path><path d="M13 3.6 8.6 8 13 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+        </button>
+        <button class="tbtn" type="button" title="Play" aria-label="Play">
+          <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.2 3.4 12.4 8 5.2 12.6Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+        </button>
+        <button class="tbtn" type="button" title="Step forward" aria-label="Step forward">
+          <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.6 7.4 8 3 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path><path d="M8.4 3.6 12.8 8 8.4 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+        </button>
+        <button class="tbtn" type="button" title="Rewind to start" aria-label="Rewind to start">
+          <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.8" y="3.4" width="1.9" height="9.2" rx=".9" fill="currentColor"></rect><path d="M13 3.6 6.2 8 13 12.4Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+        </button>
+        <div class="rates" role="group" aria-label="Playback rate">
+          <button class="rbtn" type="button" aria-pressed="true">1×</button>
+          <button class="rbtn" type="button" aria-pressed="false">2×</button>
+          <button class="rbtn" type="button" aria-pressed="false">4×</button>
+        </div>
+        <span class="lbl" style="margin-left:auto">renderer</span>
+        <div class="seg" role="group" aria-label="Renderer mode">
+          <button type="button" aria-pressed="true">
+            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.8 12.9 5.6 12.9 10.4 8 13.2 3.1 10.4 3.1 5.6Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+            SVG
+          </button>
+          <button type="button" aria-pressed="false">
+            <svg class="ic" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M3.2 3.2h9.6v9.6H3.2V3.2Zm2 2v5.6h5.6V5.2H5.2Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+            WebGPU
+          </button>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:10px">
+        RTL: step glyphs do not mirror (semantic step direction ≠ physical arrow). Renderer labels sit at the secondary tier.
+      </p>
+    </div>
+  </section>
+  <!-- ================================================================== -->
+  <section class="spec" id="maplayer">
+    <div class="sec-head"><span class="sec-num">06</span><h2>Map layer boundary — marks live in visualizer.html</h2></div>
+    <p class="lede">
+      The visualiser marks (terrain / spot-series / agent motifs) and every map colour
+      assignment are <b>not specified here</b> — they belong to <code>visualizer.html</code>
+      (motif-first marks, <code>data-vis</code> hue families for terrain/series/agent).
+      This sheet only fixes <b>where the state model touches the mark layer</b>, so the two
+      artifacts cannot contradict each other.
+    </p>
+    <div class="tw" tabindex="0">
+      <table class="spec" style="min-width:620px">
+        <caption>State-model touchpoints into the mark layer (implementation contract)</caption>
+        <thead>
+          <tr><th scope="col">Touchpoint</th><th scope="col">State authority</th><th scope="col">What the mark layer must expose</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row" class="rowhead"><code>map-viewer-svg</code> composite</th>
+            <td class="sm">one tab stop (section 04)</td>
+            <td>marks rendered under <code>role="img"</code> + <code>&lt;title&gt;</code> built from <code>matchId</code> / turn; no per-hex focus</td></tr>
+          <tr><th scope="row" class="rowhead">scrub overlay <code>replay-scrub</code></th>
+            <td class="sm">S4 orthogonal overlay (section 01)</td>
+            <td>mark layer follows <code>currentStep</code> only; never a second truth about position</td></tr>
+          <tr><th scope="row" class="rowhead">renderer switch (section 02)</th>
+            <td class="sm"><code>mode()</code> / effective renderer</td>
+            <td>SVG and WebGPU paint the <b>same</b> marks — identical motif paths, <code>series % 6</code> cycling, keyline rule</td></tr>
+          <tr><th scope="row" class="rowhead">blank-frame fallback (Issue #259)</th>
+            <td class="sm">frame probe</td>
+            <td>SVG fallback paints the same marks — fallback changes the painter, never the encoding</td></tr>
+          <tr><th scope="row" class="rowhead">movement highlight</th>
+            <td class="sm">derived from <code>currentStep</code> diff</td>
+            <td>transient overlay only (motion table: 0 ms); encoding owned by <code>visualizer.html</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <span class="mk" aria-hidden="true"></span>
+      <div>
+        <b>Token rule.</b> Map marks take <code>data-vis</code> hues from <code>@primer/primitives</code>
+        (emphasis = marker/boundary, muted = terrain fill) — <b>no map colour literal is defined in this
+        sheet or in app CSS</b>. UI status semantics (section 03) use <code>fgColor.*</code> / <code>bgColor.*</code>,
+        never <code>data-vis</code> (Primer rule: data hues are not semantic colours).
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ================================================================== -->
+  <section class="spec" id="motion">
+    <div class="sec-head"><span class="sec-num">07</span><h2>Motion spec</h2></div>
+    <p class="lede">
+      Level: <b>functional minimal</b> (brief). Motion exists only where it carries state change,
+      continuity, or feedback — and never above 150ms. Feedback stays under 100ms so repeated
+      clicks never queue. This spec was not revised in v2; it is restated so the new focus ring
+      and badge treatments inherit the same rules.
+    </p>
+
+    <div class="block">
+      <p class="block__t">Motion vocabulary (component-level; colour/type tokens stay in design-system.html)</p>
+      <p class="hint" style="margin:0">
+        <code>--m-feedback: 90ms</code> · <code>--m-state: 120ms</code> · <code>--m-swap: 140ms</code> ·
+        <code>--ease-out: cubic-bezier(0.2, 0, 0, 1)</code> · <code>--ease-linear: linear</code> (progress fill only)
+      </p>
+    </div>
+
+    <div class="tw" tabindex="0">
+      <table class="spec">
+        <caption>Motion table — element, property, duration, easing, trigger, reduced-motion</caption>
+        <thead>
+          <tr><th scope="col">Element</th><th scope="col">Property</th><th scope="col">Duration</th><th scope="col">Easing</th><th scope="col">Trigger</th><th scope="col">prefers-reduced-motion</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row" class="rowhead">Transport button hover / press</th><td><code>background-color, border-color</code></td><td class="num">90ms</td><td>ease-out</td><td>pointerenter / pointerdown</td><td class="sm">0ms — colour still changes</td></tr>
+          <tr><th scope="row" class="rowhead">Focus ring</th><td><code>outline</code></td><td class="num">0ms</td><td>—</td><td><code>:focus-visible</code></td><td class="sm">unchanged — ring is not motion</td></tr>
+          <tr><th scope="row" class="rowhead">Rate select (<code>aria-pressed</code>)</th><td><code>background-color, color</code></td><td class="num">90ms</td><td>ease-out</td><td>click / keys 1·2·4</td><td class="sm">0ms</td></tr>
+          <tr><th scope="row" class="rowhead">Scrub progress while playing</th><td><code>width</code> on fill</td><td class="num">100ms</td><td>linear</td><td>auto-advance tick (1000 / 500 / 250ms at 1× / 2× / 4×)</td><td class="sm">0ms</td></tr>
+          <tr><th scope="row" class="rowhead">Scrub drag (pointer)</th><td>thumb / fill</td><td class="num">0ms</td><td>—</td><td>pointermove — must track the pointer</td><td class="sm">0ms (direct manipulation)</td></tr>
+          <tr><th scope="row" class="rowhead">Scrub keyboard step</th><td>fill</td><td class="num">60ms</td><td>ease-out</td><td><kbd>←</kbd>/<kbd>→</kbd> on the range</td><td class="sm">0ms</td></tr>
+          <tr><th scope="row" class="rowhead">Renderer layer swap (SVG ⇄ canvas, fallback)</th><td><code>opacity</code> crossfade</td><td class="num">140ms</td><td>ease-out</td><td>segment click / init resolve / blank probe</td><td class="sm">instant swap — no crossfade</td></tr>
+          <tr><th scope="row" class="rowhead">Status badge change</th><td>marker fill / text</td><td class="num">120ms</td><td>ease-out</td><td>poll result flips wire status</td><td class="sm">0ms</td></tr>
+          <tr><th scope="row" class="rowhead">STALE chip appear</th><td><code>opacity</code></td><td class="num">120ms</td><td>ease-out</td><td>age ≥ 5000ms</td><td class="sm">0ms — never pulse or blink</td></tr>
+          <tr><th scope="row" class="rowhead">Map pan / zoom</th><td><code>transform</code></td><td class="num">0ms</td><td>—</td><td>drag / wheel — “no inertia, no animations” (MapViewer.tsx:27–28)</td><td class="sm">0ms</td></tr>
+          <tr><th scope="row" class="rowhead"><code>live-error</code> (<code>role="alert"</code>)</th><td>appearance</td><td class="num">0ms</td><td>—</td><td>snapshot error — alerts must be immediate</td><td class="sm">0ms</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="block">
+      <p class="block__t">Absent by design (brief — motion where useful only)</p>
+      <ul class="tight">
+        <li>Page / route transitions · map ambient animation · scroll effects</li>
+        <li>Hover lift or scale · badge pulse · skeleton shimmer (static skeleton bars only)</li>
+        <li>Loading spinner — use the existing <code>webgpu-map-loading</code> line or static skeletons</li>
+      </ul>
+      <p class="hint" style="margin-top:10px">
+        Reduced-motion: crossfade 140 ms → 0 ms (instant swap) · feedback colour retained · focus ring untouched.
+        Enforced on this sheet by <code>@media (prefers-reduced-motion: reduce)</code>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section class="spec" id="a11y">
+    <div class="sec-head"><span class="sec-num">08</span><h2>Accessibility checklist</h2></div>
+    <p class="lede">
+      Findings from auditing the real components — not a generic WCAG dump. Severity follows
+      <code>accessibility-audit</code> (critical / serious / moderate = P0 / P1 / P2), ranked by
+      task impact on the contest viewer’s primary workflow. Severity chips use the same neutral
+      chip + tone marker construction as the status badges (section 03).
+    </p>
+
+    <div class="tw" tabindex="0">
+      <table class="spec">
+        <caption>Findings — source, impact, fix</caption>
+        <thead>
+          <tr><th scope="col">Severity</th><th scope="col">Finding (source)</th><th scope="col">Impact</th><th scope="col">Fix</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="sev crit"><span class="mk"></span>Critical · P0</span></td>
+            <td><b>Map has no keyboard or AT path.</b> <code>map-viewer-svg</code> (MapViewer.tsx:190–203) handles wheel + pointer only; no <code>tabindex</code>, no <code>role</code>/<code>&lt;title&gt;</code>; the only hint (<code>map-viewer__hint</code>, :268) says “drag to pan, wheel to zoom”. WCAG 2.1.1, 1.1.1.</td>
+            <td>The defining content of the product is pointer-only. Keyboard and screen-reader users get an unlabelled graphic they cannot move.</td>
+            <td>One focusable composite stop (arrows pan, <kbd>+</kbd>/<kbd>−</kbd> zoom, <kbd>0</kbd> reset), <code>role="img"</code> + <code>&lt;title&gt;</code> from the HUD (<code>matchId</code> / <code>turn</code>), hint text lists the keys; the scores table remains the text alternative.</td>
+          </tr>
+          <tr>
+            <td><span class="sev crit"><span class="mk"></span>Critical · P0</span></td>
+            <td><b>Silent blank WebGPU canvas.</b> Once <code>renderer()</code> is set (WebGpuMapViewer.tsx:138–141), neither <code>webgpu-map-fallback</code> nor <code>webgpu-map-loading</code> renders; under headless SwiftShader the canvas paints nothing (Issue #259; <code>docs/evidence/258/README.md:14–16</code>, <code>target/uishots2/3-solvers-webgpu.png</code>).</td>
+            <td>Primary content vanishes with zero signal — no status, no announcement, no error.</td>
+            <td>Frame probe (readback after 10 rAF / 400ms) → <code>data-fallback-reason="blank-frame"</code> + SVG fallback + <code>role="status"</code> strip (section 02).</td>
+          </tr>
+          <tr>
+            <td><span class="sev ser"><span class="mk"></span>Serious · P1</span></td>
+            <td><b>Stale data passes as live.</b> <code>fetchLiveSnapshot</code> returns <code>null</code> on any failure and the poller only writes on success (<code>lib/live.ts:130–142, 314–317</code>), so the badge keeps showing RUNNING over an old <code>LAST UPDATE</code>; <code>live-error</code> never fires (it renders snapshot-borne <code>error</code> only, Live.tsx:163–169).</td>
+            <td>An operator reads a dead feed as a live match — the most dangerous failure in a timed contest.</td>
+            <td><code>lastSuccessAt</code> + STALE badge at ≥5× poll interval + <code>role="status"</code> announcement (section 03).</td>
+          </tr>
+          <tr>
+            <td><span class="sev ser"><span class="mk"></span>Serious · P1</span></td>
+            <td><b>Announced renderer ≠ rendered renderer.</b> <code>aria-pressed</code> follows requested <code>mode()</code> (Solvers.tsx:82–95) while <code>WebGpuMapViewer</code> silently falls back to SVG; fallback/loading have no live region (WebGpuMapViewer.tsx:193–206).</td>
+            <td>AT reports “WebGPU pressed” over SVG pixels; the fallback transition is unannounced.</td>
+            <td><code>aria-pressed</code> tracks the <i>effective</i> renderer; <code>data-degraded</code> chip keeps the requested one; <code>role="status"</code> on fallback + loading.</td>
+          </tr>
+          <tr>
+            <td><span class="sev mod"><span class="mk"></span>Moderate · P2</span></td>
+            <td><b>Rate selector is an exclusive choice marked as three independent toggles.</b> <code>role="group"</code> + per-button <code>aria-pressed</code> (ReplayViewer.tsx:167–181); no composite keyboard model.</td>
+            <td>AT cannot convey “one of three selected”; arrow keys do nothing inside the group.</td>
+            <td>APG radio-group: <code>role="radiogroup"</code> / <code>radio</code>, <code>aria-checked</code>, roving tabindex + arrows. Visual unchanged.</td>
+          </tr>
+          <tr>
+            <td><span class="sev mod"><span class="mk"></span>Moderate · P2</span></td>
+            <td><b>Scrub value announced without context.</b> Native range (ReplayViewer.tsx:185–202) has no <code>aria-valuetext</code>; visible copy is “step 1 / 5” but AT reads a bare number. Explicit <code>aria-valuemin/max/now</code> duplicate native defaults.</td>
+            <td>Position in the replay is ambiguous for AT users.</td>
+            <td><code>aria-valuetext="Step 1 of 5"</code>; drop the redundant value attributes.</td>
+          </tr>
+          <tr>
+            <td><span class="sev mod"><span class="mk"></span>Moderate · P2</span></td>
+            <td><b>Hardcoded <code>id="replay-scrub"</code></b> (ReplayViewer.tsx:185). A second viewer instance duplicates the id; the <code>&lt;label for&gt;</code> binds to the first only.</td>
+            <td>Broken label association as soon as two replays share a page.</td>
+            <td><code>useId()</code> per instance.</td>
+          </tr>
+          <tr>
+            <td><span class="sev mod"><span class="mk"></span>Moderate · P2</span></td>
+            <td><b>Renderer segment has no designed focus/selected treatment.</b> No rule exists for <code>.page__renderer-btn</code> anywhere in <code>src/styles/</code>; screenshot shows raw UA buttons (<code>uishots2/3</code>).</td>
+            <td>Keyboard focus on the segment is inconsistent with every other control.</td>
+            <td>Same <code>:focus-visible</code> ring as section 04 (<code>2px --focus-ring / offset 1px</code>) + <code>[aria-pressed=true]</code> fill as <code>replay-viewer__rate-btn</code>.</td>
+          </tr>
+          <tr>
+            <td><span class="sev mod"><span class="mk"></span>Moderate · P2</span></td>
+            <td><b>Match phase changes are silent to AT.</b> <code>live-status-badge</code> is a plain span (Live.tsx:125–127); RUNNING→COMPLETED/REJECTED is never announced.</td>
+            <td>Screen-reader users miss the single most important event on the live page.</td>
+            <td><code>role="status"</code> container (polite); keep the text label — colour is never the only cue.</td>
+          </tr>
+          <tr>
+            <td><span class="sev mod"><span class="mk"></span>Moderate · P2</span></td>
+            <td><b>Heading level changes per route.</b> Live uses <code>&lt;h1&gt;</code> (Live.tsx:123) while Solvers/Replays use <code>&lt;h2&gt;</code> for the same slot (Solvers.tsx:63, Replays.tsx:43); viewer title is <code>&lt;h3&gt;</code> (ReplayViewer.tsx:90).</td>
+            <td>Inconsistent heading navigation across routes.</td>
+            <td>Page title = <code>h1</code> everywhere; viewer title <code>h2</code>/<code>h3</code> consistently.</td>
+          </tr>
+          <tr>
+            <td><span class="sev mod"><span class="mk"></span>Moderate · P2</span></td>
+            <td><b>Score table semantics + alignment.</b> No <code>&lt;caption&gt;</code>; player cells are <code>&lt;td&gt;</code> (not row headers); every cell is <code>text-align: left</code> (replay-viewer.css:87–103) so score digits do not align.</td>
+            <td>Comparison is harder than it needs to be; table semantics are incomplete.</td>
+            <td>Per section 09 / table-design: <code>&lt;th scope="row"&gt;</code> player, right-align + <code>tabular-nums</code> score, caption naming the match, two-tier type.</td>
+          </tr>
+          <tr>
+            <td><span class="sev mod"><span class="mk"></span>Moderate · P3</span></td>
+            <td><b>Disabled transport signalled by <code>opacity: .45</code> alone</b> (replay-viewer.css:136–139); no explanation at boundaries (step-back at start, step-forward at end).</td>
+            <td>Boundary states are only inferable from the counter.</td>
+            <td>Keep native disabled; pair with the counter (“1 / 5”) and a <code>title</code> reason (“Already at first step”).</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section class="spec" id="score">
+    <div class="sec-head"><span class="sec-num">09</span><h2>Score table spec — alice / bob</h2></div>
+    <p class="lede">
+      Per <b>table-design</b>: the task is read + compare two player scores at the current step —
+      lookup/comparison, no cell selection or editing → a <b>native <code>&lt;table&gt;</code></b>,
+      not an interactive grid. The 2D structure is preserved; there is nothing to recompose.
+    </p>
+
+    <div class="grid2">
+      <div class="block">
+        <p class="block__t">Column rules</p>
+        <ul class="tight">
+          <li><b>Row identity:</b> player id (<code>alice</code> / <code>bob</code>) as <code>&lt;th scope="row"&gt;</code>.</li>
+          <li><b>Caption:</b> <code>Scores — demo-match</code> (<code>state().matchId.value</code>, ReplayViewer.tsx:109).</li>
+          <li><b>player</b> — left-aligned, text; <b>score</b> — right-aligned, integer, no unit, <code>font-variant-numeric: tabular-nums</code>, precision fixed per column.</li>
+          <li><b>Type: two tiers only (v2).</b> Labels (caption, column heads) at 11px; values (player name, score) at 15px. No third size for “emphasis” — the score’s priority comes from right alignment and column position, not a larger font.</li>
+          <li><b>Missing value:</b> em dash <code>—</code> (same discipline as <code>STATUS_PLACEHOLDER</code>, Live.tsx:71). Never an empty cell.</li>
+          <li><b>No delta column.</b> F1-style red/green deltas are explicitly out of the brief’s colour discipline (DESIGN-BRIEF, References — do not copy).</li>
+          <li><b>Density:</b> row height 32px (<code>--app-row-h</code>), 1px bottom border only, no zebra, no hover chrome — 2 rows, read-only.</li>
+          <li><b>Growth:</b> if players &gt; 8 rows, sticky <code>thead</code> inside the table’s own scroll region (never hide the scrollbar).</li>
+        </ul>
+      </div>
+      <div class="block">
+        <p class="block__t">Rendered example — step 4 of 5 (fixture values)</p>
+        <table class="score-table">
+          <caption>Scores — demo-match</caption>
+          <thead><tr><th scope="col">Player</th><th scope="col" class="num">Score</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">alice</th><td class="num">30</td></tr>
+            <tr><th scope="row">bob</th><td class="num">31</td></tr>
+          </tbody>
+        </table>
+        <p class="hint" style="margin-top:10px">
+          <code>FIXTURE_REPLAY</code> series <code>turn × 10 + idx</code>:
+          alice 0 · 10 · 20 · <b>30</b> · 40 &nbsp;/&nbsp; bob 1 · 11 · 21 · <b>31</b> · 41.
+          Live tiles (section 03) source <code>match-state.snapshot.json</code> only.
+        </p>
+      </div>
+    </div>
+
+    <div class="block">
+      <p class="block__t">Empty / loading states</p>
+      <div class="grid2">
+        <div>
+          <p class="hint" style="margin:0 0 6px">Empty — no frame (<code>map-viewer-empty</code> is shown instead of the table)</p>
+          <div class="tile" style="width:100%; text-align:center"><span class="v mono" style="font-size:12px">No replay loaded.</span></div>
+          <p class="hint" style="margin-top:6px">When a frame exists but <code>scores</code> is empty: header + one row <code>—</code> spanning both columns with “No scores at this step.”</p>
+        </div>
+        <div>
+          <p class="hint" style="margin:0 0 6px">Loading — <code>aria-busy="true"</code>, static skeleton (no shimmer)</p>
+          <table class="score-table" aria-busy="true">
+            <caption>Scores — loading</caption>
+            <thead><tr><th scope="col">Player</th><th scope="col" class="num">Score</th></tr></thead>
+            <tbody>
+              <tr><th scope="row"><span style="display:inline-block;width:64px;height:10px;background:var(--surface-alt);border-radius:2px"></span><span class="sr-only" style="position:absolute;left:-9999px">Loading scores…</span></th>
+                  <td class="num"><span style="display:inline-block;width:32px;height:10px;background:var(--surface-alt);border-radius:2px"></span></td></tr>
+              <tr><th scope="row"><span style="display:inline-block;width:64px;height:10px;background:var(--surface-alt);border-radius:2px"></span></th>
+                  <td class="num"><span style="display:inline-block;width:32px;height:10px;background:var(--surface-alt);border-radius:2px"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="end">
+    <p style="margin:0 0 8px">
+      <b>Evidence:</b> DESIGN-BRIEF.md v3 · official spec figures 図1–図4 (pixel-measured palette) ·
+      ReplayViewer.tsx / WebGpuMapViewer.tsx / MapViewer.tsx ·
+      Solvers.tsx / Live.tsx / Replays.tsx · stores/replay.ts · lib/live.ts · types/map.ts ·
+      styles/{replay-viewer,live,webgpu-map-viewer}.css · e2e/fixtures/match-state.snapshot.json ·
+      target/uishots2/*.png · docs/evidence/258/README.md (Issue #259).
+    </p>
+    <p style="margin:0 0 8px">
+      Colour tokens &amp; palette → <code>design-system.html</code> (consumes the icon clear-space
+      tokens and the badge marker tones defined here) ·
+      Page layout &amp; shell → <code>layout.html</code> ·
+      This file covers interaction states, keyboard model, iconography, data marks, motion,
+      accessibility findings, and the score table only.
+    </p>
+    <p style="margin:0">
+      <b>Left alone deliberately:</b> control chrome (radius, borders, target geometry of the
+      transport / rate / scrub / renderer controls) — the user judged existing controls basically
+      correct; v2 only swaps in the icon family and the quiet focus ring.
+    </p>
+  </footer>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- light / dark toggle (flips data-theme on documentElement) ---------- */
+  var root = document.documentElement;
+  var toggleBtn = document.getElementById('theme-toggle');
+  var toggleLabel = document.getElementById('theme-toggle-label');
+  var STORE_KEY = 'procon-2026.proposal.theme';
+
+  function readInitial() {
+    try {
+      var stored = window.localStorage.getItem(STORE_KEY);
+      if (stored === 'light' || stored === 'dark') return stored;
+    } catch (e) { /* privacy mode — fall through */ }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+    return 'light';
+  }
+
+  function applyTheme(mode) {
+    root.setAttribute('data-theme', mode);
+    root.style.colorScheme = mode;
+    if (toggleLabel) toggleLabel.textContent = mode === 'dark' ? 'Light mode' : 'Dark mode';
+    if (toggleBtn) toggleBtn.setAttribute('aria-pressed', mode === 'dark' ? 'true' : 'false');
+    try { window.localStorage.setItem(STORE_KEY, mode); } catch (e) { /* ignore */ }
+  }
+
+  applyTheme(readInitial());
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', function () {
+      applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+  }
+
+  /* ---------- tiny transport demo (state panel only) ----------
+     Mirrors createReplayStore semantics: 5 fixture steps, derived status,
+     single-slot interval, auto-rewind on Play from the end. */
+  var STEPS = [
+    { turn: 0, alice: 0, bob: 1 },
+    { turn: 1, alice: 10, bob: 11 },
+    { turn: 2, alice: 20, bob: 21 },
+    { turn: 3, alice: 30, bob: 31 },
+    { turn: 4, alice: 40, bob: 41 }
+  ];
+  var maxStep = STEPS.length - 1;
+
+  var step = 0, playing = false, rate = 1, timerId = null, scrubbing = false, resumeAfterScrub = false;
+
+  var elBack = document.getElementById('d-back');
+  var elToggle = document.getElementById('d-toggle');
+  var elToggleIcon = document.getElementById('d-toggle-icon');
+  var elFwd = document.getElementById('d-fwd');
+  var elStep = document.getElementById('d-step');
+  var elState = document.getElementById('d-state');
+  var elScrub = document.getElementById('d-scrub');
+  var elAlice = document.getElementById('d-alice');
+  var elBob = document.getElementById('d-bob');
+  var rateBtns = Array.prototype.slice.call(document.querySelectorAll('.demo .rbtn'));
+  var stateRows = Array.prototype.slice.call(document.querySelectorAll('#state-table tr[data-state-row]'));
+
+  /* 16-artboard family glyphs (same geometry as the specimens in section 05) */
+  var ICON_PLAY = '<path d="M5.2 3.4 12.4 8 5.2 12.6Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>';
+  var ICON_PAUSE = '<rect x="4.4" y="3.4" width="2.8" height="9.2" rx="1.2" fill="currentColor"/><rect x="8.8" y="3.4" width="2.8" height="9.2" rx="1.2" fill="currentColor"/>';
+
+  function status() {
+    if (playing) return 'S1';
+    if (maxStep > 0 && step >= maxStep) return 'S3';
+    if (step === 0 && !playing) return 'S0';
+    return 'S2';
+  }
+
+  function labelFor(st) {
+    if (st === 'S0') return 'S0 idle-at-step-1';
+    if (st === 'S1') return 'S1 playing';
+    if (st === 'S2') return 'S2 paused';
+    return 'S3 at-end';
+  }
+
+  function render() {
+    var st = status();
+    if (elStep) elStep.textContent = (step + 1) + ' / ' + STEPS.length;
+    if (elState) elState.textContent = labelFor(st) + (scrubbing ? ' · S4 scrubbing' : '');
+    if (elBack) elBack.disabled = step <= 0;
+    if (elFwd) elFwd.disabled = step >= maxStep;
+    if (elToggle) {
+      elToggle.setAttribute('aria-label', playing ? 'Pause' : (st === 'S3' ? 'Play from start' : 'Play'));
+      elToggle.title = elToggle.getAttribute('aria-label');
+    }
+    if (elToggleIcon) elToggleIcon.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+    if (elScrub) {
+      elScrub.value = String(step);
+      elScrub.setAttribute('aria-valuetext', 'Step ' + (step + 1) + ' of ' + STEPS.length);
+    }
+    if (elAlice) elAlice.textContent = String(STEPS[step].alice);
+    if (elBob) elBob.textContent = String(STEPS[step].bob);
+    rateBtns.forEach(function (b) {
+      b.setAttribute('aria-pressed', String(Number(b.getAttribute('data-rate')) === rate));
+    });
+    var key = scrubbing ? 'S4' : st;
+    stateRows.forEach(function (tr) {
+      tr.classList.toggle('is-current', tr.getAttribute('data-state-row') === key);
+    });
+  }
+
+  function clearTimer() {
+    if (timerId !== null) { clearInterval(timerId); timerId = null; }
+  }
+
+  function armTimer() {
+    clearTimer();
+    if (!playing || scrubbing) return;
+    var period = Math.max(50, Math.round(1000 / rate));
+    timerId = setInterval(function () {
+      if (step >= maxStep) { playing = false; clearTimer(); render(); return; }
+      step += 1; render();
+    }, period);
+  }
+
+  if (elToggle) elToggle.addEventListener('click', function () {
+    if (playing) { playing = false; clearTimer(); }
+    else {
+      if (step >= maxStep) step = 0; /* auto-rewind — store.play() */
+      playing = true; armTimer();
+    }
+    render();
+  });
+  if (elBack) elBack.addEventListener('click', function () { if (step > 0) { step -= 1; render(); } });
+  if (elFwd) elFwd.addEventListener('click', function () {
+    if (step < maxStep) { step += 1; render(); }
+  });
+  rateBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      rate = Number(b.getAttribute('data-rate'));
+      if (playing) armTimer();
+      render();
+    });
+  });
+  if (elScrub) {
+    elScrub.addEventListener('pointerdown', function () {
+      scrubbing = true; resumeAfterScrub = playing; playing = false; clearTimer(); render();
+    });
+    elScrub.addEventListener('input', function () {
+      step = Number(elScrub.value); render();
+    });
+    var endScrub = function () {
+      if (!scrubbing) return;
+      scrubbing = false; playing = resumeAfterScrub; armTimer(); render();
+    };
+    elScrub.addEventListener('pointerup', endScrub);
+    elScrub.addEventListener('pointercancel', endScrub);
+    elScrub.addEventListener('blur', endScrub);
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
