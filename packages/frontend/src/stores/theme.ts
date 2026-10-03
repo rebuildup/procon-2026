@@ -34,6 +34,7 @@ function applyTheme(mode: ThemeMode): void {
   }
   const root = document.documentElement;
   root.dataset['theme'] = mode;
+  root.dataset['colorMode'] = mode;
   root.style.colorScheme = mode;
 }
 
