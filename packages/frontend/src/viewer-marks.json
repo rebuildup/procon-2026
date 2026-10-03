@@ -3,28 +3,28 @@
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-plain",
-        "fill": "currentColor"
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
       },
       "children": [
         {
           "tag": "rect",
           "attrs": {
-            "x": "2.2",
-            "y": "10.1",
-            "width": "11.6",
+            "x": "1.8",
+            "y": "9.6",
+            "width": "12.4",
             "height": "3.4",
-            "rx": "1.2"
+            "rx": "1",
+            "fill": "#8ed973"
           },
           "children": []
         },
         {
           "tag": "path",
           "attrs": {
-            "d": "M4.8 10.1V7.2M8 10.1V5.7M11.2 10.1V7.2",
+            "d": "M4.6 9.6V6.8M8 9.6V5.9M11.4 9.6V6.8",
             "fill": "none",
-            "stroke": "currentColor",
-            "stroke-width": "1.8",
             "stroke-linecap": "round"
           },
           "children": []
@@ -34,114 +34,110 @@
   ],
   "mountain": [
     {
-      "tag": "g",
+      "tag": "path",
       "attrs": {
-        "data-mark": "ridge-mountain",
-        "fill": "currentColor"
+        "d": "M1.4 12.6 5.4 4.2 8 7.8 10.8 3.2 14.6 12.6Z",
+        "fill": "#bfbfbf",
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
       },
-      "children": [
-        {
-          "tag": "path",
-          "attrs": {
-            "d": "M1.2 12.8 5.2 4.2 8 7.9 10.8 3.1 14.8 12.8Z"
-          },
-          "children": []
-        }
-      ]
+      "children": []
     }
   ],
   "water": [
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-water",
-        "fill": "currentColor"
+        "stroke": "#46b1e1",
+        "stroke-width": "2.1",
+        "stroke-linecap": "round",
+        "fill": "none"
       },
       "children": [
         {
-          "tag": "g",
+          "tag": "path",
           "attrs": {
-            "fill": "none",
-            "stroke": "currentColor",
-            "stroke-width": "2.7",
-            "stroke-linecap": "round"
+            "d": "M2 5.6c1.3-1.7 2.7-1.7 4 0s2.7 1.7 4 0 2.7-1.7 4 0"
           },
-          "children": [
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M2.1 5.7c1.3-1.9 2.7-1.9 4 0s2.7 1.9 4 0 2.7-1.9 4 0"
-              },
-              "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M2.1 10.5c1.3-1.9 2.7-1.9 4 0s2.7 1.9 4 0 2.7-1.9 4 0"
-              },
-              "children": []
-            }
-          ]
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2 10.4c1.3-1.7 2.7-1.7 4 0s2.7 1.7 4 0 2.7-1.7 4 0"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1",
+        "stroke-linecap": "round",
+        "fill": "none",
+        "opacity": "0.9"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2 5.6c1.3-1.7 2.7-1.7 4 0s2.7 1.7 4 0 2.7-1.7 4 0"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2 10.4c1.3-1.7 2.7-1.7 4 0s2.7 1.7 4 0 2.7-1.7 4 0"
+          },
+          "children": []
         }
       ]
     }
   ],
   "road": [
     {
-      "tag": "g",
+      "tag": "rect",
       "attrs": {
-        "data-mark": "ridge-road",
-        "fill": "currentColor"
+        "x": "1.5",
+        "y": "5.2",
+        "width": "13",
+        "height": "5.6",
+        "rx": "2.8",
+        "fill": "#156082",
+        "stroke": "#212428",
+        "stroke-width": "1.1"
       },
-      "children": [
-        {
-          "tag": "rect",
-          "attrs": {
-            "x": "1.3",
-            "y": "5.3",
-            "width": "4",
-            "height": "5.4",
-            "rx": "1.6"
-          },
-          "children": []
-        },
-        {
-          "tag": "rect",
-          "attrs": {
-            "x": "6",
-            "y": "5.3",
-            "width": "4",
-            "height": "5.4",
-            "rx": "1.6"
-          },
-          "children": []
-        },
-        {
-          "tag": "rect",
-          "attrs": {
-            "x": "10.7",
-            "y": "5.3",
-            "width": "4",
-            "height": "5.4",
-            "rx": "1.6"
-          },
-          "children": []
-        }
-      ]
+      "children": []
+    },
+    {
+      "tag": "path",
+      "attrs": {
+        "d": "M3.6 8h2.2M7.4 8h2.2M11.2 8h1.4",
+        "stroke": "#9bc2e6",
+        "stroke-width": "1.3",
+        "stroke-linecap": "round"
+      },
+      "children": []
     }
   ],
   "patrol": [
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-patrol",
-        "fill": "currentColor"
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
       },
       "children": [
         {
           "tag": "path",
           "attrs": {
-            "d": "M1.8 10.2h12.4l-1.3-2.8h-2.9L8.8 4.8H6.3L5 7.4H3.1Z"
+            "d": "M2 10.4h12l-1.2-2.7h-2.9L8.7 5H6.2L5 7.7H3.2Z",
+            "fill": "#00b050"
           },
           "children": []
         },
@@ -150,7 +146,8 @@
           "attrs": {
             "cx": "5.1",
             "cy": "11.5",
-            "r": "1.6"
+            "r": "1.5",
+            "fill": "#00b050"
           },
           "children": []
         },
@@ -159,18 +156,20 @@
           "attrs": {
             "cx": "10.9",
             "cy": "11.5",
-            "r": "1.6"
+            "r": "1.5",
+            "fill": "#00b050"
           },
           "children": []
         },
         {
           "tag": "rect",
           "attrs": {
-            "x": "7.1",
-            "y": "3.2",
-            "width": "2",
-            "height": "1.8",
-            "rx": "0.6"
+            "x": "7.2",
+            "y": "3.4",
+            "width": "1.8",
+            "height": "1.7",
+            "rx": "0.6",
+            "fill": "#00b050"
           },
           "children": []
         }
@@ -181,34 +180,45 @@
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-supply",
-        "fill": "currentColor"
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
       },
       "children": [
         {
           "tag": "path",
           "attrs": {
-            "d": "M1.4 7.6h4.8v4.4H1.4z"
+            "d": "M1.6 7.8h4.6v4.2H1.6z",
+            "fill": "#e59edd"
           },
           "children": []
         },
         {
           "tag": "rect",
           "attrs": {
-            "x": "6.2",
-            "y": "5.2",
-            "width": "7.4",
-            "height": "6.8",
-            "rx": "0.6"
+            "x": "6.4",
+            "y": "5.4",
+            "width": "7.2",
+            "height": "6.6",
+            "fill": "#e59edd"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M6.4 8.6h7.2M9.4 5.4v6.6",
+            "fill": "none"
           },
           "children": []
         },
         {
           "tag": "circle",
           "attrs": {
-            "cx": "3.5",
-            "cy": "12.5",
-            "r": "1.5"
+            "cx": "3.6",
+            "cy": "12.6",
+            "r": "1.4",
+            "fill": "#e59edd"
           },
           "children": []
         },
@@ -216,8 +226,9 @@
           "tag": "circle",
           "attrs": {
             "cx": "11",
-            "cy": "12.5",
-            "r": "1.5"
+            "cy": "12.6",
+            "r": "1.4",
+            "fill": "#e59edd"
           },
           "children": []
         }
@@ -228,21 +239,24 @@
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-s0",
-        "fill": "currentColor"
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
       },
       "children": [
         {
           "tag": "path",
           "attrs": {
-            "d": "M2 7 8 2.4 14 7Z"
+            "d": "M2.2 7.2 8 2.6 13.8 7.2Z",
+            "fill": "#cc9900"
           },
           "children": []
         },
         {
           "tag": "path",
           "attrs": {
-            "d": "M4 7h8v5.5H4z"
+            "d": "M4.2 7.2h7.6v5.2H4.2z",
+            "fill": "#cc9900"
           },
           "children": []
         }
@@ -253,25 +267,27 @@
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-s1",
-        "fill": "currentColor"
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
       },
       "children": [
         {
           "tag": "path",
           "attrs": {
-            "d": "M2.2 5.2h11.6l-1.7 2.4H3.9Z"
+            "d": "M2.4 5.4h11.2l-1.6 2.2H4Z",
+            "fill": "#c04f15"
           },
           "children": []
         },
         {
           "tag": "rect",
           "attrs": {
-            "x": "3.2",
+            "x": "3.4",
             "y": "7.6",
-            "width": "9.6",
-            "height": "3.4",
-            "rx": "0.5"
+            "width": "9.2",
+            "height": "3.2",
+            "fill": "#c04f15"
           },
           "children": []
         },
@@ -280,7 +296,8 @@
           "attrs": {
             "cx": "5.6",
             "cy": "12.3",
-            "r": "1.6"
+            "r": "1.5",
+            "fill": "#c04f15"
           },
           "children": []
         },
@@ -289,7 +306,8 @@
           "attrs": {
             "cx": "10.4",
             "cy": "12.3",
-            "r": "1.6"
+            "r": "1.5",
+            "fill": "#c04f15"
           },
           "children": []
         }
@@ -300,25 +318,25 @@
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-s2",
-        "fill": "currentColor"
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round"
       },
       "children": [
         {
           "tag": "path",
           "attrs": {
-            "d": "M2.8 7h10.4c0 3.6-2.3 5.9-5.2 5.9S2.8 10.6 2.8 7z"
+            "d": "M3 7.2h10c0 3.4-2.2 5.6-5 5.6S3 10.6 3 7.2z",
+            "fill": "#b03a55"
           },
           "children": []
         },
         {
           "tag": "path",
           "attrs": {
-            "d": "M5.6 5.1c.6-.8 0-1.4.6-2.2M8.4 5.1c.6-.8 0-1.4.6-2.2",
-            "fill": "none",
-            "stroke": "currentColor",
-            "stroke-width": "1.6",
-            "stroke-linecap": "round"
+            "d": "M5.6 4.6c.7-.8 0-1.5.7-2.3M9.2 4.6c.7-.8 0-1.5.7-2.3",
+            "fill": "none"
           },
           "children": []
         }
@@ -329,35 +347,32 @@
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-s3",
-        "fill": "currentColor"
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
       },
       "children": [
         {
           "tag": "path",
           "attrs": {
-            "d": "M3.6 7h7.8v3.4a3.4 3.4 0 0 1-3.4 3.4h-1a3.4 3.4 0 0 1-3.4-3.4z"
+            "d": "M3.8 7.2h7.6v3.2a3.2 3.2 0 0 1-3.2 3.2h-1.2a3.2 3.2 0 0 1-3.2-3.2z",
+            "fill": "#7048a8"
           },
           "children": []
         },
         {
           "tag": "path",
           "attrs": {
-            "d": "M11.4 8 13.9 6.2",
-            "fill": "none",
-            "stroke": "currentColor",
-            "stroke-width": "1.6",
-            "stroke-linecap": "round"
+            "d": "M11.4 8.2 13.6 6.6",
+            "fill": "none"
           },
           "children": []
         },
         {
           "tag": "path",
           "attrs": {
-            "d": "M5.1 7a2.9 2.9 0 0 1 5.8 0",
-            "fill": "none",
-            "stroke": "currentColor",
-            "stroke-width": "1.6"
+            "d": "M5.2 7.2a2.8 2.8 0 0 1 5.6 0",
+            "fill": "none"
           },
           "children": []
         }
@@ -368,24 +383,27 @@
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-s4",
-        "fill": "currentColor"
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
       },
       "children": [
         {
           "tag": "path",
           "attrs": {
-            "d": "M2.2 7.2 8 2.7 13.8 7.2v5.5H2.2z"
+            "d": "M2.4 7.4 8 3l5.6 4.4v5.2H2.4z",
+            "fill": "#0f7f96"
           },
           "children": []
         },
         {
           "tag": "rect",
           "attrs": {
-            "x": "3",
-            "y": "7.2",
-            "width": "10",
-            "height": "2.1"
+            "x": "3.2",
+            "y": "7.4",
+            "width": "9.6",
+            "height": "1.9",
+            "fill": "#0f7f96"
           },
           "children": []
         }
@@ -396,28 +414,264 @@
     {
       "tag": "g",
       "attrs": {
-        "data-mark": "ridge-s5",
-        "fill": "currentColor"
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
       },
       "children": [
         {
           "tag": "rect",
           "attrs": {
-            "x": "2.6",
-            "y": "8",
-            "width": "8.4",
-            "height": "4.4",
-            "rx": "0.6"
+            "x": "2.8",
+            "y": "8.2",
+            "width": "8.2",
+            "height": "4.2",
+            "fill": "#2f7d4f"
           },
           "children": []
         },
         {
           "tag": "path",
           "attrs": {
-            "d": "M11 12.4V3.2",
+            "d": "M11 12.4V3.4",
+            "fill": "none"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M11 3.6h3.2l-1.4 1.8 1.4 1.8H11Z",
+            "fill": "#2f7d4f"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-plain": [
+    {
+      "tag": "g",
+      "attrs": {
+        "fill": "#8ed973",
+        "stroke": "#212428",
+        "stroke-width": "0.9"
+      },
+      "children": [
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "4.2",
+            "cy": "4.2",
+            "r": "1.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "8",
+            "cy": "4.2",
+            "r": "1.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "11.8",
+            "cy": "4.2",
+            "r": "1.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "4.2",
+            "cy": "8",
+            "r": "1.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "8",
+            "cy": "8",
+            "r": "1.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "11.8",
+            "cy": "8",
+            "r": "1.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "4.2",
+            "cy": "11.8",
+            "r": "1.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "8",
+            "cy": "11.8",
+            "r": "1.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "11.8",
+            "cy": "11.8",
+            "r": "1.6"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-mountain": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M8 2.4 14 12.6H2Z",
+            "fill": "#bfbfbf"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M6.1 9.4 8 6.6l1.9 2.8",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-water": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M8 2.2c3.1 4.2 4.6 6.5 4.6 8.3a4.6 4.6 0 0 1-9.2 0c0-1.8 1.5-4.1 4.6-8.3z",
+            "fill": "#46b1e1"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M5.4 10.2h5.2",
             "fill": "none",
-            "stroke": "currentColor",
-            "stroke-width": "1.7",
+            "stroke-linecap": "round"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-road": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linecap": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.2 12.2c2-4.4 3.8-6.6 5.8-6.6s3.8 2.2 5.8 6.6",
+            "fill": "none",
+            "stroke-width": "2.4"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.2 12.2c2-4.4 3.8-6.6 5.8-6.6s3.8 2.2 5.8 6.6",
+            "fill": "none",
+            "stroke": "#156082",
+            "stroke-width": "1.2"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "2.2",
+            "cy": "12.2",
+            "r": "1.6",
+            "fill": "#156082"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "13.8",
+            "cy": "12.2",
+            "r": "1.6",
+            "fill": "#156082"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-patrol": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M8 2.4c2.6 0 4.4 1.9 4.4 4.3 0 3-2.6 5.4-4.4 6.9-1.8-1.5-4.4-3.9-4.4-6.9 0-2.4 1.8-4.3 4.4-4.3z",
+            "fill": "#00b050"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M6.2 7.2a2.2 2.2 0 1 0 3.4 1.9",
+            "fill": "none",
             "stroke-linecap": "round"
           },
           "children": []
@@ -425,7 +679,759 @@
         {
           "tag": "path",
           "attrs": {
-            "d": "M11 3.4h3.5l-1.6 2 1.6 2H11Z"
+            "d": "M9.2 7.2 10.4 9l-2.2.3",
+            "fill": "none",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-supply": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "2.4",
+            "y": "3.4",
+            "width": "5",
+            "height": "9.2",
+            "rx": "1.4",
+            "fill": "#e59edd"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "8.6",
+            "y": "5.8",
+            "width": "5",
+            "height": "6.8",
+            "rx": "1.4",
+            "fill": "#e59edd"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.4 6.2h5M2.4 9.8h5M8.6 8.2h5",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-s0": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.4 7.6 8 2.8l5.6 4.8v5.4H2.4z",
+            "fill": "#cc9900"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M6.2 13V9.4h3.6V13",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-s1": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "2.2",
+            "y": "5",
+            "width": "11.6",
+            "height": "5.4",
+            "rx": "1.8",
+            "fill": "#c04f15"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "5",
+            "cy": "11.8",
+            "r": "1.5",
+            "fill": "#c04f15"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "11",
+            "cy": "11.8",
+            "r": "1.5",
+            "fill": "#c04f15"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-s2": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M3.2 5h8.2v4.6a3.4 3.4 0 0 1-3.4 3.4H6.6A3.4 3.4 0 0 1 3.2 9.6z",
+            "fill": "#b03a55"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M11.4 6.2h1.6a1.6 1.6 0 0 1 0 3.2h-1.6",
+            "fill": "none"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.4 13.4h9.6",
+            "fill": "none",
+            "stroke-linecap": "round"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-s3": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M4.2 6.4h7.6l-.8 5.2a3 3 0 0 1-3 2.6h0a3 3 0 0 1-3-2.6z",
+            "fill": "#7048a8"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "5.4",
+            "y": "3.6",
+            "width": "5.2",
+            "height": "2.2",
+            "rx": "1",
+            "fill": "#7048a8"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M8 3.6V2.2",
+            "fill": "none",
+            "stroke-linecap": "round"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-s4": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "2.6",
+            "y": "4.6",
+            "width": "10.8",
+            "height": "8",
+            "rx": "1",
+            "fill": "#0f7f96"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "4.4",
+            "y": "6.6",
+            "width": "7.2",
+            "height": "2.6",
+            "fill": "#0f7f96"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.6 4.6 8 2.2l5.4 2.4",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "peak-s5": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round",
+        "stroke-linecap": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.2 8.2a5.8 5.8 0 0 1 11.6 0c-1.2-1-2.2-1-3.2 0-1-1-2.2-1-3.2 0-1-1-2-1-3.2 0-1-1-1.8-1-2 0z",
+            "fill": "#2f7d4f"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M8 8.2v4.4",
+            "fill": "none"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M6 12.6h2.4a1.4 1.4 0 0 1-2.4 0z",
+            "fill": "#2f7d4f"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-plain": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linecap": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2 10.6h12",
+            "stroke": "#8ed973",
+            "stroke-width": "2.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2 10.6h12",
+            "fill": "none"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M4 10.6V8.2M8 10.6V7.4M12 10.6V8.2",
+            "stroke": "#8ed973",
+            "stroke-width": "1.6"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M4 10.6V8.2M8 10.6V7.4M12 10.6V8.2",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-mountain": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M1.6 12.6h3V9.6h3V6.6h3.2V3.2l2.6 2.8v6.6z",
+            "fill": "#bfbfbf"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-water": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "2.4",
+            "y": "2.4",
+            "width": "11.2",
+            "height": "11.2",
+            "rx": "2",
+            "fill": "#46b1e1"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M4.2 8.2c1.1-1.3 2.3-1.3 3.4 0s2.3 1.3 3.4 0",
+            "fill": "none",
+            "stroke": "#ffffff",
+            "stroke-width": "1.3",
+            "stroke-linecap": "round"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M4.2 11c1.1-1.3 2.3-1.3 3.4 0s2.3 1.3 3.4 0",
+            "fill": "none",
+            "stroke": "#ffffff",
+            "stroke-width": "1.3",
+            "stroke-linecap": "round"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-road": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round",
+        "stroke-linecap": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "1.4",
+            "y": "5.2",
+            "width": "13.2",
+            "height": "5.6",
+            "rx": "1.4",
+            "fill": "#156082"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M4 10.2 6.4 8 4 5.8M8 10.2 10.4 8 8 5.8M12 10.2 13.6 8.8",
+            "fill": "none",
+            "stroke": "#9bc2e6",
+            "stroke-width": "1.4"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-patrol": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round",
+        "stroke-linecap": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "3",
+            "y": "4.4",
+            "width": "10",
+            "height": "6.4",
+            "rx": "1.6",
+            "fill": "#00b050"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "5.6",
+            "cy": "12.2",
+            "r": "1.5",
+            "fill": "#00b050"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "10.4",
+            "cy": "12.2",
+            "r": "1.5",
+            "fill": "#00b050"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M5.2 3a2.8 2.8 0 1 1 4.6 2",
+            "fill": "none"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M9.4 2.4 10.2 5.2 7.4 5.4",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-supply": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "3.6",
+            "y": "3.4",
+            "width": "8.8",
+            "height": "9.6",
+            "rx": "1.2",
+            "fill": "#e59edd"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M6.2 3.4V2.2h3.6v1.2",
+            "fill": "none"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M8 6.2v3.6M6.2 8h3.6",
+            "fill": "none",
+            "stroke-linecap": "round"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-s0": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "3.4",
+            "y": "5.6",
+            "width": "9.2",
+            "height": "6.8",
+            "rx": "1.6",
+            "fill": "#cc9900"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.2 7.2h1.2M12.6 7.2h1.2",
+            "stroke-linecap": "round"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "5.6",
+            "y": "3.8",
+            "width": "4.8",
+            "height": "1.8",
+            "rx": "0.8",
+            "fill": "#cc9900"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-s1": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "3.6",
+            "y": "3",
+            "width": "8.8",
+            "height": "3.2",
+            "rx": "1",
+            "fill": "#c04f15"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "3.6",
+            "y": "7",
+            "width": "8.8",
+            "height": "3.2",
+            "rx": "1",
+            "fill": "#c04f15"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "3.6",
+            "y": "11",
+            "width": "8.8",
+            "height": "2.4",
+            "rx": "1",
+            "fill": "#c04f15"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M8 3V1.8",
+            "stroke-linecap": "round",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-s2": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.4 7h11.2c0 3.2-2.5 5.4-5.6 5.4S2.4 10.2 2.4 7z",
+            "fill": "#b03a55"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M4.2 7h7.6",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-s3": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M3.8 6.6h7v4a2.8 2.8 0 0 1-2.8 2.8h-1.4A2.8 2.8 0 0 1 3.8 10.6z",
+            "fill": "#7048a8"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M10.8 8 13.4 6.2 12.6 9.2",
+            "fill": "none"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M5.6 6.6V5.2h3.2v1.4",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-s4": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "2.4",
+            "y": "4",
+            "width": "11.2",
+            "height": "8.4",
+            "rx": "1.2",
+            "fill": "#0f7f96"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M2.4 8h11.2M8 4v8.4",
+            "fill": "none"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "terrace-s5": [
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round",
+        "stroke-linecap": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M3.2 7.6h9.6v2.6a3.2 3.2 0 0 1-3.2 3.2H6.4a3.2 3.2 0 0 1-3.2-3.2z",
+            "fill": "#2f7d4f"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M5.4 5c.6-.7 0-1.3.6-2M8.2 5c.6-.7 0-1.3.6-2M11 5c.6-.7 0-1.3.6-2",
+            "fill": "none"
           },
           "children": []
         }

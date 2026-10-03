@@ -142,9 +142,22 @@ test('GPU draws all domain symbols and advances the agent without SVG overlay', 
         ox = (canvas.width - 370 * fit) / 2,
         oy = (canvas.height - 265 * fit) / 2;
       const contains = (x: number, y: number, size: number, hue: string) => {
-        const hex = getComputedStyle(document.documentElement)
-          .getPropertyValue(`--data-${hue}-color-emphasis`)
-          .trim();
+        const hex = (
+          {
+            gray: '#bfbfbf',
+            green: '#8ed973',
+            brown: '#156082',
+            blue: '#46b1e1',
+            yellow: '#cc9900',
+            orange: '#c04f15',
+            auburn: '#b03a55',
+            purple: '#7048a8',
+            plum: '#0f7f96',
+            olive: '#2f7d4f',
+            pine: '#00b050',
+            pink: '#e59edd',
+          } as Record<string, string>
+        )[hue]!;
         const color = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
         let count = 0;
         for (

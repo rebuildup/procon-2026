@@ -5,6 +5,7 @@ import {
   glyphAtlas,
   markNames,
   palette,
+  terrainRgba,
   worldPoint,
   type Camera,
   type ViewerScene,
@@ -28,7 +29,16 @@ struct Terrain { @builtin(position) position:vec4f, @location(0) fill:vec4f, @lo
 @fragment fn terrainFS(in:Terrain)->@location(0) vec4f {
  let distance=max(abs(in.local.x)-20.0,(abs(in.local.x)*0.575+abs(in.local.y)-23.0)/1.15353);
  let aa=max(fwidth(distance),0.01);
- return mix(in.fill,in.border,smoothstep(-1.0-aa*0.5,-1.0+aa*0.5,distance));
+ var fill=in.fill;
+ let p=in.local+vec2f(24.0);
+ let kind=in.border.a;
+ if(kind<1.5){let q=fract(p/5.0)*5.0-vec2f(2.5);if(length(q)<1.0){fill=vec4f(0.4353,0.7216,0.3412,1);}}
+ else if(kind<2.5){if(abs(fract((p.x-p.y)/6.0)-0.5)<0.1167){fill=vec4f(0.5608,0.5608,0.5608,1);}}
+ else if(kind<3.5){if(abs(fract((p.y-0.8*sin(p.x*0.849))/5.0)-0.64)<0.11){fill=vec4f(0.6078,0.7608,0.9020,1);}}
+ else{let q=fract(p/8.0)*8.0;if(q.x>1.0&&q.x<4.0&&abs(q.y-4.0)<0.6){fill=vec4f(0.6078,0.7608,0.9020,1);}}
+ let ink=vec4f(0.1294,0.1412,0.1569,1);
+ let ring=mix(ink,vec4f(1),smoothstep(0.6-aa*0.5,0.6+aa*0.5,distance));
+ return mix(fill,ring,smoothstep(-0.6-aa*0.5,-0.6+aa*0.5,distance));
 }
 struct Symbol { @builtin(position) position:vec4f, @location(0) color:vec4f, @location(1) uv:vec2f };
 @vertex fn symbolVS(@builtin(vertex_index) index:u32,@location(0) rect:vec4f,@location(1) color:vec4f,@location(2) glyph:f32)->Symbol {
@@ -36,7 +46,7 @@ struct Symbol { @builtin(position) position:vec4f, @location(0) color:vec4f, @lo
  let corner=corners[index];var out:Symbol;out.position=position(rect.xy+corner*rect.zw);out.color=color;out.uv=vec2f((glyph+corner.x)/${markNames.length}.0,corner.y);return out;
 }
 @fragment fn symbolFS(in:Symbol)->@location(0) vec4f {
- return vec4f(in.color.rgb,in.color.a*textureSample(glyphs,glyphSampler,in.uv).a);
+ return textureSample(glyphs,glyphSampler,in.uv);
 }
 `;
 export async function createViewerLayer(canvas: HTMLCanvasElement, fail: (reason: string) => void) {
@@ -99,7 +109,12 @@ export async function createViewerLayer(canvas: HTMLCanvasElement, fail: (reason
       primitive: { topology: 'triangle-list' },
     });
     const vertices = new Float32Array(
-      HEX_POINTS.flatMap((point, i) => [0, 0, ...point, ...HEX_POINTS[(i + 1) % 6]!]),
+      HEX_POINTS.flatMap((point, i) => [
+        0,
+        0,
+        ...point,
+        ...HEX_POINTS[(i + 1) % 6]!.map((v) => v * 1.075),
+      ]),
     );
     const corners = device.createBuffer({
       size: vertices.byteLength,
@@ -176,8 +191,11 @@ export async function createViewerLayer(canvas: HTMLCanvasElement, fail: (reason
             scene.cells.flatMap((cell) => [
               cell.x,
               cell.y,
-              ...colors(`--data-${cell.hue}-color-muted`),
-              ...colors(`--data-${cell.hue}-color-emphasis`),
+              ...terrainRgba(cell.mark),
+              0,
+              0,
+              0,
+              ['plain', 'mountain', 'water', 'road'].indexOf(cell.mark) + 1,
             ]),
           ),
         );
