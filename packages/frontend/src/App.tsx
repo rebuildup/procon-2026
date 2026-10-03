@@ -16,6 +16,7 @@ import * as RadioGroup from '@kobalte/core/radio-group';
 import { createReplayStore, type PlaybackRate } from '@/stores/replay';
 import { getTheme, toggleTheme } from '@/stores/theme';
 import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/live';
+import { createFrameScheduler } from '@/lib/frame-scheduler';
 import icons from '@/viewer-icons.json';
 import { rulesLink, RULE_SECTIONS } from '@/lib/rules';
 import {
@@ -275,9 +276,18 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
     }
     if (!layer()) drawCanvasScene(fallback, scene(), viewport.camera());
   };
+  const frames = createFrameScheduler(draw);
+  onCleanup(frames.dispose);
   createEffect(() => {
+    // Track inputs here; the deferred draw reads their latest values.
+    void assetsReady();
+    void layer();
+    void props.turn;
+    void viewport.sample();
+    void viewport.padding();
+    void viewport.camera();
     void getTheme().mode;
-    draw();
+    frames.invalidate();
   });
   onMount(() => {
     void loadHexAssets().then(() => setAssetsReady(true));
@@ -319,7 +329,7 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
         clearTimeout(timeout);
         reject(String(error));
       });
-    const observer = new ResizeObserver(() => untrack(() => draw()));
+    const observer = new ResizeObserver(frames.invalidate);
     observer.observe(stage);
     onCleanup(() => {
       active = false;
