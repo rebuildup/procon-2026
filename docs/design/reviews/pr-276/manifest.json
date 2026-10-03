@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-03T12:28:12.499Z",
-  "commit": "0f61b7637ed657b9c5832dbe74175caf239b5132",
+  "generatedAt": "2026-10-03T12:57:50.812Z",
+  "commit": "3541ffaf96a01c2556f6ab8767a920172b949868",
   "viewport": {
     "width": 1280,
     "height": 720
@@ -12,56 +12,56 @@
       "route": "/",
       "video": "home.webm",
       "screenshot": "home.png",
-      "videoBytes": 543003,
-      "durationMs": 8974,
+      "videoBytes": 610540,
+      "durationMs": 9076,
       "chromiumVersion": "153.0.8010.12",
       "webgpu": {
         "api": true,
         "adapter": true
       },
-      "recordedAt": "2026-10-03T12:27:47.233Z"
+      "recordedAt": "2026-10-03T12:57:25.316Z"
     },
     {
       "name": "live",
       "route": "/live",
       "video": "live.webm",
       "screenshot": "live.png",
-      "videoBytes": 556677,
-      "durationMs": 8254,
+      "videoBytes": 582019,
+      "durationMs": 8388,
       "chromiumVersion": "153.0.8010.12",
       "webgpu": {
         "api": true,
         "adapter": true
       },
-      "recordedAt": "2026-10-03T12:28:12.493Z"
+      "recordedAt": "2026-10-03T12:57:50.806Z"
     },
     {
       "name": "replays",
       "route": "/replays",
       "video": "replays.webm",
       "screenshot": "replays.png",
-      "videoBytes": 552670,
-      "durationMs": 8148,
+      "videoBytes": 661327,
+      "durationMs": 8399,
       "chromiumVersion": "153.0.8010.12",
       "webgpu": {
         "api": true,
         "adapter": true
       },
-      "recordedAt": "2026-10-03T12:27:55.393Z"
+      "recordedAt": "2026-10-03T12:57:33.727Z"
     },
     {
       "name": "solvers",
       "route": "/solvers",
       "video": "solvers.webm",
       "screenshot": "solvers.png",
-      "videoBytes": 629799,
-      "durationMs": 8804,
+      "videoBytes": 1090138,
+      "durationMs": 8643,
       "chromiumVersion": "153.0.8010.12",
       "webgpu": {
         "api": true,
         "adapter": true
       },
-      "recordedAt": "2026-10-03T12:28:04.218Z"
+      "recordedAt": "2026-10-03T12:57:42.391Z"
     }
   ]
 }

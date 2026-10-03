@@ -4,14 +4,14 @@
     "draws": 61,
     "atlasUploads": 1
   },
-  "fixture48": {
+  "fixture100": {
     "uploadsAdded": 1,
     "p95SubmitMs": 0.10000000149011612
   },
   "p95SubmitMs": 0.10000000149011612,
   "meanChannelError": [
-    0.11659102498725141,
-    0.6794263131055583
+    0.1814227434982152,
+    0.8451478837327894
   ],
-  "scope": "6 canonical hexes and 48-cell demo, 60 camera submissions each; CPU submission timing, not production GPU throughput"
+  "scope": "6 canonical hexes and 100-cell official example, 60 camera submissions each; CPU submission timing, not production GPU throughput"
 }

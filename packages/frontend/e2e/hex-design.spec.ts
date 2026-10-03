@@ -35,7 +35,7 @@ test('three families render in GPU and six adjacent series remain distinct at 15
       document.body.append(canvas);
       const layer = await createViewerLayer(canvas, (reason: string) => failures.push(reason));
       await scene.loadHexAssets();
-      const fixture = scene.fixtureScene(0, family);
+      const fixture = scene.fixtureScene(0, family, 'figure2');
       layer.draw(fixture, { x: 0, y: 0, zoom: 1 });
       await layer.context.device.queue.onSubmittedWorkDone();
       const row = document.createElement('canvas');
