@@ -168,6 +168,9 @@ test('all routes keep the visualizer primary and information in the Primer pane'
     const content = page.locator('.PageLayout-content');
     const pane = page.locator('.PageLayout-pane');
     await expect(content.getByTestId('map-viewer-svg')).toBeVisible();
+    const reset = content.getByRole('button', { name: 'Reset view' });
+    const bounds = await reset.boundingBox();
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(720);
     await expect(content.locator('section,table,[role="status"],h2')).toHaveCount(0);
     await expect(pane).toBeVisible();
     const geometry = await page.evaluate(() => {

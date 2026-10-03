@@ -31,7 +31,7 @@
   display: block;
   width: 100%;
   height: max(
-    var(--base-size-256),
+    calc(var(--base-size-128) * 2),
     calc(100dvh - var(--base-size-128) - var(--control-medium-size))
   );
   touch-action: none;
