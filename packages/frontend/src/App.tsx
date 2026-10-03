@@ -59,9 +59,9 @@ const Button = (props: {
   </button>
 );
 const Box = (props: { title: string; children: JSX.Element }) => (
-  <section class="Box">
-    <h2 class="Box-header p-3">{props.title}</h2>
-    <div class="Box-body p-3">{props.children}</div>
+  <section class="border rounded-2 mb-3 overflow-hidden">
+    <h2 class="f5 text-bold bgColor-muted border-bottom p-3 m-0">{props.title}</h2>
+    <div class="p-3">{props.children}</div>
   </section>
 );
 const Row = (props: { label: string; value: JSX.Element }) => (
@@ -385,7 +385,8 @@ function ReplayPage() {
     <>
       <div class="route-heading">
         <h1>Replays</h1>
-        <span class="Label">Demo match · alice / bob</span>
+        <span class="border rounded-2 px-2 f6">Demo</span>
+        <span class="color-fg-muted">alice / bob</span>
       </div>
       <div
         class="workspace"
@@ -396,6 +397,11 @@ function ReplayPage() {
         onKeyDown={shortcut}
       >
         <div>
+          <div class="detail-header border rounded-top-2 bgColor-muted p-3 mb-3">
+            <Icon name="history" />
+            <strong>Demo match</strong>
+            <span class="color-fg-muted f6">5 steps · alice / bob</span>
+          </div>
           <div class="toolbar">
             <Button
               label="First step"
@@ -574,7 +580,7 @@ function LivePage() {
       <div class="route-heading">
         <h1>Live</h1>
         <span
-          class="Label"
+          class="border rounded-2 px-2 f6"
           role="status"
           data-testid="live-status-badge"
           data-status={snapshot()?.status ?? 'connecting'}
@@ -613,8 +619,7 @@ function LivePage() {
         </div>
       </Show>
       <div class="workspace">
-        <MapView />
-        <aside>
+        <div>
           <Box title="Match state">
             <Row
               label="Day"
@@ -643,6 +648,9 @@ function LivePage() {
               }
             />
           </Box>
+          <MapView />
+        </div>
+        <aside>
           <Box title="Map source">
             <p class="color-fg-muted">
               Fixture preview. The CLI snapshot carries match status, not map or agent positions.
@@ -676,7 +684,7 @@ function SolversPage() {
         >
           WebGPU
         </button>
-        <span class="Label">Fixture preview</span>
+        <span class="border rounded-2 px-2 f6">Fixture preview</span>
       </div>
       <div class="workspace">
         <MapView gpu={renderer() === 'webgpu'} />
@@ -708,30 +716,72 @@ function Home() {
   return (
     <>
       <div class="route-heading">
-        <h1>Match viewer</h1>
-        <span class="Label">procon-2026</span>
+        <h1>Overview</h1>
+        <span class="border rounded-2 px-2 f6">Competition workspace</span>
       </div>
       <div class="workspace">
-        <MapView />
+        <div>
+          <section class="border rounded-2 overflow-hidden" aria-label="Workspace contents">
+            <div class="bgColor-muted border-bottom p-3 d-flex flex-justify-between">
+              <strong>procon-2026</strong>
+              <span class="color-fg-muted f6">Viewer workspace</span>
+            </div>
+            <For
+              each={[
+                {
+                  href: '/replays',
+                  icon: 'history' as const,
+                  name: 'Replays',
+                  description: 'Inspect the five-step demo match',
+                  detail: 'Demo · alice / bob',
+                },
+                {
+                  href: '/solvers',
+                  icon: 'beaker' as const,
+                  name: 'Solvers',
+                  description: 'Inspect the map rendering fixture',
+                  detail: 'SVG / WebGPU',
+                },
+                {
+                  href: '/live',
+                  icon: 'broadcast' as const,
+                  name: 'Live',
+                  description: 'Monitor the local match-state snapshot',
+                  detail: '1 second polling',
+                },
+              ]}
+            >
+              {(item) => (
+                <div class="workspace-entry border-bottom px-3 py-3">
+                  <Icon name={item.icon} />
+                  <A href={item.href} class="text-bold">
+                    {item.name}
+                  </A>
+                  <span class="color-fg-muted">{item.description}</span>
+                  <span class="color-fg-muted f6">{item.detail}</span>
+                </div>
+              )}
+            </For>
+          </section>
+          <section class="border rounded-2 p-4 mt-3">
+            <h2 class="f4 border-bottom pb-3 mb-3">Match viewer</h2>
+            <p>National KOSEN Programming Contest · Competition division</p>
+            <p class="mb-0">
+              Open a replay to inspect individual steps, review the map fixture, or follow the
+              latest local match state.
+            </p>
+          </section>
+        </div>
         <aside>
-          <Box title="Workspace">
-            <A class="info-row" href="/live">
-              Live match
-              <Icon name="broadcast" />
-            </A>
-            <A class="info-row" href="/replays">
-              Replay analysis
-              <Icon name="history" />
-            </A>
-            <A class="info-row" href="/solvers">
-              Map &amp; solvers
-              <Icon name="beaker" />
-            </A>
-          </Box>
-          <Box title="About">
-            <p>全国高専プロコン 競技部門</p>
-            <p class="color-fg-muted">Inspect match state, replay steps and the hex map.</p>
-          </Box>
+          <h2 class="f4 mb-3">About</h2>
+          <p class="color-fg-muted">Competition analysis workspace for procon-2026.</p>
+          <div class="border-top pt-3">
+            <h3 class="f5">Data sources</h3>
+            <p class="f6 color-fg-muted">
+              Replay and map previews use demo fixtures. Live reads /match-state.json; map geometry
+              remains a fixture.
+            </p>
+          </div>
         </aside>
       </div>
     </>
@@ -747,18 +797,19 @@ function Shell(props: { children?: JSX.Element }) {
       <header class="app-header" data-testid="app-header">
         <A href="/" class="brand">
           <Icon name="home" />
+          <span class="color-fg-muted">rebuildup /</span>
           <b>procon-2026</b>
         </A>
-        <span class="color-fg-muted">Match viewer</span>
+        <span class="border rounded-2 px-2 f6 header-context">Match viewer</span>
         <button class="btn btn-sm ml-auto" onClick={toggleTheme} aria-label="Toggle theme">
           <Icon name={getTheme().mode === 'dark' ? 'sun' : 'moon'} />
         </button>
       </header>
-      <nav class="app-sidebar" aria-label="Main navigation">
+      <nav class="app-navigation" aria-label="Main navigation">
         <For
           each={
             [
-              ['/', 'Home', 'home'],
+              ['/', 'Overview', 'home'],
               ['/replays', 'Replays', 'history'],
               ['/solvers', 'Solvers', 'beaker'],
               ['/live', 'Live', 'broadcast'],
@@ -770,6 +821,7 @@ function Shell(props: { children?: JSX.Element }) {
               href={item[0]}
               end={item[0] === '/'}
               class="nav-item"
+              aria-current={location.pathname === item[0] ? 'page' : undefined}
               classList={{ selected: location.pathname === item[0] }}
             >
               <Icon name={item[2]} />

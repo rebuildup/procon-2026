@@ -159,3 +159,19 @@ test('replay shortcuts respect native controls and Escape cancels a held scrub',
   await page.keyboard.press('Space');
   await expect(step).toHaveText('5 / 5');
 });
+
+test('overview links to details and reload preserves the navigation context', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
+  await expect(page.getByTestId('map-viewer-svg')).toHaveCount(0);
+  await page
+    .getByRole('region', { name: 'Workspace contents' })
+    .getByRole('link', { name: 'Replays', exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/replays$/);
+  await page.reload();
+  await expect(page.getByTestId('replay-toggle')).toBeVisible();
+  await expect(
+    page.getByRole('navigation').getByRole('link', { name: 'Replays', exact: true }),
+  ).toHaveAttribute('aria-current', 'page');
+});
