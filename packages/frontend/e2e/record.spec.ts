@@ -78,6 +78,10 @@ test.describe('frontend screen recording', () => {
         await page.waitForTimeout(1500);
         await page.getByLabel('中央に戻す', { exact: true }).click();
         await page.waitForTimeout(1500);
+        await page.getByLabel('問題文の例').selectOption('figure2');
+        await page.waitForTimeout(1500);
+        await page.getByLabel('マップ外の空枠').selectOption('2');
+        await page.waitForTimeout(1500);
       },
     });
   });
