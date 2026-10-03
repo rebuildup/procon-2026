@@ -16,7 +16,14 @@ test.describe('frontend screen recording', () => {
     await recordScenario(browser, {
       name: 'home',
       route: '/',
-      ready: (page) => page.locator('[data-testid="app-header"]').waitFor(),
+      ready: async (page) => {
+        await page.locator('[data-testid="app-header"]').waitFor();
+        await expect(page.getByTestId('map-viewer')).toHaveAttribute(
+          'data-renderer',
+          /WebGPU|Canvas/,
+          { timeout: 15000 },
+        );
+      },
     });
   });
 
@@ -26,7 +33,7 @@ test.describe('frontend screen recording', () => {
       route: '/replays',
       ready: async (page) => {
         await expect(page.locator('[data-testid="replay-toggle"]')).toBeVisible();
-        await expect(page.locator('[data-testid="replay-current-step"]')).toHaveText('1');
+        await expect(page.locator('[data-testid="replay-current-step"]')).toHaveText('1 / 5');
       },
       steps: async (page) => {
         await page.locator('[data-testid="replay-toggle"]').click();
@@ -35,7 +42,7 @@ test.describe('frontend screen recording', () => {
           .poll(() => page.locator('[data-testid="replay-current-step"]').textContent(), {
             timeout: 10_000,
           })
-          .not.toBe('1');
+          .not.toBe('1 / 5');
         await page.locator('[data-testid="replay-rate-2"]').click();
       },
       hold: async (page, remainingMs) => {
@@ -54,25 +61,23 @@ test.describe('frontend screen recording', () => {
   });
 
   test('solvers', async ({ browser }) => {
-    const loading = '[data-testid="webgpu-map-loading"]';
     await recordScenario(browser, {
       name: 'solvers',
       route: '/solvers',
       ready: async (page) => {
-        await expect(page.locator('[data-testid="solvers-renderer-svg"]')).toBeVisible();
-        // Mount settled into GPU canvas, SVG fallback, or (no adapter) straight
-        // to fallback — all three end with the loading line gone.
-        await expect(page.locator(loading)).toHaveCount(0, { timeout: 15_000 });
+        await expect(page.getByTestId('map-viewer')).toHaveAttribute(
+          'data-renderer',
+          /WebGPU|Canvas/,
+          { timeout: 15000 },
+        );
       },
       steps: async (page) => {
-        await page.locator('[data-testid="solvers-renderer-svg"]').click();
-        await expect(page.locator('[data-testid="map-viewer-svg"]')).toBeVisible();
-        await page.waitForTimeout(1_500);
-        await page.locator('[data-testid="solvers-renderer-webgpu"]').click();
-        await expect(page.locator(loading)).toHaveCount(0, { timeout: 15_000 });
-        await page.waitForTimeout(1_500);
-        await page.locator('[data-testid="solvers-renderer-svg"]').click();
-        await expect(page.locator('[data-testid="map-viewer-svg"]')).toBeVisible();
+        await page.getByTestId('map-viewer').focus();
+        await page.keyboard.press('+');
+        await page.keyboard.press('ArrowLeft');
+        await page.waitForTimeout(1500);
+        await page.getByLabel('Reset view', { exact: true }).click();
+        await page.waitForTimeout(1500);
       },
     });
   });

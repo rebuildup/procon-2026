@@ -1,4 +1,18 @@
+> 最新レビュー反映: visualizer は Primer utility の枠でセクション化する。地形・境界・地図記号・agent は同じ WebGPU シーンで描画し、GPU 不可時は同じ記号アトラスの Canvas 描画へ退避する。地図内に SVG DOM を重ねない。Reset view は右側 View パネルのラベル付き Primer Button に置く。Replays の操作パネルは維持する。
+
 # Design Brief — procon-2026 viewer
+
+## 2026-10-03 レビューによる配置規則の更新
+
+ユーザーの明示指示により、以下を過去の12列指定・sidebar指定・PR #272 の Overview 一覧化より優先する。
+
+- 主領域は全ルートでビジュアライザ。状態・対象・操作・スコア・接続情報は適切な情報パネルへまとめる。
+- グリッドは導入済み Primer CSS の PageLayout（content / pane、標準幅・ガター・stackRegions）を使う。独自の列比率・breakpoint を追加しない。
+- ヘッダーはアプリ名、必要なモード切替、theme 操作のみ。意味のない組織名・repository path・重複する route header を置かない。
+- パネルは情報単位の題名と内容を持つ。装飾的な背景帯・独立した詳細ヘッダーを足さない。
+- ステータスは情報パネルのラベル付き行に置き、Octicons と Primer semantic color を使う。独自 dot / hollow marker / badge を設計しない。Issue / PR 専用 StateLabel の文脈を試合状態へ転用しない。
+- UI 文字サイズと選択状態は Primer の既定に戻す。HUD 11/15px の独自適用は行わない。map の符号・geometry は別責務。今回の厳密な Primer 使用指示により quiet focus の独自上書きも撤去する。
+
 
 > 生成: design-intent skill。実装・proposal 作成前に visual direction を固定するための共有 input。
 >
@@ -16,6 +30,12 @@
 > **`design-system.html` は廃止する。** そこに含まれていたトークン表・component gallery・typography scale は Primer に存在するので不要。**符号と map の色だけ**を `visualizer.html` へ移設する。
 >
 > これは「自前の DS を育てるコストとドリフト」をやめる判断。過去の改訂でトークンの食い違い・グリッドの崩れ・色のドリフトが繰り返し発生したため、**根を絶つ**。
+
+### 操作とコンポーネント使用の追記
+
+- 再生操作は Octicon と表示ラベルのある Primer Button を使う。再生・一段移動・先頭末尾・速度・位置を一つの wrap 列へ混在させない。関連する移動操作は BtnGroup、速度はラベル付き radio group として揃える。theme 操作も表示ラベルを持つ。
+- Primer component の padding / font / border / radius / shadow / focus / animation を project CSS で上書きしない。CSS は viewport の scroll ownership と map geometry のみに限定する。
+- GitHub.com 全体との pixel 完全一致を宣言しない。導入版 Primer の component CSS / token 一致、用途・グループ構成、実画面と操作を別々に検証する。native range は Primer component ではなく既存 scrub の native control として扱い、同一とは報告しない。
 
 ## 実装層 — SolidJS に載せる形（v5 追記）
 
