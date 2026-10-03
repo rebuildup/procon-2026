@@ -262,7 +262,7 @@
             {
               "tag": "path",
               "attrs": {
-                "d": "M2 8h4M10.2 5.4v3.8M8.3 7.3h3.8",
+                "d": "M2 8h4M8.4 5.4h3.6v3.8H8.4Z",
                 "fill": "none"
               },
               "children": []
