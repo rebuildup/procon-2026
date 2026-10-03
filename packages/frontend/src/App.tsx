@@ -53,16 +53,20 @@ const Button = (props: {
   onClick: () => void;
   disabled?: boolean;
   testid?: string;
+  text?: string;
+  grouped?: boolean;
+  block?: boolean;
+  primary?: boolean;
 }) => (
   <button
-    class="btn btn-sm"
+    class={`btn${props.grouped ? ' BtnGroup-item' : ''}${props.block ? ' btn-block' : ''}${props.primary ? ' btn-primary' : ''}`}
     aria-label={props.label}
     title={props.label}
     onClick={() => props.onClick()}
     disabled={props.disabled}
     data-testid={props.testid}
   >
-    <Icon name={props.icon} />
+    <Icon name={props.icon} /> {props.text ?? props.label}
   </button>
 );
 const Panel = (props: { title: string; children: JSX.Element }) => (
@@ -72,17 +76,9 @@ const Panel = (props: { title: string; children: JSX.Element }) => (
   </section>
 );
 const Row = (props: { label: string; value: JSX.Element }) => (
-  <div
-    class="d-flex flex-justify-between flex-items-center border-bottom py-2"
-    style={{ gap: 'var(--base-size-8)' }}
-  >
-    <span class="color-fg-muted">{props.label}</span>
-    <span
-      class="text-right"
-      style={{ 'font-variant-numeric': 'tabular-nums', 'overflow-wrap': 'anywhere' }}
-    >
-      {props.value}
-    </span>
+  <div class="d-flex flex-justify-between flex-items-center border-bottom py-2">
+    <span class="color-fg-muted mr-2">{props.label}</span>
+    <span class="text-right text-mono wb-break-word">{props.value}</span>
   </div>
 );
 const cells = Array.from({ length: 48 }, (_, i) => ({
@@ -316,7 +312,7 @@ function MapView(props: { turn?: number; gpu?: boolean }) {
           {gpuError() ? `SVG fallback: ${gpuError()}` : 'Loading WebGPU renderer…'}
         </p>
       </Show>
-      <div class="map-footer">
+      <div class="d-flex flex-justify-end border-top p-2">
         <button class="btn btn-sm" onClick={reset}>
           Reset view
         </button>
@@ -409,53 +405,82 @@ function ReplayPage() {
       <aside class="PageLayout-pane" aria-label="Replay information and controls">
         <Panel title="Replay">
           <p class="color-fg-muted f6">Demo match · alice / bob</p>
-          <div class="toolbar">
-            <Button
-              label="First step"
-              icon="move-to-start"
-              onClick={() => store.setStep(0)}
-              disabled={store.state().currentStep === 0}
-            />
-            <Button
-              label="Step backward"
-              icon="chevron-left"
-              testid="replay-step-back"
-              onClick={store.stepBackward}
-              disabled={store.state().currentStep === 0}
-            />
+          <div class="mb-3">
             <Button
               label={store.state().isPlaying ? 'Pause' : 'Play'}
               icon={store.state().isPlaying ? 'pause' : 'triangle-fill'}
+              block
+              primary={!store.state().isPlaying}
               testid="replay-toggle"
               onClick={() => (store.state().isPlaying ? store.pause() : store.play())}
             />
-            <Button
-              label="Step forward"
-              icon="chevron-right"
-              testid="replay-step-forward"
-              onClick={store.stepForward}
-              disabled={store.state().currentStep === 4}
-            />
-            <Button
-              label="Last step"
-              icon="move-to-end"
-              onClick={() => {
-                store.setStep(4);
-                store.pause();
-              }}
-              disabled={store.state().currentStep === 4}
-            />
-            <RadioGroup.Root
-              class="rates"
-              aria-label="Playback rate"
-              value={String(store.state().rate)}
-              onChange={(v) => store.setRate(Number(v) as PlaybackRate)}
-            >
+          </div>
+          <div class="mb-3">
+            <div class="d-flex flex-justify-between flex-items-center mb-2">
+              <span class="text-bold">Step</span>
+              <span class="text-mono" data-testid="replay-current-step">
+                {store.state().currentStep + 1} / {store.stepCount()}
+              </span>
+            </div>
+            <div class="BtnGroup d-flex mb-2" role="group" aria-label="Step navigation">
+              <Button
+                label="Step backward"
+                text="Previous"
+                icon="chevron-left"
+                grouped
+                block
+                testid="replay-step-back"
+                onClick={store.stepBackward}
+                disabled={store.state().currentStep === 0}
+              />
+              <Button
+                label="Step forward"
+                text="Next"
+                icon="chevron-right"
+                grouped
+                block
+                testid="replay-step-forward"
+                onClick={store.stepForward}
+                disabled={store.state().currentStep === 4}
+              />
+            </div>
+            <div class="BtnGroup d-flex" role="group" aria-label="Replay boundaries">
+              <Button
+                label="First step"
+                text="First"
+                icon="move-to-start"
+                grouped
+                block
+                onClick={() => store.setStep(0)}
+                disabled={store.state().currentStep === 0}
+              />
+              <Button
+                label="Last step"
+                text="Last"
+                icon="move-to-end"
+                grouped
+                block
+                onClick={() => {
+                  store.setStep(4);
+                  store.pause();
+                }}
+                disabled={store.state().currentStep === 4}
+              />
+            </div>
+          </div>
+          <RadioGroup.Root
+            class="mb-3"
+            aria-label="Playback rate"
+            value={String(store.state().rate)}
+            onChange={(v) => store.setRate(Number(v) as PlaybackRate)}
+          >
+            <RadioGroup.Label class="d-block text-bold mb-2">Playback speed</RadioGroup.Label>
+            <div class="BtnGroup d-flex">
               <For each={[1, 2, 4]}>
                 {(rate) => (
                   <RadioGroup.Item
                     value={String(rate)}
-                    class="btn btn-sm"
+                    class="btn BtnGroup-item btn-block"
                     classList={{ selected: store.state().rate === rate }}
                     data-testid={`replay-rate-${rate}`}
                   >
@@ -464,17 +489,14 @@ function ReplayPage() {
                   </RadioGroup.Item>
                 )}
               </For>
-            </RadioGroup.Root>
-            <span class="ml-auto" data-testid="replay-current-step">
-              {store.state().currentStep + 1} / {store.stepCount()}
-            </span>
-          </div>
-          <label class="scrub-label" for={scrubId}>
+            </div>
+          </RadioGroup.Root>
+          <label class="d-block text-bold mb-2" for={scrubId}>
             Replay position
           </label>
           <input
             id={scrubId}
-            class="scrub"
+            class="width-full"
             data-testid="replay-scrub"
             type="range"
             min="0"
@@ -508,19 +530,25 @@ function ReplayPage() {
           </details>
         </Panel>
         <Panel title="Score">
-          <table class="score-table" aria-label="Scores">
+          <table class="width-full" aria-label="Scores">
             <thead>
               <tr>
-                <th scope="col">Player</th>
-                <th scope="col">Score</th>
+                <th class="text-left color-fg-muted border-bottom pb-2" scope="col">
+                  Player
+                </th>
+                <th class="text-left color-fg-muted border-bottom pb-2" scope="col">
+                  Score
+                </th>
               </tr>
             </thead>
             <tbody>
               <For each={store.currentFrame()?.scores}>
                 {(entry) => (
                   <tr>
-                    <th scope="row">{entry[0].value}</th>
-                    <td>{entry[1]}</td>
+                    <th class="text-left border-bottom py-2" scope="row">
+                      {entry[0].value}
+                    </th>
+                    <td class="text-right text-mono border-bottom py-2">{entry[1]}</td>
                   </tr>
                 )}
               </For>
@@ -711,11 +739,11 @@ function SolversPage() {
         <Panel title="Legend">
           <For each={['plain', 'mountain', 'water', 'road', 'patrol', 'supply'] as const}>
             {(name) => (
-              <div class="legend-row">
+              <div class="d-flex flex-items-center py-1">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <SvgNodes nodes={marks[name]} />
                 </svg>
-                <span>{name}</span>
+                <span class="ml-2">{name}</span>
               </div>
             )}
           </For>
@@ -741,11 +769,11 @@ function Home() {
         <Panel title="Legend">
           <For each={['plain', 'mountain', 'water', 'road', 'patrol', 'supply'] as const}>
             {(name) => (
-              <div class="legend-row">
+              <div class="d-flex flex-items-center py-1">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <SvgNodes nodes={marks[name]} />
                 </svg>
-                <span>{name}</span>
+                <span class="ml-2">{name}</span>
               </div>
             )}
           </For>
@@ -763,10 +791,12 @@ function Shell(props: { children?: JSX.Element }) {
     ['/live', 'Live', 'broadcast'],
   ] as const;
   return (
-    <div class="app-shell bgColor-default">
-      <a class="skip-link" href="#main">
-        Skip to content
-      </a>
+    <div class="AppFrame app-shell bgColor-default">
+      <div class="AppFrame-a11yNav">
+        <a class="AppFrame-a11yLink" href="#main">
+          Skip to content
+        </a>
+      </div>
       <header
         class="d-flex flex-items-center flex-wrap border-bottom px-3 py-2"
         data-testid="app-header"
@@ -791,7 +821,7 @@ function Shell(props: { children?: JSX.Element }) {
           </For>
         </nav>
         <button class="btn btn-sm ml-auto" onClick={toggleTheme} aria-label="Toggle theme">
-          <Icon name={getTheme().mode === 'dark' ? 'sun' : 'moon'} />
+          <Icon name={getTheme().mode === 'dark' ? 'sun' : 'moon'} /> Theme
         </button>
       </header>
       <main id="main" class="app-main">

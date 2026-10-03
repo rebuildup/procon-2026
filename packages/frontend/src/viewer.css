@@ -1,4 +1,5 @@
-/* Layout uses Primer PageLayout; controls and metadata use Primer CSS.
+/* Only viewport ownership and map geometry belong here.
+   Primer owns controls, typography, focus, spacing, borders and animation.
    Hex coordinates and viewport dimensions are viewer geometry, not UI tokens. */
 .app-shell {
   height: 100dvh;
@@ -35,97 +36,4 @@
     calc(100dvh - var(--base-size-128) - var(--control-medium-size))
   );
   touch-action: none;
-}
-.map-footer {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-md);
-  padding: var(--space-md);
-  font-size: var(--text-body-size-small);
-  color: var(--fgColor-muted);
-  border-top: var(--borderWidth-thin) solid var(--borderColor-default);
-}
-.map-footer .btn {
-  margin-left: auto;
-}
-.app-shell .btn {
-  transition: none;
-}
-.toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
-}
-.toolbar button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.rates {
-  display: flex;
-  gap: var(--space-xs);
-}
-.scrub-label {
-  display: block;
-  color: var(--fgColor-muted);
-  font-size: var(--text-body-size-small);
-  margin-top: var(--space-lg);
-}
-.scrub {
-  width: 100%;
-  accent-color: var(--fgColor-accent);
-}
-.score-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.score-table th,
-.score-table td {
-  padding: var(--space-sm);
-  border-bottom: var(--borderWidth-thin) solid var(--borderColor-default);
-}
-.score-table thead th {
-  font-size: var(--text-body-size-small);
-  color: var(--fgColor-muted);
-}
-.score-table tbody th,
-.score-table td {
-  font-size: var(--text-body-size-medium);
-}
-.score-table th {
-  text-align: left;
-}
-.score-table td {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.legend-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-xs);
-}
-:focus-visible {
-  outline: var(--borderWidth-thick) solid var(--borderColor-emphasis);
-  outline-offset: var(--borderWidth-thin);
-}
-.skip-link {
-  position: absolute;
-  top: -10rem;
-}
-.skip-link:focus {
-  top: var(--space-sm);
-  left: var(--space-sm);
-  z-index: 10;
-  background: var(--bgColor-default);
-  padding: var(--space-sm);
-}
-@media (prefers-reduced-motion: reduce) {
-  * {
-    scroll-behavior: auto !important;
-    transition: none !important;
-  }
 }
