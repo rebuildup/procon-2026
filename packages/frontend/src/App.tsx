@@ -1,7 +1,7 @@
 import type { Component, JSX } from 'solid-js';
 import { Route, Router } from '@solidjs/router';
 
-import { PrimerSpike } from '@/spike/PrimerSpike';
+import { A } from '@solidjs/router';
 
 /**
  * Route skeleton only. The previous UI (components/, pages/, styles/) has been
@@ -14,12 +14,12 @@ import { PrimerSpike } from '@/spike/PrimerSpike';
 const Placeholder: Component<{ name: string }> = (props) => <p>{props.name}</p>;
 
 /** Home currently shows the stack proof — issue #269. */
-const Home: Component = () => <PrimerSpike />;
+const Home: Component = () => <Placeholder name="Home" />;
 const Replays: Component = () => <Placeholder name="Replays" />;
 const Solvers: Component = () => <Placeholder name="Solvers" />;
 const Live: Component = () => <Placeholder name="Live" />;
 
-const Shell: Component<{ children?: JSX.Element }> = (props) => <main>{props.children}</main>;
+const Shell: Component<{ children?: JSX.Element }> = (props) => <><header class="Box-header"><b>procon-2026</b><span class="color-fg-muted ml-3">Match viewer</span></header><div class="d-flex"><nav class="p-3"><A href="/">Home</A><br/><A href="/replays">Replays</A><br/><A href="/solvers">Solvers</A><br/><A href="/live">Live</A></nav><main class="p-3">{props.children}</main></div></>;
 
 export function App() {
   return (
