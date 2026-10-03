@@ -18,13 +18,12 @@ import { getTheme, toggleTheme } from '@/stores/theme';
 import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/live';
 import icons from '@/viewer-icons.json';
 import {
-  coloredAtlas,
-  cssColor,
+  loadHexAssets,
+  glyphAtlas,
   drawCanvasScene,
   fixtureScene,
   GLYPH_SIZE,
   markNames,
-  palette,
   type Camera,
   type Mark,
 } from '@/lib/webgpu/viewer-scene';
@@ -128,20 +127,13 @@ function GlyphPreview(props: { mark: Mark; hue: string }) {
   let canvas!: HTMLCanvasElement;
   createEffect(() => {
     void getTheme().mode;
-    const source = coloredAtlas(cssColor(palette()(`--data-${props.hue}-color-emphasis`)));
-    const context = canvas.getContext('2d')!;
-    context.clearRect(0, 0, 16, 16);
-    context.drawImage(
-      source,
-      markNames.indexOf(props.mark) * GLYPH_SIZE,
-      0,
-      GLYPH_SIZE,
-      GLYPH_SIZE,
-      0,
-      0,
-      16,
-      16,
-    );
+    const index = markNames.indexOf(props.mark);
+    void loadHexAssets().then(() => {
+      const source = glyphAtlas();
+      const context = canvas.getContext('2d')!;
+      context.clearRect(0, 0, 16, 16);
+      context.drawImage(source, index * GLYPH_SIZE, 0, GLYPH_SIZE, GLYPH_SIZE, 0, 0, 16, 16);
+    });
   });
   return <canvas ref={canvas} width="16" height="16" aria-hidden="true" />;
 }
@@ -176,6 +168,7 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
     null,
   );
   let gpu!: HTMLCanvasElement, fallback!: HTMLCanvasElement, stage!: HTMLDivElement;
+  const [assetsReady, setAssetsReady] = createSignal(false);
   const scene = () => fixtureScene(props.turn ?? 0);
   const fail = (reason: string) => {
     viewport.setError(reason);
@@ -185,6 +178,7 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
     current?.destroy();
   };
   const draw = () => {
+    if (!assetsReady()) return;
     const current = layer();
     if (current) {
       try {
@@ -200,6 +194,7 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
     draw();
   });
   onMount(() => {
+    void loadHexAssets().then(() => setAssetsReady(true));
     let active = true,
       failed = false;
     let created: Awaited<ReturnType<typeof createViewerLayer>> | undefined;
