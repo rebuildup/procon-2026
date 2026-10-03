@@ -1,0 +1,67 @@
+{
+  "generatedAt": "2026-10-03T12:11:44.935Z",
+  "commit": "66443023beaab3c1cfdacd10605e828e814984f1",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "recordMs": 6000,
+  "scenarios": [
+    {
+      "name": "home",
+      "route": "/",
+      "video": "home.webm",
+      "screenshot": "home.png",
+      "videoBytes": 692042,
+      "durationMs": 7425,
+      "chromiumVersion": "153.0.8010.12",
+      "webgpu": {
+        "api": true,
+        "adapter": true
+      },
+      "recordedAt": "2026-10-03T12:11:24.129Z"
+    },
+    {
+      "name": "live",
+      "route": "/live",
+      "video": "live.webm",
+      "screenshot": "live.png",
+      "videoBytes": 698195,
+      "durationMs": 6722,
+      "chromiumVersion": "153.0.8010.12",
+      "webgpu": {
+        "api": true,
+        "adapter": true
+      },
+      "recordedAt": "2026-10-03T12:11:44.930Z"
+    },
+    {
+      "name": "replays",
+      "route": "/replays",
+      "video": "replays.webm",
+      "screenshot": "replays.png",
+      "videoBytes": 733833,
+      "durationMs": 6539,
+      "chromiumVersion": "153.0.8010.12",
+      "webgpu": {
+        "api": true,
+        "adapter": true
+      },
+      "recordedAt": "2026-10-03T12:11:30.681Z"
+    },
+    {
+      "name": "solvers",
+      "route": "/solvers",
+      "video": "solvers.webm",
+      "screenshot": "solvers.png",
+      "videoBytes": 806015,
+      "durationMs": 7488,
+      "chromiumVersion": "153.0.8010.12",
+      "webgpu": {
+        "api": true,
+        "adapter": true
+      },
+      "recordedAt": "2026-10-03T12:11:38.191Z"
+    }
+  ]
+}
