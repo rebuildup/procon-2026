@@ -36,7 +36,14 @@ const SvgNodes = (props: { nodes: SvgNode[] }) => (
   </For>
 );
 const Icon = (props: { name: keyof typeof icons }) => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+  <svg
+    class="octicon"
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="currentColor"
+    aria-hidden="true"
+  >
     <SvgNodes nodes={icons[props.name]} />
   </svg>
 );
@@ -48,7 +55,7 @@ const Button = (props: {
   testid?: string;
 }) => (
   <button
-    class="btn"
+    class="btn btn-sm"
     aria-label={props.label}
     title={props.label}
     onClick={() => props.onClick()}
@@ -58,16 +65,24 @@ const Button = (props: {
     <Icon name={props.icon} />
   </button>
 );
-const Box = (props: { title: string; children: JSX.Element }) => (
-  <section class="border rounded-2 mb-3 overflow-hidden">
-    <h2 class="f5 text-bold bgColor-muted border-bottom p-3 m-0">{props.title}</h2>
-    <div class="p-3">{props.children}</div>
+const Panel = (props: { title: string; children: JSX.Element }) => (
+  <section class="border rounded-2 p-3 mb-3">
+    <h2 class="f5 text-bold mb-3">{props.title}</h2>
+    {props.children}
   </section>
 );
 const Row = (props: { label: string; value: JSX.Element }) => (
-  <div class="info-row">
-    <span>{props.label}</span>
-    <strong>{props.value}</strong>
+  <div
+    class="d-flex flex-justify-between flex-items-center border-bottom py-2"
+    style={{ gap: 'var(--base-size-8)' }}
+  >
+    <span class="color-fg-muted">{props.label}</span>
+    <span
+      class="text-right"
+      style={{ 'font-variant-numeric': 'tabular-nums', 'overflow-wrap': 'anywhere' }}
+    >
+      {props.value}
+    </span>
   </div>
 );
 const cells = Array.from({ length: 48 }, (_, i) => ({
@@ -302,8 +317,6 @@ function MapView(props: { turn?: number; gpu?: boolean }) {
         </p>
       </Show>
       <div class="map-footer">
-        <span>Fixture · 8 × 6 · {gpuReady() ? 'WebGPU + SVG marks' : 'SVG'}</span>
-        <span>Drag to pan · wheel / + − to zoom · arrows · 0 reset</span>
         <button class="btn btn-sm" onClick={reset}>
           Reset view
         </button>
@@ -382,26 +395,20 @@ function ReplayPage() {
     if (['1', '2', '4'].includes(e.key)) store.setRate(Number(e.key) as PlaybackRate);
   };
   return (
-    <>
-      <div class="route-heading">
-        <h1>Replays</h1>
-        <span class="border rounded-2 px-2 f6">Demo</span>
-        <span class="color-fg-muted">alice / bob</span>
+    <div
+      class="PageLayout-columns"
+      role="region"
+      aria-label="Replay viewer"
+      tabindex="0"
+      data-testid="replay-viewer"
+      onKeyDown={shortcut}
+    >
+      <div class="PageLayout-content">
+        <MapView turn={store.state().currentStep} />
       </div>
-      <div
-        class="workspace"
-        role="region"
-        aria-label="Replay viewer"
-        tabindex="0"
-        data-testid="replay-viewer"
-        onKeyDown={shortcut}
-      >
-        <div>
-          <div class="detail-header border rounded-top-2 bgColor-muted p-3 mb-3">
-            <Icon name="history" />
-            <strong>Demo match</strong>
-            <span class="color-fg-muted f6">5 steps · alice / bob</span>
-          </div>
+      <aside class="PageLayout-pane" aria-label="Replay information and controls">
+        <Panel title="Replay">
+          <p class="color-fg-muted f6">Demo match · alice / bob</p>
           <div class="toolbar">
             <Button
               label="First step"
@@ -449,6 +456,7 @@ function ReplayPage() {
                   <RadioGroup.Item
                     value={String(rate)}
                     class="btn btn-sm"
+                    classList={{ selected: store.state().rate === rate }}
                     data-testid={`replay-rate-${rate}`}
                   >
                     <RadioGroup.ItemInput />
@@ -461,10 +469,6 @@ function ReplayPage() {
               {store.state().currentStep + 1} / {store.stepCount()}
             </span>
           </div>
-          <MapView turn={store.state().currentStep} />
-          <p class="color-fg-muted f6">
-            Space play/pause · ← → step · Home / End · 1 2 4 rate · Escape cancels scrub
-          </p>
           <label class="scrub-label" for={scrubId}>
             Replay position
           </label>
@@ -496,39 +500,38 @@ function ReplayPage() {
             onKeyUp={end}
             onInput={(e) => store.setStep(Number(e.currentTarget.value))}
           />
-        </div>
-        <aside>
-          <Box title="Score">
-            <table class="score-table">
-              <caption>Scores — demo-match</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Player</th>
-                  <th scope="col">Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={store.currentFrame()?.scores}>
-                  {(entry) => (
-                    <tr>
-                      <th scope="row">{entry[0].value}</th>
-                      <td>{entry[1]}</td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
-          </Box>
-          <Box title="Replay">
-            <Row label="Step" value={`${store.state().currentStep + 1} / 5`} />
-            <Row label="Status" value={store.state().status} />
-            <Row label="Rate" value={`${store.state().rate}×`} />
-          </Box>
-        </aside>
-      </div>
-    </>
+          <details class="mt-3">
+            <summary class="color-fg-muted f6">Keyboard shortcuts</summary>
+            <p class="f6 mt-2 mb-0">
+              Space play/pause · ← → step · Home / End · 1 2 4 rate · Escape cancels scrub
+            </p>
+          </details>
+        </Panel>
+        <Panel title="Score">
+          <table class="score-table" aria-label="Scores">
+            <thead>
+              <tr>
+                <th scope="col">Player</th>
+                <th scope="col">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={store.currentFrame()?.scores}>
+                {(entry) => (
+                  <tr>
+                    <th scope="row">{entry[0].value}</th>
+                    <td>{entry[1]}</td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </Panel>
+      </aside>
+    </div>
   );
 }
+
 function LivePage() {
   const [snapshot, setSnapshot] = createSignal<LiveSnapshot | null>(null),
     [received, setReceived] = createSignal(0),
@@ -568,270 +571,233 @@ function LivePage() {
     rejected: 'Error',
     error: 'Error',
   };
-  const statusHue = {
-    waiting: 'attention',
-    running: 'success',
-    completed: 'accent',
-    rejected: 'danger',
-    error: 'danger',
-  };
+  const label = () =>
+    unavailable()
+      ? 'No data'
+      : stale()
+        ? 'Stale'
+        : snapshot()
+          ? statusLabel[snapshot()!.status]
+          : 'Connecting';
+  const statusIcon = () =>
+    unavailable() || stale()
+      ? 'alert'
+      : snapshot()?.status === 'running'
+        ? 'broadcast'
+        : snapshot()?.status === 'completed'
+          ? 'check-circle'
+          : snapshot()?.status === 'error' || snapshot()?.status === 'rejected'
+            ? 'x-circle'
+            : 'clock';
+  const statusColor = () =>
+    unavailable() || stale()
+      ? 'color-fg-attention'
+      : snapshot()?.status === 'running' || snapshot()?.status === 'completed'
+        ? 'color-fg-success'
+        : snapshot()?.status === 'error' || snapshot()?.status === 'rejected'
+          ? 'color-fg-danger'
+          : 'color-fg-muted';
   return (
-    <>
-      <div class="route-heading">
-        <h1>Live</h1>
-        <span
-          class="border rounded-2 px-2 f6"
-          role="status"
-          data-testid="live-status-badge"
-          data-status={snapshot()?.status ?? 'connecting'}
-        >
-          <span
-            class="status-marker circle"
-            aria-hidden="true"
-            classList={{ hollow: stale() }}
-            style={{
-              color: `var(--fgColor-${stale() ? 'attention' : snapshot() ? statusHue[snapshot()!.status] : 'muted'})`,
-            }}
+    <div class="PageLayout-columns">
+      <div class="PageLayout-content">
+        <MapView />
+      </div>
+      <aside class="PageLayout-pane" aria-label="Live match information">
+        <Panel title="Match">
+          <Row
+            label="Status"
+            value={
+              <span
+                role="status"
+                class="d-inline-flex flex-items-center"
+                data-testid="live-status-badge"
+                data-status={snapshot()?.status ?? 'connecting'}
+              >
+                <span class={statusColor() + ' mr-2'}>
+                  <Icon name={statusIcon()} />
+                </span>
+                {label()}
+              </span>
+            }
           />
-          {unavailable()
-            ? 'No data'
-            : stale()
-              ? 'Stale'
-              : snapshot()
-                ? statusLabel[snapshot()!.status]
-                : 'Connecting'}
-        </span>
-      </div>
-      <Show when={unavailable()}>
-        <div class="flash" role="status">
-          No match snapshot available. Start the CLI with --state-output pointing to
-          public/match-state.json.
-        </div>
-      </Show>
-      <Show when={stale()}>
-        <div class="flash flash-warn" role="status">
-          Feed is stale. Values are last-known; check the CLI state output.
-        </div>
-      </Show>
-      <Show when={snapshot()?.error}>
-        <div class="flash flash-error" role="alert">
-          {snapshot()?.error}
-        </div>
-      </Show>
-      <div class="workspace">
-        <div>
-          <Box title="Match state">
-            <Row
-              label="Day"
-              value={
-                snapshot()?.day == null
-                  ? '—'
-                  : `${(snapshot()?.day ?? -1) + 1} / ${snapshot()?.daysTotal ?? '—'}`
-              }
-            />
-            <Row
-              label="Revisions"
-              value={snapshot() ? `[${snapshot()!.revisions.join(', ')}]` : '—'}
-            />
-            <Row label="Solver" value={snapshot()?.solver ?? '—'} />
-            <Row label="Server" value={snapshot()?.server ?? '—'} />
-            <Row
-              label="Last update"
-              value={
-                snapshot()
-                  ? snapshot()!.lastUpdateUnix === 0
-                    ? '00:00:00'
-                    : new Date(snapshot()!.lastUpdateUnix * 1000).toLocaleTimeString(undefined, {
-                        hour12: false,
-                      })
-                  : '—'
-              }
-            />
-          </Box>
-          <MapView />
-        </div>
-        <aside>
-          <Box title="Map source">
-            <p class="color-fg-muted">
-              Fixture preview. The CLI snapshot carries match status, not map or agent positions.
-            </p>
-            <Row label="Poll interval" value="1 second" />
-          </Box>
-        </aside>
-      </div>
-    </>
+          <Row
+            label="Day"
+            value={
+              snapshot()?.day == null
+                ? '—'
+                : `${(snapshot()?.day ?? -1) + 1} / ${snapshot()?.daysTotal ?? '—'}`
+            }
+          />
+          <Row
+            label="Revisions"
+            value={snapshot() ? `[${snapshot()!.revisions.join(', ')}]` : '—'}
+          />
+          <Row label="Solver" value={snapshot()?.solver ?? '—'} />
+          <Row label="Server" value={snapshot()?.server ?? '—'} />
+          <Row
+            label="Last update"
+            value={
+              snapshot()
+                ? snapshot()!.lastUpdateUnix === 0
+                  ? '00:00:00'
+                  : new Date(snapshot()!.lastUpdateUnix * 1000).toLocaleTimeString(undefined, {
+                      hour12: false,
+                    })
+                : '—'
+            }
+          />
+          <Show when={unavailable()}>
+            <div class="flash" role="status">
+              No match snapshot available. Start the CLI with --state-output pointing to
+              public/match-state.json.
+            </div>
+          </Show>
+          <Show when={stale()}>
+            <div class="flash flash-warn" role="status">
+              Feed is stale. Values are last-known; check the CLI state output.
+            </div>
+          </Show>
+          <Show when={snapshot()?.error}>
+            <div class="flash flash-error" role="alert">
+              {snapshot()?.error}
+            </div>
+          </Show>
+        </Panel>
+        <Panel title="Source">
+          <p class="color-fg-muted f6">
+            Status: local match-state snapshot. Map: demo fixture; the snapshot contains no map or
+            agent positions.
+          </p>
+          <Row label="Polling" value="1 second" />
+        </Panel>
+      </aside>
+    </div>
   );
 }
+
 function SolversPage() {
   const [renderer, setRenderer] = createSignal('svg');
   return (
-    <>
-      <div class="route-heading">
-        <h1>Solvers</h1>
-        <button
-          class="btn btn-sm"
-          data-testid="solvers-renderer-svg"
-          aria-pressed={renderer() === 'svg'}
-          onClick={() => setRenderer('svg')}
-        >
-          SVG
-        </button>
-        <button
-          class="btn btn-sm"
-          data-testid="solvers-renderer-webgpu"
-          aria-pressed={renderer() === 'webgpu'}
-          onClick={() => setRenderer('webgpu')}
-        >
-          WebGPU
-        </button>
-        <span class="border rounded-2 px-2 f6">Fixture preview</span>
-      </div>
-      <div class="workspace">
+    <div class="PageLayout-columns">
+      <div class="PageLayout-content">
         <MapView gpu={renderer() === 'webgpu'} />
-        <aside>
-          <Box title="Map fixture">
-            <Row label="Dimensions" value="8 × 6" />
-            <Row label="Cells" value="48" />
-            <Row label="Spot series" value="6" />
-            <Row label="Renderer" value={renderer()} />
-          </Box>
-          <Box title="Legend">
-            <For each={['plain', 'mountain', 'water', 'road', 'patrol', 'supply'] as const}>
-              {(name) => (
-                <div class="legend-row">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <SvgNodes nodes={marks[name]} />
-                  </svg>
-                  <span>{name}</span>
-                </div>
-              )}
-            </For>
-          </Box>
-        </aside>
       </div>
-    </>
+      <aside class="PageLayout-pane" aria-label="Renderer information and controls">
+        <Panel title="Renderer">
+          <div class="BtnGroup mb-3">
+            <button
+              class="btn btn-sm BtnGroup-item"
+              data-testid="solvers-renderer-svg"
+              aria-pressed={renderer() === 'svg'}
+              classList={{ selected: renderer() === 'svg' }}
+              onClick={() => setRenderer('svg')}
+            >
+              SVG
+            </button>
+            <button
+              class="btn btn-sm BtnGroup-item"
+              data-testid="solvers-renderer-webgpu"
+              aria-pressed={renderer() === 'webgpu'}
+              classList={{ selected: renderer() === 'webgpu' }}
+              onClick={() => setRenderer('webgpu')}
+            >
+              WebGPU
+            </button>
+          </div>
+          <p class="color-fg-muted f6 mb-0">
+            Demo map · 8 × 6 · 48 cells. WebGPU draws terrain; symbols remain SVG.
+          </p>
+        </Panel>
+        <Panel title="Legend">
+          <For each={['plain', 'mountain', 'water', 'road', 'patrol', 'supply'] as const}>
+            {(name) => (
+              <div class="legend-row">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <SvgNodes nodes={marks[name]} />
+                </svg>
+                <span>{name}</span>
+              </div>
+            )}
+          </For>
+        </Panel>
+      </aside>
+    </div>
   );
 }
+
 function Home() {
   return (
-    <>
-      <div class="route-heading">
-        <h1>Overview</h1>
-        <span class="border rounded-2 px-2 f6">Competition workspace</span>
+    <div class="PageLayout-columns">
+      <div class="PageLayout-content">
+        <MapView />
       </div>
-      <div class="workspace">
-        <div>
-          <section class="border rounded-2 overflow-hidden" aria-label="Workspace contents">
-            <div class="bgColor-muted border-bottom p-3 d-flex flex-justify-between">
-              <strong>procon-2026</strong>
-              <span class="color-fg-muted f6">Viewer workspace</span>
-            </div>
-            <For
-              each={[
-                {
-                  href: '/replays',
-                  icon: 'history' as const,
-                  name: 'Replays',
-                  description: 'Inspect the five-step demo match',
-                  detail: 'Demo · alice / bob',
-                },
-                {
-                  href: '/solvers',
-                  icon: 'beaker' as const,
-                  name: 'Solvers',
-                  description: 'Inspect the map rendering fixture',
-                  detail: 'SVG / WebGPU',
-                },
-                {
-                  href: '/live',
-                  icon: 'broadcast' as const,
-                  name: 'Live',
-                  description: 'Monitor the local match-state snapshot',
-                  detail: '1 second polling',
-                },
-              ]}
-            >
-              {(item) => (
-                <div class="workspace-entry border-bottom px-3 py-3">
-                  <Icon name={item.icon} />
-                  <A href={item.href} class="text-bold">
-                    {item.name}
-                  </A>
-                  <span class="color-fg-muted">{item.description}</span>
-                  <span class="color-fg-muted f6">{item.detail}</span>
-                </div>
-              )}
-            </For>
-          </section>
-          <section class="border rounded-2 p-4 mt-3">
-            <h2 class="f4 border-bottom pb-3 mb-3">Match viewer</h2>
-            <p>National KOSEN Programming Contest · Competition division</p>
-            <p class="mb-0">
-              Open a replay to inspect individual steps, review the map fixture, or follow the
-              latest local match state.
-            </p>
-          </section>
-        </div>
-        <aside>
-          <h2 class="f4 mb-3">About</h2>
-          <p class="color-fg-muted">Competition analysis workspace for procon-2026.</p>
-          <div class="border-top pt-3">
-            <h3 class="f5">Data sources</h3>
-            <p class="f6 color-fg-muted">
-              Replay and map previews use demo fixtures. Live reads /match-state.json; map geometry
-              remains a fixture.
-            </p>
-          </div>
-        </aside>
-      </div>
-    </>
+      <aside class="PageLayout-pane" aria-label="Map information">
+        <Panel title="Map">
+          <Row label="Source" value="Demo fixture" />
+          <Row label="Dimensions" value="8 × 6" />
+          <Row label="Cells" value="48" />
+          <Row label="Spot series" value="6" />
+        </Panel>
+        <Panel title="Legend">
+          <For each={['plain', 'mountain', 'water', 'road', 'patrol', 'supply'] as const}>
+            {(name) => (
+              <div class="legend-row">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <SvgNodes nodes={marks[name]} />
+                </svg>
+                <span>{name}</span>
+              </div>
+            )}
+          </For>
+        </Panel>
+      </aside>
+    </div>
   );
 }
 function Shell(props: { children?: JSX.Element }) {
   const location = useLocation();
+  const destinations = [
+    ['/', 'Map', 'home'],
+    ['/replays', 'Replays', 'history'],
+    ['/solvers', 'Solvers', 'beaker'],
+    ['/live', 'Live', 'broadcast'],
+  ] as const;
   return (
-    <div class="app-shell">
+    <div class="app-shell bgColor-default">
       <a class="skip-link" href="#main">
         Skip to content
       </a>
-      <header class="app-header" data-testid="app-header">
-        <A href="/" class="brand">
-          <Icon name="home" />
-          <span class="color-fg-muted">rebuildup /</span>
-          <b>procon-2026</b>
-        </A>
-        <span class="border rounded-2 px-2 f6 header-context">Match viewer</span>
+      <header
+        class="d-flex flex-items-center flex-wrap border-bottom px-3 py-2"
+        data-testid="app-header"
+      >
+        <h1 class="f5 mr-3 mb-0">Match viewer</h1>
+        <nav aria-label="Main navigation" class="d-flex flex-items-center flex-wrap">
+          <For each={destinations}>
+            {(item) => (
+              <A
+                href={item[0]}
+                end={item[0] === '/'}
+                class="btn btn-sm btn-invisible color-fg-default mr-1"
+                aria-current={location.pathname === item[0] ? 'page' : undefined}
+                classList={{
+                  'bgColor-muted': location.pathname === item[0],
+                  'text-bold': location.pathname === item[0],
+                }}
+              >
+                <Icon name={item[2]} /> <span>{item[1]}</span>
+              </A>
+            )}
+          </For>
+        </nav>
         <button class="btn btn-sm ml-auto" onClick={toggleTheme} aria-label="Toggle theme">
           <Icon name={getTheme().mode === 'dark' ? 'sun' : 'moon'} />
         </button>
       </header>
-      <nav class="app-navigation" aria-label="Main navigation">
-        <For
-          each={
-            [
-              ['/', 'Overview', 'home'],
-              ['/replays', 'Replays', 'history'],
-              ['/solvers', 'Solvers', 'beaker'],
-              ['/live', 'Live', 'broadcast'],
-            ] as const
-          }
-        >
-          {(item) => (
-            <A
-              href={item[0]}
-              end={item[0] === '/'}
-              class="nav-item"
-              aria-current={location.pathname === item[0] ? 'page' : undefined}
-              classList={{ selected: location.pathname === item[0] }}
-            >
-              <Icon name={item[2]} />
-              {item[1]}
-            </A>
-          )}
-        </For>
-      </nav>
       <main id="main" class="app-main">
-        {props.children}
+        <div class="PageLayout PageLayout--panePos-end PageLayout--responsive-stackRegions PageLayout--outerSpacing-normal PageLayout--columnGap-normal PageLayout--rowGap-normal">
+          {props.children}
+        </div>
       </main>
     </div>
   );

@@ -160,18 +160,44 @@ test('replay shortcuts respect native controls and Escape cancels a held scrub',
   await expect(step).toHaveText('5 / 5');
 });
 
-test('overview links to details and reload preserves the navigation context', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
-  await expect(page.getByTestId('map-viewer-svg')).toHaveCount(0);
-  await page
-    .getByRole('region', { name: 'Workspace contents' })
-    .getByRole('link', { name: 'Replays', exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/replays$/);
+test('all routes keep the visualizer primary and information in the Primer pane', async ({
+  page,
+}) => {
+  for (const route of ['/', '/replays', '/solvers', '/live']) {
+    await page.goto(route);
+    const content = page.locator('.PageLayout-content');
+    const pane = page.locator('.PageLayout-pane');
+    await expect(content.getByTestId('map-viewer-svg')).toBeVisible();
+    await expect(content.locator('section,table,[role="status"],h2')).toHaveCount(0);
+    await expect(pane).toBeVisible();
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector('.PageLayout-content')!.getBoundingClientRect();
+      const pane = document.querySelector('.PageLayout-pane')!.getBoundingClientRect();
+      const columns = getComputedStyle(document.querySelector('.PageLayout-columns')!);
+      return {
+        left: content.left,
+        right: content.right,
+        paneLeft: pane.left,
+        width: content.width,
+        paneWidth: pane.width,
+        areas: columns.gridTemplateAreas,
+      };
+    });
+    expect(geometry.width).toBeGreaterThan(geometry.paneWidth);
+    expect(geometry.right).toBeLessThan(geometry.paneLeft);
+    expect(geometry.areas).toBe('"content pane"');
+    await expect(page.getByText('rebuildup /', { exact: true })).toHaveCount(0);
+  }
+  await page.setViewportSize({ width: 420, height: 800 });
+  await page.goto('/replays');
+  expect(
+    await page
+      .locator('.PageLayout-columns')
+      .evaluate((el) => getComputedStyle(el).gridTemplateAreas),
+  ).toBe('"content" "pane"');
   await page.reload();
-  await expect(page.getByTestId('replay-toggle')).toBeVisible();
   await expect(
     page.getByRole('navigation').getByRole('link', { name: 'Replays', exact: true }),
   ).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('replay-toggle')).toBeVisible();
 });

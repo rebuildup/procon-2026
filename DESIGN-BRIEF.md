@@ -1,5 +1,17 @@
 # Design Brief — procon-2026 viewer
 
+## 2026-10-03 レビューによる配置規則の更新
+
+ユーザーの明示指示により、以下を過去の12列指定・sidebar指定・PR #272 の Overview 一覧化より優先する。
+
+- 主領域は全ルートでビジュアライザ。状態・対象・操作・スコア・接続情報は適切な情報パネルへまとめる。
+- グリッドは導入済み Primer CSS の PageLayout（content / pane、標準幅・ガター・stackRegions）を使う。独自の列比率・breakpoint を追加しない。
+- ヘッダーはアプリ名、必要なモード切替、theme 操作のみ。意味のない組織名・repository path・重複する route header を置かない。
+- パネルは情報単位の題名と内容を持つ。装飾的な背景帯・独立した詳細ヘッダーを足さない。
+- ステータスは情報パネルのラベル付き行に置き、Octicons と Primer semantic color を使う。独自 dot / hollow marker / badge を設計しない。Issue / PR 専用 StateLabel の文脈を試合状態へ転用しない。
+- UI 文字サイズと選択状態は Primer の既定に戻す。HUD 11/15px の独自適用は行わない。map の符号・geometry と記録済み quiet focus 例外は別責務。
+
+
 > 生成: design-intent skill。実装・proposal 作成前に visual direction を固定するための共有 input。
 >
 > ## ★ v5 — **デザインシステムは撤廃**（最重要）
