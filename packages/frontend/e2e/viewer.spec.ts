@@ -11,9 +11,9 @@ test('replay transport, scores, keyboard scrub and map navigation', async ({ pag
   await expect(page.getByRole('row', { name: 'alice 10' })).toBeVisible();
   await page.getByText('4×', { exact: true }).click();
   await expect(page.getByRole('radio').nth(2)).toBeChecked();
-  await page.getByLabel('Replays', { exact: true }).click();
+  await page.getByLabel('Play', { exact: true }).click();
   await expect(step).toHaveText('5 / 5');
-  await expect(page.getByLabel('Replays', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Play', { exact: true })).toBeVisible();
   await page.getByLabel('First step', { exact: true }).click();
   await page.getByTestId('replay-scrub').focus();
   await page.keyboard.press('ArrowRight');
