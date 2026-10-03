@@ -1452,61 +1452,41 @@ body {
       </div>
 
       <p class="lbl" style="margin:0 0 8px">On a hex field — official terrain, texture cues, keyline + halo</p>
-      <svg class="hexfield" viewBox="0 0 420 168" role="img" aria-label="hex field with official terrain colours and six series marks">
-        <defs>
+      <svg class="hexfield" viewBox="0 0 420 168" role="img" aria-label="hex field with official terrain colours and six series marks"><defs>
           <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="6" height="6" fill="#bfbfbf"/><line x1="0" y1="0" x2="0" y2="6" stroke="#8f8f8f" stroke-width="1.4"/>
+            <rect width="6" height="6" fill="#bfbfbf" /><line x1="0" y1="0" x2="0" y2="6" stroke="#8f8f8f" stroke-width="1.4" />
           </pattern>
           <pattern id="waves" width="10" height="5" patternUnits="userSpaceOnUse">
-            <rect width="10" height="5" fill="#46b1e1"/><path d="M0 3.2c1.2-1.6 2.5-1.6 3.7 0s2.5 1.6 3.7 0" fill="none" stroke="#9bc2e6" stroke-width="1.1"/>
+            <rect width="10" height="5" fill="#46b1e1" /><path d="M0 3.2c1.2-1.6 2.5-1.6 3.7 0s2.5 1.6 3.7 0" fill="none" stroke="#9bc2e6" stroke-width="1.1" />
           </pattern>
           <pattern id="dots" width="5" height="5" patternUnits="userSpaceOnUse">
-            <rect width="5" height="5" fill="#8ed973"/><circle cx="2.5" cy="2.5" r="1" fill="#6fb857"/>
+            <rect width="5" height="5" fill="#8ed973" /><circle cx="2.5" cy="2.5" r="1" fill="#6fb857" />
           </pattern>
           <pattern id="roadpat" width="8" height="8" patternUnits="userSpaceOnUse">
-            <rect width="8" height="8" fill="#156082"/><line x1="1" y1="4" x2="4" y2="4" stroke="#9bc2e6" stroke-width="1.2"/>
+            <rect width="8" height="8" fill="#156082" /><line x1="1" y1="4" x2="4" y2="4" stroke="#9bc2e6" stroke-width="1.2" />
           </pattern>
         </defs>
-        <!-- hex ring: white halo then ink keyline then fill -->
+        
         <g stroke="#ffffff" stroke-width="4.5" stroke-linejoin="round">
-          <polygon points="52,14 78,29 78,59 52,74 26,59 26,29"/>
-          <polygon points="132,14 158,29 158,59 132,74 106,59 106,29"/>
-          <polygon points="212,14 238,29 238,59 212,74 186,59 186,29"/>
-          <polygon points="292,14 318,29 318,59 292,74 266,59 266,29"/>
-          <polygon points="92,72 118,87 118,117 92,132 66,117 66,87"/>
-          <polygon points="252,72 278,87 278,117 252,132 226,117 226,87"/>
+          <polygon points="52,14 78,29 78,59 52,74 26,59 26,29" />
+          <polygon points="132,14 158,29 158,59 132,74 106,59 106,29" />
+          <polygon points="212,14 238,29 238,59 212,74 186,59 186,29" />
+          <polygon points="292,14 318,29 318,59 292,74 266,59 266,29" />
+          <polygon points="92,72 118,87 118,117 92,132 66,117 66,87" />
+          <polygon points="252,72 278,87 278,117 252,132 226,117 226,87" />
         </g>
         <g stroke="#212428" stroke-width="1.6" stroke-linejoin="round">
-          <polygon points="52,14 78,29 78,59 52,74 26,59 26,29" fill="url(#dots)"/>
-          <polygon points="132,14 158,29 158,59 132,74 106,59 106,29" fill="url(#roadpat)"/>
-          <polygon points="212,14 238,29 238,59 212,74 186,59 186,29" fill="url(#waves)"/>
-          <polygon points="292,14 318,29 318,59 292,74 266,59 266,29" fill="url(#dots)"/>
-          <polygon points="92,72 118,87 118,117 92,132 66,117 66,87" fill="url(#hatch)"/>
-          <polygon points="252,72 278,87 278,117 252,132 226,117 226,87" fill="url(#dots)"/>
+          <polygon points="52,14 78,29 78,59 52,74 26,59 26,29" fill="url(#dots)" />
+          <polygon points="132,14 158,29 158,59 132,74 106,59 106,29" fill="url(#roadpat)" />
+          <polygon points="212,14 238,29 238,59 212,74 186,59 186,29" fill="url(#waves)" />
+          <polygon points="292,14 318,29 318,59 292,74 266,59 266,29" fill="url(#dots)" />
+          <polygon points="92,72 118,87 118,117 92,132 66,117 66,87" fill="url(#hatch)" />
+          <polygon points="252,72 278,87 278,117 252,132 226,117 226,87" fill="url(#dots)" />
         </g>
-        <!-- series marks on hexes: keyline + halo casing -->
-        <g stroke="#ffffff" stroke-width="3.4" stroke-linejoin="round">
-          <path d="M40.5 42 52 31.5 63.5 42Z"/><rect x="44" y="42" width="16" height="13"/>
-          <path d="M120 41h24l-4 5h-16Z"/><rect x="123" y="46" width="18" height="7"/>
-          <circle cx="127" cy="57" r="3.2"/><circle cx="137" cy="57" r="3.2"/>
-          <path d="M202 41h20c0 6.5-4.5 10.5-10 10.5S202 47.5 202 41z"/>
-          <path d="M282 42h16v6a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z"/><path d="M280 42a6 6 0 0 1 12 0"/>
-          <rect x="82" y="97" width="20" height="9"/><path d="M102 106V90"/><path d="M102 90h7l-3 3.6 3 3.6h-7Z"/>
-          <path d="M242 95 252 86 262 95v10h-20Z"/><rect x="244" y="95" width="16" height="4"/>
-        </g>
-        <g stroke="#212428" stroke-width="1.1" stroke-linejoin="round">
-          <path d="M40.5 42 52 31.5 63.5 42Z" fill="#cc9900"/><rect x="44" y="42" width="16" height="13" fill="#cc9900"/>
-          <path d="M120 41h24l-4 5h-16Z" fill="#c04f15"/><rect x="123" y="46" width="18" height="7" fill="#c04f15"/>
-          <circle cx="127" cy="57" r="3.2" fill="#c04f15"/><circle cx="137" cy="57" r="3.2" fill="#c04f15"/>
-          <path d="M202 41h20c0 6.5-4.5 10.5-10 10.5S202 47.5 202 41z" fill="#b03a55"/>
-          <path d="M282 42h16v6a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z" fill="#7048a8"/><path d="M280 42a6 6 0 0 1 12 0" fill="none"/>
-          <rect x="82" y="97" width="20" height="9" fill="#2f7d4f"/><path d="M102 106V90" fill="none"/><path d="M102 90h7l-3 3.6 3 3.6h-7Z" fill="#2f7d4f"/>
-          <path d="M242 95 252 86 262 95v10h-20Z" fill="#0f7f96"/><rect x="244" y="95" width="16" height="4" fill="#0f7f96"/>
-        </g>
-        <!-- movement highlight: yellow with ink keyline (図4) -->
-        <g>
-          <path d="M168 100h44v8h-44z" fill="#ffffff" stroke="#212428" stroke-width="1.2"/>
-          <path d="M172 104h24M200 104h8" stroke="#ffff00" stroke-width="3.2" stroke-linecap="round"/>
+        
+        <g><g transform="translate(36,28) scale(2)"><g transform="translate(8,8) scale(0.95999) translate(-7.99991,-8.44596)" stroke="#ffffff" stroke-width="2.7" fill="#ffffff"><g stroke="#ffffff" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff"><path d="M2 7 8 2.5 14 7H2Z" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></path><path d="M3.7 7h8.6v6H3.7Z" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></path><path d="M6.6 13V9.4h2.8V13" fill="none" stroke="#ffffff" stroke-width="2.7"></path></g></g></g><g transform="translate(116,28) scale(2)"><g transform="translate(8,8) scale(0.95991) translate(-7.99937,-8.21234)" stroke="#ffffff" stroke-width="2.7" fill="#ffffff"><g stroke="#ffffff" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff"><path d="M2 4.2h12l-1.7 3H3.7Z" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></path><rect x="3.4" y="7.2" width="9.2" height="3.8" rx=".5" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></rect><circle cx="5" cy="12.2" r="1.3" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></circle><circle cx="11" cy="12.2" r="1.3" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></circle></g></g></g><g transform="translate(196,28) scale(2)"><g transform="translate(8,8) scale(0.94984) translate(-7.99927,-8.88271)" stroke="#ffffff" stroke-width="2.7" fill="#ffffff"><g stroke="#ffffff" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff"><path d="M2.3 6.8h11.4c-.4 3.5-2.6 5.8-5.7 5.8S2.7 10.3 2.3 6.8Z" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></path><path d="M6 4.5V2.8m4 1.7V2.8M6 12.8h4" fill="none" stroke="#ffffff" stroke-width="2.7"></path></g></g></g><g transform="translate(276,28) scale(2)"><g transform="translate(8,8) scale(0.91833) translate(-8.04745,-8.29781)" stroke="#ffffff" stroke-width="2.7" fill="#ffffff"><g stroke="#ffffff" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff"><path d="M4 6.5h7v3.1a3.5 3.5 0 0 1-7 0Z" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></path><path d="M4.5 6.5V5a3 3 0 0 1 6 0v1.5M11 7.7l2.8-1.4-1.1 3.5H11" fill="none" stroke="#ffffff" stroke-width="2.7"></path><path d="M5.5 6.5h4" fill="none" stroke="#ffffff" stroke-width="2.7"></path></g></g></g><g transform="translate(76,86) scale(2)"><g transform="translate(8,8) scale(0.89264) translate(-8.07430,-8.99523)" stroke="#ffffff" stroke-width="2.7" fill="#ffffff"><g stroke="#ffffff" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff"><rect x="2.3" y="8" width="8.7" height="5" rx=".5" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></rect><path d="M11 13V2.5" fill="none" stroke="#ffffff" stroke-width="2.7"></path><path d="M11 2.5h3v3.3h-3Z" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></path><path d="M2.3 10.3H11" fill="none" stroke="#ffffff" stroke-width="2.7"></path></g></g></g><g transform="translate(236,86) scale(2)"><g transform="translate(8,8) scale(0.98891) translate(-8.00002,-8.62064)" stroke="#ffffff" stroke-width="2.7" fill="#ffffff"><g stroke="#ffffff" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff"><path d="M2.3 5.8 8 2.8l5.7 3H2.3Z" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></path><path d="M3 5.8h10v7.4H3Z" fill="#ffffff" stroke="#ffffff" stroke-width="2.7"></path><path d="M3 8.2h10M5.2 10.1h5.6M8 10.1v3.1" fill="none" stroke="#ffffff" stroke-width="2.7"></path></g></g></g></g><g><g transform="translate(36,28) scale(2)"><g transform="translate(8,8) scale(0.95999) translate(-7.99991,-8.44596)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7 8 2.5 14 7H2Z" fill="#cc9900"></path><path d="M3.7 7h8.6v6H3.7Z" fill="#cc9900"></path><path d="M6.6 13V9.4h2.8V13" fill="none"></path></g></g></g><g transform="translate(116,28) scale(2)"><g transform="translate(8,8) scale(0.95991) translate(-7.99937,-8.21234)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.2h12l-1.7 3H3.7Z" fill="#c04f15"></path><rect x="3.4" y="7.2" width="9.2" height="3.8" rx=".5" fill="#c04f15"></rect><circle cx="5" cy="12.2" r="1.3" fill="#212428"></circle><circle cx="11" cy="12.2" r="1.3" fill="#212428"></circle></g></g></g><g transform="translate(196,28) scale(2)"><g transform="translate(8,8) scale(0.94984) translate(-7.99927,-8.88271)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2.3 6.8h11.4c-.4 3.5-2.6 5.8-5.7 5.8S2.7 10.3 2.3 6.8Z" fill="#b03a55"></path><path d="M6 4.5V2.8m4 1.7V2.8M6 12.8h4" fill="none"></path></g></g></g><g transform="translate(276,28) scale(2)"><g transform="translate(8,8) scale(0.91833) translate(-8.04745,-8.29781)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h7v3.1a3.5 3.5 0 0 1-7 0Z" fill="#7048a8"></path><path d="M4.5 6.5V5a3 3 0 0 1 6 0v1.5M11 7.7l2.8-1.4-1.1 3.5H11" fill="none"></path><path d="M5.5 6.5h4" fill="none"></path></g></g></g><g transform="translate(76,86) scale(2)"><g transform="translate(8,8) scale(0.89264) translate(-8.07430,-8.99523)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.3" y="8" width="8.7" height="5" rx=".5" fill="#2f7d4f"></rect><path d="M11 13V2.5" fill="none"></path><path d="M11 2.5h3v3.3h-3Z" fill="#2f7d4f"></path><path d="M2.3 10.3H11" fill="none"></path></g></g></g><g transform="translate(236,86) scale(2)"><g transform="translate(8,8) scale(0.98891) translate(-8.00002,-8.62064)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2.3 5.8 8 2.8l5.7 3H2.3Z" fill="#0f7f96"></path><path d="M3 5.8h10v7.4H3Z" fill="#0f7f96"></path><path d="M3 8.2h10M5.2 10.1h5.6M8 10.1v3.1" fill="none"></path></g></g></g></g><g>
+          <path d="M168 100h44v8h-44z" fill="#ffffff" stroke="#212428" stroke-width="1.2" />
+          <path d="M172 104h24M200 104h8" stroke="#ffff00" stroke-width="3.2" stroke-linecap="round" />
         </g>
         <g font-family="ui-monospace, monospace" font-size="9" fill="#4b525a">
           <text x="30" y="150">plain · s0</text><text x="110" y="150">road · s1</text>
@@ -2085,53 +2065,53 @@ body {
     </div>
     <div class="mark-row c12">
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="plain field"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="1.8" y="9.6" width="12.4" height="3.4" rx="1" fill="#8ed973"/><path d="M4.6 9.6V6.8M8 9.6V5.9M11.4 9.6V6.8" fill="none" stroke-linecap="round"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="plain field"><g transform="translate(8,8) scale(0.95997) translate(-7.99977,-10.79121)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10h12v3H2z" fill="#8ed973"/><path d="M4 10V7m4 3V5m4 5V7" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">平</span><span class="mark-cell__id">plain</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="mountain ridge"><path d="M1.4 12.6 5.4 4.2 8 7.8 10.8 3.2 14.6 12.6Z" fill="#bfbfbf" stroke="#212428" stroke-width="1.1" stroke-linejoin="round"/></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="mountain ridge"><g transform="translate(8,8) scale(0.89913) translate(-8.25674,-9.17252)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 12.5 5.5 4.5 8 8l2.8-5 3.4 9.5Z" fill="#bfbfbf"/><path d="m4.3 7.2 1.2 1.1 1.1-1.1M9.7 6.1l1.1 1.2 1-1" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">山</span><span class="mark-cell__id">mountain</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="water waves"><g stroke="#46b1e1" stroke-width="2.1" stroke-linecap="round" fill="none"><path d="M2 5.6c1.3-1.7 2.7-1.7 4 0s2.7 1.7 4 0 2.7-1.7 4 0"/><path d="M2 10.4c1.3-1.7 2.7-1.7 4 0s2.7 1.7 4 0 2.7-1.7 4 0"/></g><g stroke="#212428" stroke-width="1" stroke-linecap="round" fill="none" opacity="0.9"><path d="M2 5.6c1.3-1.7 2.7-1.7 4 0s2.7 1.7 4 0 2.7-1.7 4 0"/><path d="M2 10.4c1.3-1.7 2.7-1.7 4 0s2.7 1.7 4 0 2.7-1.7 4 0"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="water waves"><g transform="translate(8,8) scale(0.84689) translate(-8.00145,-8.00213)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5c1-1.3 2-1.3 3 0s2 1.3 3 0 2-1.3 3 0 2 1.3 3 0M2 10.5c1-1.3 2-1.3 3 0s2 1.3 3 0 2-1.3 3 0 2 1.3 3 0" fill="none" stroke="#46b1e1" stroke-width="2.8"/><path d="M2 5.5c1-1.3 2-1.3 3 0s2 1.3 3 0 2-1.3 3 0 2 1.3 3 0M2 10.5c1-1.3 2-1.3 3 0s2 1.3 3 0 2-1.3 3 0 2 1.3 3 0" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">水</span><span class="mark-cell__id">water</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="road band"><rect x="1.5" y="5.2" width="13" height="5.6" rx="2.8" fill="#156082" stroke="#212428" stroke-width="1.1"/><path d="M3.6 8h2.2M7.4 8h2.2M11.2 8h1.4" stroke="#9bc2e6" stroke-width="1.3" stroke-linecap="round"/></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="road band"><g transform="translate(8,8) scale(0.91632) translate(-7.99966,-7.99966)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="1.7" y="4.8" width="12.6" height="6.4" rx="1.2" fill="#156082"/><path d="M3.3 8h2M7 8h2m1.7 0h2" fill="none" stroke="#9bc2e6"/></g></g></svg>
         <span class="mark-cell__kanji">道</span><span class="mark-cell__id">road</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="patrol car"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M2 10.4h12l-1.2-2.7h-2.9L8.7 5H6.2L5 7.7H3.2Z" fill="#00b050"/><circle cx="5.1" cy="11.5" r="1.5" fill="#00b050"/><circle cx="10.9" cy="11.5" r="1.5" fill="#00b050"/><rect x="7.2" y="3.4" width="1.8" height="1.7" rx="0.6" fill="#00b050"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="patrol car"><g transform="translate(8,8) scale(0.95996) translate(-7.99973,-8.54429)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10.7V8.4h2l1.7-3.2h4.6l1.7 3.2h2v2.3Z" fill="#00b050"/><path d="M4 8.4h8M8 5.2v3.2" fill="none"/><rect x="6.6" y="3" width="2.8" height="2" rx=".5" fill="#00b050"/><circle cx="4.8" cy="11.3" r="1.4" fill="#212428"/><circle cx="11.2" cy="11.3" r="1.4" fill="#212428"/></g></g></svg>
         <span class="mark-cell__kanji">巡</span><span class="mark-cell__id">patrol</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="supply truck"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M1.6 7.8h4.6v4.2H1.6z" fill="#e59edd"/><rect x="6.4" y="5.4" width="7.2" height="6.6" fill="#e59edd"/><path d="M6.4 8.6h7.2M9.4 5.4v6.6" fill="none"/><circle cx="3.6" cy="12.6" r="1.4" fill="#e59edd"/><circle cx="11" cy="12.6" r="1.4" fill="#e59edd"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="supply truck"><g transform="translate(8,8) scale(0.87660) translate(-8.43689,-8.10420)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 11V7.8L4 5.5h2.3V11Z" fill="#e59edd"/><rect x="6.3" y="3.4" width="7.8" height="7.6" rx=".6" fill="#e59edd"/><path d="M2 8h4M10.2 5.4v3.8M8.3 7.3h3.8" fill="none"/><circle cx="4" cy="11.7" r="1.4" fill="#212428"/><circle cx="11.5" cy="11.7" r="1.4" fill="#212428"/></g></g></svg>
         <span class="mark-cell__kanji">補</span><span class="mark-cell__id">supply</span>
       </div>
     </div>
     <div class="mark-row c12" style="margin-top:8px">
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s0 stand"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M2.2 7.2 8 2.6 13.8 7.2Z" fill="#cc9900"/><path d="M4.2 7.2h7.6v5.2H4.2z" fill="#cc9900"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s0 stand"><g transform="translate(8,8) scale(0.95999) translate(-7.99991,-8.44596)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7 8 2.5 14 7H2Z" fill="#cc9900"/><path d="M3.7 7h8.6v6H3.7Z" fill="#cc9900"/><path d="M6.6 13V9.4h2.8V13" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">一</span><span class="mark-cell__id">s0 屋台</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s1 cart"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M2.4 5.4h11.2l-1.6 2.2H4Z" fill="#c04f15"/><rect x="3.4" y="7.6" width="9.2" height="3.2" fill="#c04f15"/><circle cx="5.6" cy="12.3" r="1.5" fill="#c04f15"/><circle cx="10.4" cy="12.3" r="1.5" fill="#c04f15"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s1 cart"><g transform="translate(8,8) scale(0.95991) translate(-7.99937,-8.21234)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.2h12l-1.7 3H3.7Z" fill="#c04f15"/><rect x="3.4" y="7.2" width="9.2" height="3.8" rx=".5" fill="#c04f15"/><circle cx="5" cy="12.2" r="1.3" fill="#212428"/><circle cx="11" cy="12.2" r="1.3" fill="#212428"/></g></g></svg>
         <span class="mark-cell__kanji">二</span><span class="mark-cell__id">s1 カート</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s2 bowl"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.2h10c0 3.4-2.2 5.6-5 5.6S3 10.6 3 7.2z" fill="#b03a55"/><path d="M5.6 4.6c.7-.8 0-1.5.7-2.3M9.2 4.6c.7-.8 0-1.5.7-2.3" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s2 bowl"><g transform="translate(8,8) scale(0.94984) translate(-7.99927,-8.88271)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2.3 6.8h11.4c-.4 3.5-2.6 5.8-5.7 5.8S2.7 10.3 2.3 6.8Z" fill="#b03a55"/><path d="M6 4.5V2.8m4 1.7V2.8M6 12.8h4" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">三</span><span class="mark-cell__id">s2 丼</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s3 kettle"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M3.8 7.2h7.6v3.2a3.2 3.2 0 0 1-3.2 3.2h-1.2a3.2 3.2 0 0 1-3.2-3.2z" fill="#7048a8"/><path d="M11.4 8.2 13.6 6.6" fill="none"/><path d="M5.2 7.2a2.8 2.8 0 0 1 5.6 0" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s3 kettle"><g transform="translate(8,8) scale(0.91833) translate(-8.04745,-8.29781)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h7v3.1a3.5 3.5 0 0 1-7 0Z" fill="#7048a8"/><path d="M4.5 6.5V5a3 3 0 0 1 6 0v1.5M11 7.7l2.8-1.4-1.1 3.5H11" fill="none"/><path d="M5.5 6.5h4" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">四</span><span class="mark-cell__id">s3 釜</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s4 shop"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M2.4 7.4 8 3l5.6 4.4v5.2H2.4z" fill="#0f7f96"/><rect x="3.2" y="7.4" width="9.6" height="1.9" fill="#0f7f96"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s4 shop"><g transform="translate(8,8) scale(0.98891) translate(-8.00002,-8.62064)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2.3 5.8 8 2.8l5.7 3H2.3Z" fill="#0f7f96"/><path d="M3 5.8h10v7.4H3Z" fill="#0f7f96"/><path d="M3 8.2h10M5.2 10.1h5.6M8 10.1v3.1" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">五</span><span class="mark-cell__id">s4 店</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s5 stall"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.8" y="8.2" width="8.2" height="4.2" fill="#2f7d4f"/><path d="M11 12.4V3.4" fill="none"/><path d="M11 3.6h3.2l-1.4 1.8 1.4 1.8H11Z" fill="#2f7d4f"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s5 stall"><g transform="translate(8,8) scale(0.89264) translate(-8.07430,-8.99523)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.3" y="8" width="8.7" height="5" rx=".5" fill="#2f7d4f"/><path d="M11 13V2.5" fill="none"/><path d="M11 2.5h3v3.3h-3Z" fill="#2f7d4f"/><path d="M2.3 10.3H11" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">六</span><span class="mark-cell__id">s5 旗屋台</span>
       </div>
     </div>
@@ -2144,53 +2124,53 @@ body {
     </div>
     <div class="mark-row c12">
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="plain dots"><g fill="#8ed973" stroke="#212428" stroke-width="0.9"><circle cx="4.2" cy="4.2" r="1.6"/><circle cx="8" cy="4.2" r="1.6"/><circle cx="11.8" cy="4.2" r="1.6"/><circle cx="4.2" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="11.8" cy="8" r="1.6"/><circle cx="4.2" cy="11.8" r="1.6"/><circle cx="8" cy="11.8" r="1.6"/><circle cx="11.8" cy="11.8" r="1.6"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="plain dots"><g transform="translate(8,8) scale(1.07224) translate(-7.99947,-8.00010)"><g fill="#8ed973" stroke="#212428" stroke-width="0.9"><circle cx="4.2" cy="4.2" r="1.6"/><circle cx="8" cy="4.2" r="1.6"/><circle cx="11.8" cy="4.2" r="1.6"/><circle cx="4.2" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="11.8" cy="8" r="1.6"/><circle cx="4.2" cy="11.8" r="1.6"/><circle cx="8" cy="11.8" r="1.6"/><circle cx="11.8" cy="11.8" r="1.6"/></g></g></svg>
         <span class="mark-cell__kanji">平</span><span class="mark-cell__id">plain</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="peak hachured"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M8 2.4 14 12.6H2Z" fill="#bfbfbf"/><path d="M6.1 9.4 8 6.6l1.9 2.8" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="peak hachured"><g transform="translate(8,8) scale(0.85177) translate(-7.99994,-9.20890)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M8 2.4 14 12.6H2Z" fill="#bfbfbf"/><path d="M6.1 9.4 8 6.6l1.9 2.8" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">山</span><span class="mark-cell__id">mountain</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="droplet"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M8 2.2c3.1 4.2 4.6 6.5 4.6 8.3a4.6 4.6 0 0 1-9.2 0c0-1.8 1.5-4.1 4.6-8.3z" fill="#46b1e1"/><path d="M5.4 10.2h5.2" fill="none" stroke-linecap="round"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="droplet"><g transform="translate(8,8) scale(0.90546) translate(-7.99943,-8.70778)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M8 2.3c2.8 3.5 4.1 5.4 4.1 7.2a4.1 4.1 0 0 1-8.2 0c0-1.8 1.3-3.7 4.1-7.2Z" fill="#46b1e1"/><path d="M5.4 10.2h5.2" fill="none" stroke-linecap="round"/></g></g></svg>
         <span class="mark-cell__kanji">水</span><span class="mark-cell__id">water</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="route ribbon"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round"><path d="M2.2 12.2c2-4.4 3.8-6.6 5.8-6.6s3.8 2.2 5.8 6.6" fill="none" stroke-width="2.4"/><path d="M2.2 12.2c2-4.4 3.8-6.6 5.8-6.6s3.8 2.2 5.8 6.6" fill="none" stroke="#156082" stroke-width="1.2"/><circle cx="2.2" cy="12.2" r="1.6" fill="#156082"/><circle cx="13.8" cy="12.2" r="1.6" fill="#156082"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="route ribbon"><g transform="translate(8,8) scale(0.78744) translate(-7.99944,-9.64419)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round"><path d="M2.2 12.2c2-4.4 3.8-6.6 5.8-6.6s3.8 2.2 5.8 6.6" fill="none" stroke-width="2.4"/><path d="M2.2 12.2c2-4.4 3.8-6.6 5.8-6.6s3.8 2.2 5.8 6.6" fill="none" stroke="#156082" stroke-width="1.2"/><circle cx="2.2" cy="12.2" r="1.6" fill="#156082"/><circle cx="13.8" cy="12.2" r="1.6" fill="#156082"/></g></g></svg>
         <span class="mark-cell__kanji">道</span><span class="mark-cell__id">road</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="patrol pin"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M8 2.4c2.6 0 4.4 1.9 4.4 4.3 0 3-2.6 5.4-4.4 6.9-1.8-1.5-4.4-3.9-4.4-6.9 0-2.4 1.8-4.3 4.4-4.3z" fill="#00b050"/><path d="M6.2 7.2a2.2 2.2 0 1 0 3.4 1.9" fill="none" stroke-linecap="round"/><path d="M9.2 7.2 10.4 9l-2.2.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="patrol pin"><g transform="translate(8,8) scale(0.92903) translate(-7.99939,-7.40625)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M8 2.4c2.6 0 4.4 1.9 4.4 4.3 0 3-2.6 5.4-4.4 6.9-1.8-1.5-4.4-3.9-4.4-6.9 0-2.4 1.8-4.3 4.4-4.3z" fill="#00b050"/><path d="M6.2 7.2a2.2 2.2 0 1 0 3.4 1.9" fill="none" stroke-linecap="round"/><path d="M9.2 7.2 10.4 9l-2.2.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g></g></svg>
         <span class="mark-cell__kanji">巡</span><span class="mark-cell__id">patrol</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="supply barrels"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.4" y="3.4" width="5" height="9.2" rx="1.4" fill="#e59edd"/><rect x="8.6" y="5.8" width="5" height="6.8" rx="1.4" fill="#e59edd"/><path d="M2.4 6.2h5M2.4 9.8h5M8.6 8.2h5" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="supply barrels"><g transform="translate(8,8) scale(0.95112) translate(-7.56376,-8.51463)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.4" y="3.4" width="5" height="9.2" rx="1.4" fill="#e59edd"/><rect x="8.6" y="5.8" width="5" height="6.8" rx="1.4" fill="#e59edd"/><path d="M2.4 6.2h5M2.4 9.8h5M8.6 8.2h5" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">補</span><span class="mark-cell__id">supply</span>
       </div>
     </div>
     <div class="mark-row c12" style="margin-top:8px">
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s0 house"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M2.4 7.6 8 2.8l5.6 4.8v5.4H2.4z" fill="#cc9900"/><path d="M6.2 13V9.4h3.6V13" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s0 house"><g transform="translate(8,8) scale(0.93405) translate(-7.99974,-8.99483)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M2.4 7.6 8 2.8l5.6 4.8v5.4H2.4z" fill="#cc9900"/><path d="M6.2 13V9.4h3.6V13" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">一</span><span class="mark-cell__id">s0 家</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s1 wagon"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.2" y="5" width="11.6" height="5.4" rx="1.8" fill="#c04f15"/><circle cx="5" cy="11.8" r="1.5" fill="#c04f15"/><circle cx="11" cy="11.8" r="1.5" fill="#c04f15"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s1 wagon"><g transform="translate(8,8) scale(0.98816) translate(-7.99954,-8.62732)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.2" y="5" width="11.6" height="5.4" rx="1.8" fill="#c04f15"/><circle cx="5" cy="11.8" r="1.5" fill="#c04f15"/><circle cx="11" cy="11.8" r="1.5" fill="#c04f15"/></g></g></svg>
         <span class="mark-cell__kanji">二</span><span class="mark-cell__id">s1 荷車</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s2 cup"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M3.2 5h8.2v4.6a3.4 3.4 0 0 1-3.4 3.4H6.6A3.4 3.4 0 0 1 3.2 9.6z" fill="#b03a55"/><path d="M11.4 6.2h1.6a1.6 1.6 0 0 1 0 3.2h-1.6" fill="none"/><path d="M2.4 13.4h9.6" fill="none" stroke-linecap="round"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s2 cup"><g transform="translate(8,8) scale(0.85391) translate(-7.80968,-9.04974)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M3.2 5h8.2v4.6a3.4 3.4 0 0 1-3.4 3.4H6.6A3.4 3.4 0 0 1 3.2 9.6z" fill="#b03a55"/><path d="M11.4 6.2h1.6a1.6 1.6 0 0 1 0 3.2h-1.6" fill="none"/><path d="M2.4 13.4h9.6" fill="none" stroke-linecap="round"/></g></g></svg>
         <span class="mark-cell__kanji">三</span><span class="mark-cell__id">s2 カップ</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s3 urn"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M4.2 6.4h7.6l-.8 5.2a3 3 0 0 1-3 2.6h0a3 3 0 0 1-3-2.6z" fill="#7048a8"/><rect x="5.4" y="3.6" width="5.2" height="2.2" rx="1" fill="#7048a8"/><path d="M8 3.6V2.2" fill="none" stroke-linecap="round"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s3 urn"><g transform="translate(8,8) scale(0.90289) translate(-7.99996,-8.60260)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M4.2 6.4h7.6l-.8 5.2a3 3 0 0 1-3 2.6h0a3 3 0 0 1-3-2.6z" fill="#7048a8"/><rect x="5.4" y="3.6" width="5.2" height="2.2" rx="1" fill="#7048a8"/><path d="M8 3.6V2.2" fill="none" stroke-linecap="round"/></g></g></svg>
         <span class="mark-cell__kanji">四</span><span class="mark-cell__id">s3 壺</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s4 kiosk"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.6" y="4.6" width="10.8" height="8" rx="1" fill="#0f7f96"/><rect x="4.4" y="6.6" width="7.2" height="2.6" fill="#0f7f96"/><path d="M2.6 4.6 8 2.2l5.4 2.4" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s4 kiosk"><g transform="translate(8,8) scale(0.97060) translate(-7.99973,-8.11586)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.6" y="4.6" width="10.8" height="8" rx="1" fill="#0f7f96"/><rect x="4.4" y="6.6" width="7.2" height="2.6" fill="#0f7f96"/><path d="M2.6 4.6 8 2.2l5.4 2.4" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">五</span><span class="mark-cell__id">s4 キオスク</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s5 parasol"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"><path d="M2.2 8.2a5.8 5.8 0 0 1 11.6 0c-1.2-1-2.2-1-3.2 0-1-1-2.2-1-3.2 0-1-1-2-1-3.2 0-1-1-1.8-1-2 0z" fill="#2f7d4f"/><path d="M8 8.2v4.4" fill="none"/><path d="M6 12.6h2.4a1.4 1.4 0 0 1-2.4 0z" fill="#2f7d4f"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s5 parasol"><g transform="translate(8,8) scale(0.83637) translate(-7.93527,-6.34243)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"><path d="M2.2 8.2a5.8 5.8 0 0 1 11.6 0c-1.2-1-2.2-1-3.2 0-1-1-2.2-1-3.2 0-1-1-2-1-3.2 0-1-1-1.8-1-2 0z" fill="#2f7d4f"/><path d="M8 8.2v4.4" fill="none"/><path d="M6 12.6h2.4a1.4 1.4 0 0 1-2.4 0z" fill="#2f7d4f"/></g></g></svg>
         <span class="mark-cell__kanji">六</span><span class="mark-cell__id">s5 日傘</span>
       </div>
     </div>
@@ -2203,53 +2183,53 @@ body {
     </div>
     <div class="mark-row c12">
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="plain horizon"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round"><path d="M2 10.6h12" stroke="#8ed973" stroke-width="2.6"/><path d="M2 10.6h12" fill="none"/><path d="M4 10.6V8.2M8 10.6V7.4M12 10.6V8.2" stroke="#8ed973" stroke-width="1.6"/><path d="M4 10.6V8.2M8 10.6V7.4M12 10.6V8.2" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="plain horizon"><g transform="translate(8,8) scale(0.86148) translate(-7.99953,-10.11682)"><g stroke="#212428" stroke-width="1.1" stroke-linecap="round"><path d="M2 10.6h12" stroke="#8ed973" stroke-width="2.6"/><path d="M2 10.6h12" fill="none"/><path d="M4 10.6V8.2M8 10.6V7.4M12 10.6V8.2" stroke="#8ed973" stroke-width="1.6"/><path d="M4 10.6V8.2M8 10.6V7.4M12 10.6V8.2" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">平</span><span class="mark-cell__id">plain</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="stepped peak"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M1.6 12.6h3V9.6h3V6.6h3.2V3.2l2.6 2.8v6.6z" fill="#bfbfbf"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="stepped peak"><g transform="translate(8,8) scale(0.83387) translate(-8.99265,-9.16462)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M2 12.8V10h3V7.2h3V4.4h3V2.8l3 3.4v6.6Z" fill="#bfbfbf"/></g></g></svg>
         <span class="mark-cell__kanji">山</span><span class="mark-cell__id">mountain</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="level gauge"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.4" y="2.4" width="11.2" height="11.2" rx="2" fill="#46b1e1"/><path d="M4.2 8.2c1.1-1.3 2.3-1.3 3.4 0s2.3 1.3 3.4 0" fill="none" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/><path d="M4.2 11c1.1-1.3 2.3-1.3 3.4 0s2.3 1.3 3.4 0" fill="none" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="level gauge"><g transform="translate(8,8) scale(1.01814) translate(-7.99974,-7.99990)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.4" y="2.4" width="11.2" height="11.2" rx="2" fill="#46b1e1"/><path d="M4.2 8.2c1.1-1.3 2.3-1.3 3.4 0s2.3 1.3 3.4 0" fill="none" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/><path d="M4.2 11c1.1-1.3 2.3-1.3 3.4 0s2.3 1.3 3.4 0" fill="none" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/></g></g></svg>
         <span class="mark-cell__kanji">水</span><span class="mark-cell__id">water</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="lane chevron"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"><rect x="1.4" y="5.2" width="13.2" height="5.6" rx="1.4" fill="#156082"/><path d="M4 10.2 6.4 8 4 5.8M8 10.2 10.4 8 8 5.8M12 10.2 13.6 8.8" fill="none" stroke="#9bc2e6" stroke-width="1.4"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="lane chevron"><g transform="translate(8,8) scale(0.87647) translate(-7.99960,-8.00003)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"><rect x="1.4" y="5.2" width="13.2" height="5.6" rx="1.4" fill="#156082"/><path d="M4 10.2 6.4 8 4 5.8M8 10.2 10.4 8 8 5.8M12 10.2 13.6 8.8" fill="none" stroke="#9bc2e6" stroke-width="1.4"/></g></g></svg>
         <span class="mark-cell__kanji">道</span><span class="mark-cell__id">road</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="patrol loop"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="4.4" width="10" height="6.4" rx="1.6" fill="#00b050"/><circle cx="5.6" cy="12.2" r="1.5" fill="#00b050"/><circle cx="10.4" cy="12.2" r="1.5" fill="#00b050"/><path d="M5.2 3a2.8 2.8 0 1 1 4.6 2" fill="none"/><path d="M9.4 2.4 10.2 5.2 7.4 5.4" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="patrol loop"><g transform="translate(8,8) scale(0.80118) translate(-8.03837,-7.86337)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="4.4" width="10" height="6.4" rx="1.6" fill="#00b050"/><circle cx="5.6" cy="12.2" r="1.5" fill="#00b050"/><circle cx="10.4" cy="12.2" r="1.5" fill="#00b050"/><path d="M5.2 3a2.8 2.8 0 1 1 4.6 2" fill="none"/><path d="M9.4 2.4 10.2 5.2 7.4 5.4" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">巡</span><span class="mark-cell__id">patrol</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="supply can"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="3.6" y="3.4" width="8.8" height="9.6" rx="1.2" fill="#e59edd"/><path d="M6.2 3.4V2.2h3.6v1.2" fill="none"/><path d="M8 6.2v3.6M6.2 8h3.6" fill="none" stroke-linecap="round"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="supply can"><g transform="translate(8,8) scale(1.00253) translate(-7.99974,-7.90912)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="3.6" y="3.4" width="8.8" height="9.6" rx="1.2" fill="#e59edd"/><path d="M6.2 3.4V2.2h3.6v1.2" fill="none"/><path d="M8 6.2v3.6M6.2 8h3.6" fill="none" stroke-linecap="round"/></g></g></svg>
         <span class="mark-cell__kanji">補</span><span class="mark-cell__id">supply</span>
       </div>
     </div>
     <div class="mark-row c12" style="margin-top:8px">
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s0 pot"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="3.4" y="5.6" width="9.2" height="6.8" rx="1.6" fill="#cc9900"/><path d="M2.2 7.2h1.2M12.6 7.2h1.2" stroke-linecap="round"/><rect x="5.6" y="3.8" width="4.8" height="1.8" rx="0.8" fill="#cc9900"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s0 pot"><g transform="translate(8,8) scale(0.98818) translate(-7.99962,-8.42560)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="3.4" y="5.6" width="9.2" height="6.8" rx="1.6" fill="#cc9900"/><path d="M2.2 7.2h1.2M12.6 7.2h1.2" stroke-linecap="round"/><rect x="5.6" y="3.8" width="4.8" height="1.8" rx="0.8" fill="#cc9900"/></g></g></svg>
         <span class="mark-cell__kanji">一</span><span class="mark-cell__id">s0 鍋</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s1 tiffin"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="3.6" y="3" width="8.8" height="3.2" rx="1" fill="#c04f15"/><rect x="3.6" y="7" width="8.8" height="3.2" rx="1" fill="#c04f15"/><rect x="3.6" y="11" width="8.8" height="2.4" rx="1" fill="#c04f15"/><path d="M8 3V1.8" stroke-linecap="round" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s1 tiffin"><g transform="translate(8,8) scale(0.91638) translate(-7.99958,-8.12488)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="3.6" y="3" width="8.8" height="3.2" rx="1" fill="#c04f15"/><rect x="3.6" y="7" width="8.8" height="3.2" rx="1" fill="#c04f15"/><rect x="3.6" y="11" width="8.8" height="2.4" rx="1" fill="#c04f15"/><path d="M8 3V1.8" stroke-linecap="round" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">二</span><span class="mark-cell__id">s1 重箱</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s2 wide bowl"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M2.4 7h11.2c0 3.2-2.5 5.4-5.6 5.4S2.4 10.2 2.4 7z" fill="#b03a55"/><path d="M4.2 7h7.6" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s2 wide bowl"><g transform="translate(8,8) scale(1.01810) translate(-7.99950,-9.24996)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M2.4 7h11.2c0 3.2-2.5 5.4-5.6 5.4S2.4 10.2 2.4 7z" fill="#b03a55"/><path d="M4.2 7h7.6" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">三</span><span class="mark-cell__id">s2 平鉢</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s3 teapot"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M3.8 6.6h7v4a2.8 2.8 0 0 1-2.8 2.8h-1.4A2.8 2.8 0 0 1 3.8 10.6z" fill="#7048a8"/><path d="M10.8 8 13.4 6.2 12.6 9.2" fill="none"/><path d="M5.6 6.6V5.2h3.2v1.4" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s3 teapot"><g transform="translate(8,8) scale(1.00548) translate(-7.73431,-9.22328)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><path d="M3.8 6.6h7v4a2.8 2.8 0 0 1-2.8 2.8h-1.4A2.8 2.8 0 0 1 3.8 10.6z" fill="#7048a8"/><path d="M10.8 8 13.4 6.2 12.6 9.2" fill="none"/><path d="M5.6 6.6V5.2h3.2v1.4" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">四</span><span class="mark-cell__id">s3 急須</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s4 bento"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.4" y="4" width="11.2" height="8.4" rx="1.2" fill="#0f7f96"/><path d="M2.4 8h11.2M8 4v8.4" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s4 bento"><g transform="translate(8,8) scale(1.01814) translate(-7.99972,-8.20284)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round"><rect x="2.4" y="4" width="11.2" height="8.4" rx="1.2" fill="#0f7f96"/><path d="M2.4 8h11.2M8 4v8.4" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">五</span><span class="mark-cell__id">s4 弁当</span>
       </div>
       <div class="mark-cell">
-        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s5 hotpot"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"><path d="M3.2 7.6h9.6v2.6a3.2 3.2 0 0 1-3.2 3.2H6.4a3.2 3.2 0 0 1-3.2-3.2z" fill="#2f7d4f"/><path d="M5.4 5c.6-.7 0-1.3.6-2M8.2 5c.6-.7 0-1.3.6-2M11 5c.6-.7 0-1.3.6-2" fill="none"/></g></svg>
+        <svg class="mark-cell__glyph" viewBox="0 0 16 16" aria-label="s5 hotpot"><g transform="translate(8,8) scale(0.89464) translate(-8.06304,-9.47948)"><g stroke="#212428" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"><path d="M3.2 7.6h9.6v2.6a3.2 3.2 0 0 1-3.2 3.2H6.4a3.2 3.2 0 0 1-3.2-3.2z" fill="#2f7d4f"/><path d="M5.4 5c.6-.7 0-1.3.6-2M8.2 5c.6-.7 0-1.3.6-2M11 5c.6-.7 0-1.3.6-2" fill="none"/></g></g></svg>
         <span class="mark-cell__kanji">六</span><span class="mark-cell__id">s5 鍋+湯気</span>
       </div>
     </div>

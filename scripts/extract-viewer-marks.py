@@ -22,7 +22,7 @@ field = ET.fromstring(re.search(r'<svg class="hexfield"[^>]*>(.*?)</svg>', sourc
 groups = list(field)
 # Preserve native SVG structure: patterns, inherited styles and exact casing.
 centers = [(52,44),(132,44),(212,44),(292,44),(92,102),(252,102)]
-ranges = [(0,2),(2,6),(6,7),(7,9),(9,12),(12,14)]
+ranges = [(i,i+1) for i in range(6)]
 structure = {'viewBox': '0 0 420 168', 'defs': node(groups[0]),
              'hex': [], 'series': {}, 'reference': [node(e) for e in groups]}
 for i, (x,y) in enumerate(centers):
