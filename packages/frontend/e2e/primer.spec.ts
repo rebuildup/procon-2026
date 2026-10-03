@@ -69,12 +69,19 @@ test('labeled replay actions match unmodified Primer buttons in light and dark',
             properties.map((property) => [property, css[property as keyof CSSStyleDeclaration]]),
           );
         }, properties);
+      const settle = async (locator: typeof actual) =>
+        locator.evaluate(async (el) => {
+          await new Promise<number>((resolve) => requestAnimationFrame(resolve));
+          await Promise.allSettled(el.getAnimations().map((animation) => animation.finished));
+        });
+      await Promise.all([settle(actual), settle(baseline)]);
       expect(await read(actual)).toEqual(await read(baseline));
       if (!(await actual.isDisabled())) {
         await page.keyboard.press('Tab');
         await actual.focus();
         await reference.keyboard.press('Tab');
         await baseline.focus();
+        await Promise.all([settle(actual), settle(baseline)]);
         expect(await read(actual)).toEqual(await read(baseline));
       }
     }
