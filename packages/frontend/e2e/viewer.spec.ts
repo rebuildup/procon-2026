@@ -48,29 +48,37 @@ test('routes fit desktop and narrow viewports; theme persists', async ({ page })
   expect(errors).toEqual([]);
 });
 
-test('live feed displays status, errors and source timestamp staleness', async ({ page }) => {
+test('live feed preserves old wire timestamps and marks failed polling as stale', async ({
+  page,
+}) => {
   const fixture = JSON.parse(readFileSync(LIVE_SNAPSHOT_FIXTURE, 'utf8')) as Record<
     string,
     unknown
   >;
-  let stale = false;
+  let phase: 'running' | 'error' | 'offline' = 'running';
   await page.route(
     (url) => url.pathname === '/match-state.json',
     (route) =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          ...fixture,
-          status: stale ? 'error' : 'running',
-          error: stale ? 'Solver failed' : null,
-          lastUpdateUnix: Math.floor(Date.now() / 1000) - (stale ? 10 : 0),
-        }),
-      }),
+      phase === 'offline'
+        ? route.fulfill({ status: 404, body: '' })
+        : route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+              ...fixture,
+              status: phase,
+              error: phase === 'error' ? 'Solver failed' : null,
+              lastUpdateUnix: 0,
+            }),
+          }),
   );
   await page.goto('/live');
-  await expect(page.getByTestId('live-status-badge')).toHaveText('running');
-  stale = true;
-  await expect(page.getByTestId('live-status-badge')).toHaveText('Stale');
+  await expect(page.getByTestId('live-status-badge')).toHaveText('Running');
+  await expect(page.getByText('00:00:00', { exact: true })).toBeVisible();
+  phase = 'error';
+  await expect(page.getByTestId('live-status-badge')).toHaveText('Error');
+  await expect(page.getByRole('alert')).toHaveText('Solver failed');
+  phase = 'offline';
+  await expect(page.getByTestId('live-status-badge')).toHaveText('Stale', { timeout: 10000 });
   await expect(page.getByRole('alert')).toHaveText('Solver failed');
 });
 
@@ -81,4 +89,73 @@ test('missing live feed leaves the connecting state', async ({ page }) => {
   );
   await page.goto('/live');
   await expect(page.getByTestId('live-status-badge')).toHaveText('No data', { timeout: 10000 });
+});
+
+test('renderer selection returns to SVG and has a readable fallback', async ({ page }) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
+  );
+  await page.goto('/solvers');
+  await page.getByTestId('solvers-renderer-webgpu').click();
+  await expect(page.getByTestId('webgpu-map-fallback')).toBeVisible();
+  await expect(page.getByTestId('map-viewer-svg')).toBeVisible();
+  await expect(page.getByTestId('webgpu-map-loading')).toHaveCount(0);
+  await page.getByTestId('solvers-renderer-svg').click();
+  await expect(page.getByTestId('webgpu-map-fallback')).toHaveCount(0);
+});
+
+test('WebGPU renders colored cells when a headless adapter is available', async ({ page }) => {
+  await page.goto('/solvers');
+  await page.getByTestId('solvers-renderer-webgpu').click();
+  await expect(page.getByTestId('webgpu-map-loading')).toHaveCount(0, { timeout: 10000 });
+  await expect(page.getByTestId('webgpu-map-fallback')).toHaveCount(0);
+  await expect(page.getByTestId('webgpu-map-canvas')).toHaveCSS('visibility', 'visible');
+  const canvas = page.getByTestId('webgpu-map-canvas');
+  await canvas.screenshot({ path: '../../target/playwright/ui-271-webgpu.png' });
+  await page.getByTestId('map-viewer-svg').focus();
+  await page.keyboard.press('+');
+  await page.getByLabel('Toggle theme').click();
+  await expect(canvas).toHaveCSS('visibility', 'visible');
+});
+
+test('a blank GPU frame retains the SVG map', async ({ page }) => {
+  await page.addInitScript(() => {
+    CanvasRenderingContext2D.prototype.drawImage = function () {
+      this.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(
+        '--bgColor-muted',
+      );
+      this.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    };
+  });
+  await page.goto('/solvers');
+  await page.getByTestId('solvers-renderer-webgpu').click();
+  await expect(page.getByTestId('webgpu-map-fallback')).toContainText('blank-frame');
+  await expect(page.getByTestId('webgpu-map-canvas')).toHaveCSS('visibility', 'hidden');
+  await expect(page.getByTestId('map-viewer-svg').locator('polygon').first()).not.toHaveAttribute(
+    'fill',
+    'transparent',
+  );
+});
+
+test('replay shortcuts respect native controls and Escape cancels a held scrub', async ({
+  page,
+}) => {
+  await page.goto('/replays');
+  const step = page.getByTestId('replay-current-step');
+  await page.getByTestId('replay-viewer').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(step).toHaveText('2 / 5');
+  await page.keyboard.press('Home');
+  await expect(step).toHaveText('1 / 5');
+  await page.getByTestId('replay-scrub').focus();
+  await page.keyboard.down('ArrowRight');
+  await expect(step).toHaveText('2 / 5');
+  await page.keyboard.press('Escape');
+  await expect(step).toHaveText('1 / 5');
+  await page.keyboard.up('ArrowRight');
+  await page.getByTestId('replay-viewer').focus();
+  await page.keyboard.press('4');
+  await expect(page.getByRole('radio').nth(2)).toBeChecked();
+  await page.keyboard.press('Space');
+  await expect(step).toHaveText('5 / 5');
 });

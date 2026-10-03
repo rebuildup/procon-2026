@@ -26,7 +26,7 @@ test.describe('frontend screen recording', () => {
       route: '/replays',
       ready: async (page) => {
         await expect(page.locator('[data-testid="replay-toggle"]')).toBeVisible();
-        await expect(page.locator('[data-testid="replay-current-step"]')).toHaveText('1');
+        await expect(page.locator('[data-testid="replay-current-step"]')).toHaveText('1 / 5');
       },
       steps: async (page) => {
         await page.locator('[data-testid="replay-toggle"]').click();
@@ -35,7 +35,7 @@ test.describe('frontend screen recording', () => {
           .poll(() => page.locator('[data-testid="replay-current-step"]').textContent(), {
             timeout: 10_000,
           })
-          .not.toBe('1');
+          .not.toBe('1 / 5');
         await page.locator('[data-testid="replay-rate-2"]').click();
       },
       hold: async (page, remainingMs) => {

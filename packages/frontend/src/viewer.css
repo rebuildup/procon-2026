@@ -110,7 +110,17 @@ h2.Box-header {
   border-radius: var(--borderRadius-medium);
   overflow: hidden;
 }
-.map-instrument > svg {
+.map-stage {
+  position: relative;
+}
+.map-stage > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.map-stage > svg {
+  position: relative;
   display: block;
   width: 100%;
   height: min(58vh, 34rem);
@@ -229,4 +239,16 @@ h2.Box-header {
     scroll-behavior: auto !important;
     transition: none !important;
   }
+}
+
+.status-marker {
+  display: inline-block;
+  width: var(--base-size-8);
+  height: var(--base-size-8);
+  margin-right: var(--space-xs);
+  background: currentColor;
+}
+.status-marker.hollow {
+  background: transparent;
+  border: var(--borderWidth-thick) solid currentColor;
 }
