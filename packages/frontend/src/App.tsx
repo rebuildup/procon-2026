@@ -17,6 +17,7 @@ import { createReplayStore, type PlaybackRate } from '@/stores/replay';
 import { getTheme, toggleTheme } from '@/stores/theme';
 import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/live';
 import icons from '@/viewer-icons.json';
+import { rulesLink, RULE_SECTIONS } from '@/lib/rules';
 import {
   loadHexAssets,
   glyphAtlas,
@@ -114,11 +115,19 @@ function createViewport() {
   };
 }
 type Viewport = ReturnType<typeof createViewport>;
+function RuleLink(props: { section: string; children: JSX.Element }) {
+  return (
+    <a href={rulesLink(props.section)} target="_blank" rel="noopener noreferrer">
+      {props.children}
+    </a>
+  );
+}
+
 function ViewControls(props: { viewport: Viewport }) {
   return (
-    <Panel title="表示">
+    <Panel title="View">
       <label class="d-block text-bold mb-2" for="map-sample">
-        問題文の例
+        Example
       </label>
       <select
         id="map-sample"
@@ -133,8 +142,16 @@ function ViewControls(props: { viewport: Viewport }) {
           {([id, data]) => <option value={id}>{data.label}</option>}
         </For>
       </select>
+      <p class="f6 color-fg-muted mb-3" data-testid="sample-source">
+        Source:{' '}
+        <RuleLink section={samples[props.viewport.sample()].source.anchor}>
+          {samples[props.viewport.sample()].source.file}（p.
+          {samples[props.viewport.sample()].source.page}・
+          {samples[props.viewport.sample()].source.figure}）
+        </RuleLink>
+      </p>
       <label class="d-block text-bold mb-2" for="map-padding">
-        マップ外の空枠
+        Outer grid
       </label>
       <select
         id="map-padding"
@@ -145,21 +162,21 @@ function ViewControls(props: { viewport: Viewport }) {
           props.viewport.reset();
         }}
       >
-        <option value="0">表示しない</option>
+        <option value="0">Off</option>
         <option value="1">1セル分</option>
         <option value="2">2セル分</option>
         <option value="3">3セル分</option>
       </select>
-      <Row label="描画方式" value={props.viewport.renderer()} />
-      <Button label="中央に戻す" icon="sync" block onClick={props.viewport.reset} />
+      <Row label="Renderer" value={props.viewport.renderer()} />
+      <Button label="Reset view" icon="sync" block onClick={props.viewport.reset} />
       <Show when={props.viewport.error()}>
         <p class="f6 color-fg-muted mt-2 mb-0" data-testid="webgpu-map-fallback">
-          Canvas 描画へ切り替え: {props.viewport.error()}
+          Canvas fallback: {props.viewport.error()}
         </p>
       </Show>
       <Show when={props.viewport.renderer() === 'Initializing'}>
         <p class="f6 color-fg-muted mt-2 mb-0" data-testid="webgpu-map-loading">
-          GPU を準備中…
+          Initializing GPU…
         </p>
       </Show>
     </Panel>
@@ -181,7 +198,7 @@ function GlyphPreview(props: { mark: Mark; hue: string }) {
 }
 function Legend() {
   return (
-    <Panel title="凡例">
+    <Panel title="Legend">
       <For
         each={
           [
@@ -212,6 +229,15 @@ function Legend() {
           </div>
         )}
       </For>
+      <nav aria-label="Rules by topic" class="border-top pt-2 mt-3">
+        <For each={['map', 'agents', 'spots'] as const}>
+          {(section) => (
+            <div class="f6 py-1">
+              <RuleLink section={section}>{RULE_SECTIONS[section]}</RuleLink>
+            </div>
+          )}
+        </For>
+      </nav>
     </Panel>
   );
 }
@@ -304,14 +330,14 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
   });
   let drag: { x: number; y: number } | undefined;
   return (
-    <section class="border rounded-2 overflow-hidden bgColor-muted" aria-label="マップ表示">
+    <section class="border rounded-2 overflow-hidden bgColor-muted" aria-label="Visualizer">
       <div
         class="map-stage"
         ref={stage}
         role="img"
         tabindex="0"
         data-testid="map-viewer"
-        aria-label={`マップ、ステップ ${props.turn ?? 0}。矢印キーで移動、プラス・マイナスで拡大縮小、0で中央に戻します。`}
+        aria-label={`マップ、ステップ ${props.turn ?? 0}. Arrow keys to pan, plus/minus to zoom, 0 to reset view.`}
         data-camera={JSON.stringify(viewport.camera())}
         data-renderer={viewport.renderer()}
         onWheel={(e) => {
@@ -454,7 +480,7 @@ function ReplayPage() {
     <div
       class="PageLayout-columns"
       role="region"
-      aria-label="再生画面"
+      aria-label="Replay viewer"
       tabindex="0"
       data-testid="replay-viewer"
       onKeyDown={shortcut}
@@ -462,12 +488,12 @@ function ReplayPage() {
       <div class="PageLayout-content">
         <MapView turn={store.state().currentStep} viewport={viewport} />
       </div>
-      <aside class="PageLayout-pane" aria-label="再生情報と操作">
-        <Panel title="再生">
-          <p class="color-fg-muted f6">再生デモ · alice / bob</p>
+      <aside class="PageLayout-pane" aria-label="Replay information and controls">
+        <Panel title="Replays">
+          <p class="color-fg-muted f6">Demo match · alice / bob</p>
           <div class="mb-3">
             <Button
-              label={store.state().isPlaying ? '一時停止' : '再生'}
+              label={store.state().isPlaying ? 'Pause' : 'Play'}
               icon={store.state().isPlaying ? 'pause' : 'triangle-fill'}
               block
               primary={!store.state().isPlaying}
@@ -482,10 +508,10 @@ function ReplayPage() {
                 {store.state().currentStep + 1} / {store.stepCount()}
               </span>
             </div>
-            <div class="BtnGroup d-flex mb-2" role="group" aria-label="ステップの移動">
+            <div class="BtnGroup d-flex mb-2" role="group" aria-label="Step navigation">
               <Button
-                label="前のステップ"
-                text="前へ"
+                label="Step backward"
+                text="Previous"
                 icon="chevron-left"
                 grouped
                 block
@@ -494,8 +520,8 @@ function ReplayPage() {
                 disabled={store.state().currentStep === 0}
               />
               <Button
-                label="次のステップ"
-                text="次へ"
+                label="Step forward"
+                text="Next"
                 icon="chevron-right"
                 grouped
                 block
@@ -504,10 +530,10 @@ function ReplayPage() {
                 disabled={store.state().currentStep === 4}
               />
             </div>
-            <div class="BtnGroup d-flex" role="group" aria-label="再生範囲">
+            <div class="BtnGroup d-flex" role="group" aria-label="Replay boundaries">
               <Button
-                label="最初のステップ"
-                text="最初へ"
+                label="First step"
+                text="First"
                 icon="move-to-start"
                 grouped
                 block
@@ -515,8 +541,8 @@ function ReplayPage() {
                 disabled={store.state().currentStep === 0}
               />
               <Button
-                label="最後のステップ"
-                text="最後へ"
+                label="Last step"
+                text="Last"
                 icon="move-to-end"
                 grouped
                 block
@@ -530,11 +556,11 @@ function ReplayPage() {
           </div>
           <RadioGroup.Root
             class="mb-3"
-            aria-label="再生速度"
+            aria-label="Playback speed"
             value={String(store.state().rate)}
             onChange={(v) => store.setRate(Number(v) as PlaybackRate)}
           >
-            <RadioGroup.Label class="d-block text-bold mb-2">再生速度</RadioGroup.Label>
+            <RadioGroup.Label class="d-block text-bold mb-2">Playback speed</RadioGroup.Label>
             <div class="BtnGroup d-flex">
               <For each={[1, 2, 4]}>
                 {(rate) => (
@@ -552,7 +578,7 @@ function ReplayPage() {
             </div>
           </RadioGroup.Root>
           <label class="d-block text-bold mb-2" for={scrubId}>
-            再生位置
+            Replay position
           </label>
           <input
             id={scrubId}
@@ -583,23 +609,27 @@ function ReplayPage() {
             onInput={(e) => store.setStep(Number(e.currentTarget.value))}
           />
           <details class="mt-3">
-            <summary class="color-fg-muted f6">キーボード操作</summary>
+            <summary class="color-fg-muted f6">Keyboard shortcuts</summary>
             <p class="f6 mt-2 mb-0">
-              Space: 再生・一時停止 / ← →: ステップ / Home・End: 最初・最後 / 1・2・4: 再生速度 /
-              Escape: 移動を取り消す
+              Space: Play / Pause · ← →: ステップ · Home / End · 1 2 4: Playback speed · Escape:
+              Cancel scrub
             </p>
           </details>
         </Panel>
         <ViewControls viewport={viewport} />
-        <Panel title="参考値（デモ）">
-          <table class="width-full" aria-label="参考値（デモ）">
+        <p class="f6">
+          <RuleLink section="overview">{RULE_SECTIONS.overview}</RuleLink> ·{' '}
+          <RuleLink section="time">{RULE_SECTIONS.time}</RuleLink>
+        </p>
+        <Panel title="Score (demo)">
+          <table class="width-full" aria-label="Score (demo)">
             <thead>
               <tr>
                 <th class="text-left color-fg-muted border-bottom pb-2" scope="col">
                   チーム
                 </th>
                 <th class="text-left color-fg-muted border-bottom pb-2" scope="col">
-                  参考値（デモ）
+                  Score (demo)
                 </th>
               </tr>
             </thead>
@@ -656,20 +686,20 @@ function LivePage() {
   const unavailable = () => !snapshot() && now() - started >= 5000;
   const stale = () => received() > 0 && now() - received() >= 5000;
   const statusLabel = {
-    waiting: '待機中',
-    running: '試合中',
-    completed: '終了',
-    rejected: 'エラー',
-    error: 'エラー',
+    waiting: 'Idle',
+    running: 'Running',
+    completed: 'Completed',
+    rejected: 'Error',
+    error: 'Error',
   };
   const label = () =>
     unavailable()
-      ? '情報なし'
+      ? 'No data'
       : stale()
-        ? '更新停止'
+        ? 'Stale'
         : snapshot()
           ? statusLabel[snapshot()!.status]
-          : '接続中';
+          : 'Connecting';
   const statusIcon = () =>
     unavailable() || stale()
       ? 'alert'
@@ -693,11 +723,11 @@ function LivePage() {
       <div class="PageLayout-content">
         <MapView viewport={viewport} />
       </div>
-      <aside class="PageLayout-pane" aria-label="試合情報">
+      <aside class="PageLayout-pane" aria-label="Live match information">
         <ViewControls viewport={viewport} />
-        <Panel title="試合">
+        <Panel title="Match">
           <Row
-            label="状態"
+            label="Status"
             value={
               <span
                 role="status"
@@ -721,13 +751,13 @@ function LivePage() {
             }
           />
           <Row
-            label="回答の履歴"
+            label="Revisions"
             value={snapshot() ? `[${snapshot()!.revisions.join(', ')}]` : '—'}
           />
-          <Row label="探索方式" value={snapshot()?.solver ?? '—'} />
-          <Row label="接続先" value={snapshot()?.server ?? '—'} />
+          <Row label="Solver" value={snapshot()?.solver ?? '—'} />
+          <Row label="Server" value={snapshot()?.server ?? '—'} />
           <Row
-            label="最終更新"
+            label="Last update"
             value={
               snapshot()
                 ? snapshot()!.lastUpdateUnix === 0
@@ -754,11 +784,11 @@ function LivePage() {
             </div>
           </Show>
         </Panel>
-        <Panel title="出典">
+        <Panel title="Source">
           <p class="color-fg-muted f6">
             試合情報は接続先から取得しています。マップは問題文の例です。受信データにマップやエージェントの位置は含まれていません。
           </p>
-          <Row label="更新間隔" value="1秒" />
+          <Row label="Polling" value="1秒" />
         </Panel>
       </aside>
     </div>
@@ -772,15 +802,15 @@ function SolversPage() {
       <div class="PageLayout-content">
         <MapView viewport={viewport} />
       </div>
-      <aside class="PageLayout-pane" aria-label="描画情報と操作">
+      <aside class="PageLayout-pane" aria-label="Renderer information and controls">
         <ViewControls viewport={viewport} />
         <Panel title="マップ">
-          <Row label="出典" value={samples[viewport.sample()].label} />
+          <Row label="Source" value={samples[viewport.sample()].label} />
           <Row
             label="セル数"
             value={samples[viewport.sample()].width * samples[viewport.sample()].height}
           />
-          <Row label="記号" value="稜線・波・帯" />
+          <Row label="Symbols" value="稜線・波・帯" />
         </Panel>
         <Legend />
       </aside>
@@ -794,10 +824,10 @@ function Home() {
       <div class="PageLayout-content">
         <MapView viewport={viewport} />
       </div>
-      <aside class="PageLayout-pane" aria-label="マップ情報">
+      <aside class="PageLayout-pane" aria-label="Map information">
         <ViewControls viewport={viewport} />
         <Panel title="マップ">
-          <Row label="出典" value={samples[viewport.sample()].label} />
+          <Row label="Source" value={samples[viewport.sample()].label} />
           <Row
             label="マップの大きさ"
             value={`${samples[viewport.sample()].width} × ${samples[viewport.sample()].height}`}
@@ -820,15 +850,15 @@ function Shell(props: { children?: JSX.Element }) {
   const location = useLocation();
   const destinations = [
     ['/', 'マップ', 'home'],
-    ['/replays', '再生', 'history'],
-    ['/solvers', '探索', 'beaker'],
-    ['/live', '試合状況', 'broadcast'],
+    ['/replays', 'Replays', 'history'],
+    ['/solvers', 'Solvers', 'beaker'],
+    ['/live', 'Live', 'broadcast'],
   ] as const;
   return (
     <div class="AppFrame app-shell bgColor-default">
       <div class="AppFrame-a11yNav">
         <a class="AppFrame-a11yLink" href="#main">
-          本文へ移動
+          Skip to content
         </a>
       </div>
       <header
@@ -836,7 +866,7 @@ function Shell(props: { children?: JSX.Element }) {
         data-testid="app-header"
       >
         <h1 class="f5 mr-3 mb-0">ヘキサうどん_ ビューア</h1>
-        <nav aria-label="画面の切り替え" class="d-flex flex-items-center flex-wrap">
+        <nav aria-label="Main navigation" class="d-flex flex-items-center flex-wrap">
           <For each={destinations}>
             {(item) => (
               <A
@@ -854,8 +884,22 @@ function Shell(props: { children?: JSX.Element }) {
             )}
           </For>
         </nav>
-        <button class="btn btn-sm ml-auto" onClick={toggleTheme} aria-label="配色を切り替える">
-          <Icon name={getTheme().mode === 'dark' ? 'sun' : 'moon'} /> 配色
+        <a
+          class="btn btn-sm btn-invisible ml-auto mr-2"
+          href={rulesLink(
+            location.pathname === '/replays'
+              ? 'time'
+              : location.pathname === '/live'
+                ? 'agents'
+                : 'map',
+          )}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Rules
+        </a>
+        <button class="btn btn-sm" onClick={toggleTheme} aria-label="Toggle theme">
+          <Icon name={getTheme().mode === 'dark' ? 'sun' : 'moon'} /> Theme
         </button>
       </header>
       <main id="main" class="app-main">

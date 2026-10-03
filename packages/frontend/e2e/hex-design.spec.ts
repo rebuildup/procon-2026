@@ -153,7 +153,7 @@ test('composed hex matches proposal and Canvas; camera frames reuse uploads', as
     const structurePath = '/src/viewer-structure.json';
     const structure = (await import(/* @vite-ignore */ structurePath)).default;
     const transform = scene.sceneTransform(fixture, 370, 265, camera);
-    const body = `<g transform="translate(${transform.x},${transform.y}) scale(${transform.scale * scale})">${structure.reference.slice(0, 5).map(assets.svgNode).join('')}</g>`;
+    const body = `<g transform="translate(${transform.x},${transform.y}) scale(${transform.scale * scale})">${assets.svgNode(structure.defs)}${coords.map(([x, y], index) => `<g transform="translate(${x},${y}) scale(${assets.HEX_INSET}) translate(${-x!},${-y!})">${assets.svgNode(structure.hex[index].halo)}${assets.svgNode(structure.hex[index].fill)}${structure.series[names[index]!].layers.map(assets.svgNode).join('')}</g>`).join('')}</g>`;
     const image = new Image();
     const url = URL.createObjectURL(
       new Blob(
@@ -251,8 +251,8 @@ test('adjacent hex borders survive reverse order and map stays centered with emp
   await expect(page.getByTestId('map-viewer')).toHaveAttribute('data-renderer', 'WebGPU', {
     timeout: 10000,
   });
-  await page.getByLabel('問題文の例').selectOption('figure2');
-  await page.getByLabel('マップ外の空枠').selectOption('2');
+  await page.getByLabel('Example').selectOption('figure2');
+  await page.getByLabel('Outer grid').selectOption('2');
   await expect(page.getByTestId('map-viewer')).toHaveAttribute(
     'data-camera',
     '{"x":0,"y":0,"zoom":1}',
@@ -283,8 +283,8 @@ test('adjacent hex borders survive reverse order and map stays centered with emp
       const p = scene.worldPoint(
         700,
         600,
-        center.x + x! * scale,
-        center.y + y! * scale,
+        center.x + x! * scale * 0.93,
+        center.y + y! * scale * 0.93,
         { x: 0, y: 0, zoom: 1 },
         fixture,
       );
@@ -296,6 +296,20 @@ test('adjacent hex borders survive reverse order and map stays centered with emp
         }
       return ink;
     });
+    const seam = scene.worldPoint(
+      700,
+      600,
+      center.x + 26 * scale,
+      center.y,
+      { x: 0, y: 0, zoom: 1 },
+      fixture,
+    );
+    let whiteGap = 0;
+    for (let y = Math.floor(seam.y) - 3; y <= Math.floor(seam.y) + 3; y++)
+      for (let x = Math.floor(seam.x) - 2; x <= Math.floor(seam.x) + 2; x++) {
+        const i = (y * canvas.width + x) * 4;
+        if (first[i]! > 250 && first[i + 1]! > 250 && first[i + 2]! > 250) whiteGap++;
+      }
     scene.drawCanvasScene(
       canvas,
       { cells: [...fixture.cells].reverse(), marks: [] },
@@ -324,6 +338,7 @@ test('adjacent hex borders survive reverse order and map stays centered with emp
       }
     return {
       edges,
+      whiteGap,
       meanOrderDifference: difference / first.length,
       center: [(left + right) / 2, (top + bottom) / 2],
       empty: padded.cells.filter((cell: { terrain: string }) => cell.terrain === 'empty').length,
@@ -342,6 +357,7 @@ test('adjacent hex borders survive reverse order and map stays centered with emp
     [18, 's0'],
   ]);
   expect(result.parity).toBe(true);
+  expect(result.whiteGap).toBeGreaterThan(2);
   result.edges.forEach((count) => expect(count).toBeGreaterThan(2));
   expect(result.meanOrderDifference).toBeLessThan(0.5);
   expect(Math.abs(result.center[0]! - 350)).toBeLessThan(2);

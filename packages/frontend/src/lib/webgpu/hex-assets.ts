@@ -8,6 +8,8 @@ export const GLYPH_SIZE = 64;
 export const TILE_SIZE = 128;
 export const TILE_COLUMNS = 16;
 export const TILE_VIEW_SIZE = 68;
+/** Leave white space between independently outlined neighboring cells. */
+export const HEX_INSET = 0.93;
 export const TILE_WORLD_SIZE = (TILE_VIEW_SIZE * 23) / 30;
 export const terrains: Terrain[] = ['plain', 'mountain', 'water', 'road', 'empty'];
 export const HALO_TILE = terrains.length * (markNames.length + 1);
@@ -79,7 +81,7 @@ export function loadHexAssets(): Promise<void> {
       for (const mark of [undefined, ...markNames]) {
         const index = tileIndex(terrain, mark),
           origin = tileSource(index);
-        tiles += `<g transform="translate(${origin.x + TILE_SIZE / 2},${origin.y + TILE_SIZE / 2}) scale(${TILE_SIZE / TILE_VIEW_SIZE})">${tileSvgContent(terrain, mark)}</g>`;
+        tiles += `<g transform="translate(${origin.x + TILE_SIZE / 2},${origin.y + TILE_SIZE / 2}) scale(${TILE_SIZE / TILE_VIEW_SIZE})"><g transform="scale(${HEX_INSET})">${tileSvgContent(terrain, mark)}</g></g>`;
       }
     for (const [index, stroke, width] of [
       [HALO_TILE, '#ffffff', '4.5'],
@@ -95,7 +97,7 @@ export function loadHexAssets(): Promise<void> {
           attrs: { ...child.attrs, fill: 'none' },
         })),
       };
-      tiles += `<g transform="translate(${origin.x + TILE_SIZE / 2},${origin.y + TILE_SIZE / 2}) scale(${TILE_SIZE / TILE_VIEW_SIZE})"><g transform="translate(-52,-44)">${svgNode(outline)}</g></g>`;
+      tiles += `<g transform="translate(${origin.x + TILE_SIZE / 2},${origin.y + TILE_SIZE / 2}) scale(${TILE_SIZE / TILE_VIEW_SIZE})"><g transform="scale(${HEX_INSET})"><g transform="translate(-52,-44)">${svgNode(outline)}</g></g></g>`;
     }
     const glyphBody = markNames
       .map(
