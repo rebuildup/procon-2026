@@ -17,14 +17,17 @@ import { createReplayStore, type PlaybackRate } from '@/stores/replay';
 import { getTheme, toggleTheme } from '@/stores/theme';
 import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/live';
 import icons from '@/viewer-icons.json';
+import { rulesLink, RULE_SECTIONS } from '@/lib/rules';
 import {
-  coloredAtlas,
-  cssColor,
+  loadHexAssets,
+  glyphAtlas,
   drawCanvasScene,
   fixtureScene,
   GLYPH_SIZE,
   markNames,
-  palette,
+  samples,
+  sceneTransform,
+  type Sample,
   type Camera,
   type Mark,
 } from '@/lib/webgpu/viewer-scene';
@@ -93,11 +96,17 @@ const Row = (props: { label: string; value: JSX.Element }) => (
 );
 function createViewport() {
   const [camera, setCamera] = createSignal<Camera>({ x: 0, y: 0, zoom: 1 });
+  const [sample, setSample] = createSignal<Sample>('figure1');
+  const [padding, setPadding] = createSignal(0);
   const [renderer, setRenderer] = createSignal('Initializing');
   const [error, setError] = createSignal('');
   return {
     camera,
     setCamera,
+    sample,
+    setSample,
+    padding,
+    setPadding,
     renderer,
     setRenderer,
     error,
@@ -106,9 +115,58 @@ function createViewport() {
   };
 }
 type Viewport = ReturnType<typeof createViewport>;
+function RuleLink(props: { section: string; children: JSX.Element }) {
+  return (
+    <a href={rulesLink(props.section)} target="_blank" rel="noopener noreferrer">
+      {props.children}
+    </a>
+  );
+}
+
 function ViewControls(props: { viewport: Viewport }) {
   return (
     <Panel title="View">
+      <label class="d-block text-bold mb-2" for="map-sample">
+        Example
+      </label>
+      <select
+        id="map-sample"
+        class="form-select width-full mb-3"
+        value={props.viewport.sample()}
+        onChange={(e) => {
+          props.viewport.setSample(e.currentTarget.value as Sample);
+          props.viewport.reset();
+        }}
+      >
+        <For each={Object.entries(samples)}>
+          {([id, data]) => <option value={id}>{data.label}</option>}
+        </For>
+      </select>
+      <p class="f6 color-fg-muted mb-3" data-testid="sample-source">
+        Source:{' '}
+        <RuleLink section={samples[props.viewport.sample()].source.anchor}>
+          {samples[props.viewport.sample()].source.file}（p.
+          {samples[props.viewport.sample()].source.page}・
+          {samples[props.viewport.sample()].source.figure}）
+        </RuleLink>
+      </p>
+      <label class="d-block text-bold mb-2" for="map-padding">
+        Outer grid
+      </label>
+      <select
+        id="map-padding"
+        class="form-select width-full mb-3"
+        value={props.viewport.padding()}
+        onChange={(e) => {
+          props.viewport.setPadding(Number(e.currentTarget.value));
+          props.viewport.reset();
+        }}
+      >
+        <option value="0">Off</option>
+        <option value="1">1セル分</option>
+        <option value="2">2セル分</option>
+        <option value="3">3セル分</option>
+      </select>
       <Row label="Renderer" value={props.viewport.renderer()} />
       <Button label="Reset view" icon="sync" block onClick={props.viewport.reset} />
       <Show when={props.viewport.error()}>
@@ -128,20 +186,13 @@ function GlyphPreview(props: { mark: Mark; hue: string }) {
   let canvas!: HTMLCanvasElement;
   createEffect(() => {
     void getTheme().mode;
-    const source = coloredAtlas(cssColor(palette()(`--data-${props.hue}-color-emphasis`)));
-    const context = canvas.getContext('2d')!;
-    context.clearRect(0, 0, 16, 16);
-    context.drawImage(
-      source,
-      markNames.indexOf(props.mark) * GLYPH_SIZE,
-      0,
-      GLYPH_SIZE,
-      GLYPH_SIZE,
-      0,
-      0,
-      16,
-      16,
-    );
+    const index = markNames.indexOf(props.mark);
+    void loadHexAssets().then(() => {
+      const source = glyphAtlas();
+      const context = canvas.getContext('2d')!;
+      context.clearRect(0, 0, 16, 16);
+      context.drawImage(source, index * GLYPH_SIZE, 0, GLYPH_SIZE, GLYPH_SIZE, 0, 0, 16, 16);
+    });
   });
   return <canvas ref={canvas} width="16" height="16" aria-hidden="true" />;
 }
@@ -163,10 +214,30 @@ function Legend() {
         {(item) => (
           <div class="d-flex flex-items-center py-1">
             <GlyphPreview {...item} />
-            <span class="ml-2">{item.mark}</span>
+            <span class="ml-2">
+              {
+                {
+                  plain: '平地',
+                  mountain: '山地',
+                  water: '池',
+                  road: '道路',
+                  patrol: '巡回車',
+                  supply: '補給車',
+                }[item.mark]
+              }
+            </span>
           </div>
         )}
       </For>
+      <nav aria-label="Rules by topic" class="border-top pt-2 mt-3">
+        <For each={['map', 'agents', 'spots'] as const}>
+          {(section) => (
+            <div class="f6 py-1">
+              <RuleLink section={section}>{RULE_SECTIONS[section]}</RuleLink>
+            </div>
+          )}
+        </For>
+      </nav>
     </Panel>
   );
 }
@@ -176,7 +247,15 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
     null,
   );
   let gpu!: HTMLCanvasElement, fallback!: HTMLCanvasElement, stage!: HTMLDivElement;
-  const scene = () => fixtureScene(props.turn ?? 0);
+  const [assetsReady, setAssetsReady] = createSignal(false);
+  const scene = () =>
+    fixtureScene(
+      props.turn ?? 0,
+      'ridge',
+      viewport.sample(),
+      viewport.padding(),
+      props.turn !== undefined,
+    );
   const fail = (reason: string) => {
     viewport.setError(reason);
     viewport.setRenderer('Canvas');
@@ -185,6 +264,7 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
     current?.destroy();
   };
   const draw = () => {
+    if (!assetsReady()) return;
     const current = layer();
     if (current) {
       try {
@@ -200,6 +280,7 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
     draw();
   });
   onMount(() => {
+    void loadHexAssets().then(() => setAssetsReady(true));
     let active = true,
       failed = false;
     let created: Awaited<ReturnType<typeof createViewerLayer>> | undefined;
@@ -256,7 +337,7 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
         role="img"
         tabindex="0"
         data-testid="map-viewer"
-        aria-label={`Match map, turn ${props.turn ?? 0}. Arrow keys pan, plus and minus zoom, zero resets.`}
+        aria-label={`マップ、ステップ ${props.turn ?? 0}. Arrow keys to pan, plus/minus to zoom, 0 to reset view.`}
         data-camera={JSON.stringify(viewport.camera())}
         data-renderer={viewport.renderer()}
         onWheel={(e) => {
@@ -273,7 +354,7 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
         onPointerMove={(e) => {
           if (drag) {
             const rect = e.currentTarget.getBoundingClientRect(),
-              fit = Math.min(rect.width / 370, rect.height / 265);
+              fit = sceneTransform(scene(), rect.width, rect.height, viewport.camera()).fit;
             viewport.setCamera((c) => ({
               ...c,
               x: c.x + (e.clientX - drag!.x) / fit,
@@ -408,7 +489,7 @@ function ReplayPage() {
         <MapView turn={store.state().currentStep} viewport={viewport} />
       </div>
       <aside class="PageLayout-pane" aria-label="Replay information and controls">
-        <Panel title="Replay">
+        <Panel title="Replays">
           <p class="color-fg-muted f6">Demo match · alice / bob</p>
           <div class="mb-3">
             <Button
@@ -422,7 +503,7 @@ function ReplayPage() {
           </div>
           <div class="mb-3">
             <div class="d-flex flex-justify-between flex-items-center mb-2">
-              <span class="text-bold">Step</span>
+              <span class="text-bold">ステップ</span>
               <span class="text-mono" data-testid="replay-current-step">
                 {store.state().currentStep + 1} / {store.stepCount()}
               </span>
@@ -475,7 +556,7 @@ function ReplayPage() {
           </div>
           <RadioGroup.Root
             class="mb-3"
-            aria-label="Playback rate"
+            aria-label="Playback speed"
             value={String(store.state().rate)}
             onChange={(v) => store.setRate(Number(v) as PlaybackRate)}
           >
@@ -507,7 +588,7 @@ function ReplayPage() {
             min="0"
             max="4"
             value={store.state().currentStep}
-            aria-valuetext={`Step ${store.state().currentStep + 1} of 5`}
+            aria-valuetext={`ステップ ${store.state().currentStep + 1} / 5`}
             onPointerDown={(e) => {
               begin();
               e.currentTarget.setPointerCapture(e.pointerId);
@@ -530,20 +611,25 @@ function ReplayPage() {
           <details class="mt-3">
             <summary class="color-fg-muted f6">Keyboard shortcuts</summary>
             <p class="f6 mt-2 mb-0">
-              Space play/pause · ← → step · Home / End · 1 2 4 rate · Escape cancels scrub
+              Space: Play / Pause · ← →: ステップ · Home / End · 1 2 4: Playback speed · Escape:
+              Cancel scrub
             </p>
           </details>
         </Panel>
         <ViewControls viewport={viewport} />
-        <Panel title="Score">
-          <table class="width-full" aria-label="Scores">
+        <p class="f6">
+          <RuleLink section="overview">{RULE_SECTIONS.overview}</RuleLink> ·{' '}
+          <RuleLink section="time">{RULE_SECTIONS.time}</RuleLink>
+        </p>
+        <Panel title="Score (demo)">
+          <table class="width-full" aria-label="Score (demo)">
             <thead>
               <tr>
                 <th class="text-left color-fg-muted border-bottom pb-2" scope="col">
-                  Player
+                  チーム
                 </th>
                 <th class="text-left color-fg-muted border-bottom pb-2" scope="col">
-                  Score
+                  Score (demo)
                 </th>
               </tr>
             </thead>
@@ -657,7 +743,7 @@ function LivePage() {
             }
           />
           <Row
-            label="Day"
+            label="日"
             value={
               snapshot()?.day == null
                 ? '—'
@@ -684,13 +770,12 @@ function LivePage() {
           />
           <Show when={unavailable()}>
             <div class="flash" role="status">
-              No match snapshot available. Start the CLI with --state-output pointing to
-              public/match-state.json.
+              試合情報を受信していません。
             </div>
           </Show>
           <Show when={stale()}>
             <div class="flash flash-warn" role="status">
-              Feed is stale. Values are last-known; check the CLI state output.
+              更新が停止しています。最後に受信した試合情報を表示しています。
             </div>
           </Show>
           <Show when={snapshot()?.error}>
@@ -701,10 +786,9 @@ function LivePage() {
         </Panel>
         <Panel title="Source">
           <p class="color-fg-muted f6">
-            Status: local match-state snapshot. Map: demo fixture; the snapshot contains no map or
-            agent positions.
+            試合情報は接続先から取得しています。マップは問題文の例です。受信データにマップやエージェントの位置は含まれていません。
           </p>
-          <Row label="Polling" value="1 second" />
+          <Row label="Polling" value="1秒" />
         </Panel>
       </aside>
     </div>
@@ -720,10 +804,13 @@ function SolversPage() {
       </div>
       <aside class="PageLayout-pane" aria-label="Renderer information and controls">
         <ViewControls viewport={viewport} />
-        <Panel title="Map">
-          <Row label="Source" value="Demo fixture" />
-          <Row label="Cells" value="48" />
-          <Row label="Symbols" value="ridge" />
+        <Panel title="マップ">
+          <Row label="Source" value={samples[viewport.sample()].label} />
+          <Row
+            label="セル数"
+            value={samples[viewport.sample()].width * samples[viewport.sample()].height}
+          />
+          <Row label="Symbols" value="稜線・波・帯" />
         </Panel>
         <Legend />
       </aside>
@@ -739,11 +826,20 @@ function Home() {
       </div>
       <aside class="PageLayout-pane" aria-label="Map information">
         <ViewControls viewport={viewport} />
-        <Panel title="Map">
-          <Row label="Source" value="Demo fixture" />
-          <Row label="Dimensions" value="8 × 6" />
-          <Row label="Cells" value="48" />
-          <Row label="Spot series" value="6" />
+        <Panel title="マップ">
+          <Row label="Source" value={samples[viewport.sample()].label} />
+          <Row
+            label="マップの大きさ"
+            value={`${samples[viewport.sample()].width} × ${samples[viewport.sample()].height}`}
+          />
+          <Row
+            label="セル数"
+            value={samples[viewport.sample()].width * samples[viewport.sample()].height}
+          />
+          <Row
+            label="系列数"
+            value={new Set(samples[viewport.sample()].spots.map((spot) => spot.series)).size}
+          />
         </Panel>
         <Legend />
       </aside>
@@ -753,7 +849,7 @@ function Home() {
 function Shell(props: { children?: JSX.Element }) {
   const location = useLocation();
   const destinations = [
-    ['/', 'Map', 'home'],
+    ['/', 'マップ', 'home'],
     ['/replays', 'Replays', 'history'],
     ['/solvers', 'Solvers', 'beaker'],
     ['/live', 'Live', 'broadcast'],
@@ -769,7 +865,7 @@ function Shell(props: { children?: JSX.Element }) {
         class="d-flex flex-items-center flex-wrap border-bottom px-3 py-2"
         data-testid="app-header"
       >
-        <h1 class="f5 mr-3 mb-0">Match viewer</h1>
+        <h1 class="f5 mr-3 mb-0">ヘキサうどん_ ビューア</h1>
         <nav aria-label="Main navigation" class="d-flex flex-items-center flex-wrap">
           <For each={destinations}>
             {(item) => (
@@ -788,7 +884,21 @@ function Shell(props: { children?: JSX.Element }) {
             )}
           </For>
         </nav>
-        <button class="btn btn-sm ml-auto" onClick={toggleTheme} aria-label="Toggle theme">
+        <a
+          class="btn btn-sm btn-invisible ml-auto mr-2"
+          href={rulesLink(
+            location.pathname === '/replays'
+              ? 'time'
+              : location.pathname === '/live'
+                ? 'agents'
+                : 'map',
+          )}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Rules
+        </a>
+        <button class="btn btn-sm" onClick={toggleTheme} aria-label="Toggle theme">
           <Icon name={getTheme().mode === 'dark' ? 'sun' : 'moon'} /> Theme
         </button>
       </header>

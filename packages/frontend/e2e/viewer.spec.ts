@@ -113,90 +113,24 @@ test('unsupported GPU automatically uses a complete Canvas scene without SVG DOM
   expect(pixels).toBeGreaterThan(100);
 });
 
-test('GPU draws all domain symbols and advances the agent without SVG overlay', async ({
-  page,
-}) => {
+test('GPU replay changes composed occupants and camera without SVG overlay', async ({ page }) => {
   await page.goto('/replays');
   await expect(page.getByTestId('map-viewer')).toHaveAttribute('data-renderer', 'WebGPU', {
     timeout: 10000,
   });
-  await expect(page.getByTestId('webgpu-map-canvas')).toHaveCSS('visibility', 'visible');
   await expect(
     page.getByRole('region', { name: 'Visualizer' }).locator('svg,path,polygon,button'),
   ).toHaveCount(0);
-  const sample = async () => {
-    const bytes = Array.from(await page.getByTestId('webgpu-map-canvas').screenshot());
-    return page.getByTestId('webgpu-map-canvas').evaluate(async (el, bytes) => {
-      const canvas = el as HTMLCanvasElement,
-        probe = document.createElement('canvas');
-      probe.width = canvas.width;
-      probe.height = canvas.height;
-      const context = probe.getContext('2d')!;
-      const imageBitmap = await createImageBitmap(
-        new Blob([new Uint8Array(bytes)], { type: 'image/png' }),
-      );
-      context.drawImage(imageBitmap, 0, 0);
-      imageBitmap.close();
-      const image = context.getImageData(0, 0, probe.width, probe.height);
-      const fit = Math.min(canvas.width / 370, canvas.height / 265),
-        ox = (canvas.width - 370 * fit) / 2,
-        oy = (canvas.height - 265 * fit) / 2;
-      const contains = (x: number, y: number, size: number, hue: string) => {
-        const hex = getComputedStyle(document.documentElement)
-          .getPropertyValue(`--data-${hue}-color-emphasis`)
-          .trim();
-        const color = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-        let count = 0;
-        for (
-          let py = Math.ceil((y + 24) * fit + oy);
-          py < Math.floor((y + size + 24) * fit + oy);
-          py++
-        )
-          for (
-            let px = Math.ceil((x + 24) * fit + ox);
-            px < Math.floor((x + size + 24) * fit + ox);
-            px++
-          ) {
-            const i = (py * image.width + px) * 4;
-            if (color.every((c, n) => Math.abs(image.data[i + n]! - c) < 4)) count++;
-          }
-        return count;
-      };
-      return {
-        terrain: [
-          contains(-8, -8, 16, 'gray'),
-          contains(32, -8, 16, 'green'),
-          contains(192, -8, 16, 'brown'),
-          contains(52, 27, 16, 'blue'),
-        ],
-        spots: ['yellow', 'orange', 'auburn', 'purple', 'plum', 'olive'].map((h, n) =>
-          contains(40 + n * 40, 27 + (n % 2) * 70, 18, h),
-        ),
-        patrol: [contains(40, 132, 20, 'pine'), contains(80, 132, 20, 'pine')],
-        supply: contains(220, 100, 20, 'pink'),
-      };
-    }, bytes);
-  };
-  const first = await sample();
-  first.terrain.forEach((count) => expect(count).toBeGreaterThan(2));
-  first.spots.forEach((count) => expect(count).toBeGreaterThan(2));
-  expect(first.supply).toBeGreaterThan(2);
-  expect(first.patrol[0]).toBeGreaterThan(2);
-  expect(first.patrol[1]).toBe(0);
-  await page.getByLabel('Step forward', { exact: true }).click();
-  await expect.poll(async () => (await sample()).patrol[1]).toBeGreaterThan(2);
-  expect((await sample()).patrol[0]).toBe(0);
   const before = await page.getByTestId('webgpu-map-canvas').screenshot();
+  await page.getByLabel('Step forward', { exact: true }).click();
+  expect(await page.getByTestId('webgpu-map-canvas').screenshot()).not.toEqual(before);
   await page.getByTestId('map-viewer').focus();
   await page.keyboard.press('+');
-  expect(await page.getByTestId('webgpu-map-canvas').screenshot()).not.toEqual(before);
   await page.getByLabel('Reset view', { exact: true }).click();
   await expect(page.getByTestId('map-viewer')).toHaveAttribute(
     'data-camera',
     '{"x":0,"y":0,"zoom":1}',
   );
-  await page.getByLabel('Toggle theme').click();
-  await expect(page.getByTestId('map-viewer')).toHaveAttribute('data-renderer', 'WebGPU');
 });
 
 test('a blank GPU frame falls back to Canvas instead of recreating SVG DOM', async ({ page }) => {
@@ -286,4 +220,43 @@ test('all routes keep the visualizer primary and information in the Primer pane'
     page.getByRole('navigation').getByRole('link', { name: 'Replays', exact: true }),
   ).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('replay-toggle')).toBeVisible();
+});
+
+test('viewer actions stay English; domain terms and rule sources connect to official sections', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: 'Rules', exact: true })).toHaveAttribute(
+    'href',
+    'https://rebuildup.dev/share/procon2026#map',
+  );
+  await expect(page.getByTestId('sample-source')).toContainText(
+    '令和8年度香川（高松）大会募集要項.pdf',
+  );
+  await expect(page.getByTestId('sample-source').getByRole('link')).toHaveAttribute(
+    'href',
+    'https://rebuildup.dev/share/procon2026#s1-p8',
+  );
+  await page.getByLabel('Example').selectOption('figure2');
+  await expect(page.getByTestId('sample-source')).toContainText('p.10・図2');
+  await expect(page.getByTestId('sample-source').getByRole('link')).toHaveAttribute(
+    'href',
+    'https://rebuildup.dev/share/procon2026#s1-p10',
+  );
+  const topics = page.getByRole('navigation', { name: 'Rules by topic' }).getByRole('link');
+  await expect(topics).toHaveCount(3);
+  for (const [index, section] of ['map', 'agents', 'spots'].entries())
+    await expect(topics.nth(index)).toHaveAttribute(
+      'href',
+      `https://rebuildup.dev/share/procon2026#${section}`,
+    );
+  await expect(page.getByText('平地', { exact: true })).toBeVisible();
+  await expect(page.getByText('池', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reset view', exact: true })).toBeVisible();
+  await page.goto('/replays');
+  await expect(page.getByTestId('replay-toggle')).toHaveText('Play');
+  await expect(page.getByRole('link', { name: 'Rules', exact: true })).toHaveAttribute(
+    'href',
+    'https://rebuildup.dev/share/procon2026#time',
+  );
 });

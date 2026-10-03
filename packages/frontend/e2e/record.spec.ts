@@ -51,7 +51,7 @@ test.describe('frontend screen recording', () => {
         while (Date.now() < deadline) {
           // `play()` rewinds to step 1 once the five-step fixture has run
           // out, so pressing Play again keeps the clip moving throughout.
-          if ((await toggle.getAttribute('aria-label')) === 'Play') {
+          if ((await toggle.getAttribute('aria-label')) === 'Replays') {
             await toggle.click();
           }
           await page.waitForTimeout(300);
@@ -77,6 +77,10 @@ test.describe('frontend screen recording', () => {
         await page.keyboard.press('ArrowLeft');
         await page.waitForTimeout(1500);
         await page.getByLabel('Reset view', { exact: true }).click();
+        await page.waitForTimeout(1500);
+        await page.getByLabel('Example').selectOption('figure2');
+        await page.waitForTimeout(1500);
+        await page.getByLabel('Outer grid').selectOption('2');
         await page.waitForTimeout(1500);
       },
     });

@@ -1,116 +1,112 @@
-import marks from '@/viewer-marks.json';
+import samples from '@/viewer-samples.json';
+import {
+  tileAtlas,
+  tileIndex,
+  tileSource,
+  TILE_SIZE,
+  TILE_WORLD_SIZE,
+  HALO_TILE,
+  INK_TILE,
+  type Terrain,
+} from './hex-assets';
+export { markNames, GLYPH_SIZE, glyphAtlas, loadHexAssets } from './hex-assets';
+import type { Mark } from './hex-assets';
+export type { Mark } from './hex-assets';
 
-export type Mark = keyof typeof marks;
+export type Family = 'ridge' | 'peak' | 'terrace';
+
 export interface Camera {
   x: number;
   y: number;
   zoom: number;
 }
 export interface ViewerCell {
-  x: number;
-  y: number;
-  hue: string;
-  mark: Mark;
+  readonly x: number;
+  readonly y: number;
+  readonly terrain: Terrain;
 }
 export interface ViewerMark {
-  x: number;
-  y: number;
-  size: number;
-  hue: string;
-  mark: Mark;
+  readonly cell: number;
+  readonly mark: Mark;
 }
 export interface ViewerScene {
-  cells: ViewerCell[];
-  marks: ViewerMark[];
+  readonly cells: readonly ViewerCell[];
+  readonly marks: readonly ViewerMark[];
 }
-export const markNames = Object.keys(marks) as Mark[];
-export const GLYPH_SIZE = 64;
-export const HEX_POINTS = [
-  [0, -23],
-  [20, -11.5],
-  [20, 11.5],
-  [0, 23],
-  [-20, 11.5],
-  [-20, -11.5],
-] as const;
-const terrainHue = { plain: 'green', mountain: 'gray', water: 'blue', road: 'brown' };
-export function fixtureScene(turn: number): ViewerScene {
-  const cells: ViewerCell[] = Array.from({ length: 48 }, (_, i) => {
-    const mark = i % 11 === 0 ? 'mountain' : i % 9 === 0 ? 'water' : i % 5 === 0 ? 'road' : 'plain';
-    return {
-      x: (i % 8) * 40 + (Math.floor(i / 8) % 2) * 20,
-      y: Math.floor(i / 8) * 35,
-      hue: terrainHue[mark],
-      mark,
-    };
-  });
-  const hues = ['yellow', 'orange', 'auburn', 'purple', 'plum', 'olive'];
-  return {
-    cells,
-    marks: [
-      ...cells.map((cell) => ({
-        x: cell.x - 8,
-        y: cell.y - 8,
-        size: 16,
-        hue: cell.hue,
-        mark: cell.mark,
-      })),
-      ...hues.map((hue, n) => ({
-        x: 40 + n * 40,
-        y: 27 + (n % 2) * 70,
-        size: 18,
-        hue,
-        mark: `s${n}` as Mark,
-      })),
-      { x: 40 + (turn % 6) * 40, y: 132, size: 20, hue: 'pine', mark: 'patrol' },
-      { x: 220, y: 100, size: 20, hue: 'pink', mark: 'supply' },
-    ],
-  };
-}
-interface GlyphNode {
-  tag: string;
-  attrs: Record<string, string>;
-  children: GlyphNode[];
-}
-let atlas: OffscreenCanvas | undefined;
-export function glyphAtlas(): OffscreenCanvas {
-  if (atlas) return atlas;
-  const result = new OffscreenCanvas(GLYPH_SIZE * markNames.length, GLYPH_SIZE);
-  const ctx = result.getContext('2d');
-  if (!ctx) throw new Error('No glyph atlas context');
-  const paint = (node: GlyphNode, inherited: Record<string, string>) => {
-    const attrs = { ...inherited, ...node.attrs };
-    if (node.tag === 'g') {
-      for (const child of node.children) paint(child, attrs);
-      return;
+export type Sample = keyof typeof samples;
+export { samples };
+const fixtures = new Map<string, ViewerScene>();
+export function fixtureScene(
+  turn: number,
+  family: Family = 'ridge',
+  sample: Sample = 'figure1',
+  padding = 0,
+  animate = false,
+): ViewerScene {
+  const key = `${family}:${sample}:${padding}:${animate ? turn % 6 : 'static'}`;
+  const cached = fixtures.get(key);
+  if (cached) return cached;
+  const data = samples[sample],
+    cells: ViewerCell[] = [],
+    marks: ViewerMark[] = [];
+  const index = new Map<number, number>();
+  const scale = 23 / 30;
+  for (let row = -padding; row < data.height + padding; row++)
+    for (let col = -padding; col < data.width + padding; col++) {
+      const inside = row >= 0 && row < data.height && col >= 0 && col < data.width;
+      const cell = cells.length;
+      if (inside) index.set(row * data.width + col, cell);
+      cells.push({
+        x: (col * 52 + (row % 2 === 0 ? 26 : 0)) * scale,
+        y: row * 45 * scale,
+        terrain: inside
+          ? (['plain', 'road', 'mountain', 'water'] as const)[data.cells[row]![col]!]!
+          : 'empty',
+      });
     }
-    const n = (name: string) => Number(attrs[name] ?? 0);
-    const path = new Path2D();
-    if (node.tag === 'path') path.addPath(new Path2D(attrs.d));
-    else if (node.tag === 'rect') path.roundRect(n('x'), n('y'), n('width'), n('height'), n('rx'));
-    else if (node.tag === 'circle') path.arc(n('cx'), n('cy'), n('r'), 0, Math.PI * 2);
-    else throw new Error(`Unsupported glyph shape: ${node.tag}`);
-    if (attrs.fill !== 'none') {
-      ctx.fillStyle = 'white';
-      ctx.fill(path);
-    }
-    if (attrs.stroke && attrs.stroke !== 'none') {
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = Number(attrs['stroke-width'] ?? 1);
-      ctx.lineCap = (attrs['stroke-linecap'] ?? 'butt') as CanvasLineCap;
-      ctx.lineJoin = (attrs['stroke-linejoin'] ?? 'miter') as CanvasLineJoin;
-      ctx.stroke(path);
-    }
-  };
-  markNames.forEach((name, index) => {
-    ctx.save();
-    ctx.translate(index * GLYPH_SIZE, 0);
-    ctx.scale(GLYPH_SIZE / 16, GLYPH_SIZE / 16);
-    for (const node of marks[name]) paint(node, {});
-    ctx.restore();
-  });
-  atlas = result;
+  for (const spot of data.spots)
+    marks.push({
+      cell: index.get(spot.cell)!,
+      mark: (family === 'ridge' ? `s${spot.series}` : `${family}-s${spot.series}`) as Mark,
+    });
+  const candidates = [...index.entries()]
+    .filter(
+      ([original]) =>
+        data.cells[Math.floor(original / data.width)]![original % data.width] === 0 &&
+        !data.spots.some((spot) => spot.cell === original),
+    )
+    .map(([, cell]) => cell);
+  if (animate)
+    marks.push({
+      cell: candidates[turn % candidates.length]!,
+      mark: (family === 'ridge' ? 'patrol' : `${family}-patrol`) as Mark,
+    });
+  const result = { cells, marks };
+  fixtures.set(key, result);
   return result;
+}
+export function sceneTransform(scene: ViewerScene, width: number, height: number, camera: Camera) {
+  const half = TILE_WORLD_SIZE / 2;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const cell of scene.cells) {
+    minX = Math.min(minX, cell.x - half);
+    minY = Math.min(minY, cell.y - half);
+    maxX = Math.max(maxX, cell.x + half);
+    maxY = Math.max(maxY, cell.y + half);
+  }
+  const fit = Math.min(
+    Math.max(1, width - 32) / (maxX - minX),
+    Math.max(1, height - 32) / (maxY - minY),
+  );
+  return {
+    fit,
+    scale: fit * camera.zoom,
+    x: width / 2 - ((minX + maxX) / 2) * fit * camera.zoom + camera.x * fit,
+    y: height / 2 - ((minY + maxY) / 2) * fit * camera.zoom + camera.y * fit,
+  };
 }
 export function palette(): (token: string) => [number, number, number, number] {
   const style = getComputedStyle(document.documentElement);
@@ -134,28 +130,47 @@ export function palette(): (token: string) => [number, number, number, number] {
 export function cssColor(rgba: readonly number[]): string {
   return `rgba(${rgba[0]! * 255},${rgba[1]! * 255},${rgba[2]! * 255},${rgba[3]})`;
 }
-export function worldPoint(width: number, height: number, x: number, y: number, camera: Camera) {
-  const fit = Math.min(width / 370, height / 265);
+export function worldPoint(
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  camera: Camera,
+  scene: ViewerScene = fixtureScene(0),
+) {
+  const transform = sceneTransform(scene, width, height, camera);
   return {
-    x: (x * camera.zoom + camera.x + 24) * fit + (width - 370 * fit) / 2,
-    y: (y * camera.zoom + camera.y + 24) * fit + (height - 265 * fit) / 2,
-    fit,
+    x: x * transform.scale + transform.x,
+    y: y * transform.scale + transform.y,
+    fit: transform.fit,
   };
 }
-const tinted = new Map<string, OffscreenCanvas>();
-export function coloredAtlas(color: string): OffscreenCanvas {
-  const cached = tinted.get(color);
+export interface HexInstance {
+  x: number;
+  y: number;
+  tile: number;
+}
+/** One occupant per hex, composed before either rendering backend sees it. */
+const compositions = new WeakMap<ViewerScene, HexInstance[]>();
+export function hexInstances(scene: ViewerScene): HexInstance[] {
+  const cached = compositions.get(scene);
   if (cached) return cached;
-  const source = glyphAtlas();
-  const result = new OffscreenCanvas(source.width, source.height);
-  const ctx = result.getContext('2d')!;
-  ctx.drawImage(source, 0, 0);
-  ctx.globalCompositeOperation = 'source-in';
-  ctx.fillStyle = color;
-  ctx.fillRect(0, 0, result.width, result.height);
-  if (tinted.size >= 24) tinted.clear();
-  tinted.set(color, result);
-  return result;
+  const occupants = new Map<number, Mark>();
+  for (const occupant of scene.marks) {
+    if (!Number.isInteger(occupant.cell) || !scene.cells[occupant.cell])
+      throw new Error('Occupant references missing hex');
+    if (occupants.has(occupant.cell)) throw new Error('Duplicate hex occupant');
+    occupants.set(occupant.cell, occupant.mark);
+  }
+  const instances = scene.cells.map((cell, index) => {
+    return {
+      x: cell.x - TILE_WORLD_SIZE / 2,
+      y: cell.y - TILE_WORLD_SIZE / 2,
+      tile: tileIndex(cell.terrain, occupants.get(index)),
+    };
+  });
+  compositions.set(scene, instances);
+  return instances;
 }
 export function drawCanvasScene(canvas: HTMLCanvasElement, scene: ViewerScene, camera: Camera) {
   const rect = canvas.getBoundingClientRect();
@@ -166,14 +181,11 @@ export function drawCanvasScene(canvas: HTMLCanvasElement, scene: ViewerScene, c
     canvas.width = width;
     canvas.height = height;
   }
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('No Canvas fallback context');
-  const colors = palette();
+  const ctx = canvas.getContext('2d')!;
   ctx.resetTransform();
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = cssColor(colors('--bgColor-muted'));
+  ctx.fillStyle = cssColor(palette()('--bgColor-muted'));
   ctx.fillRect(0, 0, width, height);
-  const point = worldPoint(rect.width, rect.height, 0, 0, camera);
+  const point = worldPoint(rect.width, rect.height, 0, 0, camera, scene);
   ctx.setTransform(
     devicePixelRatio * point.fit * camera.zoom,
     0,
@@ -182,34 +194,20 @@ export function drawCanvasScene(canvas: HTMLCanvasElement, scene: ViewerScene, c
     point.x * devicePixelRatio,
     point.y * devicePixelRatio,
   );
-  for (const cell of scene.cells) {
-    const path = new Path2D();
-    HEX_POINTS.forEach(([x, y], i) => {
-      if (i === 0) path.moveTo(cell.x + x, cell.y + y);
-      else path.lineTo(cell.x + x, cell.y + y);
-    });
-    path.closePath();
-    ctx.fillStyle = cssColor(colors(`--data-${cell.hue}-color-muted`));
-    ctx.fill(path);
-    ctx.save();
-    ctx.clip(path);
-    ctx.strokeStyle = cssColor(colors(`--data-${cell.hue}-color-emphasis`));
-    ctx.lineWidth = 2;
-    ctx.stroke(path);
-    ctx.restore();
-  }
-  for (const mark of scene.marks) {
-    const source = coloredAtlas(cssColor(colors(`--data-${mark.hue}-color-emphasis`)));
-    ctx.drawImage(
-      source,
-      markNames.indexOf(mark.mark) * GLYPH_SIZE,
-      0,
-      GLYPH_SIZE,
-      GLYPH_SIZE,
-      mark.x,
-      mark.y,
-      mark.size,
-      mark.size,
-    );
-  }
+  const instances = hexInstances(scene);
+  for (const layer of [HALO_TILE, undefined, INK_TILE])
+    for (const instance of instances) {
+      const source = tileSource(layer ?? instance.tile);
+      ctx.drawImage(
+        tileAtlas(),
+        source.x,
+        source.y,
+        TILE_SIZE,
+        TILE_SIZE,
+        instance.x,
+        instance.y,
+        TILE_WORLD_SIZE,
+        TILE_WORLD_SIZE,
+      );
+    }
 }

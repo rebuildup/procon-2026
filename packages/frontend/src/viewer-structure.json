@@ -1,0 +1,1347 @@
+{
+  "viewBox": "0 0 420 168",
+  "defs": {
+    "tag": "defs",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "pattern",
+        "attrs": {
+          "id": "hatch",
+          "width": "6",
+          "height": "6",
+          "patternUnits": "userSpaceOnUse",
+          "patternTransform": "rotate(45)"
+        },
+        "children": [
+          {
+            "tag": "rect",
+            "attrs": {
+              "width": "6",
+              "height": "6",
+              "fill": "#bfbfbf"
+            },
+            "children": []
+          },
+          {
+            "tag": "line",
+            "attrs": {
+              "x1": "0",
+              "y1": "0",
+              "x2": "0",
+              "y2": "6",
+              "stroke": "#8f8f8f",
+              "stroke-width": "1.4"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "tag": "pattern",
+        "attrs": {
+          "id": "waves",
+          "width": "10",
+          "height": "5",
+          "patternUnits": "userSpaceOnUse"
+        },
+        "children": [
+          {
+            "tag": "rect",
+            "attrs": {
+              "width": "10",
+              "height": "5",
+              "fill": "#46b1e1"
+            },
+            "children": []
+          },
+          {
+            "tag": "path",
+            "attrs": {
+              "d": "M0 3.2c1.2-1.6 2.5-1.6 3.7 0s2.5 1.6 3.7 0",
+              "fill": "none",
+              "stroke": "#9bc2e6",
+              "stroke-width": "1.1"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "tag": "pattern",
+        "attrs": {
+          "id": "dots",
+          "width": "5",
+          "height": "5",
+          "patternUnits": "userSpaceOnUse"
+        },
+        "children": [
+          {
+            "tag": "rect",
+            "attrs": {
+              "width": "5",
+              "height": "5",
+              "fill": "#8ed973"
+            },
+            "children": []
+          },
+          {
+            "tag": "circle",
+            "attrs": {
+              "cx": "2.5",
+              "cy": "2.5",
+              "r": "1",
+              "fill": "#6fb857"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "tag": "pattern",
+        "attrs": {
+          "id": "roadpat",
+          "width": "8",
+          "height": "8",
+          "patternUnits": "userSpaceOnUse"
+        },
+        "children": [
+          {
+            "tag": "rect",
+            "attrs": {
+              "width": "8",
+              "height": "8",
+              "fill": "#156082"
+            },
+            "children": []
+          },
+          {
+            "tag": "line",
+            "attrs": {
+              "x1": "1",
+              "y1": "4",
+              "x2": "4",
+              "y2": "4",
+              "stroke": "#9bc2e6",
+              "stroke-width": "1.2"
+            },
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "hex": [
+    {
+      "center": [52, 44],
+      "halo": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#ffffff",
+          "stroke-width": "4.5",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "52,14 78,29 78,59 52,74 26,59 26,29"
+            },
+            "children": []
+          }
+        ]
+      },
+      "fill": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#212428",
+          "stroke-width": "1.6",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "52,14 78,29 78,59 52,74 26,59 26,29",
+              "fill": "url(#dots)"
+            },
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "center": [132, 44],
+      "halo": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#ffffff",
+          "stroke-width": "4.5",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "132,14 158,29 158,59 132,74 106,59 106,29"
+            },
+            "children": []
+          }
+        ]
+      },
+      "fill": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#212428",
+          "stroke-width": "1.6",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "132,14 158,29 158,59 132,74 106,59 106,29",
+              "fill": "url(#roadpat)"
+            },
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "center": [212, 44],
+      "halo": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#ffffff",
+          "stroke-width": "4.5",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "212,14 238,29 238,59 212,74 186,59 186,29"
+            },
+            "children": []
+          }
+        ]
+      },
+      "fill": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#212428",
+          "stroke-width": "1.6",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "212,14 238,29 238,59 212,74 186,59 186,29",
+              "fill": "url(#waves)"
+            },
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "center": [292, 44],
+      "halo": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#ffffff",
+          "stroke-width": "4.5",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "292,14 318,29 318,59 292,74 266,59 266,29"
+            },
+            "children": []
+          }
+        ]
+      },
+      "fill": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#212428",
+          "stroke-width": "1.6",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "292,14 318,29 318,59 292,74 266,59 266,29",
+              "fill": "url(#dots)"
+            },
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "center": [92, 102],
+      "halo": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#ffffff",
+          "stroke-width": "4.5",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "92,72 118,87 118,117 92,132 66,117 66,87"
+            },
+            "children": []
+          }
+        ]
+      },
+      "fill": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#212428",
+          "stroke-width": "1.6",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "92,72 118,87 118,117 92,132 66,117 66,87",
+              "fill": "url(#hatch)"
+            },
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "center": [252, 102],
+      "halo": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#ffffff",
+          "stroke-width": "4.5",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "252,72 278,87 278,117 252,132 226,117 226,87"
+            },
+            "children": []
+          }
+        ]
+      },
+      "fill": {
+        "tag": "g",
+        "attrs": {
+          "stroke": "#212428",
+          "stroke-width": "1.6",
+          "stroke-linejoin": "round"
+        },
+        "children": [
+          {
+            "tag": "polygon",
+            "attrs": {
+              "points": "252,72 278,87 278,117 252,132 226,117 226,87",
+              "fill": "url(#dots)"
+            },
+            "children": []
+          }
+        ]
+      }
+    }
+  ],
+  "series": {
+    "s0": {
+      "center": [52, 44],
+      "layers": [
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#ffffff",
+            "stroke-width": "3.4",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M40.5 42 52 31.5 63.5 42Z"
+              },
+              "children": []
+            },
+            {
+              "tag": "rect",
+              "attrs": {
+                "x": "44",
+                "y": "42",
+                "width": "16",
+                "height": "13"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#212428",
+            "stroke-width": "1.1",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M40.5 42 52 31.5 63.5 42Z",
+                "fill": "#cc9900"
+              },
+              "children": []
+            },
+            {
+              "tag": "rect",
+              "attrs": {
+                "x": "44",
+                "y": "42",
+                "width": "16",
+                "height": "13",
+                "fill": "#cc9900"
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "s1": {
+      "center": [132, 44],
+      "layers": [
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#ffffff",
+            "stroke-width": "3.4",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M120 41h24l-4 5h-16Z"
+              },
+              "children": []
+            },
+            {
+              "tag": "rect",
+              "attrs": {
+                "x": "123",
+                "y": "46",
+                "width": "18",
+                "height": "7"
+              },
+              "children": []
+            },
+            {
+              "tag": "circle",
+              "attrs": {
+                "cx": "127",
+                "cy": "57",
+                "r": "3.2"
+              },
+              "children": []
+            },
+            {
+              "tag": "circle",
+              "attrs": {
+                "cx": "137",
+                "cy": "57",
+                "r": "3.2"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#212428",
+            "stroke-width": "1.1",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M120 41h24l-4 5h-16Z",
+                "fill": "#c04f15"
+              },
+              "children": []
+            },
+            {
+              "tag": "rect",
+              "attrs": {
+                "x": "123",
+                "y": "46",
+                "width": "18",
+                "height": "7",
+                "fill": "#c04f15"
+              },
+              "children": []
+            },
+            {
+              "tag": "circle",
+              "attrs": {
+                "cx": "127",
+                "cy": "57",
+                "r": "3.2",
+                "fill": "#c04f15"
+              },
+              "children": []
+            },
+            {
+              "tag": "circle",
+              "attrs": {
+                "cx": "137",
+                "cy": "57",
+                "r": "3.2",
+                "fill": "#c04f15"
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "s2": {
+      "center": [212, 44],
+      "layers": [
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#ffffff",
+            "stroke-width": "3.4",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M202 41h20c0 6.5-4.5 10.5-10 10.5S202 47.5 202 41z"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#212428",
+            "stroke-width": "1.1",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M202 41h20c0 6.5-4.5 10.5-10 10.5S202 47.5 202 41z",
+                "fill": "#b03a55"
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "s3": {
+      "center": [292, 44],
+      "layers": [
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#ffffff",
+            "stroke-width": "3.4",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M282 42h16v6a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z"
+              },
+              "children": []
+            },
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M280 42a6 6 0 0 1 12 0"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#212428",
+            "stroke-width": "1.1",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M282 42h16v6a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z",
+                "fill": "#7048a8"
+              },
+              "children": []
+            },
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M280 42a6 6 0 0 1 12 0",
+                "fill": "none"
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "s5": {
+      "center": [92, 102],
+      "layers": [
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#ffffff",
+            "stroke-width": "3.4",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "rect",
+              "attrs": {
+                "x": "82",
+                "y": "97",
+                "width": "20",
+                "height": "9"
+              },
+              "children": []
+            },
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M102 106V90"
+              },
+              "children": []
+            },
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M102 90h7l-3 3.6 3 3.6h-7Z"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#212428",
+            "stroke-width": "1.1",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "rect",
+              "attrs": {
+                "x": "82",
+                "y": "97",
+                "width": "20",
+                "height": "9",
+                "fill": "#2f7d4f"
+              },
+              "children": []
+            },
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M102 106V90",
+                "fill": "none"
+              },
+              "children": []
+            },
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M102 90h7l-3 3.6 3 3.6h-7Z",
+                "fill": "#2f7d4f"
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "s4": {
+      "center": [252, 102],
+      "layers": [
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#ffffff",
+            "stroke-width": "3.4",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M242 95 252 86 262 95v10h-20Z"
+              },
+              "children": []
+            },
+            {
+              "tag": "rect",
+              "attrs": {
+                "x": "244",
+                "y": "95",
+                "width": "16",
+                "height": "4"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "g",
+          "attrs": {
+            "stroke": "#212428",
+            "stroke-width": "1.1",
+            "stroke-linejoin": "round"
+          },
+          "children": [
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M242 95 252 86 262 95v10h-20Z",
+                "fill": "#0f7f96"
+              },
+              "children": []
+            },
+            {
+              "tag": "rect",
+              "attrs": {
+                "x": "244",
+                "y": "95",
+                "width": "16",
+                "height": "4",
+                "fill": "#0f7f96"
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "reference": [
+    {
+      "tag": "defs",
+      "attrs": {},
+      "children": [
+        {
+          "tag": "pattern",
+          "attrs": {
+            "id": "hatch",
+            "width": "6",
+            "height": "6",
+            "patternUnits": "userSpaceOnUse",
+            "patternTransform": "rotate(45)"
+          },
+          "children": [
+            {
+              "tag": "rect",
+              "attrs": {
+                "width": "6",
+                "height": "6",
+                "fill": "#bfbfbf"
+              },
+              "children": []
+            },
+            {
+              "tag": "line",
+              "attrs": {
+                "x1": "0",
+                "y1": "0",
+                "x2": "0",
+                "y2": "6",
+                "stroke": "#8f8f8f",
+                "stroke-width": "1.4"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "pattern",
+          "attrs": {
+            "id": "waves",
+            "width": "10",
+            "height": "5",
+            "patternUnits": "userSpaceOnUse"
+          },
+          "children": [
+            {
+              "tag": "rect",
+              "attrs": {
+                "width": "10",
+                "height": "5",
+                "fill": "#46b1e1"
+              },
+              "children": []
+            },
+            {
+              "tag": "path",
+              "attrs": {
+                "d": "M0 3.2c1.2-1.6 2.5-1.6 3.7 0s2.5 1.6 3.7 0",
+                "fill": "none",
+                "stroke": "#9bc2e6",
+                "stroke-width": "1.1"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "pattern",
+          "attrs": {
+            "id": "dots",
+            "width": "5",
+            "height": "5",
+            "patternUnits": "userSpaceOnUse"
+          },
+          "children": [
+            {
+              "tag": "rect",
+              "attrs": {
+                "width": "5",
+                "height": "5",
+                "fill": "#8ed973"
+              },
+              "children": []
+            },
+            {
+              "tag": "circle",
+              "attrs": {
+                "cx": "2.5",
+                "cy": "2.5",
+                "r": "1",
+                "fill": "#6fb857"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "pattern",
+          "attrs": {
+            "id": "roadpat",
+            "width": "8",
+            "height": "8",
+            "patternUnits": "userSpaceOnUse"
+          },
+          "children": [
+            {
+              "tag": "rect",
+              "attrs": {
+                "width": "8",
+                "height": "8",
+                "fill": "#156082"
+              },
+              "children": []
+            },
+            {
+              "tag": "line",
+              "attrs": {
+                "x1": "1",
+                "y1": "4",
+                "x2": "4",
+                "y2": "4",
+                "stroke": "#9bc2e6",
+                "stroke-width": "1.2"
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#ffffff",
+        "stroke-width": "4.5",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "52,14 78,29 78,59 52,74 26,59 26,29"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "132,14 158,29 158,59 132,74 106,59 106,29"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "212,14 238,29 238,59 212,74 186,59 186,29"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "292,14 318,29 318,59 292,74 266,59 266,29"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "92,72 118,87 118,117 92,132 66,117 66,87"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "252,72 278,87 278,117 252,132 226,117 226,87"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.6",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "52,14 78,29 78,59 52,74 26,59 26,29",
+            "fill": "url(#dots)"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "132,14 158,29 158,59 132,74 106,59 106,29",
+            "fill": "url(#roadpat)"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "212,14 238,29 238,59 212,74 186,59 186,29",
+            "fill": "url(#waves)"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "292,14 318,29 318,59 292,74 266,59 266,29",
+            "fill": "url(#dots)"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "92,72 118,87 118,117 92,132 66,117 66,87",
+            "fill": "url(#hatch)"
+          },
+          "children": []
+        },
+        {
+          "tag": "polygon",
+          "attrs": {
+            "points": "252,72 278,87 278,117 252,132 226,117 226,87",
+            "fill": "url(#dots)"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#ffffff",
+        "stroke-width": "3.4",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M40.5 42 52 31.5 63.5 42Z"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "44",
+            "y": "42",
+            "width": "16",
+            "height": "13"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M120 41h24l-4 5h-16Z"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "123",
+            "y": "46",
+            "width": "18",
+            "height": "7"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "127",
+            "cy": "57",
+            "r": "3.2"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "137",
+            "cy": "57",
+            "r": "3.2"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M202 41h20c0 6.5-4.5 10.5-10 10.5S202 47.5 202 41z"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M282 42h16v6a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M280 42a6 6 0 0 1 12 0"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "82",
+            "y": "97",
+            "width": "20",
+            "height": "9"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M102 106V90"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M102 90h7l-3 3.6 3 3.6h-7Z"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M242 95 252 86 262 95v10h-20Z"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "244",
+            "y": "95",
+            "width": "16",
+            "height": "4"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "tag": "g",
+      "attrs": {
+        "stroke": "#212428",
+        "stroke-width": "1.1",
+        "stroke-linejoin": "round"
+      },
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M40.5 42 52 31.5 63.5 42Z",
+            "fill": "#cc9900"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "44",
+            "y": "42",
+            "width": "16",
+            "height": "13",
+            "fill": "#cc9900"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M120 41h24l-4 5h-16Z",
+            "fill": "#c04f15"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "123",
+            "y": "46",
+            "width": "18",
+            "height": "7",
+            "fill": "#c04f15"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "127",
+            "cy": "57",
+            "r": "3.2",
+            "fill": "#c04f15"
+          },
+          "children": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": "137",
+            "cy": "57",
+            "r": "3.2",
+            "fill": "#c04f15"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M202 41h20c0 6.5-4.5 10.5-10 10.5S202 47.5 202 41z",
+            "fill": "#b03a55"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M282 42h16v6a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z",
+            "fill": "#7048a8"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M280 42a6 6 0 0 1 12 0",
+            "fill": "none"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "82",
+            "y": "97",
+            "width": "20",
+            "height": "9",
+            "fill": "#2f7d4f"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M102 106V90",
+            "fill": "none"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M102 90h7l-3 3.6 3 3.6h-7Z",
+            "fill": "#2f7d4f"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M242 95 252 86 262 95v10h-20Z",
+            "fill": "#0f7f96"
+          },
+          "children": []
+        },
+        {
+          "tag": "rect",
+          "attrs": {
+            "x": "244",
+            "y": "95",
+            "width": "16",
+            "height": "4",
+            "fill": "#0f7f96"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "tag": "g",
+      "attrs": {},
+      "children": [
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M168 100h44v8h-44z",
+            "fill": "#ffffff",
+            "stroke": "#212428",
+            "stroke-width": "1.2"
+          },
+          "children": []
+        },
+        {
+          "tag": "path",
+          "attrs": {
+            "d": "M172 104h24M200 104h8",
+            "stroke": "#ffff00",
+            "stroke-width": "3.2",
+            "stroke-linecap": "round"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "tag": "g",
+      "attrs": {
+        "font-family": "ui-monospace, monospace",
+        "font-size": "9",
+        "fill": "#4b525a"
+      },
+      "children": [
+        {
+          "tag": "text",
+          "attrs": {
+            "x": "30",
+            "y": "150"
+          },
+          "children": []
+        },
+        {
+          "tag": "text",
+          "attrs": {
+            "x": "110",
+            "y": "150"
+          },
+          "children": []
+        },
+        {
+          "tag": "text",
+          "attrs": {
+            "x": "190",
+            "y": "150"
+          },
+          "children": []
+        },
+        {
+          "tag": "text",
+          "attrs": {
+            "x": "268",
+            "y": "150"
+          },
+          "children": []
+        },
+        {
+          "tag": "text",
+          "attrs": {
+            "x": "72",
+            "y": "164"
+          },
+          "children": []
+        },
+        {
+          "tag": "text",
+          "attrs": {
+            "x": "232",
+            "y": "164"
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}
