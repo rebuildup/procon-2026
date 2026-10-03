@@ -7,7 +7,8 @@ export const markNames = Object.keys(glyphs) as Mark[];
 export const GLYPH_SIZE = 64;
 export const TILE_SIZE = 128;
 export const TILE_COLUMNS = 16;
-export const TILE_WORLD_SIZE = (64 * 23) / 30;
+export const TILE_VIEW_SIZE = 68;
+export const TILE_WORLD_SIZE = (TILE_VIEW_SIZE * 23) / 30;
 export const terrains: Terrain[] = ['plain', 'mountain', 'water', 'road'];
 interface Node {
   tag: string;
@@ -75,7 +76,7 @@ export function loadHexAssets(): Promise<void> {
       for (const mark of [undefined, ...markNames]) {
         const index = tileIndex(terrain, mark),
           origin = tileSource(index);
-        tiles += `<g transform="translate(${origin.x + TILE_SIZE / 2},${origin.y + TILE_SIZE / 2}) scale(${TILE_SIZE / 64})">${tileSvgContent(terrain, mark)}</g>`;
+        tiles += `<g transform="translate(${origin.x + TILE_SIZE / 2},${origin.y + TILE_SIZE / 2}) scale(${TILE_SIZE / TILE_VIEW_SIZE})">${tileSvgContent(terrain, mark)}</g>`;
       }
     const glyphBody = markNames
       .map(
