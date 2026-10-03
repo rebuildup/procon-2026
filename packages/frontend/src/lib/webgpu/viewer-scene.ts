@@ -1,9 +1,12 @@
+import samples from '@/viewer-samples.json';
 import {
   tileAtlas,
   tileIndex,
   tileSource,
   TILE_SIZE,
   TILE_WORLD_SIZE,
+  HALO_TILE,
+  INK_TILE,
   type Terrain,
 } from './hex-assets';
 export { markNames, GLYPH_SIZE, glyphAtlas, loadHexAssets } from './hex-assets';
@@ -30,33 +33,80 @@ export interface ViewerScene {
   readonly cells: readonly ViewerCell[];
   readonly marks: readonly ViewerMark[];
 }
+export type Sample = keyof typeof samples;
+export { samples };
 const fixtures = new Map<string, ViewerScene>();
-export function fixtureScene(turn: number, family: Family = 'ridge'): ViewerScene {
-  const key = `${family}:${turn % 6}`;
+export function fixtureScene(
+  turn: number,
+  family: Family = 'ridge',
+  sample: Sample = 'figure1',
+  padding = 0,
+  animate = false,
+): ViewerScene {
+  const key = `${family}:${sample}:${padding}:${animate ? turn % 6 : 'static'}`;
   const cached = fixtures.get(key);
   if (cached) return cached;
-  const cells: ViewerCell[] = Array.from({ length: 48 }, (_, i) => {
-    const mark = i % 11 === 0 ? 'mountain' : i % 9 === 0 ? 'water' : i % 5 === 0 ? 'road' : 'plain';
-    return {
-      x: (i % 8) * 40 + (Math.floor(i / 8) % 2) * 20,
-      y: Math.floor(i / 8) * 35,
-      terrain: mark,
-    };
-  });
-
-  const result: ViewerScene = {
-    cells,
-    marks: [
-      ...Array.from({ length: 6 }, (_, n) => ({
-        cell: 9 + n,
-        mark: (family === 'ridge' ? `s${n}` : `${family}-s${n}`) as Mark,
-      })),
-      { cell: 33 + (turn % 6), mark: (family === 'ridge' ? 'patrol' : `${family}-patrol`) as Mark },
-      { cell: 30, mark: (family === 'ridge' ? 'supply' : `${family}-supply`) as Mark },
-    ],
-  };
+  const data = samples[sample],
+    cells: ViewerCell[] = [],
+    marks: ViewerMark[] = [];
+  const index = new Map<number, number>();
+  const scale = 23 / 30;
+  for (let row = -padding; row < data.height + padding; row++)
+    for (let col = -padding; col < data.width + padding; col++) {
+      const inside = row >= 0 && row < data.height && col >= 0 && col < data.width;
+      const cell = cells.length;
+      if (inside) index.set(row * data.width + col, cell);
+      cells.push({
+        x: (col * 52 + (row % 2 === 0 ? 26 : 0)) * scale,
+        y: row * 45 * scale,
+        terrain: inside
+          ? (['plain', 'road', 'mountain', 'water'] as const)[data.cells[row]![col]!]!
+          : 'empty',
+      });
+    }
+  for (const spot of data.spots)
+    marks.push({
+      cell: index.get(spot.cell)!,
+      mark: (family === 'ridge' ? `s${spot.series}` : `${family}-s${spot.series}`) as Mark,
+    });
+  const candidates = [...index.entries()]
+    .filter(
+      ([original]) =>
+        data.cells[Math.floor(original / data.width)]![original % data.width] === 0 &&
+        !data.spots.some((spot) => spot.cell === original),
+    )
+    .map(([, cell]) => cell);
+  if (animate)
+    marks.push({
+      cell: candidates[turn % candidates.length]!,
+      mark: (family === 'ridge' ? 'patrol' : `${family}-patrol`) as Mark,
+    });
+  const result = { cells, marks };
   fixtures.set(key, result);
   return result;
+}
+export function sceneTransform(scene: ViewerScene, width: number, height: number, camera: Camera) {
+  const half = TILE_WORLD_SIZE / 2;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const cell of scene.cells) {
+    minX = Math.min(minX, cell.x - half);
+    minY = Math.min(minY, cell.y - half);
+    maxX = Math.max(maxX, cell.x + half);
+    maxY = Math.max(maxY, cell.y + half);
+  }
+  const fit = Math.min(
+    Math.max(1, width - 32) / (maxX - minX),
+    Math.max(1, height - 32) / (maxY - minY),
+  );
+  return {
+    fit,
+    scale: fit * camera.zoom,
+    x: width / 2 - ((minX + maxX) / 2) * fit * camera.zoom + camera.x * fit,
+    y: height / 2 - ((minY + maxY) / 2) * fit * camera.zoom + camera.y * fit,
+  };
 }
 export function palette(): (token: string) => [number, number, number, number] {
   const style = getComputedStyle(document.documentElement);
@@ -80,12 +130,19 @@ export function palette(): (token: string) => [number, number, number, number] {
 export function cssColor(rgba: readonly number[]): string {
   return `rgba(${rgba[0]! * 255},${rgba[1]! * 255},${rgba[2]! * 255},${rgba[3]})`;
 }
-export function worldPoint(width: number, height: number, x: number, y: number, camera: Camera) {
-  const fit = Math.min(width / 370, height / 265);
+export function worldPoint(
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  camera: Camera,
+  scene: ViewerScene = fixtureScene(0),
+) {
+  const transform = sceneTransform(scene, width, height, camera);
   return {
-    x: (x * camera.zoom + camera.x + 24) * fit + (width - 370 * fit) / 2,
-    y: (y * camera.zoom + camera.y + 24) * fit + (height - 265 * fit) / 2,
-    fit,
+    x: x * transform.scale + transform.x,
+    y: y * transform.scale + transform.y,
+    fit: transform.fit,
   };
 }
 export interface HexInstance {
@@ -128,7 +185,7 @@ export function drawCanvasScene(canvas: HTMLCanvasElement, scene: ViewerScene, c
   ctx.resetTransform();
   ctx.fillStyle = cssColor(palette()('--bgColor-muted'));
   ctx.fillRect(0, 0, width, height);
-  const point = worldPoint(rect.width, rect.height, 0, 0, camera);
+  const point = worldPoint(rect.width, rect.height, 0, 0, camera, scene);
   ctx.setTransform(
     devicePixelRatio * point.fit * camera.zoom,
     0,
@@ -137,18 +194,20 @@ export function drawCanvasScene(canvas: HTMLCanvasElement, scene: ViewerScene, c
     point.x * devicePixelRatio,
     point.y * devicePixelRatio,
   );
-  for (const instance of hexInstances(scene)) {
-    const source = tileSource(instance.tile);
-    ctx.drawImage(
-      tileAtlas(),
-      source.x,
-      source.y,
-      TILE_SIZE,
-      TILE_SIZE,
-      instance.x,
-      instance.y,
-      TILE_WORLD_SIZE,
-      TILE_WORLD_SIZE,
-    );
-  }
+  const instances = hexInstances(scene);
+  for (const layer of [HALO_TILE, undefined, INK_TILE])
+    for (const instance of instances) {
+      const source = tileSource(layer ?? instance.tile);
+      ctx.drawImage(
+        tileAtlas(),
+        source.x,
+        source.y,
+        TILE_SIZE,
+        TILE_SIZE,
+        instance.x,
+        instance.y,
+        TILE_WORLD_SIZE,
+        TILE_WORLD_SIZE,
+      );
+    }
 }

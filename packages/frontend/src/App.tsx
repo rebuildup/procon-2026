@@ -24,6 +24,9 @@ import {
   fixtureScene,
   GLYPH_SIZE,
   markNames,
+  samples,
+  sceneTransform,
+  type Sample,
   type Camera,
   type Mark,
 } from '@/lib/webgpu/viewer-scene';
@@ -92,11 +95,17 @@ const Row = (props: { label: string; value: JSX.Element }) => (
 );
 function createViewport() {
   const [camera, setCamera] = createSignal<Camera>({ x: 0, y: 0, zoom: 1 });
+  const [sample, setSample] = createSignal<Sample>('figure1');
+  const [padding, setPadding] = createSignal(0);
   const [renderer, setRenderer] = createSignal('Initializing');
   const [error, setError] = createSignal('');
   return {
     camera,
     setCamera,
+    sample,
+    setSample,
+    padding,
+    setPadding,
     renderer,
     setRenderer,
     error,
@@ -107,17 +116,50 @@ function createViewport() {
 type Viewport = ReturnType<typeof createViewport>;
 function ViewControls(props: { viewport: Viewport }) {
   return (
-    <Panel title="View">
-      <Row label="Renderer" value={props.viewport.renderer()} />
-      <Button label="Reset view" icon="sync" block onClick={props.viewport.reset} />
+    <Panel title="表示">
+      <label class="d-block text-bold mb-2" for="map-sample">
+        問題文の例
+      </label>
+      <select
+        id="map-sample"
+        class="form-select width-full mb-3"
+        value={props.viewport.sample()}
+        onChange={(e) => {
+          props.viewport.setSample(e.currentTarget.value as Sample);
+          props.viewport.reset();
+        }}
+      >
+        <For each={Object.entries(samples)}>
+          {([id, data]) => <option value={id}>{data.label}</option>}
+        </For>
+      </select>
+      <label class="d-block text-bold mb-2" for="map-padding">
+        マップ外の空枠
+      </label>
+      <select
+        id="map-padding"
+        class="form-select width-full mb-3"
+        value={props.viewport.padding()}
+        onChange={(e) => {
+          props.viewport.setPadding(Number(e.currentTarget.value));
+          props.viewport.reset();
+        }}
+      >
+        <option value="0">表示しない</option>
+        <option value="1">1セル分</option>
+        <option value="2">2セル分</option>
+        <option value="3">3セル分</option>
+      </select>
+      <Row label="描画方式" value={props.viewport.renderer()} />
+      <Button label="中央に戻す" icon="sync" block onClick={props.viewport.reset} />
       <Show when={props.viewport.error()}>
         <p class="f6 color-fg-muted mt-2 mb-0" data-testid="webgpu-map-fallback">
-          Canvas fallback: {props.viewport.error()}
+          Canvas 描画へ切り替え: {props.viewport.error()}
         </p>
       </Show>
       <Show when={props.viewport.renderer() === 'Initializing'}>
         <p class="f6 color-fg-muted mt-2 mb-0" data-testid="webgpu-map-loading">
-          Initializing GPU…
+          GPU を準備中…
         </p>
       </Show>
     </Panel>
@@ -139,7 +181,7 @@ function GlyphPreview(props: { mark: Mark; hue: string }) {
 }
 function Legend() {
   return (
-    <Panel title="Legend">
+    <Panel title="凡例">
       <For
         each={
           [
@@ -155,7 +197,18 @@ function Legend() {
         {(item) => (
           <div class="d-flex flex-items-center py-1">
             <GlyphPreview {...item} />
-            <span class="ml-2">{item.mark}</span>
+            <span class="ml-2">
+              {
+                {
+                  plain: '平地',
+                  mountain: '山地',
+                  water: '池',
+                  road: '道路',
+                  patrol: '巡回車',
+                  supply: '補給車',
+                }[item.mark]
+              }
+            </span>
           </div>
         )}
       </For>
@@ -169,7 +222,14 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
   );
   let gpu!: HTMLCanvasElement, fallback!: HTMLCanvasElement, stage!: HTMLDivElement;
   const [assetsReady, setAssetsReady] = createSignal(false);
-  const scene = () => fixtureScene(props.turn ?? 0);
+  const scene = () =>
+    fixtureScene(
+      props.turn ?? 0,
+      'ridge',
+      viewport.sample(),
+      viewport.padding(),
+      props.turn !== undefined,
+    );
   const fail = (reason: string) => {
     viewport.setError(reason);
     viewport.setRenderer('Canvas');
@@ -244,14 +304,14 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
   });
   let drag: { x: number; y: number } | undefined;
   return (
-    <section class="border rounded-2 overflow-hidden bgColor-muted" aria-label="Visualizer">
+    <section class="border rounded-2 overflow-hidden bgColor-muted" aria-label="マップ表示">
       <div
         class="map-stage"
         ref={stage}
         role="img"
         tabindex="0"
         data-testid="map-viewer"
-        aria-label={`Match map, turn ${props.turn ?? 0}. Arrow keys pan, plus and minus zoom, zero resets.`}
+        aria-label={`マップ、ステップ ${props.turn ?? 0}。矢印キーで移動、プラス・マイナスで拡大縮小、0で中央に戻します。`}
         data-camera={JSON.stringify(viewport.camera())}
         data-renderer={viewport.renderer()}
         onWheel={(e) => {
@@ -268,7 +328,7 @@ function MapView(props: { turn?: number; viewport: Viewport }) {
         onPointerMove={(e) => {
           if (drag) {
             const rect = e.currentTarget.getBoundingClientRect(),
-              fit = Math.min(rect.width / 370, rect.height / 265);
+              fit = sceneTransform(scene(), rect.width, rect.height, viewport.camera()).fit;
             viewport.setCamera((c) => ({
               ...c,
               x: c.x + (e.clientX - drag!.x) / fit,
@@ -394,7 +454,7 @@ function ReplayPage() {
     <div
       class="PageLayout-columns"
       role="region"
-      aria-label="Replay viewer"
+      aria-label="再生画面"
       tabindex="0"
       data-testid="replay-viewer"
       onKeyDown={shortcut}
@@ -402,12 +462,12 @@ function ReplayPage() {
       <div class="PageLayout-content">
         <MapView turn={store.state().currentStep} viewport={viewport} />
       </div>
-      <aside class="PageLayout-pane" aria-label="Replay information and controls">
-        <Panel title="Replay">
-          <p class="color-fg-muted f6">Demo match · alice / bob</p>
+      <aside class="PageLayout-pane" aria-label="再生情報と操作">
+        <Panel title="再生">
+          <p class="color-fg-muted f6">再生デモ · alice / bob</p>
           <div class="mb-3">
             <Button
-              label={store.state().isPlaying ? 'Pause' : 'Play'}
+              label={store.state().isPlaying ? '一時停止' : '再生'}
               icon={store.state().isPlaying ? 'pause' : 'triangle-fill'}
               block
               primary={!store.state().isPlaying}
@@ -417,15 +477,15 @@ function ReplayPage() {
           </div>
           <div class="mb-3">
             <div class="d-flex flex-justify-between flex-items-center mb-2">
-              <span class="text-bold">Step</span>
+              <span class="text-bold">ステップ</span>
               <span class="text-mono" data-testid="replay-current-step">
                 {store.state().currentStep + 1} / {store.stepCount()}
               </span>
             </div>
-            <div class="BtnGroup d-flex mb-2" role="group" aria-label="Step navigation">
+            <div class="BtnGroup d-flex mb-2" role="group" aria-label="ステップの移動">
               <Button
-                label="Step backward"
-                text="Previous"
+                label="前のステップ"
+                text="前へ"
                 icon="chevron-left"
                 grouped
                 block
@@ -434,8 +494,8 @@ function ReplayPage() {
                 disabled={store.state().currentStep === 0}
               />
               <Button
-                label="Step forward"
-                text="Next"
+                label="次のステップ"
+                text="次へ"
                 icon="chevron-right"
                 grouped
                 block
@@ -444,10 +504,10 @@ function ReplayPage() {
                 disabled={store.state().currentStep === 4}
               />
             </div>
-            <div class="BtnGroup d-flex" role="group" aria-label="Replay boundaries">
+            <div class="BtnGroup d-flex" role="group" aria-label="再生範囲">
               <Button
-                label="First step"
-                text="First"
+                label="最初のステップ"
+                text="最初へ"
                 icon="move-to-start"
                 grouped
                 block
@@ -455,8 +515,8 @@ function ReplayPage() {
                 disabled={store.state().currentStep === 0}
               />
               <Button
-                label="Last step"
-                text="Last"
+                label="最後のステップ"
+                text="最後へ"
                 icon="move-to-end"
                 grouped
                 block
@@ -470,11 +530,11 @@ function ReplayPage() {
           </div>
           <RadioGroup.Root
             class="mb-3"
-            aria-label="Playback rate"
+            aria-label="再生速度"
             value={String(store.state().rate)}
             onChange={(v) => store.setRate(Number(v) as PlaybackRate)}
           >
-            <RadioGroup.Label class="d-block text-bold mb-2">Playback speed</RadioGroup.Label>
+            <RadioGroup.Label class="d-block text-bold mb-2">再生速度</RadioGroup.Label>
             <div class="BtnGroup d-flex">
               <For each={[1, 2, 4]}>
                 {(rate) => (
@@ -492,7 +552,7 @@ function ReplayPage() {
             </div>
           </RadioGroup.Root>
           <label class="d-block text-bold mb-2" for={scrubId}>
-            Replay position
+            再生位置
           </label>
           <input
             id={scrubId}
@@ -502,7 +562,7 @@ function ReplayPage() {
             min="0"
             max="4"
             value={store.state().currentStep}
-            aria-valuetext={`Step ${store.state().currentStep + 1} of 5`}
+            aria-valuetext={`ステップ ${store.state().currentStep + 1} / 5`}
             onPointerDown={(e) => {
               begin();
               e.currentTarget.setPointerCapture(e.pointerId);
@@ -523,22 +583,23 @@ function ReplayPage() {
             onInput={(e) => store.setStep(Number(e.currentTarget.value))}
           />
           <details class="mt-3">
-            <summary class="color-fg-muted f6">Keyboard shortcuts</summary>
+            <summary class="color-fg-muted f6">キーボード操作</summary>
             <p class="f6 mt-2 mb-0">
-              Space play/pause · ← → step · Home / End · 1 2 4 rate · Escape cancels scrub
+              Space: 再生・一時停止 / ← →: ステップ / Home・End: 最初・最後 / 1・2・4: 再生速度 /
+              Escape: 移動を取り消す
             </p>
           </details>
         </Panel>
         <ViewControls viewport={viewport} />
-        <Panel title="Score">
-          <table class="width-full" aria-label="Scores">
+        <Panel title="参考値（デモ）">
+          <table class="width-full" aria-label="参考値（デモ）">
             <thead>
               <tr>
                 <th class="text-left color-fg-muted border-bottom pb-2" scope="col">
-                  Player
+                  チーム
                 </th>
                 <th class="text-left color-fg-muted border-bottom pb-2" scope="col">
-                  Score
+                  参考値（デモ）
                 </th>
               </tr>
             </thead>
@@ -595,20 +656,20 @@ function LivePage() {
   const unavailable = () => !snapshot() && now() - started >= 5000;
   const stale = () => received() > 0 && now() - received() >= 5000;
   const statusLabel = {
-    waiting: 'Idle',
-    running: 'Running',
-    completed: 'Completed',
-    rejected: 'Error',
-    error: 'Error',
+    waiting: '待機中',
+    running: '試合中',
+    completed: '終了',
+    rejected: 'エラー',
+    error: 'エラー',
   };
   const label = () =>
     unavailable()
-      ? 'No data'
+      ? '情報なし'
       : stale()
-        ? 'Stale'
+        ? '更新停止'
         : snapshot()
           ? statusLabel[snapshot()!.status]
-          : 'Connecting';
+          : '接続中';
   const statusIcon = () =>
     unavailable() || stale()
       ? 'alert'
@@ -632,11 +693,11 @@ function LivePage() {
       <div class="PageLayout-content">
         <MapView viewport={viewport} />
       </div>
-      <aside class="PageLayout-pane" aria-label="Live match information">
+      <aside class="PageLayout-pane" aria-label="試合情報">
         <ViewControls viewport={viewport} />
-        <Panel title="Match">
+        <Panel title="試合">
           <Row
-            label="Status"
+            label="状態"
             value={
               <span
                 role="status"
@@ -652,7 +713,7 @@ function LivePage() {
             }
           />
           <Row
-            label="Day"
+            label="日"
             value={
               snapshot()?.day == null
                 ? '—'
@@ -660,13 +721,13 @@ function LivePage() {
             }
           />
           <Row
-            label="Revisions"
+            label="回答の履歴"
             value={snapshot() ? `[${snapshot()!.revisions.join(', ')}]` : '—'}
           />
-          <Row label="Solver" value={snapshot()?.solver ?? '—'} />
-          <Row label="Server" value={snapshot()?.server ?? '—'} />
+          <Row label="探索方式" value={snapshot()?.solver ?? '—'} />
+          <Row label="接続先" value={snapshot()?.server ?? '—'} />
           <Row
-            label="Last update"
+            label="最終更新"
             value={
               snapshot()
                 ? snapshot()!.lastUpdateUnix === 0
@@ -679,13 +740,12 @@ function LivePage() {
           />
           <Show when={unavailable()}>
             <div class="flash" role="status">
-              No match snapshot available. Start the CLI with --state-output pointing to
-              public/match-state.json.
+              試合情報を受信していません。
             </div>
           </Show>
           <Show when={stale()}>
             <div class="flash flash-warn" role="status">
-              Feed is stale. Values are last-known; check the CLI state output.
+              更新が停止しています。最後に受信した試合情報を表示しています。
             </div>
           </Show>
           <Show when={snapshot()?.error}>
@@ -694,12 +754,11 @@ function LivePage() {
             </div>
           </Show>
         </Panel>
-        <Panel title="Source">
+        <Panel title="出典">
           <p class="color-fg-muted f6">
-            Status: local match-state snapshot. Map: demo fixture; the snapshot contains no map or
-            agent positions.
+            試合情報は接続先から取得しています。マップは問題文の例です。受信データにマップやエージェントの位置は含まれていません。
           </p>
-          <Row label="Polling" value="1 second" />
+          <Row label="更新間隔" value="1秒" />
         </Panel>
       </aside>
     </div>
@@ -713,12 +772,15 @@ function SolversPage() {
       <div class="PageLayout-content">
         <MapView viewport={viewport} />
       </div>
-      <aside class="PageLayout-pane" aria-label="Renderer information and controls">
+      <aside class="PageLayout-pane" aria-label="描画情報と操作">
         <ViewControls viewport={viewport} />
-        <Panel title="Map">
-          <Row label="Source" value="Demo fixture" />
-          <Row label="Cells" value="48" />
-          <Row label="Symbols" value="ridge" />
+        <Panel title="マップ">
+          <Row label="出典" value={samples[viewport.sample()].label} />
+          <Row
+            label="セル数"
+            value={samples[viewport.sample()].width * samples[viewport.sample()].height}
+          />
+          <Row label="記号" value="稜線・波・帯" />
         </Panel>
         <Legend />
       </aside>
@@ -732,13 +794,22 @@ function Home() {
       <div class="PageLayout-content">
         <MapView viewport={viewport} />
       </div>
-      <aside class="PageLayout-pane" aria-label="Map information">
+      <aside class="PageLayout-pane" aria-label="マップ情報">
         <ViewControls viewport={viewport} />
-        <Panel title="Map">
-          <Row label="Source" value="Demo fixture" />
-          <Row label="Dimensions" value="8 × 6" />
-          <Row label="Cells" value="48" />
-          <Row label="Spot series" value="6" />
+        <Panel title="マップ">
+          <Row label="出典" value={samples[viewport.sample()].label} />
+          <Row
+            label="マップの大きさ"
+            value={`${samples[viewport.sample()].width} × ${samples[viewport.sample()].height}`}
+          />
+          <Row
+            label="セル数"
+            value={samples[viewport.sample()].width * samples[viewport.sample()].height}
+          />
+          <Row
+            label="系列数"
+            value={new Set(samples[viewport.sample()].spots.map((spot) => spot.series)).size}
+          />
         </Panel>
         <Legend />
       </aside>
@@ -748,24 +819,24 @@ function Home() {
 function Shell(props: { children?: JSX.Element }) {
   const location = useLocation();
   const destinations = [
-    ['/', 'Map', 'home'],
-    ['/replays', 'Replays', 'history'],
-    ['/solvers', 'Solvers', 'beaker'],
-    ['/live', 'Live', 'broadcast'],
+    ['/', 'マップ', 'home'],
+    ['/replays', '再生', 'history'],
+    ['/solvers', '探索', 'beaker'],
+    ['/live', '試合状況', 'broadcast'],
   ] as const;
   return (
     <div class="AppFrame app-shell bgColor-default">
       <div class="AppFrame-a11yNav">
         <a class="AppFrame-a11yLink" href="#main">
-          Skip to content
+          本文へ移動
         </a>
       </div>
       <header
         class="d-flex flex-items-center flex-wrap border-bottom px-3 py-2"
         data-testid="app-header"
       >
-        <h1 class="f5 mr-3 mb-0">Match viewer</h1>
-        <nav aria-label="Main navigation" class="d-flex flex-items-center flex-wrap">
+        <h1 class="f5 mr-3 mb-0">ヘキサうどん_ ビューア</h1>
+        <nav aria-label="画面の切り替え" class="d-flex flex-items-center flex-wrap">
           <For each={destinations}>
             {(item) => (
               <A
@@ -783,8 +854,8 @@ function Shell(props: { children?: JSX.Element }) {
             )}
           </For>
         </nav>
-        <button class="btn btn-sm ml-auto" onClick={toggleTheme} aria-label="Toggle theme">
-          <Icon name={getTheme().mode === 'dark' ? 'sun' : 'moon'} /> Theme
+        <button class="btn btn-sm ml-auto" onClick={toggleTheme} aria-label="配色を切り替える">
+          <Icon name={getTheme().mode === 'dark' ? 'sun' : 'moon'} /> 配色
         </button>
       </header>
       <main id="main" class="app-main">

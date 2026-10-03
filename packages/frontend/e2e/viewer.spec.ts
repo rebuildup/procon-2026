@@ -6,15 +6,15 @@ test('replay transport, scores, keyboard scrub and map navigation', async ({ pag
   await page.goto('/replays');
   const step = page.getByTestId('replay-current-step');
   await expect(step).toHaveText('1 / 5');
-  await page.getByLabel('Step forward', { exact: true }).click();
+  await page.getByLabel('次のステップ', { exact: true }).click();
   await expect(step).toHaveText('2 / 5');
   await expect(page.getByRole('row', { name: 'alice 10' })).toBeVisible();
   await page.getByText('4×', { exact: true }).click();
   await expect(page.getByRole('radio').nth(2)).toBeChecked();
-  await page.getByLabel('Play', { exact: true }).click();
+  await page.getByLabel('再生', { exact: true }).click();
   await expect(step).toHaveText('5 / 5');
-  await expect(page.getByLabel('Play', { exact: true })).toBeVisible();
-  await page.getByLabel('First step', { exact: true }).click();
+  await expect(page.getByLabel('再生', { exact: true })).toBeVisible();
+  await page.getByLabel('最初のステップ', { exact: true }).click();
   await page.getByTestId('replay-scrub').focus();
   await page.keyboard.press('ArrowRight');
   await expect(step).toHaveText('2 / 5');
@@ -40,7 +40,7 @@ test('routes fit desktop and narrow viewports; theme persists', async ({ page })
     }
   }
   const before = await page.locator('html').getAttribute('data-color-mode');
-  await page.getByLabel('Toggle theme').click();
+  await page.getByLabel('配色を切り替える').click();
   const after = await page.locator('html').getAttribute('data-color-mode');
   expect(after).not.toBe(before);
   await page.reload();
@@ -72,13 +72,13 @@ test('live feed preserves old wire timestamps and marks failed polling as stale'
           }),
   );
   await page.goto('/live');
-  await expect(page.getByTestId('live-status-badge')).toHaveText('Running');
+  await expect(page.getByTestId('live-status-badge')).toHaveText('試合中');
   await expect(page.getByText('00:00:00', { exact: true })).toBeVisible();
   phase = 'error';
-  await expect(page.getByTestId('live-status-badge')).toHaveText('Error');
+  await expect(page.getByTestId('live-status-badge')).toHaveText('エラー');
   await expect(page.getByRole('alert')).toHaveText('Solver failed');
   phase = 'offline';
-  await expect(page.getByTestId('live-status-badge')).toHaveText('Stale', { timeout: 10000 });
+  await expect(page.getByTestId('live-status-badge')).toHaveText('更新停止', { timeout: 10000 });
   await expect(page.getByRole('alert')).toHaveText('Solver failed');
 });
 
@@ -88,7 +88,7 @@ test('missing live feed leaves the connecting state', async ({ page }) => {
     (route) => route.fulfill({ status: 404, body: '' }),
   );
   await page.goto('/live');
-  await expect(page.getByTestId('live-status-badge')).toHaveText('No data', { timeout: 10000 });
+  await expect(page.getByTestId('live-status-badge')).toHaveText('情報なし', { timeout: 10000 });
 });
 
 test('unsupported GPU automatically uses a complete Canvas scene without SVG DOM', async ({
@@ -102,7 +102,7 @@ test('unsupported GPU automatically uses a complete Canvas scene without SVG DOM
   await expect(page.getByTestId('map-viewer')).toHaveAttribute('data-renderer', 'Canvas');
   await expect(page.getByTestId('canvas-map-fallback')).toHaveCSS('visibility', 'visible');
   await expect(
-    page.getByRole('region', { name: 'Visualizer' }).locator('svg,path,polygon'),
+    page.getByRole('region', { name: 'マップ表示' }).locator('svg,path,polygon'),
   ).toHaveCount(0);
   const pixels = await page.getByTestId('canvas-map-fallback').evaluate((el) => {
     const canvas = el as HTMLCanvasElement;
@@ -119,14 +119,14 @@ test('GPU replay changes composed occupants and camera without SVG overlay', asy
     timeout: 10000,
   });
   await expect(
-    page.getByRole('region', { name: 'Visualizer' }).locator('svg,path,polygon,button'),
+    page.getByRole('region', { name: 'マップ表示' }).locator('svg,path,polygon,button'),
   ).toHaveCount(0);
   const before = await page.getByTestId('webgpu-map-canvas').screenshot();
-  await page.getByLabel('Step forward', { exact: true }).click();
+  await page.getByLabel('次のステップ', { exact: true }).click();
   expect(await page.getByTestId('webgpu-map-canvas').screenshot()).not.toEqual(before);
   await page.getByTestId('map-viewer').focus();
   await page.keyboard.press('+');
-  await page.getByLabel('Reset view', { exact: true }).click();
+  await page.getByLabel('中央に戻す', { exact: true }).click();
   await expect(page.getByTestId('map-viewer')).toHaveAttribute(
     'data-camera',
     '{"x":0,"y":0,"zoom":1}',
@@ -152,7 +152,7 @@ test('a blank GPU frame falls back to Canvas instead of recreating SVG DOM', asy
   await expect(page.getByTestId('webgpu-map-fallback')).toContainText('blank-frame');
   await expect(page.getByTestId('webgpu-map-canvas')).toHaveCSS('visibility', 'hidden');
   await expect(page.getByTestId('canvas-map-fallback')).toHaveCSS('visibility', 'visible');
-  await expect(page.getByRole('region', { name: 'Visualizer' }).locator('svg')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'マップ表示' }).locator('svg')).toHaveCount(0);
 });
 
 test('replay shortcuts respect native controls and Escape cancels a held scrub', async ({
@@ -186,9 +186,9 @@ test('all routes keep the visualizer primary and information in the Primer pane'
     const content = page.locator('.PageLayout-content');
     const pane = page.locator('.PageLayout-pane');
     await expect(content.getByTestId('map-viewer')).toBeVisible();
-    await expect(content.getByRole('region', { name: 'Visualizer' })).toBeVisible();
+    await expect(content.getByRole('region', { name: 'マップ表示' })).toBeVisible();
     await expect(content.locator('button,table,[role="status"],h2,svg')).toHaveCount(0);
-    await expect(pane.getByRole('button', { name: 'Reset view' })).toBeVisible();
+    await expect(pane.getByRole('button', { name: '中央に戻す' })).toBeVisible();
     await expect(pane).toBeVisible();
     const geometry = await page.evaluate(() => {
       const content = document.querySelector('.PageLayout-content')!.getBoundingClientRect();
@@ -217,7 +217,7 @@ test('all routes keep the visualizer primary and information in the Primer pane'
   ).toBe('"content" "pane"');
   await page.reload();
   await expect(
-    page.getByRole('navigation').getByRole('link', { name: 'Replays', exact: true }),
+    page.getByRole('navigation').getByRole('link', { name: '再生', exact: true }),
   ).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('replay-toggle')).toBeVisible();
 });

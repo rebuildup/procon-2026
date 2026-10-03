@@ -1,21 +1,36 @@
 import { createWebGpuContext } from './device';
-import { loadHexAssets, tileAtlas, TILE_COLUMNS, TILE_SIZE, TILE_WORLD_SIZE } from './hex-assets';
-import { hexInstances, palette, worldPoint, type Camera, type ViewerScene } from './viewer-scene';
+import {
+  loadHexAssets,
+  tileAtlas,
+  TILE_COLUMNS,
+  TILE_SIZE,
+  TILE_WORLD_SIZE,
+  HALO_TILE,
+  INK_TILE,
+} from './hex-assets';
+import {
+  hexInstances,
+  palette,
+  worldPoint,
+  sceneTransform,
+  type Camera,
+  type ViewerScene,
+} from './viewer-scene';
 
 const shader = `
 struct View {camera:vec4f,viewport:vec4f};
 @group(0) @binding(0) var<uniform> view:View;
 @group(0) @binding(1) var atlasSampler:sampler;
 @group(0) @binding(2) var atlas:texture_2d<f32>;
+@group(0) @binding(3) var<uniform> layerMode:vec4f;
 struct Vertex {@builtin(position) position:vec4f,@location(0) uv:vec2f};
 @vertex fn vs(@builtin(vertex_index) index:u32,@location(0) rect:vec4f,@location(1) tile:f32)->Vertex {
  let corners=array<vec2f,6>(vec2f(0,0),vec2f(1,0),vec2f(0,1),vec2f(0,1),vec2f(1,0),vec2f(1,1));
  let corner=corners[index];let world=rect.xy+corner*rect.zw;
- let fit=min(view.viewport.x/370.0,view.viewport.y/265.0);
- let offset=(view.viewport.xy-vec2f(370,265)*fit)*0.5;
- let pixel=(world*view.camera.z+view.camera.xy+vec2f(24))*fit+offset;
+ let pixel=world*view.camera.x+view.camera.yz;
  var out:Vertex;out.position=vec4f(pixel.x/view.viewport.x*2-1,1-pixel.y/view.viewport.y*2,0,1);
- let origin=vec2f(f32(u32(tile)%${TILE_COLUMNS}u),floor(tile/${TILE_COLUMNS}.0))*${TILE_SIZE}.0;
+ let asset=select(tile,layerMode.x,layerMode.x>=0.0);
+ let origin=vec2f(f32(u32(asset)%${TILE_COLUMNS}u),floor(asset/${TILE_COLUMNS}.0))*${TILE_SIZE}.0;
  out.uv=(origin+corner*${TILE_SIZE}.0)/vec2f(textureDimensions(atlas));return out;
 }
 @fragment fn fs(in:Vertex)->@location(0) vec4f {return textureSample(atlas,atlasSampler,in.uv);}
@@ -80,16 +95,26 @@ export async function createViewerLayer(canvas: HTMLCanvasElement, fail: (reason
       atlas.width,
       atlas.height,
     ]);
-    const group = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: uniform } },
-        {
-          binding: 1,
-          resource: device.createSampler({ magFilter: 'linear', minFilter: 'linear' }),
-        },
-        { binding: 2, resource: texture.createView() },
-      ],
+    const modeBuffers: GPUBuffer[] = [];
+    const groups = [HALO_TILE, -1, INK_TILE].map((mode) => {
+      const buffer = device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(buffer, 0, new Float32Array([mode, 0, 0, 0]));
+      modeBuffers.push(buffer);
+      return device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: uniform } },
+          {
+            binding: 1,
+            resource: device.createSampler({ magFilter: 'linear', minFilter: 'linear' }),
+          },
+          { binding: 2, resource: texture.createView() },
+          { binding: 3, resource: { buffer } },
+        ],
+      });
     });
     const error = await device.popErrorScope();
     if (error) throw new Error(error.message);
@@ -136,10 +161,20 @@ export async function createViewerLayer(canvas: HTMLCanvasElement, fail: (reason
           lastInstances = instances;
           uploads++;
         }
+        const transform = sceneTransform(scene, rect.width, rect.height, camera);
         device.queue.writeBuffer(
           uniform,
           0,
-          new Float32Array([camera.x, camera.y, camera.zoom, 0, rect.width, rect.height, 0, 0]),
+          new Float32Array([
+            transform.scale,
+            transform.x,
+            transform.y,
+            0,
+            rect.width,
+            rect.height,
+            0,
+            0,
+          ]),
         );
         const bg = palette()('--bgColor-muted'),
           encoder = device.createCommandEncoder();
@@ -154,9 +189,12 @@ export async function createViewerLayer(canvas: HTMLCanvasElement, fail: (reason
           ],
         });
         pass.setPipeline(pipeline);
-        pass.setBindGroup(0, group);
+
         pass.setVertexBuffer(0, buffer);
-        pass.draw(6, instances.length);
+        for (const group of groups) {
+          pass.setBindGroup(0, group);
+          pass.draw(6, instances.length);
+        }
         pass.end();
         device.queue.submit([encoder.finish()]);
         draws++;
@@ -165,7 +203,7 @@ export async function createViewerLayer(canvas: HTMLCanvasElement, fail: (reason
         await device.queue.onSubmittedWorkDone();
         const rect = canvas.getBoundingClientRect();
         const point = scene.cells
-          .map((cell) => worldPoint(rect.width, rect.height, cell.x, cell.y, camera))
+          .map((cell) => worldPoint(rect.width, rect.height, cell.x, cell.y, camera, scene))
           .find((p) => p.x > 2 && p.y > 2 && p.x < rect.width - 2 && p.y < rect.height - 2);
         if (!point) return;
         const probe = document.createElement('canvas');
@@ -187,6 +225,7 @@ export async function createViewerLayer(canvas: HTMLCanvasElement, fail: (reason
         destroyed = true;
         buffer.destroy();
         uniform.destroy();
+        modeBuffers.forEach((buffer) => buffer.destroy());
         texture.destroy();
         device.destroy();
       },

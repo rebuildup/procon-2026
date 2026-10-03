@@ -32,19 +32,20 @@ test('labeled replay actions match unmodified Primer buttons in light and dark',
   for (const mode of ['light', 'dark']) {
     await page.goto('/replays');
     if ((await page.locator('html').getAttribute('data-color-mode')) !== mode)
-      await page.getByRole('button', { name: 'Toggle theme' }).click();
-    const pane = page.getByRole('complementary', { name: 'Replay information and controls' });
-    await expect(pane.getByTestId('replay-toggle')).toHaveText('Play');
+      await page.getByRole('button', { name: '配色を切り替える' }).click();
+    const pane = page.getByRole('complementary', { name: '再生情報と操作' });
+    await expect(pane.getByTestId('replay-toggle')).toHaveText('再生');
     await expect(
-      pane.getByRole('group', { name: 'Step navigation' }).getByRole('button'),
-    ).toHaveText(['Previous', 'Next']);
-    await expect(
-      pane.getByRole('group', { name: 'Replay boundaries' }).getByRole('button'),
-    ).toHaveText(['First', 'Last']);
+      pane.getByRole('group', { name: 'ステップの移動' }).getByRole('button'),
+    ).toHaveText(['前へ', '次へ']);
+    await expect(pane.getByRole('group', { name: '再生範囲' }).getByRole('button')).toHaveText([
+      '最初へ',
+      '最後へ',
+    ]);
     const reference = await context.newPage();
     await reference.goto('/replays');
     if ((await reference.locator('html').getAttribute('data-color-mode')) !== mode)
-      await reference.getByRole('button', { name: 'Toggle theme' }).click();
+      await reference.getByRole('button', { name: '配色を切り替える' }).click();
     const markup = await pane.evaluate((el) => el.innerHTML);
     await reference.evaluate((markup) => {
       document
@@ -86,7 +87,7 @@ test('labeled replay actions match unmodified Primer buttons in light and dark',
       }
     }
     const buttons = await pane
-      .getByRole('group', { name: 'Step navigation' })
+      .getByRole('group', { name: 'ステップの移動' })
       .getByRole('button')
       .all();
     const previous = (await buttons[0]!.boundingBox())!,

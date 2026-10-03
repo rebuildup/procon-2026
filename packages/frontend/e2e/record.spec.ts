@@ -51,7 +51,7 @@ test.describe('frontend screen recording', () => {
         while (Date.now() < deadline) {
           // `play()` rewinds to step 1 once the five-step fixture has run
           // out, so pressing Play again keeps the clip moving throughout.
-          if ((await toggle.getAttribute('aria-label')) === 'Play') {
+          if ((await toggle.getAttribute('aria-label')) === '再生') {
             await toggle.click();
           }
           await page.waitForTimeout(300);
@@ -76,7 +76,7 @@ test.describe('frontend screen recording', () => {
         await page.keyboard.press('+');
         await page.keyboard.press('ArrowLeft');
         await page.waitForTimeout(1500);
-        await page.getByLabel('Reset view', { exact: true }).click();
+        await page.getByLabel('中央に戻す', { exact: true }).click();
         await page.waitForTimeout(1500);
       },
     });
@@ -90,7 +90,7 @@ test.describe('frontend screen recording', () => {
         // `/match-state.json` is a gitignored CLI output; serve the committed
         // schemaVersion-1 fixture instead so the HUD is deterministic even on
         // a fresh clone. `lastUpdateUnix` is stamped at fulfill time so the
-        // "Last update" clock reads like a live poll.
+        // "最終更新" clock reads like a live poll.
         const fixture = JSON.parse(readFileSync(LIVE_SNAPSHOT_FIXTURE, 'utf8')) as Record<
           string,
           unknown

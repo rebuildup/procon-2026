@@ -129,7 +129,7 @@ test('composed hex matches proposal and Canvas; camera frames reuse uploads', as
       })),
       marks: names.map((mark, cell) => ({ cell, mark })),
     };
-    const camera = { x: -24, y: -24, zoom: 1 / scale };
+    const camera = { x: 0, y: 0, zoom: 1 };
     const make = (name: string) => {
       const title = document.createElement('h2');
       title.textContent = name;
@@ -152,7 +152,8 @@ test('composed hex matches proposal and Canvas; camera frames reuse uploads', as
     const reference = make('Canonical SVG');
     const structurePath = '/src/viewer-structure.json';
     const structure = (await import(/* @vite-ignore */ structurePath)).default;
-    const body = structure.reference.slice(0, 5).map(assets.svgNode).join('');
+    const transform = scene.sceneTransform(fixture, 370, 265, camera);
+    const body = `<g transform="translate(${transform.x},${transform.y}) scale(${transform.scale * scale})">${structure.reference.slice(0, 5).map(assets.svgNode).join('')}</g>`;
     const image = new Image();
     const url = URL.createObjectURL(
       new Blob(
@@ -177,24 +178,24 @@ test('composed hex matches proposal and Canvas; camera frames reuse uploads', as
     }
     await layer.context.device.queue.onSubmittedWorkDone();
     const stats = layer.stats();
-    const fixture48 = scene.fixtureScene(0);
-    const timings48: number[] = [];
+    const fixture100 = scene.fixtureScene(0);
+    const timings100: number[] = [];
     for (let i = 0; i < 60; i++) {
       const start = performance.now();
-      layer.draw(fixture48, { x: i * 0.01, y: 0, zoom: 1 });
-      timings48.push(performance.now() - start);
+      layer.draw(fixture100, { x: i * 0.01, y: 0, zoom: 1 });
+      timings100.push(performance.now() - start);
     }
     await layer.context.device.queue.onSubmittedWorkDone();
-    const uploads48 = layer.stats().uploads - stats.uploads;
+    const uploads100 = layer.stats().uploads - stats.uploads;
     layer.draw(fixture, camera);
     await layer.context.device.queue.onSubmittedWorkDone();
     return {
       stats,
-      fixture48: { uploadsAdded: uploads48, p95SubmitMs: timings48.sort((a, b) => a - b)[57] },
+      fixture100: { uploadsAdded: uploads100, p95SubmitMs: timings100.sort((a, b) => a - b)[57] },
       p95SubmitMs: timings.sort((a, b) => a - b)[57],
     };
   });
-  expect(report.fixture48.uploadsAdded).toBe(1);
+  expect(report.fixture100.uploadsAdded).toBe(1);
   expect(report.stats.uploads).toBe(1);
   expect(report.stats.atlasUploads).toBe(1);
   expect(report.stats.draws).toBe(61);
@@ -235,10 +236,116 @@ test('composed hex matches proposal and Canvas; camera frames reuse uploads', as
         ...report,
         meanChannelError: differences,
         scope:
-          '6 canonical hexes and 48-cell demo, 60 camera submissions each; CPU submission timing, not production GPU throughput',
+          '6 canonical hexes and 100-cell official example, 60 camera submissions each; CPU submission timing, not production GPU throughput',
       },
       null,
       2,
     ),
   );
+});
+
+test('adjacent hex borders survive reverse order and map stays centered with empty margin', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.getByTestId('map-viewer')).toHaveAttribute('data-renderer', 'WebGPU', {
+    timeout: 10000,
+  });
+  await page.getByLabel('問題文の例').selectOption('figure2');
+  await page.getByLabel('マップ外の空枠').selectOption('2');
+  await expect(page.getByTestId('map-viewer')).toHaveAttribute(
+    'data-camera',
+    '{"x":0,"y":0,"zoom":1}',
+  );
+  await page.screenshot({ path: resolve(OUT_DIR, 'sample-figure2-padding.png'), fullPage: true });
+  const result = await page.evaluate(async () => {
+    const path = '/src/lib/webgpu/viewer-scene.ts';
+    const scene = await import(/* @vite-ignore */ path);
+    await scene.loadHexAssets();
+    const canvas = document.createElement('canvas');
+    canvas.style.width = '700px';
+    canvas.style.height = '600px';
+    document.body.replaceChildren(canvas);
+    const fixture = scene.fixtureScene(0, 'ridge', 'figure1');
+    scene.drawCanvasScene(canvas, fixture, { x: 0, y: 0, zoom: 1 });
+    const ctx = canvas.getContext('2d')!;
+    const first = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const center = fixture.cells[24],
+      scale = 23 / 30;
+    const edges = [
+      [-13, -22.5],
+      [13, -22.5],
+      [26, 0],
+      [13, 22.5],
+      [-13, 22.5],
+      [-26, 0],
+    ].map(([x, y]) => {
+      const p = scene.worldPoint(
+        700,
+        600,
+        center.x + x! * scale,
+        center.y + y! * scale,
+        { x: 0, y: 0, zoom: 1 },
+        fixture,
+      );
+      let ink = 0;
+      for (let py = Math.floor(p.y) - 3; py <= Math.floor(p.y) + 3; py++)
+        for (let px = Math.floor(p.x) - 3; px <= Math.floor(p.x) + 3; px++) {
+          const i = (py * canvas.width + px) * 4;
+          if (first[i]! < 80 && first[i + 1]! < 80 && first[i + 2]! < 80) ink++;
+        }
+      return ink;
+    });
+    scene.drawCanvasScene(
+      canvas,
+      { cells: [...fixture.cells].reverse(), marks: [] },
+      { x: 0, y: 0, zoom: 1 },
+    );
+    const second = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let difference = 0;
+    for (let i = 0; i < first.length; i++) difference += Math.abs(first[i]! - second[i]!);
+    const padded = scene.fixtureScene(0, 'ridge', 'figure2', 2);
+    scene.drawCanvasScene(canvas, padded, { x: 0, y: 0, zoom: 1 });
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height).data,
+      bg = image.slice(0, 3);
+    let left = 700,
+      right = 0,
+      top = 600,
+      bottom = 0;
+    for (let y = 0; y < 600; y++)
+      for (let x = 0; x < 700; x++) {
+        const i = (y * 700 + x) * 4;
+        if (bg.some((v, n) => Math.abs(v - image[i + n]!) > 10)) {
+          left = Math.min(left, x);
+          right = Math.max(right, x);
+          top = Math.min(top, y);
+          bottom = Math.max(bottom, y);
+        }
+      }
+    return {
+      edges,
+      meanOrderDifference: difference / first.length,
+      center: [(left + right) / 2, (top + bottom) / 2],
+      empty: padded.cells.filter((cell: { terrain: string }) => cell.terrain === 'empty').length,
+      figure1: fixture.cells.length,
+      figure2: scene
+        .fixtureScene(0, 'ridge', 'figure2')
+        .marks.map((m: { cell: number; mark: string }) => [m.cell, m.mark]),
+      parity: fixture.cells[0].x > fixture.cells[10].x,
+    };
+  });
+  expect(result.figure1).toBe(100);
+  expect(result.figure2).toEqual([
+    [5, 's0'],
+    [8, 's2'],
+    [15, 's1'],
+    [18, 's0'],
+  ]);
+  expect(result.parity).toBe(true);
+  result.edges.forEach((count) => expect(count).toBeGreaterThan(2));
+  expect(result.meanOrderDifference).toBeLessThan(0.5);
+  expect(Math.abs(result.center[0]! - 350)).toBeLessThan(2);
+  expect(Math.abs(result.center[1]! - 300)).toBeLessThan(2);
+  expect(result.empty).toBeGreaterThan(0);
+  await page.screenshot({ path: resolve(OUT_DIR, 'empty-margin-2.png'), fullPage: true });
 });
