@@ -1,18 +1,18 @@
 # PR #276 — 画面確認と共通描画の検証
 
-実装・録画 harness: `3541ffa`（product変更は `0356098`）。1280×720 / Chromium / SwiftShader / Noto Sans CJK JP。地図は問題文の例、Live入力はsnapshot fixture。実試合の地図を表示する録画ではない。
+実装・録画元: `d528ebb`（product変更は `5cdc8c6`）。1280×720 / Chromium / SwiftShader / Noto Sans CJK JP。マップは問題文の例、Live入力はsnapshot fixture。実試合の地図を表示する録画ではない。
 
-- [図1の中央表示](home.png)
-- [図2とマップ外の空枠](sample-figure2-padding.png)
-- [Solvers PNG](solvers.png) / [ズーム・中央に戻す・図2への切替・空枠追加の録画](solvers.webm)
+- [マップ構成例（募集要項p.8）](home.png) / [録画](home.webm)
+- [スポット配置例（募集要項p.10）と外側2セル分の空枠](sample-figure2-padding.png)
+- [Replays PNG](replays.png) / [録画](replays.webm)
+- [Solvers PNG](solvers.png) / [例切替・ズーム・Reset view・空枠追加の録画](solvers.webm)
 - [Live PNG](live.png) / [録画](live.webm)
-- [原資料の図1](official-figure1.png) / [原資料の図2](official-figure2.png)。`docs/reference/hexaudon_spec.html` の埋め込み原画像から抽出した。地形・スポット位置・系列・行のずれを再現し、描画素材は合流済みdesignを使う。
-- [元SVG / GPU / Canvasの同座標比較](shared-renderer-comparison.png)
-- [3 family / 15pxの6系列標本](families-15px.png)
-- [描画計測](renderer-performance.json) / [撮影 manifest](manifest.json) / [Primer token 監査](primer-audit.json)
+- [原資料p.8の図1](official-figure1.png) / [原資料p.10の図2](official-figure2.png)。埋め込み原画像から抽出。地形・位置・系列を再現し、絵柄は合流済みdesignを使う。
+- [元SVG / GPU / Canvas比較](shared-renderer-comparison.png) / [3family・15px標本](families-15px.png)
+- [計測](renderer-performance.json) / [撮影manifest](manifest.json) / [Primer監査](primer-audit.json)
 
-`bunx playwright test` で18件成功。録画シナリオに例/空枠の操作を追加後、`bunx playwright test e2e/record.spec.ts e2e/hex-design.spec.ts` の8件も成功。frontend check / lint / format / unit10件 / build成功。
+共通atlas内のhexを0.93倍に縮小し、各cellの六辺の黒線と隣接cell間の白い余白を保つ。GPU/Canvasとも「全halo → 全背景/記号 → 全黒線」の順序を使う。六辺の黒画素・隙間の白画素・描画順反転・中央合わせを検証する。GPUは1pipeline/1passの3 instanced draw。camera60回でatlas/instance再転送0。CPU submissionの計測は実機FPS保証とは区別する。
 
-GPU/Canvasは「全halo → 全背景/記号 → 全黒線」の順序で同じアトラスを描き、隣の塗りによる黒線欠けを防ぐ。六辺の黒画素・cell順反転の差・空枠付きcenterを検証する。GPUは1pipeline/1passの3 instanced draw、camera60回でatlas/instance再転送0。100cell原図1のCPU submission p95は計測JSONを参照（実機FPS保証とは区別する）。
+平地・道路・セル数・巡回車など問題由来の用語は日本語に合わせ、Play / Pause / Reset viewなどviewer独自の操作名は英語にする。出典は正式なPDFファイル名・ページ・図番号とリンクを表示する。[公開ルール](https://rebuildup.dev/share/procon2026)の地形・エージェント・スポットと原資料p.8/p.10への5リンクは実ブラウザで到達確認済み。HeaderのRulesも関連セクションへ直接移動する。
 
-日本語フォントは検証環境に追加したもの。productのPrimer system font指定は変更していない。詳細: [UI-275.md](../../validation/UI-275.md)。
+frontend check / lint / format / unit10件 / build成功。ブラウザ19件成功（4画面の録画を含む）。Primerの独自/未定義style tokenは0。日本語フォントは検証環境に追加し、productのPrimer system fontは変更していない。詳細: [UI-275.md](../../validation/UI-275.md)。
