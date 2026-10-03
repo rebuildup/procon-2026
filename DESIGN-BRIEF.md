@@ -1,3 +1,5 @@
+> 最新レビュー反映: visualizer は Primer utility の枠でセクション化する。地形・境界・地図記号・agent は同じ WebGPU シーンで描画し、GPU 不可時は同じ記号アトラスの Canvas 描画へ退避する。地図内に SVG DOM を重ねない。Reset view は右側 View パネルのラベル付き Primer Button に置く。Replays の操作パネルは維持する。
+
 # Design Brief — procon-2026 viewer
 
 ## 2026-10-03 レビューによる配置規則の更新

@@ -12,7 +12,7 @@ import { BASE_URL, PORT, VIEWPORT } from './e2e/recording';
  *   developer's `bun run dev` (5173) or `vite preview` (4173), and
  *   `--strictPort` fails loudly instead of silently moving.
  * - WebGPU launch flags make headless runs exercise the real GPU renderer;
- *   every page still falls back to SVG when no adapter is available.
+ *   every page still falls back to Canvas when no adapter is available.
  */
 export default defineConfig({
   testDir: './e2e',

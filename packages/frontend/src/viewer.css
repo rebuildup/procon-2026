@@ -15,25 +15,17 @@
 .PageLayout-content {
   min-width: 0;
 }
-.map-instrument {
-  min-width: 0;
-}
 .map-stage {
   position: relative;
+  height: max(
+    calc(var(--base-size-128) * 2),
+    calc(100dvh - var(--base-size-128) - var(--control-medium-size))
+  );
+  touch-action: none;
 }
 .map-stage > canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-}
-.map-stage > svg {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: max(
-    calc(var(--base-size-128) * 2),
-    calc(100dvh - var(--base-size-128) - var(--control-medium-size))
-  );
-  touch-action: none;
 }

@@ -17,7 +17,17 @@ import { createReplayStore, type PlaybackRate } from '@/stores/replay';
 import { getTheme, toggleTheme } from '@/stores/theme';
 import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/live';
 import icons from '@/viewer-icons.json';
-import marks from '@/viewer-marks.json';
+import {
+  coloredAtlas,
+  cssColor,
+  drawCanvasScene,
+  fixtureScene,
+  GLYPH_SIZE,
+  markNames,
+  palette,
+  type Camera,
+  type Mark,
+} from '@/lib/webgpu/viewer-scene';
 import './viewer.css';
 import { createViewerLayer } from '@/lib/webgpu/viewer-layer';
 
@@ -81,43 +91,126 @@ const Row = (props: { label: string; value: JSX.Element }) => (
     <span class="text-right text-mono wb-break-word">{props.value}</span>
   </div>
 );
-const cells = Array.from({ length: 48 }, (_, i) => ({
-  col: i % 8,
-  row: Math.floor(i / 8),
-  terrain: (i % 11 === 0 ? 'mountain' : i % 9 === 0 ? 'water' : i % 5 === 0 ? 'road' : 'plain') as
-    'plain' | 'mountain' | 'water' | 'road',
-}));
-const terrainHue = { plain: 'green', mountain: 'gray', water: 'blue', road: 'brown' };
-const seriesHue = ['yellow', 'orange', 'auburn', 'purple', 'plum', 'olive'];
-function MapView(props: { turn?: number; gpu?: boolean }) {
-  const [zoom, setZoom] = createSignal(1),
-    [x, setX] = createSignal(0),
-    [y, setY] = createSignal(0);
-  const [gpuReady, setGpuReady] = createSignal(false);
-  const [gpuError, setGpuError] = createSignal('');
+function createViewport() {
+  const [camera, setCamera] = createSignal<Camera>({ x: 0, y: 0, zoom: 1 });
+  const [renderer, setRenderer] = createSignal('Initializing');
+  const [error, setError] = createSignal('');
+  return {
+    camera,
+    setCamera,
+    renderer,
+    setRenderer,
+    error,
+    setError,
+    reset: () => setCamera({ x: 0, y: 0, zoom: 1 }),
+  };
+}
+type Viewport = ReturnType<typeof createViewport>;
+function ViewControls(props: { viewport: Viewport }) {
+  return (
+    <Panel title="View">
+      <Row label="Renderer" value={props.viewport.renderer()} />
+      <Button label="Reset view" icon="sync" block onClick={props.viewport.reset} />
+      <Show when={props.viewport.error()}>
+        <p class="f6 color-fg-muted mt-2 mb-0" data-testid="webgpu-map-fallback">
+          Canvas fallback: {props.viewport.error()}
+        </p>
+      </Show>
+      <Show when={props.viewport.renderer() === 'Initializing'}>
+        <p class="f6 color-fg-muted mt-2 mb-0" data-testid="webgpu-map-loading">
+          Initializing GPU…
+        </p>
+      </Show>
+    </Panel>
+  );
+}
+function GlyphPreview(props: { mark: Mark; hue: string }) {
+  let canvas!: HTMLCanvasElement;
+  createEffect(() => {
+    void getTheme().mode;
+    const source = coloredAtlas(cssColor(palette()(`--data-${props.hue}-color-emphasis`)));
+    const context = canvas.getContext('2d')!;
+    context.clearRect(0, 0, 16, 16);
+    context.drawImage(
+      source,
+      markNames.indexOf(props.mark) * GLYPH_SIZE,
+      0,
+      GLYPH_SIZE,
+      GLYPH_SIZE,
+      0,
+      0,
+      16,
+      16,
+    );
+  });
+  return <canvas ref={canvas} width="16" height="16" aria-hidden="true" />;
+}
+function Legend() {
+  return (
+    <Panel title="Legend">
+      <For
+        each={
+          [
+            { mark: 'plain', hue: 'green' },
+            { mark: 'mountain', hue: 'gray' },
+            { mark: 'water', hue: 'blue' },
+            { mark: 'road', hue: 'brown' },
+            { mark: 'patrol', hue: 'pine' },
+            { mark: 'supply', hue: 'pink' },
+          ] as const
+        }
+      >
+        {(item) => (
+          <div class="d-flex flex-items-center py-1">
+            <GlyphPreview {...item} />
+            <span class="ml-2">{item.mark}</span>
+          </div>
+        )}
+      </For>
+    </Panel>
+  );
+}
+function MapView(props: { turn?: number; viewport: Viewport }) {
+  const viewport = untrack(() => props.viewport);
   const [layer, setLayer] = createSignal<Awaited<ReturnType<typeof createViewerLayer>> | null>(
     null,
   );
-  let canvas!: HTMLCanvasElement;
+  let gpu!: HTMLCanvasElement, fallback!: HTMLCanvasElement, stage!: HTMLDivElement;
+  const scene = () => fixtureScene(props.turn ?? 0);
+  const fail = (reason: string) => {
+    viewport.setError(reason);
+    viewport.setRenderer('Canvas');
+    const current = untrack(layer);
+    setLayer(null);
+    current?.destroy();
+  };
+  const draw = () => {
+    const current = layer();
+    if (current) {
+      try {
+        current.draw(scene(), viewport.camera());
+      } catch (error) {
+        fail(String(error));
+      }
+    }
+    if (!layer()) drawCanvasScene(fallback, scene(), viewport.camera());
+  };
   createEffect(() => {
-    if (!props.gpu) return;
-    let active = true;
-    let failed = false;
+    void getTheme().mode;
+    draw();
+  });
+  onMount(() => {
+    let active = true,
+      failed = false;
     let created: Awaited<ReturnType<typeof createViewerLayer>> | undefined;
-    setGpuError('');
-    const fallback = (reason: string) => {
-      failed = true;
+    const reject = (reason: string) => {
       if (active) {
-        setGpuError(reason);
-        setGpuReady(false);
+        failed = true;
+        fail(reason);
       }
     };
-    const timeout = setTimeout(() => fallback('GPU initialization timed out'), 5000);
-    void createViewerLayer(
-      canvas,
-      cells.map((cell) => ({ ...cell, hue: terrainHue[cell.terrain] })),
-      fallback,
-    )
+    const timeout = setTimeout(() => reject('GPU initialization timed out'), 5000);
+    void createViewerLayer(gpu, reject)
       .then(async (value) => {
         created = value;
         if (!active || failed) {
@@ -125,202 +218,114 @@ function MapView(props: { turn?: number; gpu?: boolean }) {
           return;
         }
         try {
-          const camera = untrack(() => [x(), y(), zoom()] as const);
-          value.draw(...camera);
-          await value.verifyFrame(...camera);
+          const firstScene = untrack(() => scene()),
+            camera = untrack(viewport.camera);
+          value.draw(firstScene, camera);
+          await value.verifyFrame(firstScene, camera);
           clearTimeout(timeout);
           if (!active || failed) {
             value.destroy();
             return;
           }
           setLayer(value);
-          setGpuReady(true);
+          viewport.setRenderer('WebGPU');
         } catch (error) {
-          fallback(String(error));
+          value.destroy();
+          reject(String(error));
         }
       })
       .catch((error) => {
         clearTimeout(timeout);
-        fallback(String(error));
+        reject(String(error));
       });
+    const observer = new ResizeObserver(() => untrack(() => draw()));
+    observer.observe(stage);
     onCleanup(() => {
       active = false;
       clearTimeout(timeout);
+      observer.disconnect();
       created?.destroy();
-      setLayer(null);
-      setGpuReady(false);
     });
-  });
-  createEffect(() => {
-    void getTheme().mode;
-    const current = layer();
-    const px = x(),
-      py = y(),
-      z = zoom();
-    if (current) {
-      try {
-        current.draw(px, py, z);
-      } catch (error) {
-        setGpuReady(false);
-        setGpuError(String(error));
-      }
-    }
-  });
-  onMount(() => {
-    const observer = new ResizeObserver(() => {
-      try {
-        layer()?.draw(x(), y(), zoom());
-      } catch (error) {
-        setGpuReady(false);
-        setGpuError(String(error));
-      }
-    });
-    observer.observe(canvas);
-    onCleanup(() => observer.disconnect());
   });
   let drag: { x: number; y: number } | undefined;
-  const reset = () => {
-    setZoom(1);
-    setX(0);
-    setY(0);
-  };
   return (
-    <div class="map-instrument">
-      <div class="map-stage">
+    <section class="border rounded-2 overflow-hidden bgColor-muted" aria-label="Visualizer">
+      <div
+        class="map-stage"
+        ref={stage}
+        role="img"
+        tabindex="0"
+        data-testid="map-viewer"
+        aria-label={`Match map, turn ${props.turn ?? 0}. Arrow keys pan, plus and minus zoom, zero resets.`}
+        data-camera={JSON.stringify(viewport.camera())}
+        data-renderer={viewport.renderer()}
+        onWheel={(e) => {
+          e.preventDefault();
+          viewport.setCamera((c) => ({
+            ...c,
+            zoom: Math.min(4, Math.max(0.5, c.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))),
+          }));
+        }}
+        onPointerDown={(e) => {
+          drag = { x: e.clientX, y: e.clientY };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          if (drag) {
+            const rect = e.currentTarget.getBoundingClientRect(),
+              fit = Math.min(rect.width / 370, rect.height / 265);
+            viewport.setCamera((c) => ({
+              ...c,
+              x: c.x + (e.clientX - drag!.x) / fit,
+              y: c.y + (e.clientY - drag!.y) / fit,
+            }));
+            drag = { x: e.clientX, y: e.clientY };
+          }
+        }}
+        onPointerUp={() => {
+          drag = undefined;
+        }}
+        onPointerCancel={() => {
+          drag = undefined;
+        }}
+        onKeyDown={(e) => {
+          if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '-', '0'].includes(e.key)) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.key === '0') viewport.reset();
+            else
+              viewport.setCamera((c) => ({
+                ...c,
+                x: c.x + (e.key === 'ArrowLeft' ? 12 : e.key === 'ArrowRight' ? -12 : 0),
+                y: c.y + (e.key === 'ArrowUp' ? 12 : e.key === 'ArrowDown' ? -12 : 0),
+                zoom:
+                  e.key === '+'
+                    ? Math.min(4, c.zoom * 1.1)
+                    : e.key === '-'
+                      ? Math.max(0.5, c.zoom / 1.1)
+                      : c.zoom,
+              }));
+          }
+        }}
+      >
         <canvas
-          ref={canvas}
+          ref={gpu}
           data-testid="webgpu-map-canvas"
           aria-hidden="true"
-          style={{ visibility: gpuReady() ? 'visible' : 'hidden' }}
+          style={{ visibility: layer() ? 'visible' : 'hidden' }}
         />
-        <svg
-          data-testid="map-viewer-svg"
-          viewBox="-24 -24 370 265"
-          role="img"
-          aria-label={`Match map, turn ${props.turn ?? 0}`}
-          tabindex="0"
-          onWheel={(e) => {
-            e.preventDefault();
-            setZoom((z) => Math.min(4, Math.max(0.5, z * (e.deltaY < 0 ? 1.1 : 1 / 1.1))));
-          }}
-          onPointerDown={(e) => {
-            drag = { x: e.clientX, y: e.clientY };
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            if (drag) {
-              const factor = 370 / e.currentTarget.getBoundingClientRect().width;
-              setX((v) => v + (e.clientX - drag!.x) * factor);
-              setY((v) => v + (e.clientY - drag!.y) * factor);
-              drag = { x: e.clientX, y: e.clientY };
-            }
-          }}
-          onPointerUp={() => {
-            drag = undefined;
-          }}
-          onPointerCancel={() => {
-            drag = undefined;
-          }}
-          onKeyDown={(e) => {
-            if (
-              ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '-', '0'].includes(e.key)
-            ) {
-              e.preventDefault();
-              if (e.key === '0') reset();
-              if (e.key === '+') setZoom((v) => Math.min(4, v * 1.1));
-              if (e.key === '-') setZoom((v) => Math.max(0.5, v / 1.1));
-              if (e.key === 'ArrowLeft') setX((v) => v + 12);
-              if (e.key === 'ArrowRight') setX((v) => v - 12);
-              if (e.key === 'ArrowUp') setY((v) => v + 12);
-              if (e.key === 'ArrowDown') setY((v) => v - 12);
-            }
-          }}
-        >
-          <title>Fixture map — eight columns, six rows</title>
-          <g transform={`translate(${x()} ${y()}) scale(${zoom()})`}>
-            <For each={cells}>
-              {(cell) => {
-                const cx = cell.col * 40 + (cell.row % 2) * 20,
-                  cy = cell.row * 35;
-                return (
-                  <g transform={`translate(${cx} ${cy})`}>
-                    <polygon
-                      points="0,-23 20,-11.5 20,11.5 0,23 -20,11.5 -20,-11.5"
-                      fill={
-                        gpuReady()
-                          ? 'transparent'
-                          : `var(--data-${terrainHue[cell.terrain]}-color-muted)`
-                      }
-                      stroke={`var(--data-${terrainHue[cell.terrain]}-color-emphasis)`}
-                    />
-                    <svg
-                      x="-8"
-                      y="-8"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 16 16"
-                      style={{ color: `var(--data-${terrainHue[cell.terrain]}-color-emphasis)` }}
-                    >
-                      <SvgNodes nodes={marks[cell.terrain]} />
-                    </svg>
-                  </g>
-                );
-              }}
-            </For>
-            <For each={[0, 1, 2, 3, 4, 5]}>
-              {(n) => (
-                <svg
-                  x={40 + n * 40}
-                  y={27 + (n % 2) * 70}
-                  width="18"
-                  height="18"
-                  viewBox="0 0 16 16"
-                  style={{ color: `var(--data-${seriesHue[n]}-color-emphasis)` }}
-                >
-                  <SvgNodes nodes={marks[`s${n}` as keyof typeof marks]} />
-                </svg>
-              )}
-            </For>
-            <svg
-              x={40 + ((props.turn ?? 0) % 6) * 40}
-              y="132"
-              width="20"
-              height="20"
-              viewBox="0 0 16 16"
-              style={{ color: 'var(--data-pine-color-emphasis)' }}
-            >
-              <SvgNodes nodes={marks.patrol} />
-            </svg>
-            <svg
-              x="220"
-              y="100"
-              width="20"
-              height="20"
-              viewBox="0 0 16 16"
-              style={{ color: 'var(--data-pink-color-emphasis)' }}
-            >
-              <SvgNodes nodes={marks.supply} />
-            </svg>
-          </g>
-        </svg>
+        <canvas
+          ref={fallback}
+          data-testid="canvas-map-fallback"
+          aria-hidden="true"
+          style={{ visibility: layer() ? 'hidden' : 'visible' }}
+        />
       </div>
-      <Show when={props.gpu && !gpuReady()}>
-        <p
-          class="px-3 color-fg-muted"
-          data-testid={gpuError() ? 'webgpu-map-fallback' : 'webgpu-map-loading'}
-        >
-          {gpuError() ? `SVG fallback: ${gpuError()}` : 'Loading WebGPU renderer…'}
-        </p>
-      </Show>
-      <div class="d-flex flex-justify-end border-top p-2">
-        <button class="btn btn-sm" onClick={reset}>
-          Reset view
-        </button>
-      </div>
-    </div>
+    </section>
   );
 }
 function ReplayPage() {
+  const viewport = createViewport();
   const store = createReplayStore();
   store.load({
     id: 'demo',
@@ -371,7 +376,7 @@ function ReplayPage() {
     if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
     if (
       (e.target as Element).closest(
-        'button,input,select,textarea,a,svg,[role="radiogroup"],[contenteditable]',
+        'button,input,select,textarea,a,[role="img"],[role="radiogroup"],[contenteditable]',
       )
     )
       return;
@@ -400,7 +405,7 @@ function ReplayPage() {
       onKeyDown={shortcut}
     >
       <div class="PageLayout-content">
-        <MapView turn={store.state().currentStep} />
+        <MapView turn={store.state().currentStep} viewport={viewport} />
       </div>
       <aside class="PageLayout-pane" aria-label="Replay information and controls">
         <Panel title="Replay">
@@ -529,6 +534,7 @@ function ReplayPage() {
             </p>
           </details>
         </Panel>
+        <ViewControls viewport={viewport} />
         <Panel title="Score">
           <table class="width-full" aria-label="Scores">
             <thead>
@@ -561,6 +567,7 @@ function ReplayPage() {
 }
 
 function LivePage() {
+  const viewport = createViewport();
   const [snapshot, setSnapshot] = createSignal<LiveSnapshot | null>(null),
     [received, setReceived] = createSignal(0),
     [now, setNow] = createSignal(Date.now());
@@ -628,9 +635,10 @@ function LivePage() {
   return (
     <div class="PageLayout-columns">
       <div class="PageLayout-content">
-        <MapView />
+        <MapView viewport={viewport} />
       </div>
       <aside class="PageLayout-pane" aria-label="Live match information">
+        <ViewControls viewport={viewport} />
         <Panel title="Match">
           <Row
             label="Status"
@@ -704,80 +712,40 @@ function LivePage() {
 }
 
 function SolversPage() {
-  const [renderer, setRenderer] = createSignal('svg');
+  const viewport = createViewport();
   return (
     <div class="PageLayout-columns">
       <div class="PageLayout-content">
-        <MapView gpu={renderer() === 'webgpu'} />
+        <MapView viewport={viewport} />
       </div>
       <aside class="PageLayout-pane" aria-label="Renderer information and controls">
-        <Panel title="Renderer">
-          <div class="BtnGroup mb-3">
-            <button
-              class="btn btn-sm BtnGroup-item"
-              data-testid="solvers-renderer-svg"
-              aria-pressed={renderer() === 'svg'}
-              classList={{ selected: renderer() === 'svg' }}
-              onClick={() => setRenderer('svg')}
-            >
-              SVG
-            </button>
-            <button
-              class="btn btn-sm BtnGroup-item"
-              data-testid="solvers-renderer-webgpu"
-              aria-pressed={renderer() === 'webgpu'}
-              classList={{ selected: renderer() === 'webgpu' }}
-              onClick={() => setRenderer('webgpu')}
-            >
-              WebGPU
-            </button>
-          </div>
-          <p class="color-fg-muted f6 mb-0">
-            Demo map · 8 × 6 · 48 cells. WebGPU draws terrain; symbols remain SVG.
-          </p>
+        <ViewControls viewport={viewport} />
+        <Panel title="Map">
+          <Row label="Source" value="Demo fixture" />
+          <Row label="Cells" value="48" />
+          <Row label="Symbols" value="ridge" />
         </Panel>
-        <Panel title="Legend">
-          <For each={['plain', 'mountain', 'water', 'road', 'patrol', 'supply'] as const}>
-            {(name) => (
-              <div class="d-flex flex-items-center py-1">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <SvgNodes nodes={marks[name]} />
-                </svg>
-                <span class="ml-2">{name}</span>
-              </div>
-            )}
-          </For>
-        </Panel>
+        <Legend />
       </aside>
     </div>
   );
 }
-
 function Home() {
+  const viewport = createViewport();
   return (
     <div class="PageLayout-columns">
       <div class="PageLayout-content">
-        <MapView />
+        <MapView viewport={viewport} />
       </div>
       <aside class="PageLayout-pane" aria-label="Map information">
+        <ViewControls viewport={viewport} />
         <Panel title="Map">
           <Row label="Source" value="Demo fixture" />
           <Row label="Dimensions" value="8 × 6" />
           <Row label="Cells" value="48" />
           <Row label="Spot series" value="6" />
         </Panel>
-        <Panel title="Legend">
-          <For each={['plain', 'mountain', 'water', 'road', 'patrol', 'supply'] as const}>
-            {(name) => (
-              <div class="d-flex flex-items-center py-1">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <SvgNodes nodes={marks[name]} />
-                </svg>
-                <span class="ml-2">{name}</span>
-              </div>
-            )}
-          </For>
-        </Panel>
+        <Legend />
       </aside>
     </div>
   );
