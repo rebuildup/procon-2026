@@ -1,10 +1,10 @@
 # PR #272 — 画面確認用の録画とスクリーンショット
 
-実装 commit: `79ed2f64a25bd67697ce4d0cb732d6c602246a6c`。1280×720、Chromium 153。`bunx playwright test e2e/record.spec.ts` で4件とも成功した録画を保存した。source の変更は含まない。
+実装 commit: `7f135e04891b236d17782dd5b494518aec2a8979`。1280×720、Chromium 153。`bunx playwright test e2e/record.spec.ts` で4件とも成功した録画を保存した。source の変更は含まない。
 
 | 画面 | スクリーンショット | 録画 | 動作 |
 |---|---|---|---|
-| Overview | [PNG](home.png) | [WebM](home.webm) | プロジェクト文脈・横並びナビ・作業対象一覧 |
+| Map | [PNG](home.png) | [WebM](home.webm) | visualizer 主領域と fixture / legend パネル |
 | Replays | [PNG](replays.png) | [WebM](replays.webm) / [GIF](replays.gif) | 再生・score・速度2×、末尾到達後の再生 |
 | Solvers | [PNG](solvers.png) | [WebM](solvers.webm) / [GIF](solvers.gif) | SVG → WebGPU → SVG |
 | Live | [PNG](live.png) | [WebM](live.webm) | schemaVersion 1 の snapshot fixture を polling |
