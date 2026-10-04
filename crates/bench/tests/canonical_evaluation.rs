@@ -439,10 +439,14 @@ fn process_isolation_kills_the_worker_on_timeout() {
     // Uses a case no other test touches, so the process check below cannot
     // race against a concurrent run.
     let registry = CandidateRegistry::builtin();
-    // Measured: this pair takes ~6.6 ms to evaluate, plus ~1 ms to spawn the
-    // worker. A 3 ms deadline therefore lands squarely *inside* the
-    // computation — not before the child starts, and not after it finishes.
-    let candidate = registry.build("loop:iterations=128:initial=greedy").unwrap();
+    // Measured: this pair takes ~6.6 ms at 128 iterations, plus ~1 ms to
+    // spawn the worker. The deadline must land squarely *inside* the
+    // computation — not before the child starts, and not after it finishes —
+    // so the workload is sized an order of magnitude above the deadline: at
+    // 1028 iterations only a machine ~40x faster than the measured one could
+    // finish under 3 ms, and the worker is killed at the deadline anyway, so
+    // the extra work never runs to completion.
+    let candidate = registry.build("loop:iterations=1028:initial=greedy").unwrap();
     let case = CaseSpec::from_bundled_fixture("large-32x32").unwrap();
 
     let evaluator = Evaluator::new(
@@ -476,7 +480,15 @@ fn process_isolation_kills_the_worker_on_timeout() {
         Ok(_) => String::new(),
         Err(_) => return,
     };
-    let stray: Vec<String> = output.lines().map(ToOwned::to_owned).collect();
+    // Every worker in this binary shares that command line — `evaluator()`,
+    // `kinds_survive_process_isolation` and friends all spawn `--worker`
+    // children concurrently — so keep only the ones running *this* case,
+    // which travels in `--case-json`.
+    let stray: Vec<String> = output
+        .lines()
+        .filter(|line| line.contains("large-32x32"))
+        .map(ToOwned::to_owned)
+        .collect();
     assert!(stray.is_empty(), "a killed worker must not still be running (pids {stray:?})");
 }
 
