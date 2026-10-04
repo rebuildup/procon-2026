@@ -46,14 +46,26 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 # Pre-warm Cargo registry for the workspace to keep cold builds small.
 WORKDIR /workspace
 COPY Cargo.toml Cargo.lock* ./
+# Every workspace member must exist before cargo runs: it loads the whole
+# `members` array before fetching, so a partial manifest set dies with
+# "failed to load manifest for workspace member". Keep this list in sync
+# with the root Cargo.toml.
 COPY crates/domain/Cargo.toml crates/domain/Cargo.toml
 COPY crates/protocol/Cargo.toml crates/protocol/Cargo.toml
 COPY crates/engine/Cargo.toml crates/engine/Cargo.toml
+COPY crates/coordinator/Cargo.toml crates/coordinator/Cargo.toml
+COPY crates/solver-mcts/Cargo.toml crates/solver-mcts/Cargo.toml
+COPY crates/bench/Cargo.toml crates/bench/Cargo.toml
 COPY crates/cli/Cargo.toml crates/cli/Cargo.toml
-RUN mkdir -p \
-        crates/domain/src crates/protocol/src crates/engine/src crates/cli/src \
- && for d in crates/domain crates/protocol crates/engine crates/cli; do \
-        echo "fn main() {}" > "$d/src/lib.rs"; \
+COPY crates/solver-greedy/Cargo.toml crates/solver-greedy/Cargo.toml
+COPY crates/solver-localsearch/Cargo.toml crates/solver-localsearch/Cargo.toml
+COPY crates/solver-ilp-cross/Cargo.toml crates/solver-ilp-cross/Cargo.toml
+COPY crates/solver-gpu/Cargo.toml crates/solver-gpu/Cargo.toml
+COPY crates/solver-loop/Cargo.toml crates/solver-loop/Cargo.toml
+COPY crates/solver-series-clustered/Cargo.toml crates/solver-series-clustered/Cargo.toml
+COPY crates/solver-astar/Cargo.toml crates/solver-astar/Cargo.toml
+RUN for d in crates/*/; do \
+        mkdir -p "$d/src" && echo "fn main() {}" > "$d/src/lib.rs"; \
     done \
  && echo "fn main() {}" > crates/cli/src/main.rs \
  && cargo fetch
@@ -93,14 +105,24 @@ WORKDIR /workspace
 # Copy the workspace manifest layer so the dependency graph can be cached
 # separately from the source tree (best-practice multi-stage layout).
 COPY Cargo.toml Cargo.lock ./
+# Same contract as the toolchain stage: all 14 members, or cargo refuses to
+# resolve the graph at all.
 COPY crates/domain/Cargo.toml crates/domain/Cargo.toml
 COPY crates/protocol/Cargo.toml crates/protocol/Cargo.toml
 COPY crates/engine/Cargo.toml crates/engine/Cargo.toml
+COPY crates/coordinator/Cargo.toml crates/coordinator/Cargo.toml
+COPY crates/solver-mcts/Cargo.toml crates/solver-mcts/Cargo.toml
+COPY crates/bench/Cargo.toml crates/bench/Cargo.toml
 COPY crates/cli/Cargo.toml crates/cli/Cargo.toml
-RUN mkdir -p \
-        crates/domain/src crates/protocol/src crates/engine/src crates/cli/src \
- && for d in crates/domain crates/protocol crates/engine crates/cli; do \
-        echo "fn main() {}" > "$d/src/lib.rs"; \
+COPY crates/solver-greedy/Cargo.toml crates/solver-greedy/Cargo.toml
+COPY crates/solver-localsearch/Cargo.toml crates/solver-localsearch/Cargo.toml
+COPY crates/solver-ilp-cross/Cargo.toml crates/solver-ilp-cross/Cargo.toml
+COPY crates/solver-gpu/Cargo.toml crates/solver-gpu/Cargo.toml
+COPY crates/solver-loop/Cargo.toml crates/solver-loop/Cargo.toml
+COPY crates/solver-series-clustered/Cargo.toml crates/solver-series-clustered/Cargo.toml
+COPY crates/solver-astar/Cargo.toml crates/solver-astar/Cargo.toml
+RUN for d in crates/*/; do \
+        mkdir -p "$d/src" && echo "fn main() {}" > "$d/src/lib.rs"; \
     done \
  && echo "fn main() {}" > crates/cli/src/main.rs \
  && cargo fetch --locked
