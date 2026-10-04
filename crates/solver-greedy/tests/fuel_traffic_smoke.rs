@@ -48,7 +48,6 @@ fn low_fuel_targets_nearest_refill_spot() {
             spot(2, 2, 0, 0, 1), // distance 2 — middle, also jammed
         ],
         traffic,
-        3,
     );
 
     let actions = FuelTrafficGreedy::with_params(3, 100).decide(&ctx);
@@ -86,7 +85,6 @@ fn traffic_avoidance_picks_smooth_path() {
             spot(1, 3, 0, 1, 1), // distance 3 via smooth cells
         ],
         traffic,
-        3,
     );
 
     let actions = FuelTrafficGreedy::with_params(3, 100).decide(&ctx);
@@ -116,7 +114,6 @@ fn zero_traffic_weight_falls_back_to_distance() {
             spot(1, 3, 0, 1, 1), // distance 3, no traffic
         ],
         traffic,
-        3,
     );
 
     let actions = FuelTrafficGreedy::with_params(3, 0).decide(&ctx);
@@ -174,7 +171,6 @@ fn multi_agent_mixes_fuel_and_traffic() {
             spot(2, 5, 1, 0, 1), // distance 0 from a1 — a1's refuel target
         ],
         traffic,
-        3,
     );
 
     let actions = FuelTrafficGreedy::with_params(3, 100).decide(&ctx);
@@ -229,7 +225,6 @@ fn decide_is_deterministic() {
         vec![agent(0, 0, 0, 100), agent(1, 1, 0, 2), agent(2, 0, 1, 100)],
         vec![spot(0, 0, 0, 0, 1), spot(1, 1, 1, 1, 1), spot(2, -1, 0, 1, 1)],
         traffic,
-        3,
     );
     let solver = FuelTrafficGreedy::new();
     let a1 = solver.decide(&ctx);
@@ -245,7 +240,6 @@ fn empty_stock_everyone_stays() {
         vec![agent(0, 0, 0, 100), agent(1, 1, 0, 1)],
         vec![spot(0, 0, 0, 0, 0), spot(1, 1, 1, 1, 0)],
         vec![],
-        3,
     );
     let actions = FuelTrafficGreedy::new().decide(&ctx);
     for a in actions {

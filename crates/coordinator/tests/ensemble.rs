@@ -211,3 +211,46 @@ fn empty_ensemble_panics_at_construction() {
     let r = std::panic::catch_unwind(|| EnsembleSelector::best_of(vec![]));
     assert!(r.is_err());
 }
+
+struct HangingSolver;
+impl Solver for HangingSolver {
+    fn id(&self) -> &'static str {
+        "hanging"
+    }
+    fn solve(&self, _: &MatchInput) -> SolverOutput {
+        // Never reports. Sleep in slices so the thread is interruptible by
+        // process exit rather than spinning.
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+}
+
+/// `timeout` used to be dead: the `Some(_t)` arm read `_t` and then joined
+/// the handle anyway, so a hung solver blocked `run_parallel` forever and
+/// callers relying on the documented deadline protection had none.
+#[test]
+fn timeout_stops_waiting_on_a_hung_solver() {
+    let sel = EnsembleSelector::best_of(vec![
+        RegisteredSolver::new(Arc::new(GreedySolver)),
+        RegisteredSolver::new(Arc::new(HangingSolver)),
+    ]);
+
+    let started = std::time::Instant::now();
+    let res = sel.run_parallel(&MatchInput::new("match-timeout", 0), Some(120));
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "the deadline must end the wait, took {elapsed:?}"
+    );
+    assert_eq!(res.all_outputs.len(), 2, "every slot is reported on");
+    let hung = res
+        .all_outputs
+        .iter()
+        .find(|o| o.score.solver_id == "hanging")
+        .expect("the hung solver still has a slot");
+    assert_eq!(hung.score.distinct_series, 0, "a straggler scores zero");
+    assert_eq!(hung.score.total_balls, 0);
+    assert_eq!(res.winner.score.solver_id, "greedy", "the healthy solver wins");
+}
