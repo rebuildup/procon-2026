@@ -55,6 +55,16 @@ pub fn two_opt_delta(tour: &[u32], spots: &[Spot], i: usize, j: usize) -> i64 {
     let lookup = |id: u32| spots.iter().find(|s| s.id == id).map(|s| s.coord);
     let n = tour.len();
 
+    // Reversing the *whole* tour of a closed circuit leaves its edge set
+    // untouched, so the delta is exactly 0. Without this guard the anchors
+    // below both fall inside the reversed segment and report
+    // `-2 × closing_edge` — a spurious "improvement" that made `refine` flip
+    // the tour on every pass, never reach its convergence break, and starve
+    // genuine 2-opt moves (the flip beats real deltas, which are 1..5).
+    if i == 0 && j + 1 == n {
+        return 0;
+    }
+
     let prev_i = if i == 0 { tour[n - 1] } else { tour[i - 1] };
     let next_j = if j == n - 1 { tour[0] } else { tour[j + 1] };
 
@@ -137,6 +147,35 @@ mod tests {
         // the function runs and returns a numeric delta (i64 is always
         // finite, so the equivalent check is that we got *some* delta).
         let _ = delta;
+    }
+
+    /// The delta must equal the real cost change for **every** pair — the
+    /// degenerate `(0, n-1)` used to report `-2 × closing_edge` while the
+    /// reversal it describes costs nothing.
+    #[test]
+    fn two_opt_delta_matches_the_real_cost_change() {
+        let spots = vec![
+            spot(0, 0, 0),
+            spot(1, 3, 1),
+            spot(2, 1, 2),
+            spot(3, 4, 3),
+            spot(4, 2, 4),
+        ];
+        let tour = vec![0, 1, 2, 3, 4];
+        let n = tour.len();
+        for i in 0..n.saturating_sub(1) {
+            for j in (i + 1)..n {
+                let before = tour_cost(&tour, &spots);
+                let mut swapped = tour.clone();
+                apply_two_opt(&mut swapped, i, j);
+                let after = tour_cost(&swapped, &spots);
+                assert_eq!(
+                    two_opt_delta(&tour, &spots, i, j),
+                    i64::from(after) - i64::from(before),
+                    "delta disagrees with the real cost change at ({i}, {j})"
+                );
+            }
+        }
     }
 
     #[test]
