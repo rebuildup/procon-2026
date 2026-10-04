@@ -172,6 +172,11 @@ protocol-consistency:
 record:
     cd packages/frontend && bun run record
 
+# Opt-in Canvas/WebGPU frame scheduling checks (Chromium + Firefox).
+# Install once: cd packages/frontend && bunx playwright install chromium firefox
+test-viewer-frames:
+    cd packages/frontend && bunx playwright test --config playwright.frames.config.ts
+
 # ----------------------------------------------------------------
 # Cleanup
 # ----------------------------------------------------------------
