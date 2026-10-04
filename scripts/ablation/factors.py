@@ -26,6 +26,16 @@ def load(dirname):
     }
 
 
+def slot_ball(run):
+    """Balls held by the 5th (kmeans=4 surplus) agent, or `-`.
+
+    The team is 3..=8 agents, so indexing `[4]` into a shorter
+    `agent_ball_counts` crashed the report on any run with fewer than five.
+    """
+    counts = run.get("agent_ball_counts") or []
+    return counts[4] if len(counts) > 4 else "-"
+
+
 def tiers(cond, cands):
     return tuple(sum(cond[c][f] for c in cands) for f in ["variety", "daily_variety_sum", "total_balls"])
 
@@ -73,7 +83,7 @@ def main():
     print("\n=== slot-4 balls (the kmeans=4 surplus agent) ===")
     for lab, _ in CONDITIONS:
         print(f"  {lab:20s} " + "  ".join(
-            f"{c.split()[0]}={(C[lab][c]['agent_ball_counts'] or [None] * 5)[4]}" for c in FUEL_AWARE))
+            f"{c.split()[0]}={slot_ball(C[lab][c])}" for c in FUEL_AWARE))
 
     print("\n=== fuel_short per candidate ===")
     for lab, _ in CONDITIONS:
