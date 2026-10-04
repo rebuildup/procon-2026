@@ -78,6 +78,18 @@ pub struct CoordinatorLoopConfig {
     pub team_id: String,
     /// Sleep between `GET /setting` polls while `starts_at == 0`.
     pub setting_poll_interval: Duration,
+    /// Maximum `GET /setting` polls before the loop gives up — applied to the
+    /// Phase 1 pre-start probe *and* the Phase 4 `starts_at == 0` wait.
+    ///
+    /// Both loops used to spin forever: `get_match_setting` returns promptly
+    /// on `403 AccessTimeError` without retrying, so a cancelled match or a
+    /// drifted API hung an unattended run with no log line at all, while
+    /// every other retry in this file is bounded (`kind_submit_max_attempts`,
+    /// `match_state_max_attempts`). Default `300` × `setting_poll_interval =
+    /// 2s` = `10min` — far beyond a normal kind window plus the official
+    /// `-match-start-delay`, but finite, so the wait ends in
+    /// [`CoordinatorLoopError::SettingPollTimeout`] instead of silence.
+    pub setting_poll_max_attempts: u32,
     /// Stable identifier of the solver the CLI wired up. Used only to
     /// decide what `POST /agent` kinds vector to send **when
     /// [`agent_kinds`](Self::agent_kinds) is `None`**: real solvers
@@ -185,6 +197,7 @@ impl Default for CoordinatorLoopConfig {
         Self {
             team_id: "mvp-player".to_owned(),
             setting_poll_interval: Duration::from_secs(2),
+            setting_poll_max_attempts: 300,
             solver_name: "loop".to_owned(),
             agent_kinds: None,
             kind_submit_max_attempts: 30,
@@ -227,6 +240,7 @@ impl CoordinatorLoopConfig {
         Ok(Self {
             team_id,
             setting_poll_interval: Duration::from_secs(2),
+            setting_poll_max_attempts: 300,
             solver_name: "loop".to_owned(),
             // No env override for the composition: `--kinds` is a CLI flag
             // so an invocation records exactly what it asked for.
@@ -532,6 +546,15 @@ pub enum CoordinatorLoopError {
     /// The server rejected the plan (`revision < 0`). Not retried.
     #[error("server rejected plan on day {day} (revision={revision})")]
     Rejected { day: u32, revision: i32 },
+    /// `GET /setting` never produced a usable snapshot within the poll
+    /// budget (`setting_poll_max_attempts`).
+    #[error("`GET /setting` was not ready after {attempts} attempts during the {phase} phase")]
+    SettingPollTimeout {
+        /// Which poll loop ran out: `"phase-1 probe"` or `"phase-4 start wait"`.
+        phase: &'static str,
+        /// Polls issued before giving up.
+        attempts: u32,
+    },
     /// Protocol <-> engine conversion produced a malformed value.
     #[error("protocol/engine conversion failed: {0}")]
     Conversion(String),
@@ -642,12 +665,27 @@ where
     // returns `starts_at == 0` while the kind-submission window is
     // OPEN, then sets `starts_at` only AFTER the kind deadline closes —
     // so we MUST NOT gate Phase 2 on `starts_at > 0` (issue #156).
+    let mut setting_polls = 0_u32;
     let wire_setting = loop {
         match client.get_match_setting().await {
             Ok(s) => break s,
             Err(protocol::HttpClientError::AccessTime { .. }) => {
                 // Pre-start window: server returns 403 before the first
-                // setting snapshot exists. Just back off and retry.
+                // setting snapshot exists. Back off and retry — but not
+                // forever, or an unattended run waits on a server that
+                // never comes up with nothing in the log to show for it.
+                setting_polls += 1;
+                if setting_polls >= cfg.setting_poll_max_attempts {
+                    return Err(CoordinatorLoopError::SettingPollTimeout {
+                        phase: "phase-1 probe",
+                        attempts: setting_polls,
+                    });
+                }
+                tracing::debug!(
+                    attempt = setting_polls,
+                    max = cfg.setting_poll_max_attempts,
+                    "GET /setting still 403; waiting for the first snapshot"
+                );
                 tokio::time::sleep(cfg.setting_poll_interval).await;
             }
             Err(e) => return Err(CoordinatorLoopError::Setting(e)),
@@ -747,11 +785,26 @@ where
     // the setting (map / day_steps / day_seconds / agents) is static so
     // the snapshot from Phase 1 stays valid.
     if wire_setting.starts_at == 0 {
+        let mut start_polls = 0_u32;
         loop {
             match client.get_match_setting().await {
                 Ok(s) if s.starts_at > 0 => break,
-                Ok(_) => tokio::time::sleep(cfg.setting_poll_interval).await,
-                Err(protocol::HttpClientError::AccessTime { .. }) => {
+                Ok(_) | Err(protocol::HttpClientError::AccessTime { .. }) => {
+                    // Kinds are registered but the match has not announced a
+                    // start yet. Bounded, and visible: a cancelled match or a
+                    // drifted `starts_at` must not hang an arena run silently.
+                    start_polls += 1;
+                    if start_polls >= cfg.setting_poll_max_attempts {
+                        return Err(CoordinatorLoopError::SettingPollTimeout {
+                            phase: "phase-4 start wait",
+                            attempts: start_polls,
+                        });
+                    }
+                    tracing::debug!(
+                        attempt = start_polls,
+                        max = cfg.setting_poll_max_attempts,
+                        "waiting for `starts_at` to flip positive"
+                    );
                     tokio::time::sleep(cfg.setting_poll_interval).await;
                 }
                 Err(e) => return Err(CoordinatorLoopError::Setting(e)),
