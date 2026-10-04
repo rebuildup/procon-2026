@@ -19,7 +19,7 @@
 //! isolation; [`super::sim::MatchSim::step`] stitches them together in the
 //! Q6 order.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::model::{
     Action, ActionKind, Agent, AgentKind, Cell, HexCoord, MapGrid, MatchState, Spot, Terrain,
@@ -62,10 +62,12 @@ pub enum StepEvent {
 /// Filter the action list down to a canonical `(agent_id, action)` map.
 /// Unknown agent ids and duplicate entries are dropped (treated as `Wait`).
 ///
-/// The output preserves no ordering — callers iterate it as they please.
+/// The output is ordered by agent id. `MatchSim::step` iterates it to emit
+/// moves, so a `HashMap` here made the `Vec<StepEvent>` order depend on the
+/// per-process hash seed: same input, different event order between runs.
 #[must_use]
-pub fn phase_wait(actions: &[Action], known_ids: &[u8]) -> HashMap<u8, Action> {
-    let mut out = HashMap::new();
+pub fn phase_wait(actions: &[Action], known_ids: &[u8]) -> BTreeMap<u8, Action> {
+    let mut out = BTreeMap::new();
     for action in actions {
         if !known_ids.contains(&action.agent_id) {
             continue;
@@ -374,10 +376,10 @@ pub fn phase_traffic_update(
             if let Terrain::Road(ref mut current) = cell.terrain {
                 if *current != new_state {
                     *current = new_state;
-                    updates.push((coord, new_state));
-                } else {
-                    updates.push((coord, new_state));
                 }
+                // Report every road, changed or not: the caller's contract is
+                // "the state each road ends the day in", not "what moved".
+                updates.push((coord, new_state));
             }
         }
     }
