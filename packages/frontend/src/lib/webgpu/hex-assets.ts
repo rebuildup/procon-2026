@@ -53,7 +53,7 @@ export function tileSvgContent(terrain: Terrain, mark?: Mark): string {
     const id = pattern.slice(5, -1);
     const base = structure.defs.children.find((node) => node.attrs.id === id)!.children[0]!.attrs
       .fill!;
-    content += `<circle cx="0" cy="0" r="19.2" fill="${base}"/>`;
+    content += `<circle cx="0" cy="0" r="16.5" fill="${base}"/>`;
     const shape = glyphs[mark].map(svgNode).join('');
     const casing = glyphs[mark].map((node) => svgNode(markerCasing(node))).join('');
     content += `<g transform="translate(-20,-20) scale(2.5)">${casing}${shape}</g>`;

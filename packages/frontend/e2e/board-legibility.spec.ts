@@ -140,7 +140,22 @@ test('large silhouettes retain contrast and separation on every terrain', async 
       const seriesColours = marks
         .slice(0, 6)
         .map((mark) => glyphs[mark].flatMap(fillColours)[0] as string);
+      const structurePath = '/src/viewer-structure.json';
+      const structure = (await import(/* @vite-ignore */ structurePath)).default;
+      const terrainContrasts = structure.defs.children.map(
+        (pattern: {
+          attrs: Record<string, string>;
+          children: { attrs: Record<string, string> }[];
+        }) => ({
+          terrain: pattern.attrs.id,
+          ratio: contrast(
+            pattern.children[0]!.attrs.fill!,
+            pattern.children[1]!.attrs.stroke ?? pattern.children[1]!.attrs.fill!,
+          ),
+        }),
+      );
       return {
+        terrainContrasts,
         measurements,
         distinct: new Set(signatures).size,
         boundaryContrast: contrast('#212428', '#ffffff'),
@@ -154,6 +169,7 @@ test('large silhouettes retain contrast and separation on every terrain', async 
   );
   expect(report.distinct).toBe(8);
   expect(report.boundaryContrast).toBeGreaterThan(3);
+  for (const terrain of report.terrainContrasts) expect(terrain.ratio).toBeGreaterThanOrEqual(3);
   for (const colour of report.seriesToKeyline) expect(colour.ratio).toBeGreaterThanOrEqual(3);
   for (const item of report.measurements.filter(
     (m) => m.terrain === 'mountain' && m.mark.startsWith('s'),
