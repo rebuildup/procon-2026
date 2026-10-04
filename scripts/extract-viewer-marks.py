@@ -22,13 +22,15 @@ field = ET.fromstring(re.search(r'<svg class="hexfield"[^>]*>(.*?)</svg>', sourc
 groups = list(field)
 # Preserve native SVG structure: patterns, inherited styles and exact casing.
 centers = [(52,44),(132,44),(212,44),(292,44),(92,102),(252,102)]
-ranges = [(0,2),(2,6),(6,7),(7,9),(9,12),(12,14)]
+ranges = [(i,i+1) for i in range(6)]
 structure = {'viewBox': '0 0 420 168', 'defs': node(groups[0]),
              'hex': [], 'series': {}, 'reference': [node(e) for e in groups]}
 for i, (x,y) in enumerate(centers):
     structure['hex'].append({'center':[x,y], 'halo': node(ET.Element('g', groups[1].attrib)), 'fill':node(ET.Element('g',groups[2].attrib))})
     structure['hex'][-1]['halo']['children'] = [node(groups[1][i])]
-    structure['hex'][-1]['fill']['children'] = [node(groups[2][i])]
+    fill_node = node(groups[2][i])
+    fill_node['attrs']['fill'] = fill_node['attrs'].get('data-fill-pattern',fill_node['attrs']['fill'])
+    structure['hex'][-1]['fill']['children'] = [fill_node]
     a,b = ranges[i]
     key = ['s0','s1','s2','s3','s5','s4'][i]
     structure['series'][key] = {'center':[x,y], 'layers': []}

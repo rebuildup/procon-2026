@@ -1,3 +1,9 @@
+## 2026-10-03 最新レビュー: 盤面での視認性
+
+問題由来の役割・配置・色相の意味を維持し、viewerの系列色は彩度と明度を再調整する。過去の「色変更禁止」「公式図の実測値をそのまま使う」は、今回のユーザー指定により固定条件ではなくなった。操作UIのPrimer色は変更しない。系列色は導入済みPrimer Primitivesのlight data-vis/display色から選び、map内ではlight/dark共通の一定色で表示する。原資料のbitmap色との一致は主張しない。
+
+識別の主役は大きい輪郭と色面とする。小さい内部線を減らし、map上の記号を32から40unitへ拡大する。全familyとagentにも同じ白いcasingを付け、色だけで系列を判定しない。地形模様は密度を下げ、記号の背後では省き、周縁には地形判別の手がかりを残す。周縁の地形模様にも3:1以上の色のコントラストを確保する。hex枠・記号の黒輪郭・白いcasingの必要な境界を計測する。
+
 > 最新レビュー反映: visualizer は Primer utility の枠でセクション化する。地形・境界・地図記号・agent は同じ WebGPU シーンで描画し、GPU 不可時は同じ記号アトラスの Canvas 描画へ退避する。地図内に SVG DOM を重ねない。Reset view は右側 View パネルのラベル付き Primer Button に置く。Replays の操作パネルは維持する。
 
 # Design Brief — procon-2026 viewer

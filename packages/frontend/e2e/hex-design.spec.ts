@@ -153,7 +153,7 @@ test('composed hex matches proposal and Canvas; camera frames reuse uploads', as
     const structurePath = '/src/viewer-structure.json';
     const structure = (await import(/* @vite-ignore */ structurePath)).default;
     const transform = scene.sceneTransform(fixture, 370, 265, camera);
-    const body = `<g transform="translate(${transform.x},${transform.y}) scale(${transform.scale * scale})">${assets.svgNode(structure.defs)}${coords.map(([x, y], index) => `<g transform="translate(${x},${y}) scale(${assets.HEX_INSET}) translate(${-x!},${-y!})">${assets.svgNode(structure.hex[index].halo)}${assets.svgNode(structure.hex[index].fill)}${structure.series[names[index]!].layers.map(assets.svgNode).join('')}</g>`).join('')}</g>`;
+    const body = `<g transform="translate(${transform.x},${transform.y}) scale(${transform.scale * scale})">${assets.svgNode(structure.defs)}${coords.map(([x, y], index) => `<g transform="translate(${x},${y}) scale(${assets.HEX_INSET}) translate(${-x!},${-y!})">${assets.svgNode(structure.hex[index].halo)}${assets.svgNode({ ...structure.hex[index].fill, children: [structure.reference[2].children[index]] })}${structure.series[names[index]!].layers.map(assets.svgNode).join('')}</g>`).join('')}</g>`;
     const image = new Image();
     const url = URL.createObjectURL(
       new Blob(
