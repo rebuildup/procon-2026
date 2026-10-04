@@ -27,12 +27,18 @@ export async function createWebGpuContext(canvas: HTMLCanvasElement): Promise<We
     console.error('WebGPU device lost', err);
   });
 
-  const context = canvas.getContext('webgpu');
-  if (!context) {
-    throw new Error('Failed to acquire WebGPU context from canvas');
-  }
-  const format = gpu.getPreferredCanvasFormat();
-  context.configure({ device, format, alphaMode: 'opaque' });
+  try {
+    const context = canvas.getContext('webgpu');
+    if (!context) {
+      throw new Error('Failed to acquire WebGPU context from canvas');
+    }
+    const format = gpu.getPreferredCanvasFormat();
+    context.configure({ device, format, alphaMode: 'opaque' });
 
-  return { device, adapter, format };
+    return { device, adapter, format };
+  } catch (error) {
+    // Ownership transfers to the caller only after successful configuration.
+    device.destroy();
+    throw error;
+  }
 }
