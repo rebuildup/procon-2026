@@ -439,18 +439,18 @@ fn process_isolation_kills_the_worker_on_timeout() {
     // Uses a case no other test touches, so the process check below cannot
     // race against a concurrent run.
     let registry = CandidateRegistry::builtin();
-    // Measured: this pair takes ~6.6 ms at 128 iterations, plus ~1 ms to
-    // spawn the worker. The deadline must land squarely *inside* the
-    // computation — not before the child starts, and not after it finishes —
-    // so the workload is sized an order of magnitude above the deadline: at
-    // 1028 iterations only a machine ~40x faster than the measured one could
-    // finish under 3 ms, and the worker is killed at the deadline anyway, so
-    // the extra work never runs to completion.
-    let candidate = registry.build("loop:iterations=1028:initial=greedy").unwrap();
+    // The deadline must land before the child can possibly report, and the
+    // only cost that is *not* machine-dependent is process start-up: fork +
+    // exec + interpreter init is ~1 ms, so a sub-millisecond deadline kills
+    // the worker whether the evaluation itself takes 6 ms or 60 µs. (Sizing
+    // the workload instead proved fragile — refinement converges in one pass
+    // whenever no improving move exists, so "iterations" is an upper bound,
+    // not a cost.)
+    let candidate = registry.build("loop:iterations=128:initial=greedy").unwrap();
     let case = CaseSpec::from_bundled_fixture("large-32x32").unwrap();
 
     let evaluator = Evaluator::new(
-        config(HarnessDeadline::Fixed(Duration::from_millis(3)), Isolation::Thread)
+        config(HarnessDeadline::Fixed(Duration::from_micros(500)), Isolation::Thread)
             .with_process_isolation(worker_exe()),
     );
 
@@ -484,11 +484,8 @@ fn process_isolation_kills_the_worker_on_timeout() {
     // `kinds_survive_process_isolation` and friends all spawn `--worker`
     // children concurrently — so keep only the ones running *this* case,
     // which travels in `--case-json`.
-    let stray: Vec<String> = output
-        .lines()
-        .filter(|line| line.contains("large-32x32"))
-        .map(ToOwned::to_owned)
-        .collect();
+    let stray: Vec<String> =
+        output.lines().filter(|line| line.contains("large-32x32")).map(ToOwned::to_owned).collect();
     assert!(stray.is_empty(), "a killed worker must not still be running (pids {stray:?})");
 }
 

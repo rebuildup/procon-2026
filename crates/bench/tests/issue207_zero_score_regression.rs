@@ -41,13 +41,6 @@ struct Score {
     balls: u32,
 }
 
-impl Score {
-    /// Lexicographic `>=` in the contest's ranking order.
-    fn beats_or_ties(self, other: Self) -> bool {
-        (self.variety, self.daily, self.balls) >= (other.variety, other.daily, other.balls)
-    }
-}
-
 /// Drive one candidate through the real `engine::MatchSim` and read the
 /// official score off the final state — the evaluator's own path, so a
 /// passing test describes an evaluation, not a re-implementation of one.
