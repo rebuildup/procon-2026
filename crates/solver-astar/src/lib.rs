@@ -3,7 +3,9 @@
 //! Spec anchors:
 //!
 //! - 募集要項「移動と燃料」 — base step / fuel cost per terrain.
-//! - Q&A Q1 — even-row right-offset layout (encoded in [`hex::Direction::step`]).
+//! - Q&A Q1 — even-row right-offset layout. [`hex::Direction::step`]
+//!   encodes a *column-mirrored* twin of it (see [`hex`]'s module docs);
+//!   `crates/bench` carries the compensating mirror.
 //! - Q&A Q6 — environment reflects the **previous** step's actions before
 //!   the next step's evaluation; the solver treats traffic / cell state as
 //!   static within a single solve.

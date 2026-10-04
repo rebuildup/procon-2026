@@ -39,7 +39,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[2]  # scripts/ -> natural-japanese/ -> skills/ -> repo root
+REPO_ROOT = SCRIPT_DIR.parents[3]  # scripts/ -> natural-japanese/ -> skills/ -> .claude/ -> repo root
+# (upstream lives at <repo>/skills/..., so its parents[2] pointed at the repo
+# root; vendored here under .claude/ it needs one level more. Without it the
+# corpus resolves to .claude/corpus, load_corpus tolerates the miss, and every
+# report silently runs against 0 documents.)
 CORPUS_DIR = REPO_ROOT / "corpus"
 REPORTS_DIR = CORPUS_DIR / "reports"
 

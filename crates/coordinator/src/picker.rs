@@ -26,19 +26,17 @@ use crate::types::{MatchSetting, SolverName};
 
 /// Tunable configuration for [`StrategyPicker`].
 ///
-/// Lets callers nudge thresholds without rewriting the rule table. Defaults
-/// match the constants in [`crate::rules`].
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// **Reserved.** The rule table reads [`Characteristics`] directly — there is
+/// no override table to tune yet — so nothing here is consulted when a
+/// decision is made. Keep it that way visibly: a knob that silently does
+/// nothing is worse than none.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PickerConfig {
-    /// Multiplier applied to `Characteristics::series_count` when reading
-    /// from the override table.
+    /// Multiplier intended for an override table that does not exist yet.
+    ///
+    /// Reading or writing this changes no decision today; see the struct
+    /// docs.
     pub series_round: u32,
-}
-
-impl Default for PickerConfig {
-    fn default() -> Self {
-        Self { series_round: 1 }
-    }
 }
 
 /// Rule-driven approach picker.
@@ -80,7 +78,9 @@ impl StrategyPicker {
     /// Useful for testing and for callers that already cached the features.
     #[must_use]
     pub fn pick_from_characteristics(&self, c: Characteristics) -> SolverName {
-        let _ = self.config.series_round; // reserved for future override tables
+        // `self.config` is reserved (see `PickerConfig`): no rule reads it
+        // yet, and none pretends to.
+        let _ = self.config;
 
         // Rule 1: mountainous + many series → ILP
         if mountainous(&c) && many_series(&c) {

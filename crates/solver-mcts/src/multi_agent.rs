@@ -207,7 +207,10 @@ impl MultiAgentNode {
             a.visits
                 .cmp(&b.visits)
                 .then_with(|| {
-                    b.total_reward.partial_cmp(&a.total_reward).unwrap_or(std::cmp::Ordering::Equal)
+                    // Same inversion as `node::most_visited_child`: order `a`
+                    // relative to `b`, or a visit tie picks the worst joint
+                    // action.
+                    a.total_reward.partial_cmp(&b.total_reward).unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .then_with(|| ka.cmp(kb))
         })

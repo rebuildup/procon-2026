@@ -439,14 +439,20 @@ fn process_isolation_kills_the_worker_on_timeout() {
     // Uses a case no other test touches, so the process check below cannot
     // race against a concurrent run.
     let registry = CandidateRegistry::builtin();
-    // Measured: this pair takes ~6.6 ms to evaluate, plus ~1 ms to spawn the
-    // worker. A 3 ms deadline therefore lands squarely *inside* the
-    // computation — not before the child starts, and not after it finishes.
+    // The deadline has to be one the child cannot meet, and everything about
+    // that bound was machine-dependent before: sizing it *inside* the
+    // computation needs the workload slower than the deadline (but
+    // "iterations" is an upper bound — refinement stops as soon as no move
+    // improves — so a faster refine sails under a fixed 3 ms), while sizing
+    // it just above process start-up races the child's own 0 ms timeout
+    // report. A zero deadline removes the guesswork: the child can never
+    // finish before the parent checks, so the kill/reap path this test is
+    // actually about always runs.
     let candidate = registry.build("loop:iterations=128:initial=greedy").unwrap();
     let case = CaseSpec::from_bundled_fixture("large-32x32").unwrap();
 
     let evaluator = Evaluator::new(
-        config(HarnessDeadline::Fixed(Duration::from_millis(3)), Isolation::Thread)
+        config(HarnessDeadline::Fixed(Duration::ZERO), Isolation::Thread)
             .with_process_isolation(worker_exe()),
     );
 
@@ -476,7 +482,12 @@ fn process_isolation_kills_the_worker_on_timeout() {
         Ok(_) => String::new(),
         Err(_) => return,
     };
-    let stray: Vec<String> = output.lines().map(ToOwned::to_owned).collect();
+    // Every worker in this binary shares that command line — `evaluator()`,
+    // `kinds_survive_process_isolation` and friends all spawn `--worker`
+    // children concurrently — so keep only the ones running *this* case,
+    // which travels in `--case-json`.
+    let stray: Vec<String> =
+        output.lines().filter(|line| line.contains("large-32x32")).map(ToOwned::to_owned).collect();
     assert!(stray.is_empty(), "a killed worker must not still be running (pids {stray:?})");
 }
 

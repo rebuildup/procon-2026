@@ -71,12 +71,14 @@ def get_tokenizer():
 
 
 # ---------------------------------------------------------------------------
-# 体言止め判定（lint.py の nominal_ending 検出器と outline.py の見出し統計で共用）。
+# 体言止め判定（outline.py の見出し統計で使用）。
 #
 # TRAILING_SYMBOL_POS / NOUN_ENDING_POS / strip_trailing_symbols() は元々
 # lint.py 側だけに定義されていたが、outline.py の見出し統計（体言止め率）でも
 # 同じ判定ロジックが必要になったため、共有基盤である textcore.py に移設した。
-# lint.py は本モジュールから import して使う（値は移設前と完全に同一）。
+# 使うのは outline.py のみ。lint.py は移設後も自分の中に対応する定義を
+# （完全に同一の値で）持ったままなので、変更する場合は両方を直すか、まず
+# lint.py 側をこのモジュールからの import に寄せる。
 # ---------------------------------------------------------------------------
 NOUN_ENDING_POS = {"名詞"}
 TRAILING_SYMBOL_POS = {"補助記号", "空白"}

@@ -96,11 +96,24 @@ pub async fn run_build(output_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Resolve the workspace root from the current executable's location.
+/// Resolve the workspace root the bundle is built from.
 ///
-/// `CARGO_MANIFEST_DIR` is set during compilation and points at
-/// `crates/cli`. Its grand-parent is the workspace root.
+/// Prefers the tree the running binary sits in — walk up from
+/// `target/release/procon` until a `Cargo.toml` declaring a workspace shows
+/// up — so a relocated `procon` packages the checkout it is actually in
+/// instead of the one it was compiled from (the compile-time
+/// `CARGO_MANIFEST_DIR` below would silently bundle *that* tree whenever it
+/// still exists). Falls back to the compile-time grand-parent when the
+/// binary runs outside any checkout (installed copy, CI artifact).
 fn locate_workspace_root() -> Result<PathBuf> {
+    if let Ok(exe) = std::env::current_exe() {
+        for dir in exe.ancestors() {
+            let manifest = dir.join("Cargo.toml");
+            if std::fs::read_to_string(&manifest).is_ok_and(|text| text.contains("[workspace]")) {
+                return Ok(dir.to_path_buf());
+            }
+        }
+    }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace = manifest
         .parent()

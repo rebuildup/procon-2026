@@ -335,3 +335,29 @@ async fn snapshot_opt_out_writes_nothing_to_disk() {
         );
     }
 }
+
+/// Phase 4 (`starts_at == 0` wait) must be bounded: the loop polls
+/// `GET /setting`, which returns promptly on `403 AccessTimeError` without
+/// retrying, so a server that never announces a start (cancelled match,
+/// drifted API) used to hang an unattended run forever with no log line.
+#[tokio::test]
+async fn start_wait_gives_up_when_the_match_never_flips() {
+    // `starts_at = 0` and nothing ever flips it.
+    let (server_url, _state) = spawn_test_server(0).await;
+    let mut cfg = test_config(&server_url, None);
+    cfg.setting_poll_max_attempts = 3;
+    cfg.setting_poll_interval = Duration::from_millis(5);
+
+    let solver: Box<dyn engine::solver::Solver> = Box::new(WaitSolver);
+    let err = run_coordinator_loop(test_client(&server_url, "test-token"), solver, cfg)
+        .await
+        .expect_err("a never-starting match must not hang the loop");
+
+    assert!(
+        matches!(
+            err,
+            CoordinatorLoopError::SettingPollTimeout { phase: "phase-4 start wait", attempts: 3 }
+        ),
+        "expected a bounded Phase 4 wait, got {err:?}"
+    );
+}

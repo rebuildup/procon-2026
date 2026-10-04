@@ -42,21 +42,27 @@ impl HexCoord {
 ///
 /// `dr = row - row'`, `dc = col - col'`. With the even-row right-shift
 /// convention the axial distance reduces to
-/// `(dc - dr / 2).abs() + (dc - dr / 2 - dr).abs() + dr.abs()) / 2`
-/// but the closed form below is the canonical
-/// `(|x| + |y| + |z|) / 2` projection.
+/// The engine's grid is **even-row right-offset** (`engine::model::Direction::step`
+/// branches on row parity), so `(col, row)` are offset coordinates. Convert
+/// to cube first — `x = col - (row + row % 2) / 2` — and take the canonical
+/// `(|dx| + |dy| + |dz|) / 2` projection, which reproduces that neighbour
+/// graph exactly. The previous closed form mixed the deltas with a truncating
+/// `ar / 2` and scored real neighbours as two steps (and two-step pairs as
+/// one), so `greedy_route`'s nearest-first ordering and its step-budget
+/// charge both disagreed with the engine.
 #[must_use]
-#[allow(
-    clippy::cast_sign_loss,
-    reason = "hex distance is non-negative; the explicit abs() in the sum guarantees it"
-)]
 pub fn hex_distance(a: HexCoord, b: HexCoord) -> u32 {
-    let ac = a.col - b.col;
-    let ar = a.row - b.row;
-    let bc = ac - (ar / 2);
-    let br = bc - ar;
-    let total = ac.unsigned_abs() + ar.unsigned_abs() + bc.unsigned_abs() + br.unsigned_abs();
-    total / 2
+    let to_cube = |c: HexCoord| {
+        let row = i64::from(c.row);
+        let x = i64::from(c.col) - (row + i64::from(c.row.rem_euclid(2))) / 2;
+        (x, -x - row, row)
+    };
+    let (ax, ay, az) = to_cube(a);
+    let (bx, by, bz) = to_cube(b);
+    let dx = (ax - bx).abs();
+    let dy = (ay - by).abs();
+    let dz = (az - bz).abs();
+    u32::try_from((dx + dy + dz) / 2).unwrap_or(u32::MAX)
 }
 
 /// Series identifier (a.k.a. "udon type"). Wrapped newtype so that
@@ -289,6 +295,18 @@ mod tests {
     fn hex_distance_zero_for_same_cell() {
         let c = HexCoord::new(3, 4);
         assert_eq!(hex_distance(c, c), 0);
+    }
+
+    /// The engine grid is even-r, so these are engine steps — the old
+    /// closed form scored `(0,0) -> (1,1)` (a direct neighbour) as 2 and
+    /// `(1,0) -> (0,1)` (two steps) as 1, which skewed `greedy_route`'s
+    /// nearest-first order and its step-budget charge.
+    #[test]
+    fn hex_distance_matches_the_engine_neighbour_graph() {
+        assert_eq!(hex_distance(HexCoord::new(0, 0), HexCoord::new(1, 1)), 1);
+        assert_eq!(hex_distance(HexCoord::new(1, 0), HexCoord::new(0, 1)), 2);
+        assert_eq!(hex_distance(HexCoord::new(0, 0), HexCoord::new(2, 0)), 2);
+        assert_eq!(hex_distance(HexCoord::new(4, 4), HexCoord::new(4, 7)), 3);
     }
 
     #[test]

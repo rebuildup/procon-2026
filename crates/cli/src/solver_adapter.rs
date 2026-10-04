@@ -29,7 +29,7 @@ use engine::solver::{
     SolverDecision,
 };
 use protocol::MatchSnapshot;
-use protocol::match_config::{AgentState, MatchState};
+use protocol::match_config::MatchState;
 use solver_loop::{
     Agent as LoopAgent, HexCoord, InitialStrategy, LoopSolver, Series as LoopSeries, SolveOutcome,
     SolveProblem, Solver as LoopSolverTrait, Spot as LoopSpot,
@@ -169,7 +169,11 @@ impl EngineLoopAdapter {
     /// Calling this a second time replaces the previous setting.
     #[allow(dead_code)] // exposed for integration tests; production path uses `setting_handle`
     pub fn set_engine_setting(&self, setting: EngineSetting) {
-        let mut guard = self.engine_setting.lock().expect("engine_setting mutex poisoned");
+        // Recover from a poisoned lock rather than panicking: the guard only
+        // ever holds an `Option`, so a panic elsewhere cannot leave an
+        // invariant broken that `decide` could not read past.
+        let mut guard =
+            self.engine_setting.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Some(setting);
     }
 }
@@ -180,7 +184,8 @@ impl Solver for EngineLoopAdapter {
     }
 
     fn decide(&self, ctx: &SolverContext) -> SolverDecision {
-        let setting = self.engine_setting.lock().expect("engine_setting mutex poisoned").clone();
+        let setting =
+            self.engine_setting.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         let problem = match setting.as_ref() {
             Some(s) => synthesize_problem_from_setting(ctx, s),
             None => synthesize_problem(ctx),
@@ -470,16 +475,18 @@ pub fn dummy_match_snapshot() -> MatchSnapshot {
 /// realistic in logs; agent positions live in the engine's
 /// `protocol_setting_to_engine` view of the day.
 ///
-/// Returns `None` if the wire payload does not reference the calling team
-/// (the engine cannot synthesise scores for a foreign player).
+/// Returns `None` when the payload carries no agents at all. The wire view
+/// has no per-team attribution — `AgentState` holds only kind/pos/fuel and
+/// foreign players live in `MatchState.others` — so this is an emptiness
+/// guard rather than a team filter; `team` stays in the signature for the
+/// reconciliation that lands with the engine's day-step hooks.
 #[must_use]
 pub fn match_state_to_snapshot(
     state: &MatchState,
     match_id: &MatchId,
     team: &PlayerId,
 ) -> Option<MatchSnapshot> {
-    let has_team = state.agents.iter().any(|a| agent_state_mentions(a, team));
-    if !has_team {
+    if state.agents.is_empty() {
         return None;
     }
     Some(MatchSnapshot {
@@ -492,13 +499,6 @@ pub fn match_state_to_snapshot(
         outcome: Outcome::Pending,
         server_time_unix_ms: 0,
     })
-}
-
-fn agent_state_mentions(_a: &AgentState, _t: &PlayerId) -> bool {
-    // MVP: any agent state is accepted; the engine never reads per-agent
-    // state in this path. Real reconciliation lands when the engine's
-    // day-step simulation hooks into the loop (later issue).
-    true
 }
 
 #[cfg(test)]

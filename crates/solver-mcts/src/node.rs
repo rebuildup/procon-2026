@@ -98,8 +98,12 @@ impl MctsNode {
                 a.visits
                     .cmp(&b.visits)
                     .then_with(|| {
-                        b.total_reward
-                            .partial_cmp(&a.total_reward)
+                        // Reward breaks visit ties: `max_by` must order `a`
+                        // relative to `b`, so this used to select the
+                        // *lowest*-reward child whenever visits tied (which
+                        // is every child when iterations == children count).
+                        a.total_reward
+                            .partial_cmp(&b.total_reward)
                             .unwrap_or(std::cmp::Ordering::Equal)
                     })
                     .then_with(|| ai.cmp(bi))
@@ -117,5 +121,30 @@ impl fmt::Display for MctsNode {
             self.visits,
             self.mean_reward()
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Visit ties fall back to reward, and `max_by` must order `a` relative
+    /// to `b`. The reversed comparison handed back the *lowest*-reward child
+    /// — every child's fate once `iterations == children.len()` leaves them
+    /// all at one visit.
+    #[test]
+    fn most_visited_child_prefers_the_higher_reward_on_a_visit_tie() {
+        let mut root = MctsNode::root();
+        for (action, reward) in [(Action(0), 1.0), (Action(1), 5.0), (Action(2), 3.0)] {
+            root.expand(action);
+            let child = root.children.last_mut().expect("just pushed");
+            child.visits = 1;
+            child.total_reward = reward;
+        }
+        assert_eq!(root.most_visited_child(), Some(1), "the best child wins a visit tie");
+
+        // A genuine visit majority still beats reward.
+        root.children[0].visits = 7;
+        assert_eq!(root.most_visited_child(), Some(0));
     }
 }

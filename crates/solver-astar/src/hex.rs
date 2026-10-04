@@ -8,6 +8,17 @@
 //!   odd-row cell at the same `col`,
 //! - if `row` is odd, the cell sits directly under `(col, row - 1)`.
 //!
+//! **Known divergence:** [`Direction::step`] branches the *other* way round —
+//! its even-row neighbour set is the engine's odd-row set, i.e. this crate
+//! searches a column-mirrored twin of the contest graph. `crates/bench`
+//! documents the mirror as load-bearing and un-mirrors every coordinate on
+//! the way in and every direction on the way out
+//! (`adapters/astar_walk::{mirror_coord, to_engine_dir}`), so engine-facing
+//! paths are correct today. Flipping the parity here and dropping the bench
+//! mirror must happen atomically, or paths come out double-mirrored — until
+//! then treat these docs and tests as describing *this crate's* graph, not
+//! the engine's.
+//!
 //! Direction order is clockwise from the upper-left neighbour
 //! (`NorthWest, NorthEast, East, SouthEast, SouthWest, West`). That is the
 //! order [`HexCoord::neighbors`] enumerates, which keeps greedy tie-breaking
@@ -106,12 +117,14 @@ impl Direction {
 
     /// Compute the neighbour coordinate for `from` along `self`.
     ///
-    /// Implementation reflects the even-row right-offset layout:
+    /// Note the parity is **column-mirrored** relative to the engine's even-r
+    /// table (`engine::model::Direction::step` swaps the two halves), so:
     /// - on even rows, the two upper neighbours sit at `(col, row - 1)` and
-    ///   `(col - 1, row - 1)`,
+    ///   `(col - 1, row - 1)` — the engine's *odd*-row offsets,
     /// - on odd rows, they sit at `(col, row - 1)` and `(col + 1, row - 1)`.
     ///
-    /// Symmetrically for the two lower neighbours.
+    /// Symmetrically for the two lower neighbours. `crates/bench` mirrors
+    /// coordinates to compensate; see the module docs.
     #[must_use]
     pub fn step(self, from: HexCoord) -> HexCoord {
         let (col, row) = (from.col, from.row);
@@ -206,8 +219,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn even_row_neighbours_match_red_blob_even_r() {
-        // Red Blob Games "even-r" layout: even rows shifted right.
+    fn even_row_neighbours_use_the_mirrored_parity() {
+        // This crate's own graph: the even-row set is the engine's odd-row
+        // set (column-mirrored). The bench adapter un-mirrors on the way out —
+        // see the module docs before "fixing" this.
         let from = HexCoord::new(4, 4);
         assert_eq!(Direction::East.step(from), HexCoord::new(5, 4));
         assert_eq!(Direction::West.step(from), HexCoord::new(3, 4));
@@ -219,7 +234,8 @@ mod tests {
     }
 
     #[test]
-    fn odd_row_neighbours_match_red_blob_even_r() {
+    fn odd_row_neighbours_use_the_mirrored_parity() {
+        // Mirror half of the test above — same divergence, odd rows.
         let from = HexCoord::new(4, 5);
         assert_eq!(Direction::East.step(from), HexCoord::new(5, 5));
         assert_eq!(Direction::West.step(from), HexCoord::new(3, 5));

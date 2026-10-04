@@ -172,15 +172,25 @@ pub fn actions_to_decision(
         for token in inner {
             match *token {
                 v if v < 0 => {
-                    let wait_count = i64::from(-v);
-                    if wait_count < 0 {
-                        return Err(AdapterError::BadWireAction { agent_index, value: v });
+                    // Negate in 64-bit: negating the `i32` first overflows on
+                    // `i32::MIN` in debug builds, and the `wait_count < 0`
+                    // guard below could never catch it. Fail fast on an
+                    // overshoot too, so a token like -2_000_000_000 cannot
+                    // push ~2e9 waits before the `step_sum` check runs.
+                    let wait_count = i64::from(v).abs();
+                    let projected = step_sum + wait_count;
+                    if projected > i64::from(ctx.day_steps) {
+                        return Err(AdapterError::StepSum {
+                            agent_index,
+                            computed: projected,
+                            expected: i64::from(ctx.day_steps),
+                        });
                     }
                     let count = usize::try_from(wait_count).unwrap_or(0);
                     for _ in 0..count {
                         flat.push(SAction::wait(*agent_id));
                     }
-                    step_sum += wait_count;
+                    step_sum = projected;
                 }
                 v @ 0..=5 => {
                     let dir =
@@ -305,6 +315,30 @@ mod tests {
         assert!(matches!(
             actions_to_decision(&body, &ctx),
             Err(AdapterError::BadWireAction { agent_index: 0, value: 9 })
+        ));
+    }
+
+    #[test]
+    fn i32_min_wait_token_is_rejected_without_panicking() {
+        // `i64::from(-v)` used to negate the i32 first: debug builds panicked
+        // with "attempt to negate with overflow" before the guard could run.
+        let ctx = ctx(vec![0], 3);
+        let body: ActionPlanBody = vec![vec![i32::MIN]];
+        assert!(matches!(
+            actions_to_decision(&body, &ctx),
+            Err(AdapterError::StepSum { agent_index: 0, computed: 2_147_483_648, expected: 3 })
+        ));
+    }
+
+    #[test]
+    fn oversized_wait_token_is_rejected_before_expansion() {
+        // A hostile token must fail on the budget check, not after pushing
+        // ~2e9 waits into `flat`.
+        let ctx = ctx(vec![0], 3);
+        let body: ActionPlanBody = vec![vec![-2_000_000_000]];
+        assert!(matches!(
+            actions_to_decision(&body, &ctx),
+            Err(AdapterError::StepSum { agent_index: 0, computed: 2_000_000_000, expected: 3 })
         ));
     }
 }

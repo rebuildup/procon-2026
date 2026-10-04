@@ -184,7 +184,15 @@ fn assert_verbatim_prefix(planned: &[i32], kept: &[i32], what: &str) {
         "{what}: normalize rewrote the plan mid-list (diverges at code {common}): \
          planned {planned:?} kept {kept:?}"
     );
-    let boundary = planned[common];
+    let Some(&boundary) = planned.get(common) else {
+        // `kept` is longer than `planned`: normalize *appended* a pad rather
+        // than shortening a wait run. Indexing here used to panic with a bare
+        // slice-out-of-range message, hiding the `pad != 0` diagnostic below.
+        panic!(
+            "{what}: normalize appended a pad instead of shortening (pad != 0): \
+             planned {planned:?} kept {kept:?}"
+        );
+    };
     let last = kept[common];
     assert!(
         boundary <= -1 && last <= -1 && last.abs() <= boundary.abs(),

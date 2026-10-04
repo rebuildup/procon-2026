@@ -108,8 +108,10 @@ mod tests {
     /// dir is shared with the main checkout via git's worktree linkage).
     fn reference_dir() -> std::path::PathBuf {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        // crates/cli/src -> crates/cli -> crates -> workspace root.
-        manifest.ancestors().nth(3).expect("workspace root").join(".reference").join("procon37")
+        // crates/cli -> crates -> workspace root. (`CARGO_MANIFEST_DIR` is the
+        // crate dir, not `crates/cli/src`, so `nth(3)` would land on the
+        // *parent* of the workspace root and silently skip the guard below.)
+        manifest.ancestors().nth(2).expect("workspace root").join(".reference").join("procon37")
     }
 
     #[test]

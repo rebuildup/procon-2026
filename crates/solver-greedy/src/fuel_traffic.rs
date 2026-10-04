@@ -8,7 +8,7 @@
 //! For each agent we pick the best available spot using a score that
 //! branches on the agent's current fuel level:
 //!
-//! - **Low fuel** (strictly below [`FuelTrafficSolveContext::fuel_low_threshold`]):
+//! - **Low fuel** (strictly below [`FuelTrafficGreedy::fuel_low_threshold`]):
 //!   the agent must refuel. Per the Issue #24 contract, *any* spot is a
 //!   valid refill opportunity; we head for the nearest one.
 //! - **Sufficient fuel**: the agent minimises
@@ -97,9 +97,12 @@ impl TrafficState {
 /// Wraps the same per-step data as [`crate::SolveContext`] and adds:
 ///
 /// - a per-cell [`TrafficState`] map (cells not present are treated as
-///   [`TrafficState::Smooth`]),
-/// - a configurable `fuel_low_threshold` below which the agent is
-///   forced to refuel before doing any other planning.
+///   [`TrafficState::Smooth`]).
+///
+/// The refuel threshold deliberately lives on the solver
+/// ([`FuelTrafficGreedy`]) rather than here: `with_params` promises it
+/// drives the refuel path, and a second copy in the context could silently
+/// disagree with it.
 ///
 /// When the domain integration lands this will fold back into the
 /// canonical [`crate::SolveContext`]; the algorithm below is the only
@@ -119,8 +122,6 @@ pub struct FuelTrafficSolveContext {
     /// Per-cell traffic state. Cells not present are treated as
     /// [`TrafficState::Smooth`] (no penalty).
     pub traffic: HashMap<HexCoord, TrafficState>,
-    /// Fuel level below which the agent must refuel.
-    pub fuel_low_threshold: u32,
 }
 
 impl FuelTrafficSolveContext {
@@ -134,7 +135,6 @@ impl FuelTrafficSolveContext {
         agents: Vec<Agent>,
         spots: Vec<Spot>,
         traffic: Vec<(HexCoord, TrafficState)>,
-        fuel_low_threshold: u32,
     ) -> Self {
         Self {
             step,
@@ -142,7 +142,6 @@ impl FuelTrafficSolveContext {
             agents,
             spots,
             traffic: traffic.into_iter().collect(),
-            fuel_low_threshold,
         }
     }
 }
@@ -220,7 +219,7 @@ impl FuelTrafficGreedy {
         if !agent.can_move() {
             return None;
         }
-        let need_refuel = agent.fuel < ctx.fuel_low_threshold;
+        let need_refuel = agent.fuel < self.fuel_low_threshold;
 
         ctx.spots.iter().filter(|s| s.is_available()).min_by_key(|spot| {
             let dist = agent.coord.distance(spot.coord);
@@ -368,7 +367,6 @@ mod tests {
             vec![agent(0, 0, 0, 0)],
             vec![spot(0, 1, 0, 0, 1)],
             vec![],
-            3,
         );
         let actions = FuelTrafficGreedy::new().decide(&ctx);
         assert!(matches!(actions[0], Action::Stay { .. }));
@@ -392,13 +390,45 @@ mod tests {
                 spot(1, 1, 0, 1, 1), // distance 1, jammed cells
             ],
             traffic,
-            3,
         );
         let actions = FuelTrafficGreedy::with_params(3, 100).decide(&ctx);
         assert_eq!(
             actions[0],
             Action::MoveToward { agent: AgentId(0), spot: SpotId(1) },
             "low-fuel agent must refuel at the nearest spot even through jammed cells"
+        );
+    }
+
+    /// `with_params`'s `fuel_low_threshold` is live: the same context makes
+    /// different decisions depending on the solver's own threshold. It used
+    /// to read a context field instead, so this parameter was a no-op and
+    /// every test passed `3` alongside a context threshold of `3`, hiding it.
+    #[test]
+    fn with_params_threshold_drives_the_refuel_path() {
+        // Near spot (1,0) sits behind a jammed cell; the far spot (0,3) has a
+        // smooth 3-step path. With `traffic_weight = 100` the scored path
+        // prefers the far one, the refuel path prefers the near one.
+        let ctx = FuelTrafficSolveContext::for_test(
+            0,
+            vec![agent(0, 0, 0, 5)], // fuel 5
+            vec![spot(0, 1, 0, 0, 1), spot(1, 0, 3, 1, 1)],
+            vec![(HexCoord::new(1, 0), TrafficState::Jammed)],
+        );
+
+        // threshold 100 > fuel 5 → refuel: nearest spot wins, traffic ignored.
+        let refuel = FuelTrafficGreedy::with_params(100, 100).decide(&ctx);
+        assert_eq!(
+            refuel[0],
+            Action::MoveToward { agent: AgentId(0), spot: SpotId(0) },
+            "a high threshold must send a fuelled agent down the refuel path"
+        );
+
+        // threshold 3 <= fuel 5 → no refuel: the traffic-weighted score wins.
+        let cruising = FuelTrafficGreedy::with_params(3, 100).decide(&ctx);
+        assert_eq!(
+            cruising[0],
+            Action::MoveToward { agent: AgentId(0), spot: SpotId(1) },
+            "a low threshold must leave a fuelled agent on the scored path"
         );
     }
 
@@ -420,7 +450,6 @@ mod tests {
             vec![agent(0, 0, 0, 100)],
             vec![spot(0, 0, 3, 0, 1), spot(1, 3, 0, 1, 1)],
             traffic,
-            3,
         );
         let actions = FuelTrafficGreedy::with_params(3, 100).decide(&ctx);
         assert_eq!(
@@ -448,7 +477,6 @@ mod tests {
                 spot(1, 3, 0, 1, 1), // distance 3, smooth
             ],
             traffic,
-            3,
         );
         let actions = FuelTrafficGreedy::with_params(3, 0).decide(&ctx);
         // Pure distance: both at 3, tie-break by series then id. The
@@ -470,7 +498,6 @@ mod tests {
             vec![agent(0, 0, 0, 100), agent(1, 1, 0, 2)],
             vec![spot(0, 1, 0, 0, 1), spot(1, 2, 1, 1, 1)],
             traffic,
-            3,
         );
         let solver = FuelTrafficGreedy::new();
         let a1 = solver.decide(&ctx);

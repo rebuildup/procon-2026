@@ -16,14 +16,16 @@ FUEL_INF = 100000  # non-binding: any patrol can walk every step of every day
 
 
 def main(src: str, dst: str) -> int:
-    case = json.load(open(src))
+    with open(src, encoding="utf-8") as fh:
+        case = json.load(fh)
     before = case["fuelLimits"]
     case["fuelLimits"] = FUEL_INF
     # Distinct identity so a merged runs.jsonl can never confuse the two.
     case["case_id"] = "fixture:match489-fuelinf"
     if isinstance(case.get("source"), dict) and "name" in case["source"]:
         case["source"]["name"] = "match489-fuelinf"
-    json.dump(case, open(dst, "w"), indent=2, ensure_ascii=False)
+    with open(dst, "w", encoding="utf-8") as fh:
+        json.dump(case, fh, indent=2, ensure_ascii=False)
     print(f"fuelLimits {before} -> {case['fuelLimits']}, case_id={case['case_id']} -> {dst}")
     return 0
 

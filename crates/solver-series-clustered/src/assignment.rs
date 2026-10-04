@@ -513,10 +513,12 @@ mod series_assignment {
         let n = spots.len() as i64;
         let sum_q: i64 = spots.iter().map(|s| i64::from(s.coord.q)).sum();
         let sum_r: i64 = spots.iter().map(|s| i64::from(s.coord.r)).sum();
-        // Round half-up: floor((x / n) + 0.5). With integers, `(2*x + n) / (2*n)`
-        // is equivalent.
-        let q = ((2 * sum_q + n) / (2 * n)) as i32;
-        let r = ((2 * sum_r + n) / (2 * n)) as i32;
+        // Round half-up: floor((x / n) + 0.5) == floor((2x + n) / (2n)).
+        // `div_euclid` floors; plain `/` truncates toward zero and so lands
+        // one off for a negative numerator (`-6/8` -> 0, not -1), which
+        // contradicted the comment above and `cluster::centroid_and_radius`.
+        let q = (2 * sum_q + n).div_euclid(2 * n) as i32;
+        let r = (2 * sum_r + n).div_euclid(2 * n) as i32;
         HexCoord::new(q, r)
     }
 

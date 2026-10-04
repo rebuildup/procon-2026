@@ -2,7 +2,11 @@ schema_version: 1
 profile_version: "0.2.0"
 updated_at: "2026-10-04"
 source_revision:
-  commit: "release-0-2-0"
+  # Branch ref this profile was written against — not a commit SHA. The SHA
+  # each validation actually ran at is recorded by the gate run itself
+  # (`validated_sha` in the evidence / agent-recovery records), so this key
+  # must not be read as "validated at <sha>".
+  branch_ref: "release-0-2-0"
   branch: "release-0-2-0"
 
 project:
@@ -18,8 +22,17 @@ project:
       - crates/domain
       - crates/protocol
       - crates/engine
+      - crates/coordinator
+      - crates/solver-mcts
+      - crates/bench
       - crates/cli
       - crates/solver-greedy
+      - crates/solver-localsearch
+      - crates/solver-ilp-cross
+      - crates/solver-gpu
+      - crates/solver-loop
+      - crates/solver-series-clustered
+      - crates/solver-astar
   frontend:
     framework: solidjs
     bundler: vite
@@ -132,18 +145,31 @@ release_gate:
     - "bash scripts/check-protocol-consistency.sh"
     - "manual WebGPU browser smoke"
 
+# What actually runs, not what a green PR would imply (verified against
+# .github/workflows/ on 2026-10-04). No workflow fires on `push`, and the
+# only `pull_request` workflow checks a branch *name* — it never builds or
+# tests. Treating a passing PR check as "just ci ran" is exactly the
+# false-green this profile's failure_policy forbids.
 ci_triggers:
   pull_request:
-    branches: [main, "release-*-*-*"]
-    types: [opened, synchronize, reopened]
-    purpose: ticket integration gate
-  push:
-    branches: [main, "release-*-*-*"]
-    purpose: post-merge / release trunk validation
+    workflows:
+      - name: release-source-check
+        branches: [main]
+        types: [opened, synchronize, reopened, edited]
+        purpose: head branch must match `release-*-*-*`
+        jobs_run: [] # no build / test / lint
+  push: []
   schedule: []
   workflow_dispatch:
-    purpose: manual deep verification
+    workflows: [ci]
+    purpose: manual deep verification — the jobs described under ci_jobs
+  local_gate:
+    entry_point: just ci
+    enforced_by: pre-push hook (scripts/install-git-hooks.sh -> scripts/ci-local.sh)
+    caveat: opt-in per clone and bypassable with `git push --no-verify`
 
+# The jobs below are the `ci.yml` (workflow_dispatch) job set; nothing runs
+# them on push or PR — see ci_triggers.
 ci_jobs:
   rust:
     runner_matrix: [ubuntu-latest, macos-latest]
@@ -192,6 +218,8 @@ coverage_policy:
   rationale: project-specific signal, defer to framework guidance per change type
   per_crate: {}
 
+# Enforced through `timeout-minutes` on the ci.yml jobs; without it a hung
+# job runs to GitHub's 6-hour default.
 timeout_policy:
   default_minutes: 30
   per_job_overrides:

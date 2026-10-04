@@ -220,6 +220,13 @@ impl MapGrid {
         }
         // Sort row-major by (row, col) for predictable indexing.
         cells.sort_by_key(|c| (c.coord.row, c.coord.col));
+        // `get` computes its index from the coordinate (`row * width + col`),
+        // so a duplicated coordinate would make some *other* cell land at
+        // that index and every lookup past it silently return the wrong
+        // cell. Reject duplicates instead of mis-mapping.
+        if let Some(pair) = cells.windows(2).find(|w| w[0].coord == w[1].coord) {
+            return Err(format!("duplicate cell coordinate {:?}", pair[0].coord));
+        }
         Ok(Self { size, cells })
     }
 
@@ -664,6 +671,9 @@ pub struct MatchState {
     /// the match still completes. Without this counter an evaluator reading
     /// only the final score would happily rank a solver the server would
     /// have refused.
+    ///
+    /// Per-action downgrades only; see [`RunResult::illegal_action_count`]
+    /// for how whole-plan shape violations are reported instead.
     pub illegal_action_count: u32,
     /// The subset of [`Self::illegal_action_count`] caused by running out of
     /// fuel rather than by a malformed destination. Tracked separately: it is
@@ -769,6 +779,18 @@ pub struct RunResult {
     /// Non-legal actions the simulator downgraded to `Wait`. Non-zero means
     /// the official rules would have rejected this answer, so the evaluator
     /// must not treat the run as a clean `success`.
+    ///
+    /// Scope: **per-action** downgrades only (out of bounds, impassable
+    /// terrain, out of fuel). A *whole-plan* shape violation — wrong block
+    /// length, foreign or missing agent ids — is degraded to `Wait` for the
+    /// whole step without touching this counter, and `run_inner` pads or
+    /// truncates a wrong-length plan the same way. That is deliberate
+    /// divergence from Q&A Q6 (which rejects such an answer outright), and
+    /// it is *not* a hole in the evaluator: `bench` wraps every solver in
+    /// `TimingSolver`, which runs the same [`AgentActions::is_well_shaped`]
+    /// predicate against the same context and reports a failure as
+    /// `RunStatus::Invalid` — so a malformed candidate is never scored as a
+    /// clean success, whatever this counter says.
     pub illegal_action_count: u32,
     /// Subset of [`Self::illegal_action_count`] caused by fuel exhaustion.
     pub fuel_short_count: u32,
@@ -816,5 +838,36 @@ impl<'a> SolverContext<'a> {
     pub fn from_state(state: &'a MatchState) -> Self {
         let agent_ids = state.setting.agent_ids();
         Self { team: state.team(), state, day: state.day, day_steps: state.day_steps(), agent_ids }
+    }
+}
+
+// =============================================================================
+// Unit tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `MapGrid::get` derives its index from the coordinate, so a duplicated
+    /// coordinate would silently shift every later lookup onto the wrong cell.
+    #[test]
+    fn duplicate_cell_coordinates_are_rejected() {
+        let size = MapSize::new(8, 8).unwrap();
+        let mut cells: Vec<Cell> = (0..8)
+            .flat_map(|row| {
+                (0..8).map(move |col| Cell {
+                    coord: HexCoord::new(col, row),
+                    terrain: Terrain::Plain,
+                    spot: None,
+                })
+            })
+            .collect();
+        // Swap one coordinate for a repeat of its neighbour: the list is
+        // still in bounds and still the right length, so only the uniqueness
+        // check can catch it.
+        cells[1].coord = cells[0].coord;
+        let err = MapGrid::new(size, cells).expect_err("duplicate coordinate must be rejected");
+        assert!(err.contains("duplicate cell coordinate"), "got: {err}");
     }
 }

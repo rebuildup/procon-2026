@@ -194,9 +194,15 @@ fn fuel_constraint_allows_goal_when_budget_covers_it() {
 
 #[test]
 fn conservative_policy_still_finds_a_path() {
-    // Mountain cells cost 2 fuel each. Conservative policy penalises low
-    // fuel but does not forbid moves, so the path is found even when the
-    // weighted cost grows.
+    // The straight run along row 4 crosses four mountains: 11 base steps.
+    // Leaving the mountain strip for row 3 costs 8 plain steps, so an
+    // 8-step budget fits exactly that route and nothing cheaper.
+    //
+    // The budget is deliberately that tight: `CostPolicy::conservative`
+    // inflates `g`/`f` as fuel drops, and pruning on the scaled value used
+    // to reject the 8-step route (its weighted `g` passes 8 well before the
+    // goal) and fall back to the greedy walk. The heap still orders on `f`;
+    // only the budget check uses unweighted steps.
     let rows = &[
         "........", "........", "........", "........", "MMMM....", "........", "........",
         "........",
@@ -204,10 +210,17 @@ fn conservative_policy_still_finds_a_path() {
     let map = map_from_str(8, 8, rows);
     let start = HexCoord::new(0, 4);
     let goal = HexCoord::new(7, 4);
-    let ctx = SolveContext::new(map, start, goal, 30, 50).unwrap();
+    // `SolveContext::new` takes (initial_fuel, max_steps).
+    let ctx = SolveContext::new(map, start, goal, 24, 8).unwrap();
+    // Cap 30 with only 24 in the tank: scaling starts immediately, so the
+    // weighted `g` of the 8-step route passes the 8-step budget.
     let solver = AstarSolver::with_policy(CostPolicy::conservative(30));
     let result = solver.solve(&ctx);
-    let _ = result;
+    assert!(
+        result.path.is_some(),
+        "a path that fits the day budget must survive fuel-scaled ordering, got {:?}",
+        result.failure
+    );
 }
 
 // ---------------------------------------------------------------------------

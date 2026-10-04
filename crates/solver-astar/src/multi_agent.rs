@@ -30,7 +30,7 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 
-use crate::cost::{CostModel, CostPolicy, DefaultCostModel};
+use crate::cost::{BaseStepCost, CostModel, CostPolicy, DefaultCostModel};
 use crate::hex::{Direction, HexCoord};
 use crate::solver::{AstarSolver, SolverStats};
 use crate::stub::{Action, Path, SolveContext, SolverFailure, SolverResult};
@@ -337,6 +337,7 @@ impl MultiAgentAStar {
         open.push(MultiOpenEntry {
             f: start_f,
             g: 0,
+            steps: 0,
             h: start_h,
             coord: ctx.start,
             time: 0,
@@ -360,7 +361,9 @@ impl MultiAgentAStar {
             }
             expanded_count += 1;
 
-            if entry.f > ctx.max_steps {
+            // Budget check in unweighted steps: `f` also carries the fuel
+            // scaling, which orders the heap rather than measuring the day.
+            if entry.steps.saturating_add(entry.h) > ctx.max_steps {
                 continue;
             }
 
@@ -387,7 +390,9 @@ impl MultiAgentAStar {
                 let g_after = entry.g.saturating_add(step_weight);
                 let h_after = (self.heuristic)(neighbor, ctx.goal);
                 let f_after = g_after.saturating_add(h_after);
-                if f_after > ctx.max_steps {
+                let steps_after =
+                    entry.steps.saturating_add(BaseStepCost::for_cell(cell).map_or(0, |c| c.0));
+                if steps_after.saturating_add(h_after) > ctx.max_steps {
                     continue;
                 }
                 let state_key = (neighbor, next_time, next_fuel);
@@ -399,6 +404,7 @@ impl MultiAgentAStar {
                 open.push(MultiOpenEntry {
                     f: f_after,
                     g: g_after,
+                    steps: steps_after,
                     h: h_after,
                     coord: neighbor,
                     time: next_time,
@@ -509,6 +515,9 @@ struct MultiOpenEntry {
     f: u32,
     /// Weighted cost so far.
     g: u32,
+    /// **Unweighted** step cost so far — the unit `ctx.max_steps` is in.
+    /// `g`/`f` carry the policy's fuel scaling; see `solver::OpenEntry`.
+    steps: u32,
     /// Heuristic estimate to the goal.
     h: u32,
     coord: HexCoord,
@@ -521,6 +530,7 @@ impl PartialEq for MultiOpenEntry {
     fn eq(&self, other: &Self) -> bool {
         self.f == other.f
             && self.g == other.g
+            && self.steps == other.steps
             && self.h == other.h
             && self.coord == other.coord
             && self.time == other.time
@@ -535,6 +545,7 @@ impl Ord for MultiOpenEntry {
             .f
             .cmp(&self.f)
             .then_with(|| other.g.cmp(&self.g))
+            .then_with(|| other.steps.cmp(&self.steps))
             .then_with(|| self.h.cmp(&other.h))
             .then_with(|| self.coord.cmp(&other.coord))
             .then_with(|| self.time.cmp(&other.time))

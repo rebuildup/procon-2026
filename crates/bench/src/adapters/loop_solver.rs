@@ -82,7 +82,7 @@
 //! modes hill-climb the *same* tour; `lookahead` only changes how that tour
 //! is distributed over days and agents.
 
-use engine::model::{ActionKind, AgentActions, HexCoord, Solver, SolverContext};
+use engine::model::{ActionKind, AgentActions, AgentKind, HexCoord, Solver, SolverContext};
 use solver_loop::{
     Agent as LoopAgent, HexCoord as LoopCoord, InitialStrategy, LoopSolver, OperatorSet,
     Series as LoopSeries, SolveProblem, Solver as _, Spot as LoopSpot,
@@ -440,10 +440,13 @@ fn coord_for_spot_id(spot_id: u32) -> Option<HexCoord> {
 /// bookkeeping *exactly* — same live start positions, same
 /// `step % targets.len()` target cycling, same [`step_towards`] — and for
 /// [`WalkMode::Astar`] it is the actions
-/// [`super::astar_walk::plan_walk_astar`] actually produces. Consequently
-/// the count is `0` **if and only if** no agent can collect anything from
-/// this target assignment on this day *with this walk* — `engine::MatchSim`
-/// only acquires when an agent ends a step on a spot.
+/// [`super::astar_walk::plan_walk_astar`] actually produces. `Supply` agents
+/// are skipped, because `engine::transitions::phase_acquire` returns early
+/// for them — a Supply parked on a spot collects nothing, so counting one
+/// would report a day as usable while it still scores zero. Consequently the
+/// count is `0` **if and only if** no agent can collect anything from this
+/// target assignment on this day *with this walk* — `engine::MatchSim` only
+/// acquires when a Patrol ends a step on a stocked spot.
 ///
 /// It is a read-only probe: it never mutates the state and it is never used
 /// to pick a *better* assignment when the default one already works (see
@@ -467,6 +470,9 @@ fn agents_reaching_a_spot(
                 let Some(start) = ctx.state.agents.iter().find(|a| a.id == **agent_id) else {
                     return false;
                 };
+                if start.kind == AgentKind::Supply {
+                    return false; // phase_acquire never picks for a Supply
+                }
                 let mut pos = start.pos;
                 for step in 0..day_steps {
                     if let Some(dir) = step_towards(pos, list[step % list.len()], map) {
@@ -490,6 +496,9 @@ fn agents_reaching_a_spot(
                     let Some(start) = ctx.state.agents.iter().find(|a| a.id == **agent_id) else {
                         return false;
                     };
+                    if start.kind == AgentKind::Supply {
+                        return false; // phase_acquire never picks for a Supply
+                    }
                     let mut pos = start.pos;
                     for step in 0..day_steps {
                         let Some(action) = plan.actions.get(step * agent_count + *i) else {
@@ -825,23 +834,25 @@ mod tests {
         ));
     }
 
-    /// Issue #207 — minimal repro: same `SolveProblem`, two different tours,
-    /// only one of which the walk can actually use.
+    /// Issue #207 — minimal repro: same `SolveProblem`, two different tours.
     ///
     /// `problem_from_state` builds the exact problem the adapter solves for
     /// `fixture:road-heavy-v2` (10 spots, 5 agents, `days = 1`, 40 steps).
-    /// The two operator sets refine it into two different *array* orders of
-    /// a closed tour; `distribute_plan` hands those out by array index
-    /// (`spot i` → `agent i % 5`), so each agent gets a different pair of
-    /// targets. `plan_walk` then switches target on every step, so an agent
-    /// only ever stands on a spot when its `(start, target pair)` works out
-    /// geometrically:
+    /// The two operator sets refine it into two different *array* orders of a
+    /// closed tour; `distribute_plan` hands those out by array index, so each
+    /// agent gets a different pair of targets.
     ///
-    /// * `classic` — two agents reach a spot, so the day scores;
-    /// * `extended` — **not one** agent reaches one, so the day would score
-    ///   `(0, 0, 0)` if [`LoopCandidate::targets_for`] did not re-anchor it.
+    /// What pins down here is the structural half of the repro plus Issue
+    /// #207's actual defect: **no zero day**. The original zero came from two
+    /// stacked bugs — `walk::hex_distance` measured the even-r grid as axial
+    /// (so `step_towards` stalled), and the Issue #207 probe counted `Supply`
+    /// agents that `phase_acquire` never picks for. With both fixed, and with
+    /// `two_opt_delta` no longer flipping the whole tour every pass, the
+    /// default anchor walks somewhere useful on its own and the rescue stays
+    /// idle here — it is pinned independently by
+    /// `rescue_anchor_reanchors_a_target_set_that_reaches_nothing`.
     #[test]
-    fn issue207_minimal_repro_extended_default_anchor_reaches_no_spot() {
+    fn issue207_extended_default_anchor_never_reaches_nothing() {
         let ctx = road_heavy_v2_context();
         let problem = problem_from_state(&ctx);
         assert_eq!(problem.days, 1, "the adapter re-solves one day at a time");
@@ -880,18 +891,49 @@ mod tests {
             "classic's default anchor must reach a spot on road-heavy-v2 \
              (probe control), got {classic_hits}"
         );
-        // The defect: extended's default anchor reaches nothing.
-        assert_eq!(
-            extended_hits, 0,
-            "Issue #207: extended's default anchor is the zero-scoring one; \
-             got {extended_hits} reachable agents"
+        // Issue #207's defect is a zero day: both anchors must walk
+        // somewhere useful now that the distance and probe are honest.
+        assert!(
+            extended_hits >= 1,
+            "Issue #207's zero must not come back; got {extended_hits} reachable agents"
         );
 
-        // …and the rescue must re-anchor it to something walkable.
+        // …and whatever `targets_for` hands out stays walkable.
         let rescued = extended_candidate().targets_for(&ctx, extended_outcome);
         assert!(
             agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy) >= 1,
-            "the Issue #207 rescue must re-anchor extended to a walkable target set"
+            "the Issue #207 rescue must never degrade the anchor to an unwalkable set"
+        );
+    }
+
+    /// Issue #207 — the rescue branch itself, pinned independently of the
+    /// road-heavy-v2 anchor: a target set that reaches *nothing* (off-map
+    /// coordinates make `step_towards` bail before stepping) must be replaced
+    /// by one the greedy walk can actually use.
+    #[test]
+    fn rescue_anchor_reanchors_a_target_set_that_reaches_nothing() {
+        let ctx = road_heavy_v2_context();
+        let problem = problem_from_state(&ctx);
+        let outcome = LoopSolver::with_operators(
+            InitialStrategy::GreedyNearestNeighbor,
+            32,
+            OperatorSet::Extended,
+        )
+        .solve(&problem)
+        .expect("solve");
+        let n_agents = problem.agents.len();
+        let unreachable = vec![vec![HexCoord::new(-99, -99)]; n_agents];
+
+        assert_eq!(
+            agents_reaching_a_spot(&ctx, &unreachable, WalkMode::Greedy),
+            0,
+            "the premise: no agent can stand on a spot from an off-map target"
+        );
+        let rescued = rescue_anchor(&ctx, &outcome, &unreachable, WalkMode::Greedy);
+        assert_ne!(rescued, unreachable, "the scan must replace an unusable anchor");
+        assert!(
+            agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy) >= 1,
+            "and the replacement must be walkable"
         );
     }
 
@@ -1040,13 +1082,18 @@ mod tests {
         }
     }
 
-    /// Issue #215 — the Issue #207 anchor that `plan_walk` never reaches on
-    /// `fixture:road-heavy-v2` **is** reached by `walk=astar` on the very
-    /// same assignment, so `walk=astar` must not fire the rescue: the
-    /// assignment stays identical and only the walk moves. `walk=greedy`
-    /// keeps rescuing exactly as it did before #215.
+    /// Issue #215 — the walk mode changes *how* a target list is walked,
+    /// never *which* list `targets_for` returns: neither candidate re-anchors
+    /// an assignment its own probe can use (the rescue's zero trigger is
+    /// pinned by `rescue_anchor_reanchors_a_target_set_that_reaches_nothing`).
+    ///
+    /// On `fixture:road-heavy-v2` both walks can use the default anchor now:
+    /// the even-r `hex_distance` fix removed the greedy stall the Issue #207
+    /// zero was built on, and `two_opt_delta` no longer flips the refined
+    /// tour every pass. Greedy's probe used to be `0` here — only it
+    /// re-anchored, which is the asymmetry Issue #215 originally pinned.
     #[test]
-    fn walk_astar_reaches_the_207_anchor_and_keeps_the_assignment() {
+    fn walk_astar_and_greedy_keep_the_same_assignment() {
         let ctx = road_heavy_v2_context();
         let problem = problem_from_state(&ctx);
         let solver = LoopSolver::with_operators(
@@ -1057,20 +1104,15 @@ mod tests {
         let outcome = solver.solve(&problem).expect("solve");
         let targets = agent_targets(&ctx, &outcome);
 
-        // Control (Issue #207): the greedy walk model reports zero reachable
-        // agents — the rescue's documented trigger.
-        assert_eq!(
-            agents_reaching_a_spot(&ctx, &targets, WalkMode::Greedy),
-            0,
-            "the Issue #207 repro must still be a zero under plan_walk"
+        assert!(
+            agents_reaching_a_spot(&ctx, &targets, WalkMode::Greedy) >= 1,
+            "greedy must reach a spot now that the distance measures the even-r grid"
         );
-        // The fix: the ordered A* walk on the *same* assignment collects.
         assert!(
             agents_reaching_a_spot(&ctx, &targets, WalkMode::Astar) >= 1,
-            "walk=astar must reach where plan_walk oscillates"
+            "walk=astar must reach where it did before"
         );
 
-        // Therefore the astar candidate keeps the default anchor untouched …
         let astar =
             loop_candidate("loop:iterations=32:initial=greedy:operators=extended:walk=astar");
         assert_eq!(
@@ -1078,14 +1120,8 @@ mod tests {
             targets,
             "walk=astar must not re-anchor an assignment its own walk can use"
         );
-        // … while the greedy candidate still re-anchors, byte for byte as
-        // before #215.
         let rescued = extended_candidate().targets_for(&ctx, &outcome);
-        assert_ne!(rescued, targets, "the greedy rescue must still fire here");
-        assert!(
-            agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy) >= 1,
-            "and the rescued anchor must still be walkable"
-        );
+        assert_eq!(rescued, targets, "greedy must not re-anchor an assignment it can use either");
     }
 
     /// `walk=astar` rides the same `decide` path: a well-shaped day whose

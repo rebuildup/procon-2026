@@ -41,6 +41,17 @@ const fn cell_cost(t: crate::types::Terrain) -> f32 {
 /// same output. There is no randomness, no clock, no I/O.
 #[must_use]
 pub fn extract(setting: &MatchSetting) -> Characteristics {
+    // `road_density` and `map_avg_cost` divide by `width * height`, so a
+    // `terrain` shorter than that would silently skew both. Nothing validates
+    // the length today (the field doc promises `width * height` items and
+    // every constructor obeys it), so fail loudly here rather than in
+    // silence.
+    debug_assert_eq!(
+        setting.terrain.len(),
+        setting.cell_count(),
+        "MatchSetting::terrain must hold exactly width * height entries"
+    );
+
     // Convert counts through `u16` so we can use `f32::from` losslessly:
     // every cell count the contest will ever ship (≤ 32 * 32 = 1024) fits.
     let cell_count_u = u16::try_from(setting.cell_count()).unwrap_or(1).max(1);

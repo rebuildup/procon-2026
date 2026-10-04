@@ -5,12 +5,17 @@
 //! coordinator carries a minimum compatible stub so the selector can be
 //! developed and tested in isolation.
 //!
-//! EXPECTED INTEGRATION: bench
-//! - When `crates/bench` lands, this module will be deleted and the
-//!   coordinator will `use bench::{ScoreReport, judge}` instead. The
-//!   shape of the four ranking criteria (うどん種類数 / 累積種類数 /
-//!   総玉数 / 累積回答時刻) must remain identical to the field set below
-//!   so existing callers and tests keep compiling.
+//! EXPECTED INTEGRATION
+//! - `crates/bench` has landed, but it ships no `ScoreReport`: it
+//!   re-exports `domain::{OfficialScore, compare_scores, judge}` instead.
+//!   `domain::compare_scores` already implements the same four-tier priority
+//!   order (うどん種類数 → 累積種類数 → 総玉数 → 回答時刻 smaller-is-better),
+//!   so the migration is a re-point of this module to `domain::OfficialScore`
+//!   plus a signature change (`judge` here returns
+//!   `Option<(winner, loser)>`, `domain::judge` returns `Outcome`).
+//! - Until this crate has a consumer, the stub stays: the field set below is
+//!   what the ensemble's `BestOf` / `WeightedByScore` modes rank on, and the
+//!   order must remain identical to `domain::compare_scores`.
 //! - `judge()` here implements the official priority order described in
 //!   `docs/contest/strategy.md` §1.
 

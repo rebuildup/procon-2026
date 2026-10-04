@@ -5,10 +5,11 @@
 //! - **募集要項「移動と燃料」**: agents traverse the hex grid one step at a
 //!   time; each step costs fuel depending on the destination terrain (see
 //!   [`crate::cell::Cell`] for the cost table).
-//! - **Q&A Q1** (枝1): the map is **even-row right-offset** — odd `row`
-//!   values sit half a cell to the right of the even `row` above. This is
+//! - **Q&A Q1** (枝1): the map is **even-row right-offset** — even `row`
+//!   values sit half a cell to the right of the odd `row` above. This is
 //!   the only layout the contest allows, so [`Direction`] neighbor offsets
-//!   branch on `row % 2`.
+//!   branch on `row % 2`. `crates/engine`'s `Direction::step` is the
+//!   authority: its offsets, not this module's, decide real matches.
 //! - **Q&A Q6**: input answers are validated **before** they are reflected
 //!   into the match state. A single invalid action rejects the **entire**
 //!   answer batch, never just the offending action. [`Action::validate`]
@@ -268,15 +269,19 @@ pub fn neighbor(coord: HexCoord, dir: Direction, layout: MapLayout) -> Option<He
     // dispatch on it so future layouts don't silently use the wrong offsets.
     let _ = layout;
     let even_row = coord.row % 2 == 0;
+    // Mirrors `engine::model::Direction::step` exactly: on an even (right-
+    // shifted) row the upper-left / lower-left neighbour keeps the column and
+    // the right-hand pair gains one; on an odd row it is the other way round.
+    // The previous arms were that table's mirror image, i.e. odd-r.
     let (dr, dc) = match (even_row, dir) {
-        (true, Direction::UpperLeft) => (-1i16, -1i16),
-        (true, Direction::UpperRight) | (false, Direction::UpperLeft) => (-1, 0),
+        (true, Direction::UpperLeft) | (false, Direction::UpperRight) => (-1i16, 0i16),
+        (true, Direction::UpperRight) => (-1, 1),
+        (false, Direction::UpperLeft) => (-1, -1),
         (_, Direction::Right) => (0, 1),
-        (true, Direction::LowerRight) | (false, Direction::LowerLeft) => (1, 0),
-        (true, Direction::LowerLeft) => (1, -1),
         (_, Direction::Left) => (0, -1),
-        (false, Direction::UpperRight) => (-1, 1),
-        (false, Direction::LowerRight) => (1, 1),
+        (true, Direction::LowerRight) => (1, 1),
+        (true, Direction::LowerLeft) | (false, Direction::LowerRight) => (1, 0),
+        (false, Direction::LowerLeft) => (1, -1),
     };
     let new_row = i16::from(coord.row) + dr;
     let new_col = i16::from(coord.col) + dc;
@@ -438,35 +443,34 @@ mod tests {
     // ---------- Neighbor geometry ----------
 
     #[test]
-    fn neighbor_even_row_upper_left_is_minus_one_minus_one() {
-        // From row=0 col=0 the upper-left neighbor in even-r is (row=-1, col=-1) -> None (overflow).
+    fn neighbor_even_row_upper_left_keeps_the_column() {
+        // Even rows are the shifted ones, so their upper-left sits at the same
+        // column: (0,0) -> (0,-1) is off-map -> None.
         assert_eq!(neighbor(HexCoord::new(0, 0), Direction::UpperLeft, MapLayout::default()), None);
-        // From (col=2, row=4) the upper-left neighbor is (col=1, row=3).
         let n = neighbor(HexCoord::new(2, 4), Direction::UpperLeft, MapLayout::default())
-            .expect("in range");
-        assert_eq!(n, HexCoord::new(1, 3));
-    }
-
-    #[test]
-    fn neighbor_even_row_upper_right_is_minus_one_zero() {
-        let n = neighbor(HexCoord::new(2, 4), Direction::UpperRight, MapLayout::default())
             .expect("in range");
         assert_eq!(n, HexCoord::new(2, 3));
     }
 
     #[test]
-    fn neighbor_odd_row_upper_left_is_minus_one_zero() {
-        // For odd row (row=3), upper-left shifts to (-1, 0).
-        let n = neighbor(HexCoord::new(2, 3), Direction::UpperLeft, MapLayout::default())
+    fn neighbor_even_row_upper_right_shifts_right() {
+        let n = neighbor(HexCoord::new(2, 4), Direction::UpperRight, MapLayout::default())
             .expect("in range");
-        assert_eq!(n, HexCoord::new(2, 2));
+        assert_eq!(n, HexCoord::new(3, 3));
     }
 
     #[test]
-    fn neighbor_odd_row_upper_right_is_minus_one_plus_one() {
+    fn neighbor_odd_row_upper_left_shifts_left() {
+        let n = neighbor(HexCoord::new(2, 3), Direction::UpperLeft, MapLayout::default())
+            .expect("in range");
+        assert_eq!(n, HexCoord::new(1, 2));
+    }
+
+    #[test]
+    fn neighbor_odd_row_upper_right_keeps_the_column() {
         let n = neighbor(HexCoord::new(2, 3), Direction::UpperRight, MapLayout::default())
             .expect("in range");
-        assert_eq!(n, HexCoord::new(3, 2));
+        assert_eq!(n, HexCoord::new(2, 2));
     }
 
     #[test]
@@ -483,23 +487,24 @@ mod tests {
 
     #[test]
     fn neighbor_lower_left_and_lower_right_branch_on_row_parity() {
-        // Even row 4, col 2: lower-left=(5, 1), lower-right=(5, 2).
+        // Even row 4, col 2 (shifted right): lower-left keeps the column,
+        // lower-right gains one — same table as engine `Direction::step`.
         assert_eq!(
             neighbor(HexCoord::new(2, 4), Direction::LowerLeft, MapLayout::default()),
-            Some(HexCoord::new(1, 5))
+            Some(HexCoord::new(2, 5))
         );
         assert_eq!(
             neighbor(HexCoord::new(2, 4), Direction::LowerRight, MapLayout::default()),
-            Some(HexCoord::new(2, 5))
+            Some(HexCoord::new(3, 5))
         );
-        // Odd row 3, col 2: lower-left=(5, 2), lower-right=(5, 3).
+        // Odd row 3, col 2: lower-left loses a column, lower-right keeps it.
         assert_eq!(
             neighbor(HexCoord::new(2, 3), Direction::LowerLeft, MapLayout::default()),
-            Some(HexCoord::new(2, 4))
+            Some(HexCoord::new(1, 4))
         );
         assert_eq!(
             neighbor(HexCoord::new(2, 3), Direction::LowerRight, MapLayout::default()),
-            Some(HexCoord::new(3, 4))
+            Some(HexCoord::new(2, 4))
         );
     }
 
@@ -659,7 +664,8 @@ mod tests {
             (Action::move_in(2, Direction::LowerRight), HexCoord::new(4, 4)),
         ];
         let out = validate_batch(&batch, b, &always_passable).expect("all valid");
-        assert_eq!(out, vec![HexCoord::new(0, 0), HexCoord::new(3, 2), HexCoord::new(4, 5)]);
+        // LowerRight from an even row (4) gains a column: (4,4) -> (5,5).
+        assert_eq!(out, vec![HexCoord::new(0, 0), HexCoord::new(3, 2), HexCoord::new(5, 5)]);
     }
 
     #[test]

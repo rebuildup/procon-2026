@@ -221,6 +221,10 @@ pub fn protocol_setting_to_engine_with_kinds(
         let max_stock = u32::try_from(wire_spot.stocks)
             .map_err(|_| format!("spot.stocks {} out of u32 range", wire_spot.stocks))?;
         let spot = Spot { series, pos: coord, max_stock, current_stock: max_stock };
+        // The overlay path builds spots straight from the wire, so run the
+        // same invariant `MapGrid::new` enforces — `stocks: 0` otherwise
+        // becomes a spot that can never be collected from, with no error.
+        spot.validate().map_err(|e| format!("spot at pos {pos_idx}: {e}"))?;
         let cell = grid.get_mut(coord).ok_or_else(|| {
             format!("spot at pos {} maps to {coord:?} which is outside the map", wire_spot.pos)
         })?;
@@ -408,6 +412,18 @@ mod tests {
                 "wire {v}: corrected table must equal old_table(inverse_permute({v}))"
             );
         }
+    }
+
+    /// `protocol::match_config::Spot::stocks` is documented `>= 1`; building
+    /// a spot with `stocks: 0` used to sail through the overlay and produce a
+    /// cell that can never be collected from, with no error anywhere.
+    #[test]
+    fn zero_stock_spot_is_rejected() {
+        let mut wire = wire_setting();
+        wire.spots[0].stocks = 0;
+        let err = protocol_setting_to_engine(&wire, TeamId::new("player-a").unwrap())
+            .expect_err("stocks: 0 must not become a spot");
+        assert!(err.contains("max_stock must be >= 1"), "got: {err}");
     }
 
     #[test]

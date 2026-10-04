@@ -15,8 +15,9 @@
 //! snapshots, and we want a small, synchronous surface that fits the
 //! rest of the (mostly sync) workspace.
 
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -144,52 +145,67 @@ impl EnsembleSelector {
 
     /// Run all solvers in parallel and select a winner.
     ///
-    /// Each solver is dispatched on a fresh `std::thread`. Results are
-    /// joined in registration order so `all_outputs[i]` always
+    /// Each solver is dispatched on a fresh `std::thread` and reports over a
+    /// channel; every result lands in its own slot, so `all_outputs[i]` still
     /// corresponds to `solvers[i]`.
     ///
-    /// `timeout` is a soft wall-clock cap (in milliseconds) applied to
-    /// each solver thread. A solver that exceeds the timeout is
-    /// recorded as a zero-score placeholder; other solvers still run.
-    /// Pass `None` to disable the timeout.
+    /// `timeout` is a soft wall-clock cap (in milliseconds) for the whole
+    /// collection: once it expires the selector stops waiting and records
+    /// every solver that has not reported as a zero-score placeholder, while
+    /// the stragglers keep running detached (nothing joins or kills them).
+    /// Pass `None` to wait for every solver.
     pub fn run_parallel(&self, input: &MatchInput, timeout: Option<u64>) -> EnsembleResult {
-        let mut handles = Vec::with_capacity(self.solvers.len());
+        let (tx, rx) = mpsc::channel::<(usize, String, SolverOutput)>();
         for (idx, solver) in self.solvers.iter().enumerate() {
             let solver = solver.clone();
             let input = input.clone();
-            let handle = thread::Builder::new()
-                .name(format!("ensemble-solver-{idx}"))
-                .spawn(move || (idx, solver.id().to_owned(), solver.solve(&input)))
-                .expect("failed to spawn solver thread");
-            handles.push(handle);
+            let tx = tx.clone();
+            // The closure owns its sender: a spawn refusal drops it, and a
+            // panic inside the solver drops it too, so the slot simply stays
+            // empty and is filled with the zero placeholder below — one
+            // misbehaving solver can no longer take the selector down.
+            let _ =
+                thread::Builder::new().name(format!("ensemble-solver-{idx}")).spawn(move || {
+                    let id = solver.id().to_owned();
+                    let out = solver.solve(&input);
+                    let _ = tx.send((idx, id, out));
+                });
         }
+        // Last owner of the sender: `recv` ends once every solver reported
+        // or the deadline below expires.
+        drop(tx);
 
+        let deadline = timeout.map(|ms| Instant::now() + Duration::from_millis(ms));
         let mut outputs: Vec<Option<SolverOutput>> =
             (0..self.solvers.len()).map(|_| None).collect();
-        for handle in handles {
-            let (idx, id, out) = match timeout {
-                Some(_t) => handle.join().unwrap_or_else(|_| {
-                    (
-                        usize::MAX,
-                        String::from("__panicked__"),
-                        SolverOutput {
-                            score: StubScoreReport::zero("__panicked__"),
-                            plan: crate::types::ActionSequence::empty(),
-                        },
-                    )
-                }),
-                None => handle.join().expect("solver thread panicked"),
+        loop {
+            let reported = match deadline {
+                Some(end) => {
+                    let now = Instant::now();
+                    if now >= end {
+                        None
+                    } else {
+                        rx.recv_timeout(end.saturating_duration_since(now)).ok()
+                    }
+                }
+                // Every sender is dropped by now, so this returns `None`
+                // once all solvers have reported (or panicked).
+                None => rx.recv().ok(),
             };
-            if idx < outputs.len() {
-                outputs[idx] = Some(SolverOutput {
-                    score: StubScoreReport { solver_id: id, ..out.score },
-                    plan: out.plan,
-                });
+            match reported {
+                Some((idx, id, out)) if idx < outputs.len() => {
+                    outputs[idx] = Some(SolverOutput {
+                        score: StubScoreReport { solver_id: id, ..out.score },
+                        plan: out.plan,
+                    });
+                }
+                Some(_) => {}
+                None => break, // deadline reached, or everyone reported
             }
         }
 
-        // All slots must be filled; if a thread panicked before writing,
-        // fall back to a zero output.
+        // Anything the deadline outran (or a solver that panicked) becomes a
+        // zero-score placeholder under its own id.
         let all_outputs: Vec<SolverOutput> = outputs
             .into_iter()
             .enumerate()

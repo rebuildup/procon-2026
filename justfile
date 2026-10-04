@@ -64,7 +64,10 @@ build:
 # Local CI parity
 # ----------------------------------------------------------------
 
-ci: check test build
+# `ci.yml` runs fmt/clippy/tests/build **and** a protocol-consistency job, so
+# parity means running all of them here too — that job is 8 ms (no runner, no
+# build), and `release-check` still depends on it explicitly for clarity.
+ci: check test protocol-consistency build
     @echo "✓ just ci passed (local CI parity)"
 
 # ----------------------------------------------------------------

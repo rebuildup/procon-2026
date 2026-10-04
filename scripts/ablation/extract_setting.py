@@ -52,9 +52,12 @@ def main(path: str, out: str) -> int:
         if tail.strip(" \t\r\n}"):
             print(f"parse: FAILED ({first_err}); unparsable tail {tail!r}", file=sys.stderr)
             return 1
+        # The tail is whitespace + braces only (checked above), so count the
+        # braces themselves: `len(tail.strip())` also counted the whitespace
+        # between them and over-reported the size of the repair.
         print(
             f"parse: OK after dropping a stray trailing brace "
-            f"({len(tail.strip())} char(s) of extra '}}') — "
+            f"({tail.count('}')} extra '}}' in the tail) — "
             f"first error was: {first_err}"
         )
 
