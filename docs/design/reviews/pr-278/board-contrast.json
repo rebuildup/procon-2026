@@ -1,0 +1,242 @@
+{
+  "terrainContrasts": [
+    {
+      "terrain": "hatch",
+      "ratio": 3.025996126427719
+    },
+    {
+      "terrain": "waves",
+      "ratio": 3.197270814567843
+    },
+    {
+      "terrain": "dots",
+      "ratio": 3.282717665387613
+    },
+    {
+      "terrain": "roadpat",
+      "ratio": 3.7171012848543747
+    }
+  ],
+  "measurements": [
+    {
+      "terrain": "plain",
+      "mark": "s0",
+      "before": 1398,
+      "after": 1326
+    },
+    {
+      "terrain": "plain",
+      "mark": "s1",
+      "before": 1374,
+      "after": 1295
+    },
+    {
+      "terrain": "plain",
+      "mark": "s2",
+      "before": 1423,
+      "after": 1391
+    },
+    {
+      "terrain": "plain",
+      "mark": "s3",
+      "before": 1430,
+      "after": 1357
+    },
+    {
+      "terrain": "plain",
+      "mark": "s4",
+      "before": 1363,
+      "after": 1250
+    },
+    {
+      "terrain": "plain",
+      "mark": "s5",
+      "before": 1417,
+      "after": 1386
+    },
+    {
+      "terrain": "plain",
+      "mark": "patrol",
+      "before": 1472,
+      "after": 1318
+    },
+    {
+      "terrain": "plain",
+      "mark": "supply",
+      "before": 1427,
+      "after": 1327
+    },
+    {
+      "terrain": "mountain",
+      "mark": "s0",
+      "before": 136,
+      "after": 212
+    },
+    {
+      "terrain": "mountain",
+      "mark": "s1",
+      "before": 116,
+      "after": 209
+    },
+    {
+      "terrain": "mountain",
+      "mark": "s2",
+      "before": 90,
+      "after": 186
+    },
+    {
+      "terrain": "mountain",
+      "mark": "s3",
+      "before": 73,
+      "after": 129
+    },
+    {
+      "terrain": "mountain",
+      "mark": "s4",
+      "before": 142,
+      "after": 221
+    },
+    {
+      "terrain": "mountain",
+      "mark": "s5",
+      "before": 39,
+      "after": 140
+    },
+    {
+      "terrain": "mountain",
+      "mark": "patrol",
+      "before": 58,
+      "after": 158
+    },
+    {
+      "terrain": "mountain",
+      "mark": "supply",
+      "before": 37,
+      "after": 195
+    },
+    {
+      "terrain": "water",
+      "mark": "s0",
+      "before": 1435,
+      "after": 1361
+    },
+    {
+      "terrain": "water",
+      "mark": "s1",
+      "before": 1407,
+      "after": 1337
+    },
+    {
+      "terrain": "water",
+      "mark": "s2",
+      "before": 1453,
+      "after": 1433
+    },
+    {
+      "terrain": "water",
+      "mark": "s3",
+      "before": 1458,
+      "after": 1399
+    },
+    {
+      "terrain": "water",
+      "mark": "s4",
+      "before": 1387,
+      "after": 1282
+    },
+    {
+      "terrain": "water",
+      "mark": "s5",
+      "before": 1435,
+      "after": 1432
+    },
+    {
+      "terrain": "water",
+      "mark": "patrol",
+      "before": 1505,
+      "after": 1356
+    },
+    {
+      "terrain": "water",
+      "mark": "supply",
+      "before": 1456,
+      "after": 1366
+    },
+    {
+      "terrain": "road",
+      "mark": "s0",
+      "before": 1398,
+      "after": 1332
+    },
+    {
+      "terrain": "road",
+      "mark": "s1",
+      "before": 1374,
+      "after": 1306
+    },
+    {
+      "terrain": "road",
+      "mark": "s2",
+      "before": 1433,
+      "after": 1403
+    },
+    {
+      "terrain": "road",
+      "mark": "s3",
+      "before": 1437,
+      "after": 1368
+    },
+    {
+      "terrain": "road",
+      "mark": "s4",
+      "before": 1372,
+      "after": 1258
+    },
+    {
+      "terrain": "road",
+      "mark": "s5",
+      "before": 1422,
+      "after": 1395
+    },
+    {
+      "terrain": "road",
+      "mark": "patrol",
+      "before": 1477,
+      "after": 1328
+    },
+    {
+      "terrain": "road",
+      "mark": "supply",
+      "before": 1437,
+      "after": 1337
+    }
+  ],
+  "distinct": 8,
+  "boundaryContrast": 15.58259573022697,
+  "seriesToKeyline": [
+    {
+      "colour": "#ebb400",
+      "ratio": 8.207528877208684
+    },
+    {
+      "colour": "#eb670f",
+      "ratio": 4.807921302694864
+    },
+    {
+      "colour": "#df0c24",
+      "ratio": 3.1281384207062963
+    },
+    {
+      "colour": "#894ceb",
+      "ratio": 3.188556210480986
+    },
+    {
+      "colour": "#179b9b",
+      "ratio": 4.599300452972466
+    },
+    {
+      "colour": "#30a147",
+      "ratio": 4.685619595759248
+    }
+  ]
+}

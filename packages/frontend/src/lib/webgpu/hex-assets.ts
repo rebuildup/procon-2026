@@ -29,6 +29,19 @@ export function svgNode(node: Node): string {
 export function referenceSvg(): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${structure.viewBox}" width="420" height="168">${structure.reference.map(svgNode).join('')}</svg>`;
 }
+/** A quiet white separation around the same glyph, for every terrain and family. */
+function markerCasing(node: Node): Node {
+  return {
+    ...node,
+    attrs: {
+      ...node.attrs,
+      stroke: '#ffffff',
+      'stroke-width': '2.2',
+      fill: node.attrs.fill === 'none' ? 'none' : '#ffffff',
+    },
+    children: node.children.map(markerCasing),
+  };
+}
 /** Full hex: original pattern, halo, keyline and one centered domain occupant. */
 export function tileSvgContent(terrain: Terrain, mark?: Mark): string {
   if (terrain === 'empty') return '';
@@ -36,15 +49,14 @@ export function tileSvgContent(terrain: Terrain, mark?: Mark): string {
   const [x, y] = template.center;
   let content = `<g transform="translate(${-x!},${-y!})">${svgNode({ ...template.fill, attrs: { ...template.fill.attrs, stroke: 'none' } })}</g>`;
   if (mark) {
-    const series = structure.series[mark as keyof typeof structure.series];
-    if (series) {
-      const [mx, my] = series.center;
-      content += `<g transform="translate(${-mx!},${-my!})">${series.layers.map(svgNode).join('')}</g>`;
-    } else {
-      // Family glyphs retain native SVG semantics; casing is explicit composition.
-      const shape = glyphs[mark].map(svgNode).join('');
-      content += `<g transform="translate(-16,-16) scale(2)">${shape}</g>`;
-    }
+    const pattern = template.fill.children[0]!.attrs['data-fill-pattern']!;
+    const id = pattern.slice(5, -1);
+    const base = structure.defs.children.find((node) => node.attrs.id === id)!.children[0]!.attrs
+      .fill!;
+    content += `<circle cx="0" cy="0" r="16.5" fill="${base}"/>`;
+    const shape = glyphs[mark].map(svgNode).join('');
+    const casing = glyphs[mark].map((node) => svgNode(markerCasing(node))).join('');
+    content += `<g transform="translate(-20,-20) scale(2.5)">${casing}${shape}</g>`;
   }
   return content;
 }

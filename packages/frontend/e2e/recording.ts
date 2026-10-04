@@ -28,7 +28,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
 
 /** Dedicated dev-server port: never collides with `bun run dev` (5173). */
-export const PORT = 5273;
+export const PORT = Number(process.env.RECORD_PORT ?? 5273);
 export const BASE_URL = `http://127.0.0.1:${PORT}`;
 export const VIEWPORT: { width: number; height: number } = { width: 1280, height: 720 };
 
