@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 
-use crate::cost::{BaseFuelCost, CostModel, CostPolicy, DefaultCostModel};
+use crate::cost::{BaseFuelCost, BaseStepCost, CostModel, CostPolicy, DefaultCostModel};
 use crate::hex::{CellKind, Direction, HexCoord};
 use crate::map::HexMap;
 use crate::stub::{Action, Path, SolveContext, SolverFailure, SolverResult};
@@ -100,6 +100,7 @@ impl AstarSolver {
         open.push(OpenEntry {
             f: start_f,
             g: 0,
+            steps: 0,
             h: start_h,
             coord: ctx.start,
             fuel: ctx.initial_fuel,
@@ -128,7 +129,10 @@ impl AstarSolver {
             }
             stats.expanded += 1;
 
-            if entry.f > ctx.max_steps {
+            // Budget check in unweighted steps: `entry.f` also carries the
+            // policy's fuel scaling, which is an ordering weight, not a
+            // measure of the day budget.
+            if entry.steps.saturating_add(entry.h) > ctx.max_steps {
                 continue;
             }
 
@@ -164,7 +168,10 @@ impl AstarSolver {
             let g_after = entry.g.saturating_add(step_weight);
             let h_after = hex_distance(neighbor, ctx.goal);
             let f_after = g_after.saturating_add(h_after);
-            if f_after > ctx.max_steps {
+            let steps_after = entry
+                .steps
+                .saturating_add(BaseStepCost::for_cell(cell).map_or(0, |c| c.0));
+            if steps_after.saturating_add(h_after) > ctx.max_steps {
                 continue;
             }
             let state_key = (neighbor, next_fuel);
@@ -176,6 +183,7 @@ impl AstarSolver {
             open.push(OpenEntry {
                 f: f_after,
                 g: g_after,
+                steps: steps_after,
                 h: h_after,
                 coord: neighbor,
                 fuel: next_fuel,
@@ -251,6 +259,14 @@ struct OpenEntry {
     f: u32,
     /// Weighted cost so far.
     g: u32,
+    /// **Unweighted** step cost so far — the unit `ctx.max_steps` is in.
+    ///
+    /// `g`/`f` carry the policy's fuel scaling (`CostPolicy::conservative`
+    /// inflates them up to 5x as fuel drops), so pruning on `f` alone made a
+    /// perfectly feasible path look over-budget and silently fell back to the
+    /// greedy walk. The budget check uses this counter; `f` still orders the
+    /// heap.
+    steps: u32,
     /// Heuristic estimate to the goal (kept for tie-breaking only).
     h: u32,
     coord: HexCoord,
@@ -261,6 +277,7 @@ impl PartialEq for OpenEntry {
     fn eq(&self, other: &Self) -> bool {
         self.f == other.f
             && self.g == other.g
+            && self.steps == other.steps
             && self.h == other.h
             && self.coord == other.coord
             && self.fuel == other.fuel
@@ -275,6 +292,7 @@ impl Ord for OpenEntry {
             .f
             .cmp(&self.f)
             .then_with(|| other.g.cmp(&self.g))
+            .then_with(|| other.steps.cmp(&self.steps))
             .then_with(|| self.h.cmp(&other.h))
             .then_with(|| self.coord.cmp(&other.coord))
             .then_with(|| self.fuel.cmp(&other.fuel))

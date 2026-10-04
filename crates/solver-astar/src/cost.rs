@@ -24,6 +24,19 @@
 use crate::hex::{CellKind, TrafficState};
 
 /// Base step cost of a cell. Matches the recruitment document's table.
+///
+/// **Known unit divergence:** the official `daySteps` budget counts the
+/// *origin* cell's cost with `domain::cell::MOVE_STEPS` (plain 2 / mountain 3
+/// / road 1·2·4 — cross-check `engine::wire_plan::terrain_step_cost`), while
+/// this table bills the *entered* cell as plain 1 / mountain 2.
+/// [`SolveContext::max_steps`] mirrors `daySteps`, so every `<= max_steps`
+/// budget check in this crate runs in mixed units and can hand back a path
+/// the wire-level `normalize_agent_plan` later truncates mid-walk.
+/// `budget=official` fixes that for the `loop` / `multiloop` candidates; the
+/// `astar` candidate has no such knob yet. Aligning the table re-costs every
+/// A* candidate (scores shift, `plain_step_cost_is_one` and
+/// `mountain_step_cost_is_two` pin the current values), so it is tracked as a
+/// follow-up instead of landing with the fuel-scaling fix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BaseStepCost(pub u32);
 
@@ -32,6 +45,21 @@ impl BaseStepCost {
     pub const PLAIN: Self = Self(1);
     /// Mountain cell: 2 steps.
     pub const MOUNTAIN: Self = Self(2);
+
+    /// Step cost of entering `cell`; `None` for ponds (impassable).
+    ///
+    /// This is the *unscaled* cost — the unit [`SolveContext::max_steps`] is
+    /// expressed in. Fuel scaling (see [`CostPolicy::conservative`]) applies
+    /// on top and must never be compared against the day budget.
+    #[must_use]
+    pub const fn for_cell(cell: CellKind) -> Option<Self> {
+        match cell {
+            CellKind::Plain => Some(Self::PLAIN),
+            CellKind::Mountain => Some(Self::MOUNTAIN),
+            CellKind::Road { traffic } => Some(Self::road(traffic)),
+            CellKind::Pond => None,
+        }
+    }
 
     /// Step cost for a road cell in the given traffic state.
     #[must_use]
@@ -139,12 +167,7 @@ impl CostPolicy {
     /// [`Self::forbid_when_empty`] is on).
     #[must_use]
     pub fn weighted_cost(&self, cell: CellKind, fuel_remaining: u32) -> Option<u32> {
-        let base = match cell {
-            CellKind::Plain => BaseStepCost::PLAIN.0,
-            CellKind::Mountain => BaseStepCost::MOUNTAIN.0,
-            CellKind::Road { traffic } => BaseStepCost::road(traffic).0,
-            CellKind::Pond => return None,
-        };
+        let base = BaseStepCost::for_cell(cell)?.0;
         if self.forbid_when_empty && fuel_remaining <= self.fuel_low_threshold {
             return None;
         }
