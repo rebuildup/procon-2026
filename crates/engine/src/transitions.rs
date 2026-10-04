@@ -374,12 +374,14 @@ pub fn phase_traffic_update(
         let new_state = thresholds.classify_pair(today, yesterday);
         if let Some(cell) = state.setting.map.get_mut(coord) {
             if let Terrain::Road(ref mut current) = cell.terrain {
+                // Only *changes* are reported: `MatchSim::step` gates
+                // `StepEvent::TrafficUpdated` on this vec being non-empty, so
+                // including unchanged roads made the event fire on every
+                // day-end and the change detection dead.
                 if *current != new_state {
                     *current = new_state;
+                    updates.push((coord, new_state));
                 }
-                // Report every road, changed or not: the caller's contract is
-                // "the state each road ends the day in", not "what moved".
-                updates.push((coord, new_state));
             }
         }
     }
