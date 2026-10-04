@@ -97,11 +97,26 @@ pub async fn run_build(output_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Resolve the workspace root from the current executable's location.
+/// Resolve the workspace root the bundle is built from.
 ///
-/// `CARGO_MANIFEST_DIR` is set during compilation and points at
-/// `crates/cli`. Its grand-parent is the workspace root.
+/// Prefers the tree the running binary sits in — walk up from
+/// `target/release/procon` until a `Cargo.toml` declaring a workspace shows
+/// up — so a relocated `procon` packages the checkout it is actually in
+/// instead of the one it was compiled from. Falls back to the compile-time
+/// `CARGO_MANIFEST_DIR` grand-parent when the binary runs outside any
+/// checkout (installed copy, CI artifact).
 fn locate_workspace_root() -> Result<PathBuf> {
+    if let Ok(exe) = std::env::current_exe() {
+        for dir in exe.ancestors() {
+            let manifest = dir.join("Cargo.toml");
+            let declares_workspace = std::fs::read_to_string(&manifest)
+                .map(|text| text.contains("[workspace]"))
+                .unwrap_or(false);
+            if declares_workspace {
+                return Ok(dir.to_path_buf());
+            }
+        }
+    }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace = manifest
         .parent()
@@ -110,15 +125,14 @@ fn locate_workspace_root() -> Result<PathBuf> {
     Ok(workspace.to_path_buf())
 }
 
-/// Build the release `procon` binary if it is missing.
+/// Build the release `procon` binary.
 ///
 /// `cargo build --release --bin procon --locked` is invoked as a subprocess
-/// so we honour the same flags as `just build`. Existing up-to-date binaries
-/// are reused to keep the bundle workflow fast on iteration.
+/// so we honour the same flags as `just build`. The build always runs: cargo
+/// is a no-op when the binary is already fresh, whereas the previous
+/// existence-only check zipped whatever stale `target/release/procon` was
+/// lying around (older commit, different flags) into the contest deliverable.
 async fn ensure_release_binary(binary_path: &Path, workspace: &Path) -> Result<()> {
-    if binary_path.exists() {
-        return Ok(());
-    }
     let status = tokio::process::Command::new("cargo")
         .arg("build")
         .arg("--release")
@@ -131,6 +145,9 @@ async fn ensure_release_binary(binary_path: &Path, workspace: &Path) -> Result<(
         .context("spawn cargo build --release")?;
     if !status.success() {
         bail!("cargo build --release failed (status {status})");
+    }
+    if !binary_path.exists() {
+        bail!("cargo build succeeded but the release binary is missing at {}", binary_path.display());
     }
     Ok(())
 }
