@@ -213,9 +213,12 @@ where
 /// - validates the setting up front,
 /// - for each day `1..=setting.days`, asks the solver for a plan and POSTs it,
 /// - applies retry + exponential backoff on transport failures,
-/// - waits for the server's day boundary signal between submissions,
-/// - stops and returns the final score when the server signals `Finished` or
-///   when the loop has covered all days.
+/// - waits for the server's day boundary signal after **every** submission,
+///   including the last one — that is where `Finished { final_score }`
+///   arrives, and skipping it made the normal completion path return a
+///   hard-coded `Score(0)` regardless of what the server reported,
+/// - stops and returns the final score when the server signals `Finished`,
+///   or falls through to `Score(0)` when every day ran out without one.
 pub async fn run_match_loop<S, T>(
     setting: MatchSetting,
     solver: &S,
@@ -236,15 +239,14 @@ where
         post_with_retry(transport, &submission, config).await?;
         debug!(match_id = %setting.match_id, day, "submitted plan");
 
-        if day < setting.days {
-            let signal = transport.wait_for_next_day(day).await?;
-            match signal {
-                DaySignal::Continue { .. } => {}
-                DaySignal::Finished { final_score } => return Ok(final_score),
-            }
+        let signal = transport.wait_for_next_day(day).await?;
+        match signal {
+            DaySignal::Continue { .. } => {}
+            DaySignal::Finished { final_score } => return Ok(final_score),
         }
     }
 
+    // Every day ran out without a `Finished` signal.
     Ok(Score(0))
 }
 
@@ -594,6 +596,23 @@ mod tests {
         assert_eq!(score, Score(42), "early-finish signal wins over running the full day count");
         assert_eq!(server.submissions(), 2, "should stop submitting after the finish signal");
         assert_eq!(solver.calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn finish_signal_after_the_last_day_is_read() {
+        // The `day < setting.days` guard used to skip the final boundary, so
+        // the server's `Finished { final_score }` was never observed and
+        // `run_match_loop` returned `Score(0)` on every normal completion.
+        let server = MockServer::with_agent("/agent", Scripted::Ok);
+        let transport = MockTransport::new(Arc::clone(&server)).with_finish_at(3);
+        let solver = EchoSolver::new();
+
+        let score =
+            run_match_loop(sample_setting(3), &solver, &transport, &fast_config()).await.unwrap();
+
+        assert_eq!(score, Score(42), "the final day's boundary carries the real score");
+        assert_eq!(server.submissions(), 3);
+        assert_eq!(solver.calls(), 3);
     }
 
     #[tokio::test]
