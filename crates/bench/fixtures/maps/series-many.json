@@ -1,0 +1,258 @@
+{
+  "name": "series-many",
+  "description": "12x12 map with 12 spots spread across 6 brands and 4 agents. Designed for variety-first solvers (solver-series-clustered) to dominate the leaderboard.",
+  "category": "series_many",
+  "startsAt": 0,
+  "daySeconds": [
+    60
+  ],
+  "daySteps": [
+    24
+  ],
+  "map": {
+    "height": 12,
+    "width": 12,
+    "cells": [
+      [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ]
+    ]
+  },
+  "spots": [
+    {
+      "brand": 0,
+      "pos": 0,
+      "stocks": 1
+    },
+    {
+      "brand": 0,
+      "pos": 12,
+      "stocks": 2
+    },
+    {
+      "brand": 1,
+      "pos": 24,
+      "stocks": 1
+    },
+    {
+      "brand": 1,
+      "pos": 36,
+      "stocks": 2
+    },
+    {
+      "brand": 2,
+      "pos": 49,
+      "stocks": 1
+    },
+    {
+      "brand": 2,
+      "pos": 61,
+      "stocks": 2
+    },
+    {
+      "brand": 3,
+      "pos": 74,
+      "stocks": 1
+    },
+    {
+      "brand": 3,
+      "pos": 86,
+      "stocks": 2
+    },
+    {
+      "brand": 4,
+      "pos": 99,
+      "stocks": 1
+    },
+    {
+      "brand": 4,
+      "pos": 111,
+      "stocks": 2
+    },
+    {
+      "brand": 5,
+      "pos": 124,
+      "stocks": 1
+    },
+    {
+      "brand": 5,
+      "pos": 137,
+      "stocks": 2
+    }
+  ],
+  "agents": [
+    13,
+    22,
+    121,
+    130
+  ],
+  "fuelLimits": 48,
+  "players": 1,
+  "busyThreshold": 1,
+  "jammedThreshold": 2
+}

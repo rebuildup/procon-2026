@@ -4,12 +4,22 @@ members = [
     "crates/domain",
     "crates/protocol",
     "crates/engine",
+    "crates/coordinator",
+    "crates/solver-mcts",
+    "crates/bench",
     "crates/cli",
+    "crates/solver-greedy",
+    "crates/solver-localsearch",
+    "crates/solver-ilp-cross",
+    "crates/solver-gpu",
+    "crates/solver-loop",
+    "crates/solver-series-clustered",
+    "crates/solver-astar",
 ]
 exclude = [".tmp/**"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -21,6 +31,12 @@ publish = false
 domain = { path = "crates/domain" }
 protocol = { path = "crates/protocol" }
 engine = { path = "crates/engine" }
+solver-loop = { path = "crates/solver-loop" }
+solver-greedy = { path = "crates/solver-greedy" }
+solver-astar = { path = "crates/solver-astar" }
+# The CLI resolves `--candidate` through the offline evaluator's registry
+# (Issues #178/#179), so it depends on `bench` like any other member.
+bench = { path = "crates/bench" }
 
 # Serialization (core ↔ frontend wire format)
 serde = { version = "1", features = ["derive"] }
@@ -35,10 +51,25 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
+
+# Archive
+zip = { version = "3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+# Text (bundle secret lint)
+regex = "1"
+
+# Test-only
+tempfile = "3"
+mockito = "1"
+axum = "0.8"
 
 # Async runtime (engine server / protocol)
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
+
+# HTTP client (coordinator / /agent POST with retry + timeout).
+# Sync API — used inside spawn_blocking from async contexts.
+ureq = { version = "2.10", default-features = false, features = ["tls", "json"] }
 
 # Time
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
@@ -70,3 +101,8 @@ strip = "debuginfo"
 opt-level = 1
 debug = 1
 incremental = true
+
+# Measurement (#218 / ADR-0024 §6): workspace crates keep line-tables-only
+# (debug = 1), dependencies drop debuginfo to cut target footprint.
+[profile.dev.package."*"]
+debug = false

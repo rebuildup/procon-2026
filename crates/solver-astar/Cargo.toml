@@ -1,0 +1,17 @@
+[package]
+name = "solver-astar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Single-agent hex A* path solver, fuel-aware and traffic-aware."
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]

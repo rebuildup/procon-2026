@@ -1,0 +1,130 @@
+{
+  "name": "openapi-sample",
+  "description": "Project-authored 8x8 warmup map whose name derives from the vendored Procon 37 OpenAPI schema - schema-derived, NOT an official payload (the real official example is .reference/procon37/match-config.example.json). Four agents at the corners; used to verify the loader round-trips end-to-end. Mirrors the warmup default in crates/cli/src/fixtures.rs.",
+  "category": "official_sample",
+  "startsAt": 0,
+  "daySeconds": [
+    60
+  ],
+  "daySteps": [
+    16
+  ],
+  "map": {
+    "height": 8,
+    "width": 8,
+    "cells": [
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0
+      ]
+    ]
+  },
+  "spots": [
+    {
+      "brand": 0,
+      "pos": 9,
+      "stocks": 2
+    },
+    {
+      "brand": 1,
+      "pos": 14,
+      "stocks": 1
+    },
+    {
+      "brand": 0,
+      "pos": 49,
+      "stocks": 1
+    },
+    {
+      "brand": 1,
+      "pos": 54,
+      "stocks": 2
+    }
+  ],
+  "agents": [
+    0,
+    7,
+    56,
+    63
+  ],
+  "fuelLimits": 24,
+  "players": 1,
+  "busyThreshold": 1,
+  "jammedThreshold": 2
+}

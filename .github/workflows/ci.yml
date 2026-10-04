@@ -20,13 +20,19 @@ jobs:
   rust:
     name: Rust (${{ matrix.os }} / ${{ matrix.toolchain }})
     runs-on: ${{ matrix.os }}
+    # quality/profile.yaml timeout_policy: default 30 minutes — without this
+    # a hung job runs to GitHub's 6-hour default.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        # This workflow is workflow_dispatch-only, so the old
+        # `github.event_name == 'pull_request'` matrix expression could never
+        # take its PR branch — spell the matrix out instead.
         os: [ubuntu-latest, macos-latest]
         toolchain: [stable]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -44,22 +50,29 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --workspace --locked
+      - name: Test (ignored / heavy property tests)
+        # `cargo test --workspace -- --ignored` exercises integration suites
+        # marked #[ignore] (e.g. large-scale property tests in
+        # crates/domain and crates/protocol). Keeping this in a separate step
+        # lets the fast suite stay under the main "Test" gate.
+        run: cargo test --workspace --locked -- --ignored --nocapture
       - name: Build release
         run: cargo build --workspace --release --locked
 
   frontend:
     name: Frontend (bun)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Cache bun modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: packages/frontend/node_modules
           key: ${{ runner.os }}-bun-${{ hashFiles('packages/frontend/bun.lock') }}
@@ -78,12 +91,12 @@ jobs:
         run: bun run format:check
       - name: Test
         working-directory: packages/frontend
-        run: bun test
+        run: bun run test
       - name: Build
         working-directory: packages/frontend
         run: bun run build
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist-${{ github.sha }}
           path: packages/frontend/dist
@@ -92,8 +105,9 @@ jobs:
   protocol-consistency:
     name: Protocol consistency check
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Check that protocol version matches across crates

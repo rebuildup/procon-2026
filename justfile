@@ -45,7 +45,7 @@ test: test-fast test-integration
 test-fast:
     cargo test --workspace --locked
     @echo "--- frontend unit ---"
-    cd packages/frontend && bun test
+    cd packages/frontend && bun run test
 
 test-integration:
     @echo "--- protocol round-trip + replay determinism ---"
@@ -64,7 +64,10 @@ build:
 # Local CI parity
 # ----------------------------------------------------------------
 
-ci: check test build
+# `ci.yml` runs fmt/clippy/tests/build **and** a protocol-consistency job, so
+# parity means running all of them here too — that job is 8 ms (no runner, no
+# build), and `release-check` still depends on it explicitly for clarity.
+ci: check test protocol-consistency build
     @echo "✓ just ci passed (local CI parity)"
 
 # ----------------------------------------------------------------
@@ -76,11 +79,106 @@ smoke-cli:
     cargo run -q --bin procon -- hello >/dev/null
 
 # ----------------------------------------------------------------
+# Warmup (pre-match cold/warm/smoke timing) — see crates/cli/src/warmup.rs
+# ----------------------------------------------------------------
+
+# Run the warmup timing harness against every built-in solver and emit a
+# human-readable summary table. Use `--json` for CI / scripted consumers.
+warmup:
+    cargo run -q --bin procon -- warmup
+
+# Run the warmup harness and emit a machine-readable JSON report. Output is
+# suitable for piping to `jq` or archiving as a build artifact.
+warmup-json:
+    cargo run -q --bin procon -- warmup --json
+
+# ----------------------------------------------------------------
+# Canonical evaluation — see docs/evaluation.md
+#
+# Offline solver comparison through `engine::MatchSim`. This is the path
+# that produces the official score tuple (variety, daily_variety_sum,
+# total_balls, response_time) and ranks lexicographically.
+#
+# It is NOT `procon tournament` (the real-server wire/protocol smoke
+# harness — see `--protocol-progress` there). Run `just eval-list` to see
+# the candidate axis.
+# ----------------------------------------------------------------
+
+# Default candidate set and baseline for `just eval`. Override per-call:
+#   just eval-quiet
+eval_candidates := "loop:iterations=32:initial=greedy,loop:iterations=128:initial=greedy,loop:initial=sweep-row,loop:initial=sweep-col,loop:iterations=64:initial=random:seed=42,greedy,wait"
+eval_baseline := "wait"
+
+# List the registered candidate algorithms and their parameter schemas.
+eval-list:
+    cargo run -q -p bench --bin procon-eval -- --list-candidates
+
+# Run the standard evaluation batch: every bundled fixture against the
+# default candidate set, ranked against the `wait` baseline.
+#
+# Artifacts: target/eval/{runs.jsonl,aggregate.json,report.md}
+eval:
+    PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" cargo run -q -p bench --bin procon-eval -- \
+        --cases all \
+        --candidates "{{eval_candidates}}" \
+        --baseline "{{eval_baseline}}" \
+        --output-dir target/eval \
+        --markdown-out target/eval/report.md
+
+# Same batch, artifacts only (no Markdown on stdout) — for scripted runs.
+eval-quiet:
+    PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" cargo run -q -p bench --bin procon-eval -- \
+        --cases all \
+        --candidates "{{eval_candidates}}" \
+        --baseline "{{eval_baseline}}" \
+        --output-dir target/eval \
+        --markdown-out target/eval/report.md \
+        --quiet
+
+# ----------------------------------------------------------------
+# Arena — unofficial practice server (Issue #179)
+# See docs/contest/arena.md. The token is NEVER passed as an argument:
+# inject it from Infisical as PROCON_ARENA_TOKEN, e.g.
+#   infisical run --env=dev -- just arena-next --candidate 'multiloop:kmeans=4:seed=42:budget=official'
+# ----------------------------------------------------------------
+
+# Wait for the next :00/:15/:30/:45 match, register inside the pre-match
+# window, play exactly one match through the canonical coordinator, append
+# evidence to target/arena/runs.jsonl, and exit. Extra flags are forwarded
+# verbatim to `procon coordinator --arena --next` (e.g. `--candidate`,
+# `--solver`), so keep values whitespace-free.
+arena-next *args:
+    PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" cargo run -q --release --bin procon -- coordinator --arena --next {{args}}
+
+# Convert the arena's same-board replay JSON into an offline CaseSpec.
+# Re-run it through the evaluator with:
+#   cargo run -q -p bench --bin procon-eval -- --case-files <output> ...
+arena-import input output:
+    cargo run -q --bin procon -- arena import-case --input "{{input}}" --output "{{output}}"
+
+# ----------------------------------------------------------------
 # Protocol drift
 # ----------------------------------------------------------------
 
 protocol-consistency:
     bash scripts/check-protocol-consistency.sh
+
+# ----------------------------------------------------------------
+# Screen recording (Playwright) — see docs/development.md § 画面録画
+# ----------------------------------------------------------------
+
+# One-time browser setup (skipped when ~/.cache/ms-playwright is warm):
+#   cd packages/frontend && bun run record:install
+# Opt-in only — never part of `just ci`. See docs/development.md § 画面録画.
+# Artifacts: target/recordings/{home,replays,solvers,live}.{webm,png} + manifest.json
+# Record the frontend screens (home / replays / solvers / live) as video
+record:
+    cd packages/frontend && bun run record
+
+# Opt-in Canvas/WebGPU frame scheduling checks (Chromium + Firefox).
+# Install once: cd packages/frontend && bunx playwright install chromium firefox
+test-viewer-frames:
+    cd packages/frontend && bunx playwright test --config playwright.frames.config.ts
 
 # ----------------------------------------------------------------
 # Cleanup
@@ -89,3 +187,12 @@ protocol-consistency:
 clean:
     cargo clean
     cd packages/frontend && bun run clean || true
+
+# Full release verification, including optional native GPU and packaged executable.
+release-check branch="release-0-2-0": ci protocol-consistency
+    python3 scripts/test-release-version.py
+    python3 scripts/check-release-version.py {{branch}}
+    cargo test --workspace --release --locked
+    cargo test -p solver-gpu --features wgpu --locked
+    cargo run --release --locked --bin procon -- bundle build target/release/procon-submit.zip
+    target/release/procon version

@@ -38,7 +38,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 (cd packages/frontend && bun run check)
 (cd packages/frontend && bun run lint)
-(cd packages/frontend && bun test)
+(cd packages/frontend && bun run test)
 ```
 
 ### Ticket integration gate (clean candidate で full applicable verification)
@@ -55,7 +55,7 @@ just ci
 - [ ] cargo build --release --workspace
 - [ ] cargo test --workspace --release
 - [ ] bun run build (frontend dist を artifact upload)
-- [ ] bun test
+- [ ] bun run test
 - [ ] protocol-consistency
 - [ ] (manual) WebGPU ブラウザ smoke
 ```

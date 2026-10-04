@@ -1,76 +1,12 @@
-:root {
-  color-scheme: dark light;
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  background: #0d1117;
-  color: #e6edf3;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body,
-html,
-#root {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 1rem;
-  gap: 1rem;
-}
-
-.app__header {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-}
-
-.app__header h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  letter-spacing: 0.02em;
-}
-
-.app__tagline {
-  margin: 0;
-  color: #7d8590;
-  font-size: 0.85rem;
-}
-
-.app__status {
-  margin: 0;
-  color: #7d8590;
-  font-size: 0.9rem;
-}
-
-.app__status--error {
-  color: #f85149;
-}
-
-.gpu-canvas {
-  flex: 1;
-  min-height: 320px;
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  overflow: hidden;
-  position: relative;
-}
-
-.gpu-canvas__canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
+/* Primer is the design system — issue #269.
+ *
+ * Tokens come from @primer/primitives and are referenced, never copied; its
+ * own rule is "Never use raw values (hex/px). Use semantic tokens ONLY."
+ * Theme colours are scoped to [data-color-mode] + [data-*-theme], so the
+ * theme attribute is set on <html>. Primer ships 14 variants including
+ * colourblind, tritanopia and high-contrast modes.
+ */
+@import '@primer/primitives/dist/css/primitives.css';
+@import '@primer/primitives/dist/css/functional/themes/light.css';
+@import '@primer/primitives/dist/css/functional/themes/dark.css';
+@import '@primer/css/dist/primer.css';

@@ -1,0 +1,271 @@
+schema_version: 1
+profile_version: "0.2.0"
+updated_at: "2026-10-04"
+source_revision:
+  # Branch ref this profile was written against — not a commit SHA. The SHA
+  # each validation actually ran at is recorded by the gate run itself
+  # (`validated_sha` in the evidence / agent-recovery records), so this key
+  # must not be read as "validated at <sha>".
+  branch_ref: "release-0-2-0"
+  branch: "release-0-2-0"
+
+project:
+  name: procon-2026
+  description: >
+    Contest-style deterministic solver (Rust core + SolidJS + WebGPU frontend).
+  language: rust
+  rust:
+    toolchain: stable
+    edition: "2024"
+    rust_version: "1.85"
+    workspace_members:
+      - crates/domain
+      - crates/protocol
+      - crates/engine
+      - crates/coordinator
+      - crates/solver-mcts
+      - crates/bench
+      - crates/cli
+      - crates/solver-greedy
+      - crates/solver-localsearch
+      - crates/solver-ilp-cross
+      - crates/solver-gpu
+      - crates/solver-loop
+      - crates/solver-series-clustered
+      - crates/solver-astar
+  frontend:
+    framework: solidjs
+    bundler: vite
+    runtime: webgpu
+    package_manager: bun
+    node_version: "22"
+  release_target:
+    semantic_version: "0.2.0"
+    release_branch: "release-0-2-0"
+    protected_branch: main
+
+official_guidance:
+  rust:
+    source: https://doc.rust-lang.org/stable/
+    components: [rustfmt, clippy]
+    verified_at: "2026-09-16"
+  github_actions:
+    source: https://docs.github.com/actions
+    verified_at: "2026-09-16"
+
+test_taxonomy:
+  unit:
+    scope: single component / module behavior
+    rust_command: "cargo test --workspace --locked"
+    frontend_command: "(cd packages/frontend && bun run test)"
+    examples: [pure/domain logic, parser, validator, state transition]
+  smoke:
+    scope: process startup + minimal CLI wiring
+    rust_command: "cargo run -q --bin procon -- version && cargo run -q --bin procon -- hello"
+    frontend_command: "(cd packages/frontend && bun run build) # dist exists"
+  integration:
+    scope: real cross-component boundary + replay determinism
+    rust_command: "cargo test --workspace --locked -- --ignored --nocapture"
+    frontend_command: "(cd packages/frontend && bun run test)"
+  contract:
+    scope: protocol wire format round-trip + frontend mirror
+    rust_command: "cargo test --workspace --locked -- --ignored --nocapture"
+    frontend_command: "(cd packages/frontend && bun run test)"
+  protocol_consistency:
+    scope: PROTOCOL_VERSION一致 across crates
+    command: "bash scripts/check-protocol-consistency.sh"
+  release_build:
+    scope: production artifact + bundle
+    rust_command: "cargo build --workspace --release --locked"
+    frontend_command: "(cd packages/frontend && bun run build)"
+
+change_type_required_verification:
+  pure_domain_logic:
+    minimum: [unit]
+  protocol_type_change:
+    minimum: [unit, contract]
+  engine_state_machine:
+    minimum: [unit, integration]
+  cli_smoke:
+    minimum: [smoke]
+  frontend_component:
+    minimum: [unit, smoke]
+  webgpu_rendering:
+    minimum: [unit, manual_browser]
+  release_branch:
+    minimum: [integration, release_build, contract, protocol_consistency, smoke]
+
+entry_points:
+  fast_worker_gate: "just check"
+  ticket_integration_gate: "just ci"
+  release_gate: "just release-check release-0-2-0"
+  protocol_consistency: "just protocol-consistency"
+  smoke_cli: "just smoke-cli"
+  build: "just build"
+
+worker_gate:
+  description: focused feedback for assigned scope
+  commands:
+    - "cargo fmt --all -- --check"
+    - "cargo clippy --workspace --all-targets --locked -- -D warnings"
+    - "cargo test --workspace --locked"
+    - "(cd packages/frontend && bun run check)"
+    - "(cd packages/frontend && bun run lint)"
+    - "(cd packages/frontend && bun run test)"
+
+ticket_integration_gate:
+  description: clean candidate with full applicable verification
+  commands:
+    - "just ci"
+  additional_evidence:
+    - "current head SHA matches validation SHA"
+    - "no PR-only flag set"
+    - "target release branch / immediate predecessor reconciled"
+
+stack_reconciliation_gate:
+  description: when predecessor SHA / commit changes, downstream re-validate
+  triggers:
+    - "predecessor commit SHA changed"
+    - "predecessor branch updated"
+    - "predecessor rebase / force-push"
+  required_actions:
+    - "compare previous validated_sha vs current head SHA"
+    - "re-run affected required verification on current head"
+    - "do not reuse old green result for new SHA"
+    - "re-evaluate required CI checks on current head"
+    - "re-run contract / integration tests if predecessor changed contract / API / schema"
+
+release_gate:
+  description: release-x-y-z -> main 前の full applicable verification
+  required_steps:
+    - "cargo build --workspace --release --locked"
+    - "cargo test --workspace --release --locked"
+    - "(cd packages/frontend && bun run build)"
+    - "(cd packages/frontend && bun run test)"
+    - "bash scripts/check-protocol-consistency.sh"
+    - "manual WebGPU browser smoke"
+
+# What actually runs, not what a green PR would imply (verified against
+# .github/workflows/ on 2026-10-04). No workflow fires on `push`, and the
+# only `pull_request` workflow checks a branch *name* — it never builds or
+# tests. Treating a passing PR check as "just ci ran" is exactly the
+# false-green this profile's failure_policy forbids.
+ci_triggers:
+  pull_request:
+    workflows:
+      - name: release-source-check
+        branches: [main]
+        types: [opened, synchronize, reopened, edited]
+        purpose: head branch must match `release-*-*-*`
+        jobs_run: [] # no build / test / lint
+  push: []
+  schedule: []
+  workflow_dispatch:
+    workflows: [ci]
+    purpose: manual deep verification — the jobs described under ci_jobs
+  local_gate:
+    entry_point: just ci
+    enforced_by: pre-push hook (scripts/install-git-hooks.sh -> scripts/ci-local.sh)
+    caveat: opt-in per clone and bypassable with `git push --no-verify`
+
+# The jobs below are the `ci.yml` (workflow_dispatch) job set; nothing runs
+# them on push or PR — see ci_triggers.
+ci_jobs:
+  rust:
+    runner_matrix: [ubuntu-latest, macos-latest]
+    macos_pr_skip: true
+    rationale: macOS heavy suite gated to release / push events per Actions cost policy
+    steps:
+      - fmt_check
+      - clippy
+      - test
+      - test_ignored
+      - build_release
+    cache: Swatinem/rust-cache@v2 (per-crate target)
+    timeout_minutes: 30
+  frontend:
+    runner: ubuntu-latest
+    steps:
+      - bun_install_frozen_lockfile
+      - check
+      - lint
+      - format_check
+      - test
+      - build
+      - upload_artifact
+    cache: actions/cache@v6 (bun modules)
+    timeout_minutes: 20
+  protocol_consistency:
+    runner: ubuntu-latest
+    steps:
+      - install_ripgrep
+      - check_protocol_consistency
+    timeout_minutes: 5
+
+artifact_policy:
+  retention_days:
+    ci_evidence: 7
+    release_build: project_defined
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel_in_progress: true
+  exception_jobs: []
+  rationale: superseded PR validation cancels in-flight runs
+
+coverage_policy:
+  threshold: not_set
+  rationale: project-specific signal, defer to framework guidance per change type
+  per_crate: {}
+
+# Enforced through `timeout-minutes` on the ci.yml jobs; without it a hung
+# job runs to GitHub's 6-hour default.
+timeout_policy:
+  default_minutes: 30
+  per_job_overrides:
+    frontend: 20
+    protocol_consistency: 5
+
+runner_policy:
+  public_repository: false
+  private_repository: true
+  included_usage_model: github_private_repo_default
+  self_hosted: false
+  cost_awareness: macOS matrix gated to release / push events to avoid burning PR-cycle minutes
+
+failure_policy:
+  false_green_forbidden:
+    - skip_test_with_ignore_only
+    - blanket_ignore_suppression
+    - ignore_exit_code
+    - no_fail_option
+    - ci_check_disabling
+    - mock_only_as_real_integration
+    - coverage_threshold_exclude_cheat
+    - predecessor_changed_but_old_sha_green_reused
+
+re_evaluation_triggers:
+  - framework_runtime_upgrade
+  - official_testing_guidance_change
+  - architecture_boundary_change
+  - new_app_platform_target
+  - ci_workflow_change
+  - pr_stack_release_integration_model_change
+  - flaky_slow_gate_blocking_development
+  - actions_usage_cost_exceeding_baseline
+  - included_usage_runner_billing_change
+  - escaped_regression_showed_gate_hole
+  - release_process_change
+
+delivery_estimation_integration:
+  skill: agent-delivery-estimation
+  provided_observations:
+    - validation_level_required_gate
+    - ci_started_completed_duration
+    - queue_retry_failure
+    - e2e_manual_verification_wait
+    - release_only_validation_cost
+    - current_sha_revalidation_round
+  forbid:
+    - removing_required_gate_for_estimate
+    - weakening_quality_for_delivery

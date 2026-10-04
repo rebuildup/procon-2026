@@ -33,6 +33,13 @@ bun.lock.json
 packages/frontend/coverage/
 packages/frontend/.vite/
 
+# Runtime artefacts written by the CLI's --state-output flag.
+# `packages/frontend/public/match-state.json` is the CLI output consumed by
+# the Live page via Vite. It's regenerated on every match run; the dev
+# fixture under `match-state.example.json` stays committed.
+packages/frontend/public/match-state.json
+packages/frontend/public/match-setting.json
+
 # ----------------------------------------
 # Secrets / env files — NEVER commit
 # ----------------------------------------
@@ -46,10 +53,27 @@ packages/frontend/.vite/
 # Temporary artefacts / reference repos
 # ----------------------------------------
 .tmp/
-.reference/
+.reference/*
+!.reference/procon37/
+
+# ----------------------------------------
+# Git worktrees (Worktrunk / manual `git worktree`)
+# Each worktree is per-worker isolated mutable runtime state.
+# Do not commit worktree contents into the source tree.
+# ----------------------------------------
+.worktrees/
+
+# proptest local regression seed files (regenerated on next test run)
+*.proptest-regressions
 
 # ----------------------------------------
 # Skills local install state (kept under .claude/skills/ as
 # committed project-local knowledge; ignore local override dirs)
 # ----------------------------------------
 .agents/
+# Python bytecode (scripts/ablation tooling)
+__pycache__/
+*.pyc
+
+# natural-japanese skill: calibration corpus + generated reports
+corpus/

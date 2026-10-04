@@ -1,0 +1,47 @@
+# procon-2026 — local development composition.
+#
+# 用途:
+#   - 試合サーバ役 (engine) と coordinator を同一 bridge network で起動する。
+#   - engine はまだ image 化されていない (#45 周辺) ので、当面は `procon
+#     coordinator --dry-run` を service として置くだけ。
+#
+# 起動:
+#   docker compose up --build
+#   docker compose up --build coordinator   # coordinator のみ
+#
+# 注意:
+#   - 開発用。本番では `docker run --network host ...` を使う (docs/ops/container.md)。
+
+services:
+  coordinator:
+    build:
+      context: .
+      dockerfile: Containerfile
+      target: coordinator
+    image: procon-2026-coordinator:local
+    container_name: procon-coordinator
+    # host network にすると LAN の試合サーバに直接届く。
+    # bridge で動かしたい場合は compose 内の他 service と link する。
+    network_mode: host
+    environment:
+      PROCON_SERVER: ${PROCON_SERVER:-localhost:7878}
+      PROCON_TOKEN: ${PROCON_TOKEN:-}
+      PROCON_HTTP_TIMEOUT_MS: ${PROCON_HTTP_TIMEOUT_MS:-5000}
+      PROCON_HTTP_RETRIES: ${PROCON_HTTP_RETRIES:-3}
+      PROCON_HTTP_BACKOFF_MS: ${PROCON_HTTP_BACKOFF_MS:-250}
+      RUST_LOG: ${RUST_LOG:-info}
+    # 既定の CMD は `coordinator --dry-run`。本番常駐にするときは override する:
+    # command: ["coordinator"]
+    restart: unless-stopped
+
+  # engine (試合サーバ) は #45 で image 化されたらここに追加する想定。
+  # 当面は placeholder。
+  # engine:
+  #   build:
+  #     context: .
+  #     dockerfile: Containerfile
+  #     target: engine       # (未実装)
+  #   image: procon-2026-engine:local
+  #   container_name: procon-engine
+  #   ports:
+  #     - "7878:7878"

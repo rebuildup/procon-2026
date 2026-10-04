@@ -1,0 +1,62 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Procon 37 Minimal OpenAPI (issue #16 stub)",
+    "version": "1.0.0"
+  },
+  "components": {
+    "schemas": {
+      "MatchConfig": {
+        "type": "object",
+        "required": [
+          "startsAt",
+          "daySeconds",
+          "daySteps",
+          "fuelLimits",
+          "players"
+        ],
+        "properties": {
+          "startsAt": { "type": "integer" },
+          "daySeconds": { "type": "array", "items": { "type": "integer" } },
+          "daySteps": { "type": "array", "items": { "type": "integer" } },
+          "fuelLimits": { "type": "integer" },
+          "players": { "type": "integer", "minimum": 1 },
+          "busyThreshold": { "type": "integer" },
+          "jammedThreshold": { "type": "integer" }
+        }
+      },
+      "MatchState": {
+        "type": "object",
+        "required": ["day"],
+        "properties": {
+          "day": { "type": "integer" },
+          "agents": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AgentState" }
+          }
+        }
+      },
+      "AgentState": {
+        "type": "object",
+        "required": ["kind", "pos", "fuel"],
+        "properties": {
+          "kind": { "$ref": "#/components/schemas/AgentKind" },
+          "pos": { "type": "integer" },
+          "fuel": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "AgentKind": {
+        "type": "integer",
+        "enum": [0, 1]
+      },
+      "CellType": {
+        "type": "integer",
+        "enum": [0, 1, 2, 3]
+      },
+      "TrafficStatus": {
+        "type": "string",
+        "enum": ["smooth", "busy", "jammed"]
+      }
+    }
+  }
+}

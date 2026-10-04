@@ -55,7 +55,9 @@ Issue (#123) → ticket branch (123) → Draft PR (123 → release-0-2-0)
 
 ## Release integration
 
-sprint 対象 ticket をすべて merge した後、release gate を実行する。
+sprint 対象 ticket をすべて merge した後、`just release-check release-0-2-0` を実行する。
+この gate は `just ci`・protocol consistency・workspace/lock version・optional GPU・
+bundle 作成と CLI version smoke を検証する。PR の green な branch 名検査だけで代替しない。
 
 release PR:
 

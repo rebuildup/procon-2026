@@ -1,0 +1,6 @@
+jsx = "solid"
+jsxFragment = "Fragment"
+jsxImportSource = "solid-js/web"
+
+[test]
+preload = ["./jsx-plugin.ts", "./src/__tests__/setup.ts"]

@@ -1,0 +1,19 @@
+# Worktrunk project config — Rust/Cargo capacity policy (Issue #217).
+# Canonical policy: project-init ADR-0024 (branch 84).
+#
+# Host gate: this project's current host is ext4 (no reflink; verified with
+# `cp --reflink=always` → Operation not supported), so a full copy of a
+# multi-GB `target/` would WORSEN capacity (ADR-0024 §3). Keep target out
+# of copy-ignored on non-reflink hosts. On a reflink-capable host
+# (APFS/btrfs/XFS/ReFS), verify with the probe in
+# `.claude/skills/worktree-workflow/SKILL.md` and remove this exclude —
+# `.worktreeinclude` then seeds `target/` copy-on-write.
+[step.copy-ignored]
+exclude = ["target/"]
+
+# Allowlist-gated auto-seed on worktree start. With the exclude above this
+# is a no-op for `target/`; it is the standard ADR-0024 shape so reflink
+# hosts only lift the exclude to start seeding. Never run copy-ignored
+# without `--require-include` as the standard path (ADR-0024 §3).
+[post-start]
+copy = "wt step copy-ignored --require-include"

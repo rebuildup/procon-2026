@@ -1,0 +1,29 @@
+[package]
+name = "solver-ilp-cross"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "LP/ILP-based cross-day multi-day optimisation solver skeleton for procon-2026."
+
+[lints]
+workspace = true
+
+[features]
+# Real LP backend. When disabled, the crate falls back to a greedy decode so
+# tests stay dependency-light and deterministic. Production runs should enable
+# this once a suitable LP solver is wired in (good-lp / minilp / OR-Tools).
+default = []
+good_lp = ["dep:good_lp"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+# Optional real LP backend. Pulled in by the `good_lp` feature only — keeping
+# the test path (and thus `cargo test -p solver-ilp-cross`) free of native
+# solver dependencies for now.
+good_lp = { version = "1.15", optional = true }

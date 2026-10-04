@@ -1,0 +1,8 @@
+{
+  "match_id": "match-example",
+  "days": 2,
+  "day_steps": 100,
+  "day_seconds": 60,
+  "seed": 42,
+  "agents": ["player-a", "player-b"]
+}
