@@ -15,12 +15,12 @@
 //! is intentional and avoids cross-branch coupling. The post-merge integration
 //! will collapse this into the canonical cell-side definition.
 //!
-//! The traffic volume stored in [`TrafficCell`] is the **2-day sliding max**
+//! The traffic volume stored in [`TrafficCell`] is the **2-day sliding sum**
 //! of the previous two days' traversals (Q&A Q6 処理順序). The "today" count
 //! accumulates during the day via [`TrafficMap::record_traversal`]; the phase
 //! transition at end-of-day calls [`TrafficMap::phase_traffic_update`], which
 //! promotes "today" → "yesterday", inserts a fresh "today" of zero, and
-//! re-classifies the state from `max(count_yesterday, count_today)`.
+//! re-classifies the state from `count_yesterday + count_today`.
 //!
 //! Position is stored as `(col, row)` `(u8, u8)` rather than a richer hex
 //! coordinate type because this worktree does not yet have `coordinate.rs`
@@ -108,7 +108,7 @@ impl Default for Thresholds {
 ///
 /// `pos` is `(col, row)`. `count_yesterday` is the day-prior snapshot;
 /// `count_today` is the in-progress accumulator. The actual displayed state
-/// is re-derived from `max(count_yesterday, count_today)` via
+/// is re-derived from `count_yesterday + count_today` via
 /// [`TrafficCell::classify`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrafficCell {
@@ -131,7 +131,7 @@ impl TrafficCell {
         Self { pos, count_today: 0, count_yesterday: 0, state: TrafficState::Smooth }
     }
 
-    /// Classify the current 2-day max volume into a [`TrafficState`].
+    /// Classify the current 2-day sum volume into a [`TrafficState`].
     ///
     /// Boundaries:
     /// - `volume >= jammed` → [`TrafficState::Jammed`]
@@ -139,7 +139,7 @@ impl TrafficCell {
     /// - otherwise → [`TrafficState::Smooth`]
     #[must_use]
     pub fn classify(&self, thresholds: Thresholds) -> TrafficState {
-        let volume = self.count_yesterday.max(self.count_today);
+        let volume = self.count_yesterday.saturating_add(self.count_today);
         if volume >= u32::from(thresholds.jammed) {
             TrafficState::Jammed
         } else if volume >= u32::from(thresholds.busy) {
@@ -220,19 +220,10 @@ impl TrafficMap {
 
     /// End-of-phase update (Q&A Q6 処理順序).
     ///
-    /// For every tracked cell, in this order:
-    /// 1. Re-derive `state` from `max(count_yesterday, count_today)` using the
-    ///    current thresholds — i.e. from the two days that just ended.
+    /// For every tracked cell:
+    /// 1. Classify the sum of the two completed days.
     /// 2. Promote `count_today` → `count_yesterday`.
     /// 3. Reset `count_today` to 0.
-    ///
-    /// Classifying first is what makes the documented 2-day sliding window
-    /// real: rotating first destroyed the older day before `classify` could
-    /// read it, so a cell that jammed yesterday fell straight back to Smooth
-    /// as soon as today had zero traffic. `crates/engine`'s
-    /// `phase_traffic_update` classifies from `traffic_today` +
-    /// `traffic_yesterday` before `begin_day` rotates, and this has to agree
-    /// with it.
     ///
     /// After this call, `count_today` is zero everywhere and `count_yesterday`
     /// holds the previous day's total, so the very next day's
@@ -261,6 +252,17 @@ mod tests {
     /// - `count < 3` → Smooth
     /// - `3 <= count < 7` → Busy
     /// - `count >= 7` → Jammed
+    #[test]
+    fn two_small_days_cross_the_busy_threshold() {
+        let mut map = TrafficMap::with_thresholds(Thresholds::new(2, 5).unwrap());
+        map.record_traversal((0, 0));
+        map.phase_traffic_update();
+        assert_eq!(map.get((0, 0)).unwrap().state, TrafficState::Smooth);
+        map.record_traversal((0, 0));
+        map.phase_traffic_update();
+        assert_eq!(map.get((0, 0)).unwrap().state, TrafficState::Busy);
+    }
+
     #[test]
     fn threshold_boundaries() {
         let thresholds = Thresholds::new(3, 7).expect("mid-range thresholds are valid");
@@ -311,12 +313,12 @@ mod tests {
         assert_eq!(cell.classify(thresholds), TrafficState::Jammed);
     }
 
-    /// 2-day sliding max: yesterday's count dominates today's small count.
+    /// Both days contribute to the rolling sum.
     ///
-    /// `count_yesterday = 5`, `count_today = 1` → max = 5.
+    /// `count_yesterday = 5`, `count_today = 1` → sum = 6.
     /// With defaults (`busy = 3`), volume 5 classifies as Busy.
     #[test]
-    fn two_day_sliding_max() {
+    fn two_day_sliding_sum() {
         let cell = TrafficCell {
             pos: (1, 2),
             count_today: 1,
@@ -324,7 +326,7 @@ mod tests {
             state: TrafficState::Smooth,
         };
         assert_eq!(cell.classify(Thresholds::DEFAULT), TrafficState::Busy);
-        // Symmetric: yesterday small, today large still picks up the max.
+        // The sum is symmetric.
         let cell = TrafficCell {
             pos: (1, 2),
             count_today: 5,
@@ -356,11 +358,11 @@ mod tests {
     }
 
     /// `phase_traffic_update` promotes today → yesterday, resets today, and
-    /// re-derives the state from the 2-day max.
+    /// re-derives the state from the 2-day sum.
     #[test]
     fn phase_update_promotes_and_reclassifies() {
         let mut map = TrafficMap::new();
-        // 5 traversals today, 0 yesterday → max 5, default busy = 3 → Busy.
+        // 5 traversals today, 0 yesterday → sum 5, default busy = 3 → Busy.
         for _ in 0..5 {
             map.record_traversal((4, 4));
         }
@@ -371,22 +373,14 @@ mod tests {
         assert_eq!(cell.count_today, 0);
         assert_eq!(cell.state, TrafficState::Busy);
 
-        // Day 2: zero traversals → the window still holds yesterday's 5, so
-        // the cell stays Busy. (Classifying after the rotation used to drop
-        // that 5 first and report Smooth — the 2-day window never happened.)
+        // Day 2: zero traversals → sum still 5 from yesterday → still Busy.
         map.phase_traffic_update();
         let cell = map.get((4, 4)).expect("cell exists");
         assert_eq!(cell.count_yesterday, 0, "previous yesterday is dropped");
         assert_eq!(cell.count_today, 0);
-        assert_eq!(cell.state, TrafficState::Busy, "max(5 from yesterday, 0) stays Busy");
+        assert_eq!(cell.state, TrafficState::Busy);
 
-        // Day 3 with *no* traffic either: the window is now empty, so Smooth
-        // is correct — and only now.
-        map.phase_traffic_update();
-        let cell = map.get((4, 4)).expect("cell exists");
-        assert_eq!(cell.state, TrafficState::Smooth, "empty 2-day window is Smooth");
-
-        // Day 3: 4 traversals → max 4, default busy = 3 → Busy.
+        // Day 3: 4 traversals → sum 4, default busy = 3 → Busy.
         for _ in 0..4 {
             map.record_traversal((4, 4));
         }

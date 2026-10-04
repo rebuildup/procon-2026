@@ -172,7 +172,8 @@ impl EngineLoopAdapter {
         // Recover from a poisoned lock rather than panicking: the guard only
         // ever holds an `Option`, so a panic elsewhere cannot leave an
         // invariant broken that `decide` could not read past.
-        let mut guard = self.engine_setting.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard =
+            self.engine_setting.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Some(setting);
     }
 }

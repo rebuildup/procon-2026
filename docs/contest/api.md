@@ -27,8 +27,8 @@
 
 - 公式仕様 (募集要項 / `docs/pdf/通信仕様*.pdf`) は **JSON のみで運用** される想定。
   バイナリ protobuf は存在しない（仕様書には明示されない限り採用しない）。
-- 全レスポンスは **公式の OpenAPI 仕様 1:1 の snake_case キーで** 返される。
-  Rust 側で `#[serde(rename_all = "camelCase")]` 等を使って再命名する必要はない。
+- 全レスポンスは **公式 OpenAPI と一致する camelCase キーで** 返される。
+  Rust 側の snake_case フィールドは `#[serde(rename_all = "camelCase")]` で wire 名に対応させる。
 - 試合中 (`day` が 0 以上) は状態が頻繁に進む。GET の応答を poll する場合は
   `endsAt` を見てから 1 秒以上の間隔で再取得する。
 - POST リクエストは **冪等ではない**（行動計画やエージェント種別は最後の提出で上書き）。
@@ -410,9 +410,9 @@ curl -sS -o /dev/null -w "%{http_code}\n" \
 
 ## 8. フィールド辞書（camelCase / snake_case 対応）
 
-公式 OpenAPI は **全フィールドが snake_case で固定** されている。
-Rust 側 (`crates/protocol/src`) も `serde` 既定挙動で snake_case のまま扱うので、
-クライアント⇄サーバ間で snake_case ⇔ camelCase 変換を行う **必要はない**。
+公式 OpenAPI の wire フィールド名は **camelCase**。
+Rust 側 (`crates/protocol/src`) は snake_case フィールドに
+`#[serde(rename_all = "camelCase")]` を適用し、serialize / deserialize する。
 
 下の表は **公式 OpenAPI に出現する全フィールド名** を列挙したもの。
 
@@ -457,11 +457,7 @@ Rust 側 (`crates/protocol/src`) も `serde` 既定挙動で snake_case のま�
 | `CellType` | number enum | `Map.cells` | `0`, `1`, `2`, `3` |
 
 > **Camel / snake 揺れに関する注記**:
-> 公式 OpenAPI は一貫して snake_case（`busyThreshold` / `jammedThreshold` 等に
-> 含まれる語の境界はキャメル要素そのもの）だが、**JSON キーはキャメルでもスネークでも
-> どちらも受け付けられる** 実装が一部で見られる。
-> ただし本大会公式の挙動は **snake_case 固定** と仕様書から読み取れる。
-> 不整合に遭遇したらサーバ実装（環境変数 `PROCON_API_CASE` 等）の影響を疑うこと。
+> `busyThreshold` / `jammedThreshold` / `startsAt` などは camelCase の wire 名を使用する。
 
 ---
 

@@ -1,6 +1,6 @@
 schema_version: 1
 profile_version: "0.2.0"
-updated_at: "2026-09-16"
+updated_at: "2026-10-04"
 source_revision:
   # Branch ref this profile was written against — not a commit SHA. The SHA
   # each validation actually ran at is recorded by the gate run itself
@@ -98,7 +98,7 @@ change_type_required_verification:
 entry_points:
   fast_worker_gate: "just check"
   ticket_integration_gate: "just ci"
-  release_gate: "just ci && bash scripts/check-protocol-consistency.sh && (cd packages/frontend && bun run build)"
+  release_gate: "just release-check release-0-2-0"
   protocol_consistency: "just protocol-consistency"
   smoke_cli: "just smoke-cli"
   build: "just build"

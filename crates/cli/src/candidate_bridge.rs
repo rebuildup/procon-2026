@@ -91,6 +91,13 @@ impl CandidateBridge {
     pub fn from_registry_id(id: &str) -> Result<Self, bench::CandidateError> {
         let registry = bench::CandidateRegistry::builtin();
         let candidate = registry.build(id)?;
+        if registry
+            .factory(candidate.algorithm())
+            .is_some_and(|factory| factory.params().iter().any(|p| p.key == "budget"))
+            && candidate.spec().param("budget") != Some("official")
+        {
+            return Err(bench::CandidateError::Build("live candidates require explicit budget=official; evaluate that exact id offline first".to_owned()));
+        }
         let solver = candidate.build_solver()?;
         Ok(Self::new(candidate.id(), solver))
     }
@@ -480,9 +487,12 @@ mod tests {
     fn registry_ids_resolve_through_the_bridge() {
         // One of the Issue #179 shortlist ids — the exact configuration
         // the arena run must be able to play.
-        let bridge = CandidateBridge::from_registry_id("multiloop:kmeans=4:seed=42")
-            .expect("shortlist candidate resolves");
-        assert_eq!(bridge.candidate_id(), "multiloop:kmeans=4:seed=42");
+        let bridge =
+            CandidateBridge::from_registry_id("multiloop:kmeans=4:seed=42:budget=official")
+                .expect("shortlist candidate resolves");
+        assert_eq!(bridge.candidate_id(), "multiloop:kmeans=4:seed=42:budget=official");
+        assert!(CandidateBridge::from_registry_id("multiloop:kmeans=4:seed=42").is_err());
+        assert!(CandidateBridge::from_registry_id("loop:budget=element").is_err());
         assert!(CandidateBridge::from_registry_id("no-such-algo").is_err());
     }
 }
