@@ -87,7 +87,7 @@ async fn serve_agent(
 }
 
 async fn serve_state(State(s): State<ServerState>) -> (StatusCode, Json<Value>) {
-    let day = s.day_counter.fetch_add(1, Ordering::SeqCst);
+    let day = s.day_counter.load(Ordering::SeqCst);
     (
         StatusCode::OK,
         Json(json!({
@@ -105,6 +105,7 @@ async fn serve_action(
     _body: Json<Vec<Vec<i32>>>,
 ) -> (StatusCode, Json<Value>) {
     let revision = s.revision_counter.fetch_add(1, Ordering::SeqCst);
+    s.day_counter.fetch_add(1, Ordering::SeqCst);
     (StatusCode::OK, Json(json!({"revision": revision})))
 }
 
@@ -135,6 +136,17 @@ async fn spawn_test_server() -> (String, ServerState) {
         axum::serve(listener, router).await.expect("axum serve");
     });
     (format!("http://{addr}"), state)
+}
+
+/// Retried state reads must not consume a day in the mock protocol.
+#[tokio::test]
+async fn repeated_state_reads_do_not_advance_the_match() {
+    let (url, _) = spawn_test_server().await;
+    let client = protocol::MatchClient::new(url, "test-token").unwrap();
+    assert_eq!(client.get_match_state().await.unwrap().day, 0);
+    assert_eq!(client.get_match_state().await.unwrap().day, 0);
+    client.submit_actions(vec![vec![-20]]).await.unwrap();
+    assert_eq!(client.get_match_state().await.unwrap().day, 1);
 }
 
 /// Happy path: a single `wait` solver drives the tournament to a 4-day
