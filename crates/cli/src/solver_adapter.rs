@@ -169,7 +169,10 @@ impl EngineLoopAdapter {
     /// Calling this a second time replaces the previous setting.
     #[allow(dead_code)] // exposed for integration tests; production path uses `setting_handle`
     pub fn set_engine_setting(&self, setting: EngineSetting) {
-        let mut guard = self.engine_setting.lock().expect("engine_setting mutex poisoned");
+        // Recover from a poisoned lock rather than panicking: the guard only
+        // ever holds an `Option`, so a panic elsewhere cannot leave an
+        // invariant broken that `decide` could not read past.
+        let mut guard = self.engine_setting.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Some(setting);
     }
 }
@@ -180,7 +183,8 @@ impl Solver for EngineLoopAdapter {
     }
 
     fn decide(&self, ctx: &SolverContext) -> SolverDecision {
-        let setting = self.engine_setting.lock().expect("engine_setting mutex poisoned").clone();
+        let setting =
+            self.engine_setting.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         let problem = match setting.as_ref() {
             Some(s) => synthesize_problem_from_setting(ctx, s),
             None => synthesize_problem(ctx),

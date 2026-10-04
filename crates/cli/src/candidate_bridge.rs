@@ -128,13 +128,18 @@ impl Solver for CandidateBridge {
     }
 
     fn decide(&self, ctx: &SolverContext) -> SolverDecision {
+        // A poisoned slot means some other thread panicked while holding it;
+        // the guarded value is a plain `Option` with no invariant a panic can
+        // break, so take it rather than turning one earlier panic into a hard
+        // crash of every later `decide` — the path these `fallback` arms below
+        // exist to keep alive.
         let setting =
-            self.slots.setting.lock().expect("candidate setting slot mutex poisoned").clone();
+            self.slots.setting.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         let Some(setting) = setting else {
             return self.fallback(ctx, "engine setting not injected yet");
         };
         let live =
-            self.slots.live_state.lock().expect("candidate live state slot mutex poisoned").clone();
+            self.slots.live_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
 
         let mut state = match ModelMatchState::new(setting) {
             Ok(s) => s,

@@ -19,9 +19,9 @@
 //!    emits an illegal or unaffordable action.
 //!
 //! Deviation note: the design draft mentioned a `lookahead=none|crossday`
-//! dimension for (d). `loop` / `multiloop` have no `lookahead` parameter on
-//! `release-0-2-0` (Issue #193 has not landed), so the matrix below varies
-//! the parameters that do exist instead.
+//! dimension for (d). `loop` does declare `lookahead` (Issue #193 landed for
+//! it), but **`multiloop` still has no such parameter**, so the matrix below
+//! varies the parameters that exist for both instead.
 
 use bench::case::{CaseSpec, Corpus};
 use bench::evaluate::{EvalConfig, Evaluator, HarnessDeadline, Isolation, RunStatus};
