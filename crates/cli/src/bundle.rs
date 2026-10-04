@@ -110,8 +110,7 @@ fn locate_workspace_root() -> Result<PathBuf> {
         for dir in exe.ancestors() {
             let manifest = dir.join("Cargo.toml");
             let declares_workspace = std::fs::read_to_string(&manifest)
-                .map(|text| text.contains("[workspace]"))
-                .unwrap_or(false);
+                .is_ok_and(|text| text.contains("[workspace]"));
             if declares_workspace {
                 return Ok(dir.to_path_buf());
             }

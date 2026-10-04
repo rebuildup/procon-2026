@@ -274,15 +274,13 @@ pub fn neighbor(coord: HexCoord, dir: Direction, layout: MapLayout) -> Option<He
     // the right-hand pair gains one; on an odd row it is the other way round.
     // The previous arms were that table's mirror image, i.e. odd-r.
     let (dr, dc) = match (even_row, dir) {
-        (true, Direction::UpperLeft) => (-1i16, 0i16),
+        (true, Direction::UpperLeft) | (false, Direction::UpperRight) => (-1i16, 0i16),
         (true, Direction::UpperRight) => (-1, 1),
         (false, Direction::UpperLeft) => (-1, -1),
-        (false, Direction::UpperRight) => (-1, 0),
         (_, Direction::Right) => (0, 1),
         (_, Direction::Left) => (0, -1),
         (true, Direction::LowerRight) => (1, 1),
-        (true, Direction::LowerLeft) => (1, 0),
-        (false, Direction::LowerRight) => (1, 0),
+        (true, Direction::LowerLeft) | (false, Direction::LowerRight) => (1, 0),
         (false, Direction::LowerLeft) => (1, -1),
     };
     let new_row = i16::from(coord.row) + dr;
