@@ -14,9 +14,9 @@ cargo build --release --bin procon --locked
 procon bundle build dist/procon-submit.zip
 ```
 
-`bundle build` 内部で `target/release/procon` が存在しなければ
-`cargo build --release --bin procon --locked` を自動実行する。
-CI 上では事前に `just build` 相当でビルドしておくとアーティファクト流用できる。
+`bundle build` は毎回 `cargo build --release --bin procon --locked` を実行し、
+Cargo の freshness 判定を通す。実行ファイルは Cargo の JSON 出力から解決するため、
+`CARGO_TARGET_DIR` や platform の拡張子にも対応する。実行ファイルの欠落は失敗とする。
 
 ## 2. zip に含むファイル
 
@@ -29,7 +29,7 @@ CI 上では事前に `just build` 相当でビルドしておくとアーティ
 | `docs/contest/api.md` | `docs/contest/api.md` | プロトコル API リファレンス |
 | `.env.example` | `.env.example` | 環境変数テンプレート |
 
-元ファイルが存在しない場合は警告を `stderr` に出してスキップする（CI で個別
+任意の文書ファイルが存在しない場合は警告を `stderr` に出してスキップする（CI で個別
 ファイルが削除されていても build 自体は成功する）。
 
 ## 3. zip フォーマット詳細

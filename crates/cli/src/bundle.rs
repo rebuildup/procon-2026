@@ -56,8 +56,7 @@ pub struct PermissiveEntry {
 /// do not want to wrap it in a thread just for symmetry.
 pub async fn run_build(output_path: &Path) -> Result<()> {
     let workspace = locate_workspace_root()?;
-    let binary_path = workspace.join("target").join("release").join("procon");
-    ensure_release_binary(&binary_path, &workspace).await?;
+    let binary_path = ensure_release_binary(&workspace).await?;
 
     let entries = collect_entries(&workspace, &binary_path)?;
     let lint_targets: Vec<BundleEntry> =
@@ -110,36 +109,42 @@ fn locate_workspace_root() -> Result<PathBuf> {
     Ok(workspace.to_path_buf())
 }
 
-/// Build the release `procon` binary if it is missing.
-///
-/// `cargo build --release --bin procon --locked` is invoked as a subprocess
-/// so we honour the same flags as `just build`. Existing up-to-date binaries
-/// are reused to keep the bundle workflow fast on iteration.
-async fn ensure_release_binary(binary_path: &Path, workspace: &Path) -> Result<()> {
-    if binary_path.exists() {
-        return Ok(());
-    }
-    let status = tokio::process::Command::new("cargo")
-        .arg("build")
-        .arg("--release")
-        .arg("--bin")
-        .arg("procon")
-        .arg("--locked")
+/// Ask Cargo to validate freshness and resolve its actual executable output.
+async fn ensure_release_binary(workspace: &Path) -> Result<PathBuf> {
+    build_release_with(workspace, std::ffi::OsStr::new("cargo")).await
+}
+
+async fn build_release_with(workspace: &Path, cargo: &std::ffi::OsStr) -> Result<PathBuf> {
+    let output = tokio::process::Command::new(cargo)
+        .args(["build", "--release", "--bin", "procon", "--locked", "--message-format=json"])
         .current_dir(workspace)
-        .status()
+        .output()
         .await
         .context("spawn cargo build --release")?;
-    if !status.success() {
-        bail!("cargo build --release failed (status {status})");
+    std::io::stderr().write_all(&output.stderr)?;
+    if !output.status.success() {
+        bail!("cargo build --release failed (status {})", output.status);
     }
-    Ok(())
+    executable_from_cargo(&output.stdout)
+}
+
+fn executable_from_cargo(stdout: &[u8]) -> Result<PathBuf> {
+    for line in stdout.split(|b| *b == b'\n') {
+        let Ok(msg) = serde_json::from_slice::<serde_json::Value>(line) else { continue };
+        if msg["reason"] == "compiler-artifact" && msg["target"]["name"] == "procon" {
+            if let Some(path) = msg["executable"].as_str() {
+                return Ok(PathBuf::from(path));
+            }
+        }
+    }
+    bail!("Cargo did not report the required procon executable")
 }
 
 /// Build the in-memory entry list for the bundle.
 ///
 /// Each entry's archive path is the path *relative to the workspace root* so
 /// the zip has a clean, predictable layout. The `procon` binary entry is
-/// granted executable permissions; the rest use default `0o644`. Missing
+/// granted executable permissions; the rest use default `0o644`. Missing optional
 /// files are skipped with a warning rather than aborting — `.env.example`
 /// and the docs may legitimately be absent in some branches.
 fn collect_entries(workspace: &Path, binary_path: &Path) -> Result<Vec<PermissiveEntry>> {
@@ -170,7 +175,7 @@ fn collect_entries(workspace: &Path, binary_path: &Path) -> Result<Vec<Permissiv
                     perms,
                 });
             }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            Err(err) if *source != "procon" && err.kind() == std::io::ErrorKind::NotFound => {
                 eprintln!("warning: skipping missing file {}", src.display());
             }
             Err(err) => {
@@ -319,6 +324,45 @@ mod tests {
 
     fn entry(name: &str, data: &[u8]) -> BundleEntry {
         (PathBuf::from(name), data.to_vec())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cargo_is_invoked_even_when_an_old_binary_exists() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let binary = dir.path().join("procon");
+        std::fs::write(&binary, b"stale").unwrap();
+        let cargo = dir.path().join("cargo-fixture");
+        // Relative files avoid shell interpolation of host paths.
+        std::fs::write(
+            &cargo,
+            r#"#!/bin/sh
+printf fresh > procon
+printf '{"reason":"compiler-artifact","target":{"name":"procon"},"executable":"procon"}\n'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let reported = build_release_with(dir.path(), cargo.as_os_str()).await.unwrap();
+        assert_eq!(reported, PathBuf::from("procon"));
+        assert_eq!(std::fs::read(binary).unwrap(), b"fresh");
+    }
+
+    #[test]
+    fn missing_executable_is_a_hard_error() {
+        let dir = tempdir().unwrap();
+        assert!(collect_entries(dir.path(), &dir.path().join("missing-procon")).is_err());
+    }
+
+    #[test]
+    fn cargo_output_resolves_custom_target_and_platform_filename() {
+        let output = br#"{"reason":"compiler-artifact","target":{"name":"procon"},"executable":"/custom/target/release/procon.exe"}"#;
+        assert_eq!(
+            executable_from_cargo(output).unwrap(),
+            PathBuf::from("/custom/target/release/procon.exe")
+        );
+        assert!(executable_from_cargo(b"{}").is_err());
     }
 
     #[test]

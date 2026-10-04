@@ -96,9 +96,13 @@ impl Default for BatchedSearchConfig {
 /// crate compiles on `wasm32` / no-GPU targets where only the CPU fallback
 /// is reachable, via [`crate::cpu::shortest_path_batch_cells`].
 pub struct BatchedSearcher {
+    gpu: Option<GpuBackend>,
+    workgroup_size: u32,
+}
+
+struct GpuBackend {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    workgroup_size: u32,
     pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
 }
@@ -135,11 +139,8 @@ impl BatchedSearcher {
         }
         match try_build_gpu(cfg) {
             Ok((device, queue, pipeline, bind_group_layout)) => Self {
-                device,
-                queue,
+                gpu: Some(GpuBackend { device, queue, pipeline, bind_group_layout }),
                 workgroup_size: cfg.workgroup_size,
-                pipeline,
-                bind_group_layout,
             },
             Err(err) => {
                 warn!(error = %err, "batched searcher: GPU bring-up failed, using CPU fallback");
@@ -149,58 +150,13 @@ impl BatchedSearcher {
     }
 
     /// Construct a searcher that always routes through the CPU fallback.
-    /// The `device` / `queue` fields are populated with a real (software)
-    /// device so the struct layout is uniform, but `search_batch` never
-    /// touches the GPU pipeline.
+    /// No adapter or device is required for this backend.
     pub fn cpu_only() -> Self {
         Self::cpu_only_inner(DEFAULT_WORKGROUP_SIZE)
     }
 
     fn cpu_only_inner(workgroup_size: u32) -> Self {
-        let instance = wgpu::Instance::default();
-        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            force_fallback_adapter: true,
-            compatible_surface: None,
-        }))
-        .expect("software-fallback adapter must be available when the wgpu feature is on");
-        let (device, queue) = block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("solver-gpu::batched.cpu_only"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
-                memory_hints: wgpu::MemoryHints::default(),
-            },
-            None,
-        ))
-        .expect("software-fallback device must be available when the wgpu feature is on");
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("solver-gpu::batched.cpu_only.shader"),
-            source: wgpu::ShaderSource::Wgsl(BATCHED_SEARCH.into()),
-        });
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("solver-gpu::batched.cpu_only.bgl"),
-            entries: &[
-                map_bind_entry(),
-                queries_bind_entry(),
-                distances_bind_entry(),
-                predecessors_bind_entry(),
-            ],
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("solver-gpu::batched.cpu_only.pl"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("solver-gpu::batched.cpu_only.pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
-        Self { device, queue, workgroup_size, pipeline, bind_group_layout }
+        Self { gpu: None, workgroup_size }
     }
 
     /// `true` when the GPU pipeline is wired and will be used by
@@ -208,7 +164,7 @@ impl BatchedSearcher {
     /// via [`Self::cpu_only`] or when `SOLVER_GPU_DISABLE` is set.
     #[allow(clippy::unused_self)]
     pub fn is_gpu_active(&self) -> bool {
-        !cpu_forced()
+        self.gpu.is_some() && !cpu_forced()
     }
 
     /// Public workgroup size used to size the dispatch.
@@ -225,7 +181,7 @@ impl BatchedSearcher {
         if !self.is_gpu_active() || queries.is_empty() {
             return cpu::shortest_path_batch_cells(map, queries);
         }
-        match dispatch_gpu(self, map, queries) {
+        match dispatch_gpu(self.gpu.as_ref().expect("active GPU backend"), map, queries) {
             Ok(paths) => paths,
             Err(err) => {
                 warn!(error = %err, "batched searcher: GPU dispatch failed, falling back to CPU");
@@ -364,7 +320,7 @@ fn predecessors_bind_entry() -> wgpu::BindGroupLayoutEntry {
 // ---------------------------------------------------------------------------
 
 fn dispatch_gpu(
-    searcher: &BatchedSearcher,
+    searcher: &GpuBackend,
     map: &Map,
     queries: &[Query],
 ) -> Result<Vec<Vec<HexCoord>>, BatchedSearchError> {
@@ -476,12 +432,11 @@ fn dispatch_gpu(
     encoder.copy_buffer_to_buffer(&distances_buf, 0, &distances_stage, 0, distances_size);
     encoder.copy_buffer_to_buffer(&predecessors_buf, 0, &predecessors_stage, 0, predecessors_size);
 
-    let submit_index = searcher.queue.submit(std::iter::once(encoder.finish()));
+    let _submit_index = searcher.queue.submit(std::iter::once(encoder.finish()));
     let distances_slice = distances_stage.slice(..);
     let predecessors_slice = predecessors_stage.slice(..);
-    let distances_map = poll_buffer_map(&distances_slice)?;
-    let _ = searcher.device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(submit_index));
-    let predecessors_map = poll_buffer_map(&predecessors_slice)?;
+    let distances_map = poll_buffer_map(&searcher.device, &distances_slice)?;
+    let predecessors_map = poll_buffer_map(&searcher.device, &predecessors_slice)?;
     Ok(reconstruct_paths(map, queries, &distances_map, &predecessors_map))
 }
 
@@ -502,16 +457,18 @@ fn write_query(
     // bytes 20..QUERY_STRIDE are zero (pad).
 }
 
-fn poll_buffer_map(slice: &wgpu::BufferSlice<'_>) -> Result<Vec<u8>, BatchedSearchError> {
-    use std::sync::mpsc;
-    let (tx, rx) = mpsc::channel::<()>();
-    slice.map_async(wgpu::MapMode::Read, move |result| match result {
-        Ok(()) => {
-            let _ = tx.send(());
-        }
-        Err(err) => panic!("map_async failed: {err}"),
+fn poll_buffer_map(
+    device: &wgpu::Device,
+    slice: &wgpu::BufferSlice<'_>,
+) -> Result<Vec<u8>, BatchedSearchError> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = tx.send(result);
     });
-    rx.recv().map_err(|e| BatchedSearchError::Readback(e.to_string()))?;
+    let _ = device.poll(wgpu::Maintain::Wait);
+    rx.recv()
+        .map_err(|e| BatchedSearchError::Readback(e.to_string()))?
+        .map_err(|e| BatchedSearchError::Readback(e.to_string()))?;
     Ok(slice.get_mapped_range().to_vec())
 }
 
@@ -634,6 +591,20 @@ fn block_on<F: std::future::Future>(fut: F) -> F::Output {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cpu_only_and_failed_bringup_never_require_an_adapter() {
+        let map = Map::from_costs(&[vec![1, 1, 1]], 3).unwrap();
+        let queries = [Query::new(HexCoord::new(0, 0), HexCoord::new(2, 0))];
+        let expected = cpu::shortest_path_batch_cells(&map, &queries);
+        for searcher in [
+            BatchedSearcher::cpu_only(),
+            BatchedSearcher::with_config(BatchedSearchConfig { workgroup_size: 0 }),
+        ] {
+            assert!(!searcher.is_gpu_active());
+            assert_eq!(searcher.search_batch(&map, &queries), expected);
+        }
+    }
 
     #[test]
     fn cpu_forced_only_when_env_set() {

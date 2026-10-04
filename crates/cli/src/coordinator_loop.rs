@@ -770,11 +770,14 @@ where
         let day = u32::try_from(day_idx).unwrap_or(0);
         let day_steps = u32::try_from(wire_setting.day_steps[day_idx])
             .map_err(|e| CoordinatorLoopError::Conversion(format!("day_steps[{day_idx}]={e}")))?;
-        let day_seconds = i64::from(wire_setting.day_seconds[day_idx]);
 
-        let state =
-            fetch_state_with_retry(&client, cfg.match_state_max_attempts, cfg.match_state_backoff)
-                .await?;
+        let state = fetch_state_with_retry(
+            &client,
+            cfg.match_state_max_attempts,
+            cfg.match_state_backoff,
+            i32::try_from(day).unwrap_or(i32::MAX),
+        )
+        .await?;
         if state.day != i32::try_from(day).unwrap_or(i32::MAX) {
             return Err(CoordinatorLoopError::Conversion(format!(
                 "server reported day {} while we expected {day}",
@@ -793,7 +796,7 @@ where
 
         let snapshot =
             match_state_to_snapshot(&state, &match_id, &team).unwrap_or_else(dummy_match_snapshot);
-        let remaining_ms = u64::try_from(day_seconds.saturating_mul(1000)).unwrap_or(60_000);
+        let remaining_ms = solver_budget_ms(state.ends_at, Utc::now().timestamp_millis());
         let ctx = engine::solver::SolverContext::new(
             snapshot,
             team.clone(),
@@ -1022,16 +1025,29 @@ async fn fetch_state_with_retry(
     client: &protocol::MatchClient,
     max_attempts: u32,
     backoff: Duration,
+    expected_day: i32,
 ) -> Result<protocol::match_config::MatchState, CoordinatorLoopError> {
-    retry_on_access_time(
-        "GET /",
-        max_attempts,
-        backoff,
-        "match-start-delay did not elapse within retry budget",
-        || client.get_match_state(),
-    )
-    .await
-    .map_err(CoordinatorLoopError::State)
+    for attempt in 0..max_attempts.max(1) {
+        match client.get_match_state().await {
+            Ok(state) if state.day >= expected_day => return Ok(state),
+            Ok(_) => {}
+            Err(protocol::HttpClientError::AccessTime { .. })
+                if attempt + 1 < max_attempts.max(1) => {}
+            Err(err) => return Err(CoordinatorLoopError::State(err)),
+        }
+        if attempt + 1 < max_attempts.max(1) {
+            tokio::time::sleep(backoff).await;
+        }
+    }
+    Err(CoordinatorLoopError::Conversion(format!(
+        "server did not advance to day {expected_day} within polling budget"
+    )))
+}
+
+/// Reserve one request timeout for submission after the solver finishes.
+fn solver_budget_ms(ends_at: i64, now_ms: i64) -> u64 {
+    let deadline_ms = ends_at.saturating_mul(1000);
+    u64::try_from(deadline_ms.saturating_sub(now_ms).saturating_sub(5000)).unwrap_or(0)
 }
 
 /// Resolve the `POST /agent` composition for a team of `n_agents`.
@@ -1104,6 +1120,60 @@ mod tests {
 
     fn pattern(spec: &str) -> Vec<EngineAgentKind> {
         bench::kinds::parse_kinds(spec).unwrap_or_else(|e| panic!("{spec}: {e}"))
+    }
+
+    #[test]
+    fn solver_budget_uses_absolute_deadline_and_submission_margin() {
+        assert_eq!(solver_budget_ms(100, 90_000), 5_000);
+        assert_eq!(solver_budget_ms(100, 96_000), 0);
+        assert_eq!(solver_budget_ms(100, 101_000), 0);
+    }
+
+    #[tokio::test]
+    async fn previous_day_state_is_polled_until_expected_day() {
+        let mut server = mockito::Server::new_async().await;
+        let old = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body(r#"{"endsAt":100,"day":0,"agents":[],"others":[],"traffics":[]}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let new = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body(r#"{"endsAt":200,"day":1,"agents":[],"others":[],"traffics":[]}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let state = fetch_state_with_retry(&client, 3, Duration::ZERO, 1).await.unwrap();
+        assert_eq!(state.day, 1);
+        old.assert_async().await;
+        new.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn previous_day_polling_is_bounded_and_future_days_are_not_retried() {
+        for (reported, succeeds, requests) in [(0, false, 2), (2, true, 1)] {
+            let mut server = mockito::Server::new_async().await;
+            let mock = server
+                .mock("GET", "/")
+                .with_status(200)
+                .with_body(format!(
+                    r#"{{"endsAt":200,"day":{reported},"agents":[],"others":[],"traffics":[]}}"#
+                ))
+                .expect(requests)
+                .create_async()
+                .await;
+            let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+            let result = fetch_state_with_retry(&client, 2, Duration::ZERO, 1).await;
+            assert_eq!(result.is_ok(), succeeds);
+            if let Ok(state) = result {
+                assert!(state.day > 1, "caller must reject the missed day");
+            }
+            mock.assert_async().await;
+        }
     }
 
     #[test]

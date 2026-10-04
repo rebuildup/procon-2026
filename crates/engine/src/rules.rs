@@ -29,6 +29,14 @@ pub const fn fuel_cost(terrain: Terrain) -> u32 {
     }
 }
 
+/// Shared conservative move contract: afford both cells, charge the origin.
+/// The destination guard retains the acceptance intersection documented in #245.
+#[must_use]
+pub fn move_fuel(agent: &Agent, origin: Terrain, destination: Terrain) -> Option<u32> {
+    let cost = fuel_cost(origin);
+    agent.can_afford(cost.max(fuel_cost(destination))).then_some(cost)
+}
+
 // ---------------------------------------------------------------------------
 // Traffic thresholds (Q&A Q13).
 // ---------------------------------------------------------------------------
@@ -89,11 +97,10 @@ impl TrafficThresholds {
     }
 
     /// Combine `today`'s count with `yesterday`'s — Q&A Q13 says the state
-    /// is determined by the agent count *over 2 days*, so the worst day
-    /// dominates (max), then we classify.
+    /// is determined by the agent count *over 2 days*, so we sum the two days, then classify.
     #[must_use]
     pub fn classify_pair(&self, today: u32, yesterday: u32) -> TrafficState {
-        let combined = today.max(yesterday);
+        let combined = today.saturating_add(yesterday);
         self.classify(combined)
     }
 }
@@ -168,12 +175,14 @@ mod tests {
     }
 
     #[test]
-    fn traffic_thresholds_classify_pair_uses_max() {
+    fn traffic_thresholds_classify_pair_sums_two_days() {
         let t = TrafficThresholds::default();
-        // today=0 yesterday=5 → Jammed (max dominates)
+        // Both days contribute to the rolling window.
         assert_eq!(t.classify_pair(0, 5), TrafficState::Jammed);
         assert_eq!(t.classify_pair(5, 0), TrafficState::Jammed);
         assert_eq!(t.classify_pair(0, 0), TrafficState::Smooth);
+        assert_eq!(t.classify_pair(1, 1), TrafficState::Busy);
+        assert_eq!(t.classify_pair(u32::MAX, 1), TrafficState::Jammed);
         assert_eq!(t.classify_pair(2, 0), TrafficState::Busy);
     }
 

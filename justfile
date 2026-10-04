@@ -136,7 +136,7 @@ eval-quiet:
 # Arena — unofficial practice server (Issue #179)
 # See docs/contest/arena.md. The token is NEVER passed as an argument:
 # inject it from Infisical as PROCON_ARENA_TOKEN, e.g.
-#   infisical run --env=dev -- just arena-next --candidate 'multiloop:kmeans=4:seed=42'
+#   infisical run --env=dev -- just arena-next --candidate 'multiloop:kmeans=4:seed=42:budget=official'
 # ----------------------------------------------------------------
 
 # Wait for the next :00/:15/:30/:45 match, register inside the pre-match
@@ -184,3 +184,12 @@ test-viewer-frames:
 clean:
     cargo clean
     cd packages/frontend && bun run clean || true
+
+# Full release verification, including optional native GPU and packaged executable.
+release-check branch="release-0-2-0": ci protocol-consistency
+    python3 scripts/test-release-version.py
+    python3 scripts/check-release-version.py {{branch}}
+    cargo test --workspace --release --locked
+    cargo test -p solver-gpu --features wgpu --locked
+    cargo run --release --locked --bin procon -- bundle build target/release/procon-submit.zip
+    target/release/procon version

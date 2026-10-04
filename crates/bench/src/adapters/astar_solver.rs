@@ -79,18 +79,25 @@ use solver_astar::CostPolicy;
 
 use super::astar_walk::{plan_leg_path, to_astar_map};
 use super::greedy_solver::GreedyCandidate;
-use super::walk::step_towards;
+use super::walk::{BudgetMode, parse_budget, step_towards};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
 /// Parameter schema, in canonical id order.
-pub const PARAMS: &[ParamSpec] = &[ParamSpec {
-    key: "policy",
-    required: false,
-    doc: "A* cost policy: step (default) minimises terrain/traffic weighted \
+pub const PARAMS: &[ParamSpec] = &[
+    ParamSpec {
+        key: "policy",
+        required: false,
+        doc: "A* cost policy: step (default) minimises terrain/traffic weighted \
           step cost with fuel as a hard constraint; conservative scales the \
           step cost up as remaining fuel drops; strict refuses moves while \
           remaining fuel <= 1",
-}];
+    },
+    ParamSpec {
+        key: "budget",
+        required: false,
+        doc: "Budget accounting: element (default) | official",
+    },
+];
 
 /// The `policy=` parameter values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,12 +180,13 @@ fn walk_actions(
 /// `astar` candidate: greedy's assignment + A*'s path.
 pub struct AstarCandidate {
     policy: PolicyKind,
+    budget: BudgetMode,
 }
 
 impl AstarCandidate {
     /// Build from an already-validated spec.
     fn from_spec(spec: &CandidateSpec) -> Result<Self, CandidateError> {
-        Ok(Self { policy: parse_policy(spec)? })
+        Ok(Self { policy: parse_policy(spec)?, budget: parse_budget(spec)? })
     }
 }
 
@@ -233,7 +241,7 @@ impl Solver for AstarCandidate {
                 actions.push(Action { agent_id: *id, kind });
             }
         }
-        AgentActions::new(actions)
+        self.budget.apply(ctx, AgentActions::new(actions))
     }
 }
 
@@ -256,7 +264,8 @@ impl CandidateFactory for AstarFactory {
     }
 
     fn validate_spec(&self, spec: &CandidateSpec) -> Result<(), CandidateError> {
-        parse_policy(spec).map(|_| ())
+        parse_policy(spec)?;
+        parse_budget(spec).map(|_| ())
     }
 
     fn build(&self, spec: &CandidateSpec) -> Result<Box<dyn Solver>, CandidateError> {
