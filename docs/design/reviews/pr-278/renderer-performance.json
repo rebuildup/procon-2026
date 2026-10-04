@@ -10,8 +10,8 @@
   },
   "p95SubmitMs": 0.10000000149011612,
   "meanChannelError": [
-    0.18839622641509435,
-    0.7955405405405406
+    0.18831208567057622,
+    0.8114023457419683
   ],
   "scope": "6 canonical hexes and 100-cell official example, 60 camera submissions each; CPU submission timing, not production GPU throughput"
 }
