@@ -664,6 +664,9 @@ pub struct MatchState {
     /// the match still completes. Without this counter an evaluator reading
     /// only the final score would happily rank a solver the server would
     /// have refused.
+    ///
+    /// Per-action downgrades only; see [`RunResult::illegal_action_count`]
+    /// for how whole-plan shape violations are reported instead.
     pub illegal_action_count: u32,
     /// The subset of [`Self::illegal_action_count`] caused by running out of
     /// fuel rather than by a malformed destination. Tracked separately: it is
@@ -769,6 +772,18 @@ pub struct RunResult {
     /// Non-legal actions the simulator downgraded to `Wait`. Non-zero means
     /// the official rules would have rejected this answer, so the evaluator
     /// must not treat the run as a clean `success`.
+    ///
+    /// Scope: **per-action** downgrades only (out of bounds, impassable
+    /// terrain, out of fuel). A *whole-plan* shape violation — wrong block
+    /// length, foreign or missing agent ids — is degraded to `Wait` for the
+    /// whole step without touching this counter, and `run_inner` pads or
+    /// truncates a wrong-length plan the same way. That is deliberate
+    /// divergence from Q&A Q6 (which rejects such an answer outright), and
+    /// it is *not* a hole in the evaluator: `bench` wraps every solver in
+    /// `TimingSolver`, which runs the same [`AgentActions::is_well_shaped`]
+    /// predicate against the same context and reports a failure as
+    /// `RunStatus::Invalid` — so a malformed candidate is never scored as a
+    /// clean success, whatever this counter says.
     pub illegal_action_count: u32,
     /// Subset of [`Self::illegal_action_count`] caused by fuel exhaustion.
     pub fuel_short_count: u32,
