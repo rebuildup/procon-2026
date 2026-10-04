@@ -756,7 +756,11 @@ impl Evaluator {
         let started = Instant::now();
 
         let (tx, rx) = mpsc::channel();
-        thread::Builder::new()
+        // A refused thread spawn must not abort the batch: `evaluate_one`'s
+        // contract is "never panics, never propagates a candidate failure",
+        // and dropping `tx` here makes the `Disconnected` arm below record a
+        // failed run instead of unwinding through `evaluate_all`.
+        let spawn_failure = thread::Builder::new()
             .name(format!("bench-eval-{candidate_id}"))
             .spawn(move || {
                 let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -766,7 +770,7 @@ impl Evaluator {
                 }));
                 let _ = tx.send(outcome);
             })
-            .expect("spawn evaluation worker");
+            .err();
 
         let elapsed_us = |t: Instant| micros_u64(t.elapsed().as_micros());
 
@@ -785,7 +789,10 @@ impl Evaluator {
                 case,
                 sha,
                 RunStatus::Panic,
-                Some("evaluation worker exited without a result".to_owned()),
+                Some(match spawn_failure {
+                    Some(e) => format!("evaluation worker could not be spawned: {e}"),
+                    None => "evaluation worker exited without a result".to_owned(),
+                }),
                 elapsed_us(started),
             ),
             Ok(Err(panic_payload)) => RunRecord::unscored(

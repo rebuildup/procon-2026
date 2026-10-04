@@ -23,7 +23,7 @@ solver-loop = { workspace = true }
 # Issue #179: the live CLI resolves `--candidate` through the same
 # `CandidateRegistry` the offline evaluator (Issue #178) ranks with, so an
 # arena run and its selecting `RunRecord` share one identity source.
-bench = { path = "../bench" }
+bench = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -34,14 +34,14 @@ clap = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
 zip = { workspace = true }
-regex = "1"
+regex = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
-mockito = "1"
+tempfile = { workspace = true }
+mockito = { workspace = true }
 # Real-HTTP-server E2E harness (`crates/cli/tests/e2e_real_server.rs`).
 # Bound to a real axum server on 127.0.0.1:<random> so we exercise the
 # full `reqwest` -> `tokio` -> `axum::serve` -> router pipeline instead
 # of the in-process mockito path covered by `e2e_openapi_fixture.rs`.
-axum = "0.8"
+axum = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "net"] }

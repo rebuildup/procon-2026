@@ -74,3 +74,6 @@ packages/frontend/public/match-setting.json
 # Python bytecode (scripts/ablation tooling)
 __pycache__/
 *.pyc
+
+# natural-japanese skill: calibration corpus + generated reports
+corpus/
