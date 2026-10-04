@@ -321,4 +321,3 @@ fn reconstructed_path_stays_in_bounds_and_avoids_ponds() {
         );
     }
 }
-

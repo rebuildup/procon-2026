@@ -164,9 +164,8 @@ impl EnsembleSelector {
             // panic inside the solver drops it too, so the slot simply stays
             // empty and is filled with the zero placeholder below — one
             // misbehaving solver can no longer take the selector down.
-            let _ = thread::Builder::new()
-                .name(format!("ensemble-solver-{idx}"))
-                .spawn(move || {
+            let _ =
+                thread::Builder::new().name(format!("ensemble-solver-{idx}")).spawn(move || {
                     let id = solver.id().to_owned();
                     let out = solver.solve(&input);
                     let _ = tx.send((idx, id, out));

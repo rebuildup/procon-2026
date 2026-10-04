@@ -356,10 +356,7 @@ async fn start_wait_gives_up_when_the_match_never_flips() {
     assert!(
         matches!(
             err,
-            CoordinatorLoopError::SettingPollTimeout {
-                phase: "phase-4 start wait",
-                attempts: 3
-            }
+            CoordinatorLoopError::SettingPollTimeout { phase: "phase-4 start wait", attempts: 3 }
         ),
         "expected a bounded Phase 4 wait, got {err:?}"
     );

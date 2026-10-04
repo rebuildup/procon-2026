@@ -154,13 +154,7 @@ mod tests {
     /// reversal it describes costs nothing.
     #[test]
     fn two_opt_delta_matches_the_real_cost_change() {
-        let spots = vec![
-            spot(0, 0, 0),
-            spot(1, 3, 1),
-            spot(2, 1, 2),
-            spot(3, 4, 3),
-            spot(4, 2, 4),
-        ];
+        let spots = vec![spot(0, 0, 0), spot(1, 3, 1), spot(2, 1, 2), spot(3, 4, 3), spot(4, 2, 4)];
         let tour = vec![0, 1, 2, 3, 4];
         let n = tour.len();
         for i in 0..n.saturating_sub(1) {

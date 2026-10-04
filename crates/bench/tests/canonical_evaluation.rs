@@ -439,18 +439,20 @@ fn process_isolation_kills_the_worker_on_timeout() {
     // Uses a case no other test touches, so the process check below cannot
     // race against a concurrent run.
     let registry = CandidateRegistry::builtin();
-    // The deadline must land before the child can possibly report, and the
-    // only cost that is *not* machine-dependent is process start-up: fork +
-    // exec + interpreter init is ~1 ms, so a sub-millisecond deadline kills
-    // the worker whether the evaluation itself takes 6 ms or 60 µs. (Sizing
-    // the workload instead proved fragile — refinement converges in one pass
-    // whenever no improving move exists, so "iterations" is an upper bound,
-    // not a cost.)
+    // The deadline has to be one the child cannot meet, and everything about
+    // that bound was machine-dependent before: sizing it *inside* the
+    // computation needs the workload slower than the deadline (but
+    // "iterations" is an upper bound — refinement stops as soon as no move
+    // improves — so a faster refine sails under a fixed 3 ms), while sizing
+    // it just above process start-up races the child's own 0 ms timeout
+    // report. A zero deadline removes the guesswork: the child can never
+    // finish before the parent checks, so the kill/reap path this test is
+    // actually about always runs.
     let candidate = registry.build("loop:iterations=128:initial=greedy").unwrap();
     let case = CaseSpec::from_bundled_fixture("large-32x32").unwrap();
 
     let evaluator = Evaluator::new(
-        config(HarnessDeadline::Fixed(Duration::from_micros(500)), Isolation::Thread)
+        config(HarnessDeadline::Fixed(Duration::ZERO), Isolation::Thread)
             .with_process_isolation(worker_exe()),
     );
 

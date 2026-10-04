@@ -390,9 +390,8 @@ impl MultiAgentAStar {
                 let g_after = entry.g.saturating_add(step_weight);
                 let h_after = (self.heuristic)(neighbor, ctx.goal);
                 let f_after = g_after.saturating_add(h_after);
-                let steps_after = entry
-                    .steps
-                    .saturating_add(BaseStepCost::for_cell(cell).map_or(0, |c| c.0));
+                let steps_after =
+                    entry.steps.saturating_add(BaseStepCost::for_cell(cell).map_or(0, |c| c.0));
                 if steps_after.saturating_add(h_after) > ctx.max_steps {
                     continue;
                 }

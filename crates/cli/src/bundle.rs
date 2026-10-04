@@ -109,8 +109,8 @@ fn locate_workspace_root() -> Result<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         for dir in exe.ancestors() {
             let manifest = dir.join("Cargo.toml");
-            let declares_workspace = std::fs::read_to_string(&manifest)
-                .is_ok_and(|text| text.contains("[workspace]"));
+            let declares_workspace =
+                std::fs::read_to_string(&manifest).is_ok_and(|text| text.contains("[workspace]"));
             if declares_workspace {
                 return Ok(dir.to_path_buf());
             }
@@ -146,7 +146,10 @@ async fn ensure_release_binary(binary_path: &Path, workspace: &Path) -> Result<(
         bail!("cargo build --release failed (status {status})");
     }
     if !binary_path.exists() {
-        bail!("cargo build succeeded but the release binary is missing at {}", binary_path.display());
+        bail!(
+            "cargo build succeeded but the release binary is missing at {}",
+            binary_path.display()
+        );
     }
     Ok(())
 }

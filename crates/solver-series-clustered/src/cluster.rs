@@ -310,11 +310,8 @@ mod tests {
     /// old consecutive-only scan never compared them.
     #[test]
     fn clustering_merges_close_pairs_that_are_not_adjacent_in_input() {
-        let spots = vec![
-            spot("a", 0, 0, "udon"),
-            spot("b", 10, 10, "udon"),
-            spot("c", 1, 0, "udon"),
-        ];
+        let spots =
+            vec![spot("a", 0, 0, "udon"), spot("b", 10, 10, "udon"), spot("c", 1, 0, "udon")];
         let c = Clustering::build(&spots, ClusterConfig { merge_radius: 1 });
         assert_eq!(c.clusters.len(), 2, "a and c merge across the gap b leaves");
         assert_eq!(c.clusters[0].members.len() + c.clusters[1].members.len(), 3);
