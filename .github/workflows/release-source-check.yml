@@ -13,7 +13,11 @@ jobs:
   release-source-check:
     name: PR head must be release-x-y-z branch
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Verify PR head matches canonical release branch pattern
         env:
           BASE: ${{ github.event.pull_request.base.ref }}
@@ -29,3 +33,7 @@ jobs:
             exit 1
           fi
           echo "OK: head '${HEAD}' is a canonical release branch."
+      - name: Verify workspace and lock versions match release branch
+        env:
+          RELEASE_BRANCH: ${{ github.head_ref }}
+        run: python3 scripts/check-release-version.py "$RELEASE_BRANCH"

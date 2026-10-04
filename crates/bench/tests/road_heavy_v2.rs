@@ -217,15 +217,14 @@ fn fixture_thresholds_flip_corridor_state_across_days() {
         .collect();
     drive_day(&mut state, sim, &day1);
 
-    // max(today=2, yesterday=1) >= jammedThreshold 2 -> Jammed on day 2.
+    // today=2 + yesterday=1 >= jammedThreshold 2 -> Jammed on day 2.
     assert_eq!(
         terrain_at(&state.setting.map, 1, 4),
         Terrain::Road(EngineTraffic::Jammed),
         "day-1 traffic must jam the corridor cell for day 2"
     );
-    // Cells used once per day stay at the busy level — the jam is specific
-    // to the over-used cell, which is what makes rerouting a real choice.
-    assert_eq!(terrain_at(&state.setting.map, 5, 4), Terrain::Road(EngineTraffic::Busy));
+    // One traversal on each of two days also reaches the jam threshold.
+    assert_eq!(terrain_at(&state.setting.map, 5, 4), Terrain::Road(EngineTraffic::Jammed));
 }
 
 // ---------------------------------------------------------------------------

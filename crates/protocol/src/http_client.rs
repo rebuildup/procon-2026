@@ -4,7 +4,7 @@
 //!
 //! - `Procon-Token` header on every request.
 //! - Per-request timeout (default 5 seconds).
-//! - Retry-on-transient-failure with exponential backoff
+//! - GET-only retry-on-transient-failure with exponential backoff
 //!   (`100 ms, 200 ms, 400 ms, 800 ms`, max 4 retries).
 //!
 //! The wire payload types ([`AgentKind`](crate::match_config::AgentKind),
@@ -359,8 +359,11 @@ impl MatchClient {
         url: &str,
         body: Option<Vec<u8>>,
     ) -> Result<reqwest::Response, HttpClientError> {
+        // POST outcomes can be ambiguous: only reads may be replayed.
+        let max_retries =
+            if method == reqwest::Method::GET { self.retry_policy.max_retries } else { 0 };
         let mut last_error: Option<HttpClientError> = None;
-        for attempt in 0..=self.retry_policy.max_retries {
+        for attempt in 0..=max_retries {
             if attempt > 0 {
                 let delay =
                     self.retry_policy.backoff_millis.get(attempt - 1).copied().unwrap_or(800);
@@ -380,9 +383,7 @@ impl MatchClient {
 
             match builder.send().await {
                 Ok(response) => {
-                    if Self::is_transient_status(response.status())
-                        && attempt < self.retry_policy.max_retries
-                    {
+                    if Self::is_transient_status(response.status()) && attempt < max_retries {
                         last_error = Some(HttpClientError::Http {
                             status: response.status().as_u16(),
                             message: "transient failure".to_owned(),
@@ -393,7 +394,7 @@ impl MatchClient {
                 }
                 Err(err) => {
                     let transient = err.is_timeout() || err.is_connect() || err.is_request();
-                    if transient && attempt < self.retry_policy.max_retries {
+                    if transient && attempt < max_retries {
                         last_error = Some(HttpClientError::Transport(err));
                         continue;
                     }
@@ -547,21 +548,19 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn submit_agent_retries_transient_failure() {
-        let mut server = Server::new_async().await;
-        let m1 = server.mock("POST", "/agent").with_status(503).create_async().await;
-        let m2 = server.mock("POST", "/agent").with_status(502).create_async().await;
-        let m3 = server.mock("POST", "/agent").with_status(200).create_async().await;
-
-        let client = fast_client(&server);
-        let ack = client
-            .submit_agent(vec![AgentKind::KIND_0, AgentKind::KIND_1])
-            .await
-            .expect("submit succeeds after retries");
-        assert_eq!(ack, SubmitAck::ok());
-        m1.assert_async().await;
-        m2.assert_async().await;
-        m3.assert_async().await;
+    async fn posts_are_never_retried_on_transient_status() {
+        for path in ["/agent", "/"] {
+            let mut server = Server::new_async().await;
+            let mock = server.mock("POST", path).with_status(503).expect(1).create_async().await;
+            let client = fast_client(&server);
+            let failed = if path == "/agent" {
+                client.submit_agent(vec![AgentKind::KIND_0]).await.is_err()
+            } else {
+                client.submit_actions(vec![vec![-1]]).await.is_err()
+            };
+            assert!(failed);
+            mock.assert_async().await;
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

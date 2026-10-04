@@ -137,22 +137,24 @@ async fn access_time_error_is_returned() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn retries_on_5xx_then_succeeds() {
+async fn get_retries_on_5xx_then_succeeds() {
     let mut server = Server::new_async().await;
-    let m1 = server.mock("POST", "/agent").with_status(503).create_async().await;
-    let m2 = server.mock("POST", "/agent").with_status(500).create_async().await;
-    let m3 = server.mock("POST", "/agent").with_status(200).create_async().await;
+    let m1 = server.mock("GET", "/").with_status(503).create_async().await;
+    let m2 = server.mock("GET", "/").with_status(500).create_async().await;
+    let m3 = server
+        .mock("GET", "/")
+        .with_status(200)
+        .with_body(serde_json::to_string(&sample_match_state()).unwrap())
+        .create_async()
+        .await;
 
     let client = MatchClient::builder(server.url(), "tok")
         .retry_policy(fast_retry_policy())
         .build()
         .unwrap();
 
-    let ack = client
-        .submit_agent(vec![AgentKind::KIND_0, AgentKind::KIND_1])
-        .await
-        .expect("retries succeed");
-    assert_eq!(ack, SubmitAck::ok());
+    let state = client.get_match_state().await.expect("GET retries succeed");
+    assert_eq!(state, sample_match_state());
     m1.assert_async().await;
     m2.assert_async().await;
     m3.assert_async().await;
@@ -168,3 +170,46 @@ async fn protocol_version_constant_is_stable() {
 
 #[allow(dead_code)]
 fn _suppress_unused(_: CellType, _: Map) {}
+
+/// A server receives the POST, but the acknowledgement misses the client timeout.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn accepted_posts_with_lost_acknowledgements_are_not_replayed() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::io::AsyncReadExt;
+    for agent_endpoint in [true, false] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let count = Arc::new(AtomicUsize::new(0));
+        let received = Arc::clone(&count);
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut buf = [0; 4096];
+                let read = stream.read(&mut buf).await.unwrap();
+                assert!(read > 0);
+                received.fetch_add(1, Ordering::SeqCst);
+                // Hold the connection open without acknowledging the received request.
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    drop(stream);
+                });
+            }
+        });
+        let client = MatchClient::builder(format!("http://{addr}"), "test")
+            .retry_policy(fast_retry_policy())
+            .request_timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+        let failed = if agent_endpoint {
+            client.submit_agent(vec![AgentKind::KIND_0]).await.is_err()
+        } else {
+            client.submit_actions(vec![vec![-1]]).await.is_err()
+        };
+        assert!(failed);
+        assert_eq!(count.load(Ordering::SeqCst), 1, "ambiguous POST must be sent exactly once");
+        server.abort();
+    }
+}

@@ -851,10 +851,10 @@ fn arena_env_defaults_are_opt_in() {
 #[test]
 fn shortlist_candidate_ids_resolve_through_the_registry() {
     for id in [
-        "multiloop:kmeans=4:seed=42",
-        "astar:policy=step",
-        "loop:iterations=32:initial=greedy:lookahead=crossday",
-        "multiloop:kmeans=4:seed=42:walk=astar",
+        "multiloop:kmeans=4:seed=42:budget=official",
+        "astar:policy=step:budget=official",
+        "loop:iterations=32:initial=greedy:lookahead=crossday:budget=official",
+        "multiloop:kmeans=4:seed=42:walk=astar:budget=official",
     ] {
         let bridge = cli::candidate_bridge::CandidateBridge::from_registry_id(id)
             .unwrap_or_else(|e| panic!("shortlist id {id} must resolve: {e}"));

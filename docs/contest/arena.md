@@ -2,7 +2,8 @@
 
 > 非公式練習場 `https://procon37arena.online` を **selected candidate の外部検証先**として
 > 使うための実行・安全・記録のガイドです。
-> 選抜方針と投入候補は Issue #179 の **shortlist comment**（supervisor 選抜 4 本）を参照。
+> Issue #179 の旧 shortlist は探索履歴。投入候補は `budget=official` を明示した ID を
+> offline で再評価してから選抜する。旧 ID の評価結果は引き継がない。
 > offline 側の評価経路は [docs/evaluation.md](../evaluation.md)（Issue #178）が唯一の canonical です。
 >
 > **arena 側の仕様出典**: 公式ガイド
@@ -27,9 +28,9 @@ online（本 Issue）
 
 - **arena は parameter sweep の実行先ではありません。** 大量探索はローカルで行い、
   arena には Issue #179 shortlist の 4 本のみを投入します
-  （`multiloop:kmeans=4:seed=42` / `astar:policy=step` /
-  `loop:iterations=32:initial=greedy:lookahead=crossday` /
-  `multiloop:kmeans=4:seed=42:walk=astar`）。
+  （`multiloop:kmeans=4:seed=42:budget=official` / `astar:policy=step:budget=official` /
+  `loop:iterations=32:initial=greedy:lookahead=crossday:budget=official` /
+  `multiloop:kmeans=4:seed=42:walk=astar:budget=official`）。
 - arena への投入も **既存の canonical coordinator 経路**
   （`protocol::MatchClient` + `run_coordinator_loop`）を使います。
   arena 専用の protocol client / duplicate coordinator は存在しません。
@@ -57,14 +58,14 @@ online（本 Issue）
 ```bash
 # 1. shortlist の candidate を Issue #179 comment から決める
 # 2. Infisical から PROCON_ARENA_TOKEN を注入したまま起動する
-infisical run --env=dev -- just arena-next --candidate 'multiloop:kmeans=4:seed=42'
+infisical run --env=dev -- just arena-next --candidate 'multiloop:kmeans=4:seed=42:budget=official'
 ```
 
 等価な直接起動:
 
 ```bash
 infisical run --env=dev -- cargo run --release --bin procon -- coordinator \
-  --arena --next --candidate 'multiloop:kmeans=4:seed=42'
+  --arena --next --candidate 'multiloop:kmeans=4:seed=42:budget=official'
 ```
 
 挙動:
@@ -219,8 +220,8 @@ cargo run -q --bin procon -- arena import-case \
 cargo run -q -p bench --bin procon-eval -- \
   --cases all \
   --case-files target/arena/cases/loss-001.json \
-  --candidates 'multiloop:kmeans=4:seed=42,loop:iterations=32:initial=greedy' \
-  --baseline loop:iterations=32:initial=greedy \
+  --candidates 'multiloop:kmeans=4:seed=42:budget=official,loop:iterations=32:initial=greedy:budget=official' \
+  --baseline loop:iterations=32:initial=greedy:budget=official \
   --output-dir target/eval
 ```
 

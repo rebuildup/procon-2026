@@ -25,8 +25,7 @@
 //!
 //! The official server charges a move's **fuel** from the cell the agent
 //! leaves — the same cell that bills the step cost — not from the cell it
-//! enters, which is what [`crate::transitions::try_move`] (and therefore
-//! the offline simulator) does. Probed against the official binary on
+//! enters. [`crate::transitions::try_move`] shares the same fuel transition. Probed against the official binary on
 //! localhost with match550's board (`busyThreshold 1`,
 //! `jammedThreshold 3`, 9 days, 7 agents, `--kinds P`,
 //! `loop:iterations=32:initial=greedy:lookahead=crossday:walk=astar`):
@@ -93,19 +92,15 @@
 //!    official server would reject (off-board, impassable, fuel-short),
 //! 3. pad the shortfall with a single trailing wait-run (`-R`),
 //!
-//! so `Σ weighted == day_steps` **exactly**. Waits are state-neutral in
-//! [`crate::MatchSim`], therefore — for plans that end in waits, which is
-//! what the walk/loop candidates emit — the normalized plan simulates
-//! identically to the original (property-tested below). Offline evaluation
-//! and candidate output are untouched: this runs only at the wire
-//! submission boundary (`cli::coordinator_loop`, the single choke point
-//! that both `CandidateBridge` and `EngineLoopAdapter` decisions flow
-//! through).
+//! so `Σ weighted == day_steps` **exactly**. Day normalization replays
+//! all controlled agents on a shared timeline, applying the same Supply
+//! contact and fuel transitions as `MatchSim`. `budget=official` candidates
+//! call this same normalization before offline evaluation; live candidate
+//! construction requires that explicit budget parameter where supported.
 
 use protocol::match_config::ActionPlanBody;
 
-use crate::model::{Agent, AgentKind, Cell, Direction, HexCoord, MapGrid, Terrain};
-use crate::rules::fuel_cost;
+use crate::model::{Agent, Cell, Direction, HexCoord, MapGrid, Terrain};
 use crate::transitions::phase_fuel;
 
 /// One wire move judged by the official rules: `(destination, step cost,
@@ -133,14 +128,9 @@ fn official_move(
     if !target.terrain.traversable() {
         return Err("impassable destination");
     }
-    let origin_fuel = fuel_cost(origin.terrain);
-    if agent.kind != AgentKind::Supply {
-        let need = origin_fuel.max(fuel_cost(target.terrain));
-        if !agent.can_afford(need) {
-            return Err("fuel short");
-        }
-    }
-    Ok((to, step, origin_fuel))
+    let cost =
+        crate::rules::move_fuel(agent, origin.terrain, target.terrain).ok_or("fuel short")?;
+    Ok((to, step, cost))
 }
 
 /// Terrain / traffic step cost charged when a move *departs* this cell
@@ -315,13 +305,77 @@ pub fn normalize_day_plan(
             my_agent_ids.len()
         ));
     }
-    let mut out = ActionPlanBody::with_capacity(my_agent_ids.len());
-    for (idx, id) in my_agent_ids.iter().enumerate() {
-        let agent = agents
-            .iter()
-            .find(|a| a.id == *id)
-            .ok_or_else(|| format!("agent {id} missing from the live match state"))?;
-        out.push(normalize_agent_plan(agent, map, day_steps, &body[idx]));
+    let mut shadow: Vec<Agent> = my_agent_ids
+        .iter()
+        .map(|id| {
+            agents
+                .iter()
+                .find(|a| a.id == *id)
+                .cloned()
+                .ok_or_else(|| format!("agent {id} missing from the live match state"))
+        })
+        .collect::<Result<_, _>>()?;
+    let n = shadow.len();
+    let mut out = vec![Vec::new(); n];
+    let mut used = vec![0u32; n];
+    let mut cursor = vec![0usize; n];
+    let mut waits = vec![0u32; n];
+    let mut stopped = vec![false; n];
+    let mut events = Vec::new();
+    // Replay every agent on the engine's shared element timeline. Budget
+    // accounting remains origin-weighted; Supply contact follows MatchSim.
+    while used.iter().any(|&u| u < day_steps) {
+        let mut moves = Vec::new();
+        for i in 0..n {
+            if used[i] >= day_steps {
+                continue;
+            }
+            if waits[i] == 0 && !stopped[i] {
+                match body[i].get(cursor[i]).copied() {
+                    Some(code) if code < 0 => {
+                        waits[i] = code.unsigned_abs().min(day_steps - used[i]);
+                        cursor[i] += 1;
+                    }
+                    Some(code) => {
+                        let movement = direction_for_wire(code).and_then(|dir| {
+                            let origin = map.get(shadow[i].pos)?;
+                            official_move(&shadow[i], origin, dir, map).ok()
+                        });
+                        if let Some((to, step, fuel)) = movement {
+                            if step <= day_steps - used[i] {
+                                out[i].push(code);
+                                used[i] += step;
+                                cursor[i] += 1;
+                                moves.push((i, to, fuel));
+                                continue;
+                            }
+                        }
+                        stopped[i] = true;
+                    }
+                    None => stopped[i] = true,
+                }
+            }
+            // A stopped plan pads with waits, but still participates in
+            // Supply contact on each shared step.
+            if waits[i] > 0 {
+                waits[i] -= 1;
+            }
+            if let Some(last) = out[i].last_mut().filter(|c| **c < 0) {
+                *last -= 1;
+            } else {
+                out[i].push(-1);
+            }
+            used[i] += 1;
+        }
+        for (i, to, fuel) in moves {
+            let id = shadow[i].id;
+            shadow[i].pos = to;
+            phase_fuel(&mut shadow, &[(id, fuel)], &mut events);
+        }
+        let positions: Vec<_> = shadow.iter().map(|a| a.pos).collect();
+        for pos in positions {
+            crate::transitions::refill_fuel_if_supply_present(&mut shadow, pos, &mut events);
+        }
     }
     Ok(out)
 }
@@ -400,6 +454,43 @@ mod tests {
 
     /// AC (a): every shape of plan normalizes to *exactly* the weighted
     /// budget, keeping the movement prefix.
+    #[test]
+    fn supply_contact_keeps_patrol_moving_after_refill() {
+        let map = grid(&FLAT);
+        let mut patrol = patrol_at(0, 0, 1);
+        patrol.fuel_cap = 3;
+        let supply = Agent::supply(1, HexCoord::new(0, 0));
+        let body = vec![vec![2, 2, 2], vec![2, 2, 2]];
+        let normalized = normalize_day_plan(&map, &[patrol, supply], &[0, 1], 6, &body).unwrap();
+        assert_eq!(normalized, body, "shared contact must preserve the escort movement prefix");
+    }
+
+    #[test]
+    fn simulator_and_wire_share_move_fuel_cost_and_legality() {
+        let map = map_with('r');
+        for col in [0, 1] {
+            for fuel in 0..=4 {
+                let agent = patrol_at(col, 0, fuel);
+                let dir = if col == 0 { Direction::Right } else { Direction::Left };
+                let origin = map.get(agent.pos).unwrap();
+                let wire = official_move(&agent, origin, dir, &map);
+                let mut outcomes = Vec::new();
+                let mut events = Vec::new();
+                let sim = crate::transitions::try_move(
+                    &agent,
+                    Action::step(0, dir),
+                    &map,
+                    &mut outcomes,
+                    &mut events,
+                );
+                assert_eq!(sim.is_moved(), wire.is_ok());
+                if let Ok((_, _, cost)) = wire {
+                    assert_eq!(sim.cost(), cost);
+                }
+            }
+        }
+    }
+
     #[test]
     fn normalization_hits_the_weighted_budget_exactly() {
         // (cell at (1,0), day, input, expected output)
@@ -637,7 +728,7 @@ mod tests {
     }
 
     /// The day-level entry point keeps submission order and budgets each
-    /// agent independently (three agents, different plans, one day).
+    /// agent on a shared timeline (three agents, different plans, one day).
     #[test]
     fn day_plan_normalization_is_per_agent() {
         let map = grid(&FLAT);

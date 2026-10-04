@@ -167,10 +167,10 @@ fn classify_move(agent: &Agent, target: HexCoord, map: &MapGrid) -> MoveOk {
     if !cell.terrain.traversable() {
         return MoveOk::Impassable(cell.terrain);
     }
-    let cost = fuel_cost(cell.terrain);
-    if !agent.can_afford(cost) {
-        return MoveOk::FuelShort { cost };
-    }
+    let Some(origin) = map.get(agent.pos) else { return MoveOk::OutOfBounds };
+    let Some(cost) = crate::rules::move_fuel(agent, origin.terrain, cell.terrain) else {
+        return MoveOk::FuelShort { cost: fuel_cost(origin.terrain).max(fuel_cost(cell.terrain)) };
+    };
     MoveOk::Traversable { cost }
 }
 
