@@ -44,14 +44,32 @@ use engine::model::{
 
 use crate::candidate::{CandidateError, CandidateSpec};
 
-/// Axial hex distance between two cells, matching the pointy-top convention
-/// used across the solver crates: `(|dq| + |dq + dr| + |dr|) / 2`.
+/// Even-r hex distance between two cells.
+///
+/// The engine grid is an **even-row right-offset** layout — `Direction::step`
+/// branches on row parity — so `(col, row)` are offset coordinates, not axial
+/// ones. Measuring them as axial (the previous formula) reports a real
+/// neighbour as two steps away and a two-step pair as one, which breaks
+/// [`step_towards`]: its strictly-decreasing test finds no qualifying
+/// neighbour and returns `None`, so the walker emits `Wait` for the rest of
+/// the day while the target is still reachable.
+///
+/// Convert offset to cube first — `q = col - (row + row % 2) / 2`, the layout
+/// `engine::model::Direction::step` actually implements — and measure in cube
+/// space, which reproduces the engine's neighbour graph exactly.
 #[must_use]
 pub fn hex_distance(a: HexCoord, b: HexCoord) -> u32 {
-    let dq = i64::from(a.col - b.col).abs();
-    let dr = i64::from(a.row - b.row).abs();
-    let ds = (i64::from(a.col - b.col) + i64::from(a.row - b.row)).abs();
-    u32::try_from((dq + dr + ds) / 2).unwrap_or(u32::MAX)
+    fn cube(c: HexCoord) -> (i64, i64, i64) {
+        let row = i64::from(c.row);
+        let q = i64::from(c.col) - (row + i64::from(c.row.rem_euclid(2))) / 2;
+        (q, -q - row, row)
+    }
+    let (ax, ay, az) = cube(a);
+    let (bx, by, bz) = cube(b);
+    let dx = (ax - bx).abs();
+    let dy = (ay - by).abs();
+    let dz = (az - bz).abs();
+    u32::try_from((dx + dy + dz) / 2).unwrap_or(u32::MAX)
 }
 
 /// One legal step that gets closer to `to`, or `None` when there is nothing
@@ -798,6 +816,44 @@ mod tests {
     }
 
     #[test]
+    fn hex_distance_matches_the_engine_neighbour_graph() {
+        // Every engine step is exactly one cell away, whatever the row
+        // parity — this is what the old axial formula got wrong.
+        for row in 0..8 {
+            for col in 0..8 {
+                let from = HexCoord::new(col, row);
+                assert_eq!(hex_distance(from, from), 0, "self distance at {from:?}");
+                for dir in Direction::ALL {
+                    assert_eq!(
+                        hex_distance(from, dir.step(from)),
+                        1,
+                        "{dir:?} out of {from:?} must be one cell"
+                    );
+                }
+            }
+        }
+        // A direct neighbour the axial formula reported as two steps.
+        assert_eq!(hex_distance(HexCoord::new(0, 0), HexCoord::new(1, 1)), 1);
+        // A two-step pair the axial formula reported as one.
+        assert_eq!(hex_distance(HexCoord::new(1, 0), HexCoord::new(0, 1)), 2);
+    }
+
+    #[test]
+    fn step_towards_reaches_a_target_two_rows_away() {
+        let map = map_with_spots();
+        // Under the axial metric no neighbour of (1, 0) scored strictly below
+        // (0, 1), so this returned None and plan_walk emitted Wait all day.
+        assert_eq!(
+            step_towards(HexCoord::new(1, 0), HexCoord::new(0, 1), &map),
+            Some(Direction::LowerLeft)
+        );
+        assert_eq!(
+            step_towards(HexCoord::new(0, 0), HexCoord::new(1, 1), &map),
+            Some(Direction::LowerRight)
+        );
+    }
+
+    #[test]
     fn plan_walk_is_well_shaped_and_moves_the_agent() {
         let st = state();
         let ctx = SolverContext::from_state(&st);
@@ -931,11 +987,13 @@ mod tests {
             vec![HexCoord::new(3, 3)],
         ];
         // The pairing keys off hex distance: (1, 0) is next to patrol0 and
-        // (1, 6) is next to patrol1 — the own-tour targets must not decide it.
+        // (1, 6) is closest to patrol1 — the own-tour targets must not decide
+        // it. Distances are even-r steps, so the cross-row pairs are two and
+        // six cells apart rather than the axial formula's one and seven.
         assert_eq!(hex_distance(HexCoord::new(1, 0), HexCoord::new(0, 0)), 1);
         assert_eq!(hex_distance(HexCoord::new(1, 0), HexCoord::new(0, 7)), 7);
-        assert_eq!(hex_distance(HexCoord::new(1, 6), HexCoord::new(0, 7)), 1);
-        assert_eq!(hex_distance(HexCoord::new(1, 6), HexCoord::new(0, 0)), 7);
+        assert_eq!(hex_distance(HexCoord::new(1, 6), HexCoord::new(0, 7)), 2);
+        assert_eq!(hex_distance(HexCoord::new(1, 6), HexCoord::new(0, 0)), 6);
 
         let paths = day_paths(&ctx, &targets, WalkMode::Greedy);
         assert_ne!(paths[0], paths[1], "the two patrols must walk different paths");
@@ -1026,7 +1084,7 @@ mod tests {
         let ctx = SolverContext::from_state(&st);
         // Both Supplies are geometrically nearest to patrol0 …
         assert_eq!(hex_distance(HexCoord::new(1, 0), HexCoord::new(0, 0)), 1);
-        assert_eq!(hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 0)), 2);
+        assert_eq!(hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 0)), 1);
         assert!(
             hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 0))
                 < hex_distance(HexCoord::new(1, 1), HexCoord::new(0, 7)),
@@ -1211,7 +1269,7 @@ mod tests {
             vec![
                 HexCoord::new(4, 0),
                 HexCoord::new(3, 0),
-                HexCoord::new(3, 0),
+                HexCoord::new(2, 0),
                 HexCoord::new(3, 1),
                 HexCoord::new(2, 0)
             ],

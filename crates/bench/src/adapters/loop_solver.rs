@@ -82,7 +82,7 @@
 //! modes hill-climb the *same* tour; `lookahead` only changes how that tour
 //! is distributed over days and agents.
 
-use engine::model::{ActionKind, AgentActions, HexCoord, Solver, SolverContext};
+use engine::model::{ActionKind, AgentActions, AgentKind, HexCoord, Solver, SolverContext};
 use solver_loop::{
     Agent as LoopAgent, HexCoord as LoopCoord, InitialStrategy, LoopSolver, OperatorSet,
     Series as LoopSeries, SolveProblem, Solver as _, Spot as LoopSpot,
@@ -440,10 +440,13 @@ fn coord_for_spot_id(spot_id: u32) -> Option<HexCoord> {
 /// bookkeeping *exactly* — same live start positions, same
 /// `step % targets.len()` target cycling, same [`step_towards`] — and for
 /// [`WalkMode::Astar`] it is the actions
-/// [`super::astar_walk::plan_walk_astar`] actually produces. Consequently
-/// the count is `0` **if and only if** no agent can collect anything from
-/// this target assignment on this day *with this walk* — `engine::MatchSim`
-/// only acquires when an agent ends a step on a spot.
+/// [`super::astar_walk::plan_walk_astar`] actually produces. `Supply` agents
+/// are skipped, because `engine::transitions::phase_acquire` returns early
+/// for them — a Supply parked on a spot collects nothing, so counting one
+/// would report a day as usable while it still scores zero. Consequently the
+/// count is `0` **if and only if** no agent can collect anything from this
+/// target assignment on this day *with this walk* — `engine::MatchSim` only
+/// acquires when a Patrol ends a step on a stocked spot.
 ///
 /// It is a read-only probe: it never mutates the state and it is never used
 /// to pick a *better* assignment when the default one already works (see
@@ -467,6 +470,9 @@ fn agents_reaching_a_spot(
                 let Some(start) = ctx.state.agents.iter().find(|a| a.id == **agent_id) else {
                     return false;
                 };
+                if start.kind == AgentKind::Supply {
+                    return false; // phase_acquire never picks for a Supply
+                }
                 let mut pos = start.pos;
                 for step in 0..day_steps {
                     if let Some(dir) = step_towards(pos, list[step % list.len()], map) {
@@ -490,6 +496,9 @@ fn agents_reaching_a_spot(
                     let Some(start) = ctx.state.agents.iter().find(|a| a.id == **agent_id) else {
                         return false;
                     };
+                    if start.kind == AgentKind::Supply {
+                        return false; // phase_acquire never picks for a Supply
+                    }
                     let mut pos = start.pos;
                     for step in 0..day_steps {
                         let Some(action) = plan.actions.get(step * agent_count + *i) else {
@@ -892,6 +901,37 @@ mod tests {
         assert!(
             agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy) >= 1,
             "the Issue #207 rescue must re-anchor extended to a walkable target set"
+        );
+    }
+
+    /// Issue #207 — the rescue branch itself, pinned independently of the
+    /// road-heavy-v2 anchor: a target set that reaches *nothing* (off-map
+    /// coordinates make `step_towards` bail before stepping) must be replaced
+    /// by one the greedy walk can actually use.
+    #[test]
+    fn rescue_anchor_reanchors_a_target_set_that_reaches_nothing() {
+        let ctx = road_heavy_v2_context();
+        let problem = problem_from_state(&ctx);
+        let outcome = LoopSolver::with_operators(
+            InitialStrategy::GreedyNearestNeighbor,
+            32,
+            OperatorSet::Extended,
+        )
+        .solve(&problem)
+        .expect("solve");
+        let n_agents = problem.agents.len();
+        let unreachable = vec![vec![HexCoord::new(-99, -99)]; n_agents];
+
+        assert_eq!(
+            agents_reaching_a_spot(&ctx, &unreachable, WalkMode::Greedy),
+            0,
+            "the premise: no agent can stand on a spot from an off-map target"
+        );
+        let rescued = rescue_anchor(&ctx, &outcome, &unreachable, WalkMode::Greedy);
+        assert_ne!(rescued, unreachable, "the scan must replace an unusable anchor");
+        assert!(
+            agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy) >= 1,
+            "and the replacement must be walkable"
         );
     }
 
