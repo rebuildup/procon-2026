@@ -220,11 +220,19 @@ impl TrafficMap {
 
     /// End-of-phase update (Q&A Q6 処理順序).
     ///
-    /// For every tracked cell:
-    /// 1. Promote `count_today` → `count_yesterday`.
-    /// 2. Reset `count_today` to 0.
-    /// 3. Re-derive `state` from `max(count_yesterday, count_today)` using the
-    ///    current thresholds.
+    /// For every tracked cell, in this order:
+    /// 1. Re-derive `state` from `max(count_yesterday, count_today)` using the
+    ///    current thresholds — i.e. from the two days that just ended.
+    /// 2. Promote `count_today` → `count_yesterday`.
+    /// 3. Reset `count_today` to 0.
+    ///
+    /// Classifying first is what makes the documented 2-day sliding window
+    /// real: rotating first destroyed the older day before `classify` could
+    /// read it, so a cell that jammed yesterday fell straight back to Smooth
+    /// as soon as today had zero traffic. `crates/engine`'s
+    /// `phase_traffic_update` classifies from `traffic_today` +
+    /// `traffic_yesterday` before `begin_day` rotates, and this has to agree
+    /// with it.
     ///
     /// After this call, `count_today` is zero everywhere and `count_yesterday`
     /// holds the previous day's total, so the very next day's
@@ -232,9 +240,9 @@ impl TrafficMap {
     pub fn phase_traffic_update(&mut self) {
         let thresholds = self.thresholds;
         for cell in self.cells.values_mut() {
+            cell.state = cell.classify(thresholds);
             cell.count_yesterday = cell.count_today;
             cell.count_today = 0;
-            cell.state = cell.classify(thresholds);
         }
     }
 }
@@ -363,12 +371,20 @@ mod tests {
         assert_eq!(cell.count_today, 0);
         assert_eq!(cell.state, TrafficState::Busy);
 
-        // Day 2: zero traversals → max still 5 from yesterday → still Busy.
+        // Day 2: zero traversals → the window still holds yesterday's 5, so
+        // the cell stays Busy. (Classifying after the rotation used to drop
+        // that 5 first and report Smooth — the 2-day window never happened.)
         map.phase_traffic_update();
         let cell = map.get((4, 4)).expect("cell exists");
         assert_eq!(cell.count_yesterday, 0, "previous yesterday is dropped");
         assert_eq!(cell.count_today, 0);
-        assert_eq!(cell.state, TrafficState::Smooth);
+        assert_eq!(cell.state, TrafficState::Busy, "max(5 from yesterday, 0) stays Busy");
+
+        // Day 3 with *no* traffic either: the window is now empty, so Smooth
+        // is correct — and only now.
+        map.phase_traffic_update();
+        let cell = map.get((4, 4)).expect("cell exists");
+        assert_eq!(cell.state, TrafficState::Smooth, "empty 2-day window is Smooth");
 
         // Day 3: 4 traversals → max 4, default busy = 3 → Busy.
         for _ in 0..4 {
