@@ -175,12 +175,18 @@ impl Clustering {
 
         for indices in by_series.values() {
             // O(k²) merge pass within one series, where k is the series size.
-            for window in indices.windows(2) {
-                let (i, j) = (window[0], window[1]);
-                let a = &spots[i];
-                let b = &spots[j];
-                if a.coord.distance(b.coord) <= config.merge_radius {
-                    uf.union(i, j);
+            // Every pair has to be considered: the previous
+            // `windows(2)` pass only compared *consecutive input entries*,
+            // so two spots that were close in space merged only when they
+            // happened to sit next to each other in the slice — the result
+            // depended on input order instead of on `merge_radius`.
+            for (pos, &i) in indices.iter().enumerate() {
+                for &j in &indices[pos + 1..] {
+                    let a = &spots[i];
+                    let b = &spots[j];
+                    if a.coord.distance(b.coord) <= config.merge_radius {
+                        uf.union(i, j);
+                    }
                 }
             }
         }
@@ -297,6 +303,21 @@ mod tests {
         let sizes: Vec<usize> = c.clusters.iter().map(|cl| cl.members.len()).collect();
         assert!(sizes.contains(&3));
         assert!(sizes.contains(&1));
+    }
+
+    /// Input order must not decide the outcome: `b` sits far from the other
+    /// two, so the close pair (a, c) is *not* adjacent in the input and the
+    /// old consecutive-only scan never compared them.
+    #[test]
+    fn clustering_merges_close_pairs_that_are_not_adjacent_in_input() {
+        let spots = vec![
+            spot("a", 0, 0, "udon"),
+            spot("b", 10, 10, "udon"),
+            spot("c", 1, 0, "udon"),
+        ];
+        let c = Clustering::build(&spots, ClusterConfig { merge_radius: 1 });
+        assert_eq!(c.clusters.len(), 2, "a and c merge across the gap b leaves");
+        assert_eq!(c.clusters[0].members.len() + c.clusters[1].members.len(), 3);
     }
 
     #[test]
