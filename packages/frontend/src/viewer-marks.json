@@ -10,7 +10,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -47,7 +47,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -57,14 +57,6 @@
               "attrs": {
                 "d": "M1.8 12.5 5.5 4.5 8 8l2.8-5 3.4 9.5Z",
                 "fill": "#bfbfbf"
-              },
-              "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "m4.3 7.2 1.2 1.1 1.1-1.1M9.7 6.1l1.1 1.2 1-1",
-                "fill": "none"
               },
               "children": []
             }
@@ -84,7 +76,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -123,7 +115,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -165,7 +157,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -175,14 +167,6 @@
               "attrs": {
                 "d": "M2 10.7V8.4h2l1.7-3.2h4.6l1.7 3.2h2v2.3Z",
                 "fill": "#00b050"
-              },
-              "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M4 8.4h8M8 5.2v3.2",
-                "fill": "none"
               },
               "children": []
             },
@@ -234,7 +218,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -256,14 +240,6 @@
                 "height": "7.6",
                 "rx": ".6",
                 "fill": "#e59edd"
-              },
-              "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M2 8h4M8.4 5.4h3.6v3.8H8.4Z",
-                "fill": "none"
               },
               "children": []
             },
@@ -303,7 +279,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -312,7 +288,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M2 7 8 2.5 14 7H2Z",
-                "fill": "#cc9900"
+                "fill": "#ebb400"
               },
               "children": []
             },
@@ -320,7 +296,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M3.7 7h8.6v6H3.7Z",
-                "fill": "#cc9900"
+                "fill": "#ebb400"
               },
               "children": []
             },
@@ -348,7 +324,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -357,7 +333,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M2 4.2h12l-1.7 3H3.7Z",
-                "fill": "#c04f15"
+                "fill": "#eb670f"
               },
               "children": []
             },
@@ -369,7 +345,7 @@
                 "width": "9.2",
                 "height": "3.8",
                 "rx": ".5",
-                "fill": "#c04f15"
+                "fill": "#eb670f"
               },
               "children": []
             },
@@ -409,7 +385,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -418,7 +394,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M2.3 6.8h11.4c-.4 3.5-2.6 5.8-5.7 5.8S2.7 10.3 2.3 6.8Z",
-                "fill": "#b03a55"
+                "fill": "#df0c24"
               },
               "children": []
             },
@@ -446,7 +422,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -455,7 +431,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M4 6.5h7v3.1a3.5 3.5 0 0 1-7 0Z",
-                "fill": "#7048a8"
+                "fill": "#894ceb"
               },
               "children": []
             },
@@ -463,14 +439,6 @@
               "tag": "path",
               "attrs": {
                 "d": "M4.5 6.5V5a3 3 0 0 1 6 0v1.5M11 7.7l2.8-1.4-1.1 3.5H11",
-                "fill": "none"
-              },
-              "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M5.5 6.5h4",
                 "fill": "none"
               },
               "children": []
@@ -491,7 +459,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -500,7 +468,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M2.3 5.8 8 2.8l5.7 3H2.3Z",
-                "fill": "#0f7f96"
+                "fill": "#179b9b"
               },
               "children": []
             },
@@ -508,15 +476,19 @@
               "tag": "path",
               "attrs": {
                 "d": "M3 5.8h10v7.4H3Z",
-                "fill": "#0f7f96"
+                "fill": "#179b9b"
               },
               "children": []
             },
             {
-              "tag": "path",
+              "tag": "rect",
               "attrs": {
-                "d": "M3 8.2h10M5.2 10.1h5.6M8 10.1v3.1",
-                "fill": "none"
+                "x": "5",
+                "y": "8",
+                "width": "6",
+                "height": "2.6",
+                "rx": "0.3",
+                "fill": "#ffffff"
               },
               "children": []
             }
@@ -536,7 +508,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
           },
@@ -549,7 +521,7 @@
                 "width": "8.7",
                 "height": "5",
                 "rx": ".5",
-                "fill": "#2f7d4f"
+                "fill": "#30a147"
               },
               "children": []
             },
@@ -565,15 +537,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M11 2.5h3v3.3h-3Z",
-                "fill": "#2f7d4f"
-              },
-              "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M2.3 10.3H11",
-                "fill": "none"
+                "fill": "#30a147"
               },
               "children": []
             }
@@ -694,7 +658,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -703,14 +667,6 @@
               "attrs": {
                 "d": "M8 2.4 14 12.6H2Z",
                 "fill": "#bfbfbf"
-              },
-              "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M6.1 9.4 8 6.6l1.9 2.8",
-                "fill": "none"
               },
               "children": []
             }
@@ -730,7 +686,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -739,15 +695,6 @@
               "attrs": {
                 "d": "M8 2.3c2.8 3.5 4.1 5.4 4.1 7.2a4.1 4.1 0 0 1-8.2 0c0-1.8 1.3-3.7 4.1-7.2Z",
                 "fill": "#46b1e1"
-              },
-              "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M5.4 10.2h5.2",
-                "fill": "none",
-                "stroke-linecap": "round"
               },
               "children": []
             }
@@ -767,7 +714,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round"
           },
           "children": [
@@ -826,7 +773,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -873,7 +820,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -900,14 +847,6 @@
                 "fill": "#e59edd"
               },
               "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M2.4 6.2h5M2.4 9.8h5M8.6 8.2h5",
-                "fill": "none"
-              },
-              "children": []
             }
           ]
         }
@@ -925,7 +864,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -933,7 +872,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M2.4 7.6 8 2.8l5.6 4.8v5.4H2.4z",
-                "fill": "#cc9900"
+                "fill": "#ebb400"
               },
               "children": []
             },
@@ -961,7 +900,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -973,7 +912,7 @@
                 "width": "11.6",
                 "height": "5.4",
                 "rx": "1.8",
-                "fill": "#c04f15"
+                "fill": "#eb670f"
               },
               "children": []
             },
@@ -983,7 +922,7 @@
                 "cx": "5",
                 "cy": "11.8",
                 "r": "1.5",
-                "fill": "#c04f15"
+                "fill": "#eb670f"
               },
               "children": []
             },
@@ -993,7 +932,7 @@
                 "cx": "11",
                 "cy": "11.8",
                 "r": "1.5",
-                "fill": "#c04f15"
+                "fill": "#eb670f"
               },
               "children": []
             }
@@ -1013,7 +952,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1021,7 +960,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M3.2 5h8.2v4.6a3.4 3.4 0 0 1-3.4 3.4H6.6A3.4 3.4 0 0 1 3.2 9.6z",
-                "fill": "#b03a55"
+                "fill": "#df0c24"
               },
               "children": []
             },
@@ -1058,7 +997,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1066,7 +1005,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M4.2 6.4h7.6l-.8 5.2a3 3 0 0 1-3 2.6h0a3 3 0 0 1-3-2.6z",
-                "fill": "#7048a8"
+                "fill": "#894ceb"
               },
               "children": []
             },
@@ -1078,7 +1017,7 @@
                 "width": "5.2",
                 "height": "2.2",
                 "rx": "1",
-                "fill": "#7048a8"
+                "fill": "#894ceb"
               },
               "children": []
             },
@@ -1107,7 +1046,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1119,7 +1058,7 @@
                 "width": "10.8",
                 "height": "8",
                 "rx": "1",
-                "fill": "#0f7f96"
+                "fill": "#179b9b"
               },
               "children": []
             },
@@ -1130,7 +1069,7 @@
                 "y": "6.6",
                 "width": "7.2",
                 "height": "2.6",
-                "fill": "#0f7f96"
+                "fill": "#179b9b"
               },
               "children": []
             },
@@ -1158,7 +1097,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round",
             "stroke-linecap": "round"
           },
@@ -1167,7 +1106,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M2.2 8.2a5.8 5.8 0 0 1 11.6 0c-1.2-1-2.2-1-3.2 0-1-1-2.2-1-3.2 0-1-1-2-1-3.2 0-1-1-1.8-1-2 0z",
-                "fill": "#2f7d4f"
+                "fill": "#30a147"
               },
               "children": []
             },
@@ -1183,7 +1122,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M6 12.6h2.4a1.4 1.4 0 0 1-2.4 0z",
-                "fill": "#2f7d4f"
+                "fill": "#30a147"
               },
               "children": []
             }
@@ -1203,7 +1142,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linecap": "round"
           },
           "children": [
@@ -1257,7 +1196,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1285,7 +1224,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1339,7 +1278,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round",
             "stroke-linecap": "round"
           },
@@ -1382,7 +1321,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round",
             "stroke-linecap": "round"
           },
@@ -1451,7 +1390,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1500,7 +1439,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1512,7 +1451,7 @@
                 "width": "9.2",
                 "height": "6.8",
                 "rx": "1.6",
-                "fill": "#cc9900"
+                "fill": "#ebb400"
               },
               "children": []
             },
@@ -1532,7 +1471,7 @@
                 "width": "4.8",
                 "height": "1.8",
                 "rx": "0.8",
-                "fill": "#cc9900"
+                "fill": "#ebb400"
               },
               "children": []
             }
@@ -1552,7 +1491,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1564,7 +1503,7 @@
                 "width": "8.8",
                 "height": "3.2",
                 "rx": "1",
-                "fill": "#c04f15"
+                "fill": "#eb670f"
               },
               "children": []
             },
@@ -1576,7 +1515,7 @@
                 "width": "8.8",
                 "height": "3.2",
                 "rx": "1",
-                "fill": "#c04f15"
+                "fill": "#eb670f"
               },
               "children": []
             },
@@ -1588,7 +1527,7 @@
                 "width": "8.8",
                 "height": "2.4",
                 "rx": "1",
-                "fill": "#c04f15"
+                "fill": "#eb670f"
               },
               "children": []
             },
@@ -1617,7 +1556,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1625,15 +1564,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M2.4 7h11.2c0 3.2-2.5 5.4-5.6 5.4S2.4 10.2 2.4 7z",
-                "fill": "#b03a55"
-              },
-              "children": []
-            },
-            {
-              "tag": "path",
-              "attrs": {
-                "d": "M4.2 7h7.6",
-                "fill": "none"
+                "fill": "#df0c24"
               },
               "children": []
             }
@@ -1653,7 +1584,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1661,7 +1592,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M3.8 6.6h7v4a2.8 2.8 0 0 1-2.8 2.8h-1.4A2.8 2.8 0 0 1 3.8 10.6z",
-                "fill": "#7048a8"
+                "fill": "#894ceb"
               },
               "children": []
             },
@@ -1697,7 +1628,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round"
           },
           "children": [
@@ -1709,7 +1640,7 @@
                 "width": "11.2",
                 "height": "8.4",
                 "rx": "1.2",
-                "fill": "#0f7f96"
+                "fill": "#179b9b"
               },
               "children": []
             },
@@ -1737,7 +1668,7 @@
           "tag": "g",
           "attrs": {
             "stroke": "#212428",
-            "stroke-width": "1.1",
+            "stroke-width": "0.9",
             "stroke-linejoin": "round",
             "stroke-linecap": "round"
           },
@@ -1746,7 +1677,7 @@
               "tag": "path",
               "attrs": {
                 "d": "M3.2 7.6h9.6v2.6a3.2 3.2 0 0 1-3.2 3.2H6.4a3.2 3.2 0 0 1-3.2-3.2z",
-                "fill": "#2f7d4f"
+                "fill": "#30a147"
               },
               "children": []
             },

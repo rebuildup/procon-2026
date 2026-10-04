@@ -7,7 +7,7 @@ import { OUT_DIR } from './recording';
 const before = JSON.parse(
   execFileSync(
     'git',
-    ['show', '9b6dd85282d85d6fb0608f79808d812763380bcb:packages/frontend/src/viewer-marks.json'],
+    ['show', 'bc8ae3b5641c271a604d770441eeea128c9fff11:packages/frontend/src/viewer-marks.json'],
     { encoding: 'utf8' },
   ),
 );
