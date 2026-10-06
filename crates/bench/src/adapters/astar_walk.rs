@@ -711,7 +711,15 @@ mod tests {
                 Agent::supply(1, IDLE_1),
                 Agent::supply(2, IDLE_2),
             ],
-            day_steps: 12,
+            // 16, not 12: the walk around the pond to (7,0) is 8 moves, and
+            // every one of them departs a plain cell worth 2 official steps
+            // (`engine::wire_plan::terrain_step_cost`), for 16 in total.
+            // This fixture was written against the old plain-1 table, where
+            // the same walk cost 8 and a 12-step day had room to spare.
+            // `day_steps` is the official `daySteps` budget, so it has to be
+            // stated in official steps — see
+            // `solver-astar/tests/official_step_budget.rs`.
+            day_steps: 16,
             num_days: 1,
             day_steps_by_day: Vec::new(),
         };

@@ -194,15 +194,19 @@ fn fuel_constraint_allows_goal_when_budget_covers_it() {
 
 #[test]
 fn conservative_policy_still_finds_a_path() {
-    // The straight run along row 4 crosses four mountains: 11 base steps.
-    // Leaving the mountain strip for row 3 costs 8 plain steps, so an
-    // 8-step budget fits exactly that route and nothing cheaper.
+    // The straight run along row 4 crosses four mountains. Leaving the
+    // mountain strip for row 3 costs 8 plain moves, and in official steps
+    // that route departs one mountain (3) and seven plains (2 each), for a
+    // total of 17 — so a 17-step budget fits exactly that route and nothing
+    // cheaper. (This was written as an 8-step budget against the old
+    // plain-1/mountain-2 table; the route is the same, only the unit moved.
+    // `official_step_budget.rs` pins the table contract.)
     //
     // The budget is deliberately that tight: `CostPolicy::conservative`
     // inflates `g`/`f` as fuel drops, and pruning on the scaled value used
-    // to reject the 8-step route (its weighted `g` passes 8 well before the
-    // goal) and fall back to the greedy walk. The heap still orders on `f`;
-    // only the budget check uses unweighted steps.
+    // to reject the cheapest route (its weighted `g` passes 17 well before
+    // the goal) and fall back to the greedy walk. The heap still orders on
+    // `f`; only the budget check uses official steps.
     let rows = &[
         "........", "........", "........", "........", "MMMM....", "........", "........",
         "........",
@@ -211,9 +215,9 @@ fn conservative_policy_still_finds_a_path() {
     let start = HexCoord::new(0, 4);
     let goal = HexCoord::new(7, 4);
     // `SolveContext::new` takes (initial_fuel, max_steps).
-    let ctx = SolveContext::new(map, start, goal, 24, 8).unwrap();
+    let ctx = SolveContext::new(map, start, goal, 24, 17).unwrap();
     // Cap 30 with only 24 in the tank: scaling starts immediately, so the
-    // weighted `g` of the 8-step route passes the 8-step budget.
+    // weighted `g` of the cheapest route passes the 17-step budget.
     let solver = AstarSolver::with_policy(CostPolicy::conservative(30));
     let result = solver.solve(&ctx);
     assert!(

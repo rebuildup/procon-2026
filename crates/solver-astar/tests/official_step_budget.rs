@@ -35,8 +35,8 @@
 //! self-contained, as `lib.rs` documents, while the tests still check it
 //! against the one canonical table.
 
-use domain::cell::{Cell, MOVE_STEPS};
 use domain::TrafficState as DomainTraffic;
+use domain::cell::{Cell, MOVE_STEPS};
 use solver_astar::{
     Action, AstarSolver, BaseStepCost, CellKind, Direction, HexCoord, HexMap, Path, SolveContext,
     Solver, SolverFailure,
@@ -104,16 +104,7 @@ fn map_from_str(width: u32, height: u32, rows: &[&str]) -> HexMap {
             "row {row_idx} must be exactly {width} chars wide"
         );
         for ch in row.chars() {
-            let cell = match ch {
-                '.' => CellKind::Plain,
-                'M' => CellKind::Mountain,
-                '~' => CellKind::Pond,
-                's' => CellKind::Road { traffic: solver_astar::TrafficState::Smooth },
-                'b' => CellKind::Road { traffic: solver_astar::TrafficState::Busy },
-                'j' => CellKind::Road { traffic: solver_astar::TrafficState::Jammed },
-                other => panic!("unknown fixture char {other:?}"),
-            };
-            cells.push(cell);
+            cells.push(cell_from_char(ch));
         }
     }
     HexMap::new(width, height, cells).expect("fixture map must validate")
@@ -121,8 +112,40 @@ fn map_from_str(width: u32, height: u32, rows: &[&str]) -> HexMap {
 
 /// An all-plain `width x height` map.
 fn plain_map(width: u32, height: u32) -> HexMap {
-    let rows = vec!["."; height as usize];
+    let row = ".".repeat(usize::try_from(width).expect("width fits usize"));
+    let rows = vec![row.as_str(); usize::try_from(height).expect("height fits usize")];
     map_from_str(width, height, &rows)
+}
+
+/// A one-row **lane**: `lane` is placed on row 0, every other cell is pond.
+///
+/// `HexMap` refuses any dimension outside `[8, 32]`, so a literal `4 x 1`
+/// fixture cannot be built. Row 0 is walled in by ponds and the top edge,
+/// which makes the lane exactly as one-dimensional as the `4 x 1` fixture was
+/// meant to be: from any lane cell the only legal move is along the lane.
+fn lane_map(lane: &str) -> HexMap {
+    const W: u32 = 8;
+    const H: u32 = 8;
+    let lane_len = lane.chars().count();
+    assert!(lane_len <= W as usize, "lane {lane:?} is wider than the {W}-cell board");
+    let mut cells = vec![CellKind::Pond; (W * H) as usize];
+    for (col, ch) in lane.chars().enumerate() {
+        cells[col] = cell_from_char(ch);
+    }
+    HexMap::new(W, H, cells).expect("lane fixture map must validate")
+}
+
+/// Decode one fixture character. Shared by [`map_from_str`] and [`lane_map`].
+fn cell_from_char(ch: char) -> CellKind {
+    match ch {
+        '.' => CellKind::Plain,
+        'M' => CellKind::Mountain,
+        '~' => CellKind::Pond,
+        's' => CellKind::Road { traffic: solver_astar::TrafficState::Smooth },
+        'b' => CellKind::Road { traffic: solver_astar::TrafficState::Busy },
+        'j' => CellKind::Road { traffic: solver_astar::TrafficState::Jammed },
+        other => panic!("unknown fixture char {other:?}"),
+    }
 }
 
 /// Solve and return the path, asserting one was produced.
@@ -252,7 +275,7 @@ fn a_path_exactly_at_the_official_budget_is_accepted() {
 /// would cost the same — the rule would be untestable.
 #[test]
 fn a_move_is_billed_the_cell_it_departs() {
-    let map = map_from_str(4, 1, &[".M.."]);
+    let map = lane_map(".M..");
 
     let path = solve_path(&map, HexCoord::new(0, 0), HexCoord::new(1, 0), 100, 100);
     assert_eq!(path.steps, vec![Action::Move(Direction::East)]);
@@ -270,7 +293,7 @@ fn a_move_is_billed_the_cell_it_departs() {
 /// directions symmetric and the origin rule indistinguishable from it.
 #[test]
 fn departing_a_mountain_costs_three_even_onto_plain() {
-    let map = map_from_str(4, 1, &[".M.."]);
+    let map = lane_map(".M..");
 
     let path = solve_path(&map, HexCoord::new(1, 0), HexCoord::new(0, 0), 100, 100);
     assert_eq!(path.steps, vec![Action::Move(Direction::West)]);
@@ -287,7 +310,7 @@ fn departing_a_mountain_costs_three_even_onto_plain() {
 /// the move even though the destination is a plain cell worth exactly 2.
 #[test]
 fn the_budget_check_bills_the_origin_cell() {
-    let map = map_from_str(4, 1, &[".M.."]);
+    let map = lane_map(".M..");
 
     let ctx = SolveContext::new(map, HexCoord::new(1, 0), HexCoord::new(0, 0), 100, 2).unwrap();
     let result = AstarSolver::default().solve(&ctx);
@@ -310,8 +333,8 @@ fn the_budget_check_bills_the_origin_cell() {
 /// different price, because the price follows the cell being left.
 #[test]
 fn mountain_costs_more_than_plain_for_the_same_move() {
-    let plain_lane = map_from_str(4, 1, &["...."]);
-    let mountain_lane = map_from_str(4, 1, &["M..."]);
+    let plain_lane = lane_map("....");
+    let mountain_lane = lane_map("M...");
 
     let start = HexCoord::new(0, 0);
     let goal = HexCoord::new(1, 0);
@@ -328,7 +351,7 @@ fn mountain_costs_more_than_plain_for_the_same_move() {
 /// quietly disturb it.
 #[test]
 fn road_costs_keep_the_official_spread() {
-    let map = map_from_str(4, 1, &["sbj."]);
+    let map = lane_map("sbj.");
     for (col, want) in [(0, 1), (1, 2), (2, 4)] {
         let start = HexCoord::new(col, 0);
         let goal = HexCoord::new(col + 1, 0);
@@ -339,6 +362,34 @@ fn road_costs_keep_the_official_spread() {
             "departing the road at col {col} costs {want}"
         );
     }
+}
+
+/// A pond is impassable, not merely expensive.
+///
+/// The official table encodes pond as `u8::MAX`, the sentinel meaning "you
+/// may not be here" — a move billed at that cell is not a very expensive
+/// move, it is an illegal one. So the budget must never *spend* its way past
+/// a pond, and a budget large enough to pay for any path still must not
+/// produce one that walks into the water.
+#[test]
+fn a_pond_is_impassable_rather_than_merely_expensive() {
+    // Lane: plain, plain, pond, plain. The only way from col 0 to col 3 is
+    // straight through the pond at col 2, which the solver must refuse
+    // however generous the budget.
+    let map = lane_map("..~.");
+
+    let ctx = SolveContext::new(map.clone(), HexCoord::new(0, 0), HexCoord::new(3, 0), 100, 100)
+        .expect("start and goal are both plain");
+    let result = AstarSolver::default().solve(&ctx);
+    assert!(
+        result.path.is_none(),
+        "a pond must be impassable regardless of budget, got {:?}",
+        result.path.map(|p| p.steps)
+    );
+
+    // And the pond itself has no step cost at all — the official table
+    // returns the impassable sentinel rather than a number to add up.
+    assert_eq!(official_step_cost(CellKind::Pond), None);
 }
 
 // ---------------------------------------------------------------------------

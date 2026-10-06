@@ -121,6 +121,15 @@ impl AstarSolver {
             }
 
             if entry.coord == ctx.goal {
+                // Defence in depth for the day budget. A goal only reaches
+                // the open set through the push-time prune below, where
+                // `h == 0`, so `steps <= max_steps` is already guaranteed
+                // there. Re-checking at *acceptance* is what makes the
+                // guarantee local and readable: an over-budget path is
+                // refused here, not merely de-ranked.
+                if entry.steps > ctx.max_steps {
+                    continue;
+                }
                 // The heuristic is admissible and the edge costs are
                 // monotonic, so the first goal pop is optimal.
                 goal_state = Some((entry.coord, entry.fuel));
@@ -168,8 +177,22 @@ impl AstarSolver {
             let g_after = entry.g.saturating_add(step_weight);
             let h_after = hex_distance(neighbor, ctx.goal);
             let f_after = g_after.saturating_add(h_after);
-            let steps_after =
-                entry.steps.saturating_add(BaseStepCost::for_cell(cell).map_or(0, |c| c.0));
+            // Budget in official units: **the cell the move departs**, not
+            // the one it enters. `entry.coord` is where the agent stands
+            // when this move is taken, so it — not `neighbor` — is the
+            // billed cell (募集要項 表1, restated by
+            // `engine::wire_plan::terrain_step_cost`, which charges
+            // `shadow[0].pos` before each replayed move).
+            let origin_cost =
+                ctx.map.get(entry.coord).and_then(BaseStepCost::for_cell).map_or(0, |c| c.0);
+            let steps_after = entry.steps.saturating_add(origin_cost);
+            // Prune on `steps + h`: `h` counts remaining *moves*, and every
+            // move costs at least 1 official step, so `h` lower-bounds the
+            // steps still to be paid. That makes this a sound prune — it
+            // never discards a prefix the remaining budget could still pay
+            // for — and it rejects a node the instant it becomes
+            // infeasible rather than letting an over-budget path reach the
+            // goal at all.
             if steps_after.saturating_add(h_after) > ctx.max_steps {
                 continue;
             }
@@ -215,7 +238,7 @@ fn build_result(
     stats: SolverStats,
 ) -> (SolverResult, SolverStats) {
     let Some(state) = goal_state else {
-        let min_cost = hex_distance(ctx.start, ctx.goal);
+        let min_cost = estimate_min_steps(&ctx.map, ctx.start, ctx.goal);
         let min_fuel = estimate_min_fuel(&ctx.map, ctx.start, ctx.goal);
         return (
             SolverResult {
@@ -323,6 +346,47 @@ fn hex_distance(a: HexCoord, b: HexCoord) -> u32 {
     (dx.unsigned_abs() + dy.unsigned_abs() + dz.unsigned_abs()) / 2
 }
 
+/// Cheapest official step cost from `start` to `goal`, billing each move the
+/// cell it departs.
+///
+/// This is a Dijkstra over the official step metric, so it accounts for the
+/// terrain the walk actually crosses — unlike [`hex_distance`], which is a
+/// move count in the wrong unit. It ignores the day budget entirely, so it
+/// answers "what would the walk cost, unconstrained?", which is what
+/// [`SolverFailure::ExceedsStepBudget`] needs to report.
+///
+/// Returns `u32::MAX` if no path exists at all.
+fn estimate_min_steps(map: &HexMap, start: HexCoord, goal: HexCoord) -> u32 {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+
+    // Uniform-cost search: the edge into a neighbour is weighted by the
+    // cell it is *left* from, so the cost of expanding `coord` is constant
+    // across all its neighbours.
+    let mut best: std::collections::HashMap<HexCoord, u32> = std::collections::HashMap::new();
+    let mut queue: BinaryHeap<Reverse<(u32, HexCoord)>> = BinaryHeap::new();
+    best.insert(start, 0);
+    queue.push(Reverse((0, start)));
+    while let Some(Reverse((spent, coord))) = queue.pop() {
+        if spent > best.get(&coord).copied().unwrap_or(u32::MAX) {
+            continue;
+        }
+        if coord == goal {
+            return spent;
+        }
+        let Some(origin) = map.get(coord) else { continue };
+        let Some(origin_cost) = BaseStepCost::for_cell(origin) else { continue };
+        for next in map.neighbors(coord, CellKind::is_passable) {
+            let next_spent = spent.saturating_add(origin_cost.0);
+            if next_spent < best.get(&next).copied().unwrap_or(u32::MAX) {
+                best.insert(next, next_spent);
+                queue.push(Reverse((next_spent, next)));
+            }
+        }
+    }
+    u32::MAX
+}
+
 /// Lower-bound fuel needed to walk a shortest path from `start` to `goal`,
 /// using BFS and the actual cell kinds. Returns `u32::MAX` if no path
 /// exists at all.
@@ -350,6 +414,13 @@ fn estimate_min_fuel(map: &HexMap, start: HexCoord, goal: HexCoord) -> u32 {
 }
 
 fn diagnose(ctx: &SolveContext, min_cost: u32, min_fuel: u32) -> SolverFailure {
+    // `u32::MAX` is the "no path exists" sentinel from both estimators, so
+    // it must be caught before the budget comparison — otherwise an
+    // unreachable goal reads as a budget overrun, because `MAX > max_steps`
+    // is trivially true.
+    if min_cost == u32::MAX {
+        return SolverFailure::Unreachable;
+    }
     if min_cost > ctx.max_steps {
         SolverFailure::ExceedsStepBudget { min_cost }
     } else if min_fuel > ctx.initial_fuel {
