@@ -356,7 +356,7 @@ fn hex_distance(a: HexCoord, b: HexCoord) -> u32 {
 /// [`SolverFailure::ExceedsStepBudget`] needs to report.
 ///
 /// Returns `u32::MAX` if no path exists at all.
-fn estimate_min_steps(map: &HexMap, start: HexCoord, goal: HexCoord) -> u32 {
+pub(crate) fn estimate_min_steps(map: &HexMap, start: HexCoord, goal: HexCoord) -> u32 {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
 

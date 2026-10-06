@@ -273,9 +273,9 @@ fn traffic_costs_make_solver_avoid_jammed_road_when_plain_detour_is_cheaper() {
 
 #[test]
 fn solver_treats_smooth_road_as_plain_for_step_count() {
-    // Smooth road cells have step cost 1 — same as plain. The solver
-    // should produce a path that may include smooth-road cells without
-    // inflating the step count.
+    // Smooth road cells have step cost 1 — cheaper than plain (2). The
+    // solver should produce a path that may include smooth-road cells
+    // without inflating the step count.
     let rows = &[
         "........", "........", "........", "........", "ssssssss", "........", "........",
         "........",

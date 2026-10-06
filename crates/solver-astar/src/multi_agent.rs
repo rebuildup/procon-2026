@@ -355,15 +355,22 @@ impl MultiAgentAStar {
             }
 
             if entry.coord == ctx.goal {
-                goal_state = Some((entry.coord, entry.time, entry.fuel));
+                // Defence in depth: refuse an over-budget path at
+                // acceptance rather than de-rank it. See
+                // `official_step_budget_exhausted`.
+                if !official_step_budget_exhausted(entry.steps, 0, ctx.max_steps) {
+                    goal_state = Some((entry.coord, entry.time, entry.fuel));
+                    expanded_count += 1;
+                    break;
+                }
                 expanded_count += 1;
-                break;
+                continue;
             }
             expanded_count += 1;
 
-            // Budget check in unweighted steps: `f` also carries the fuel
+            // Budget check in official steps: `f` also carries the fuel
             // scaling, which orders the heap rather than measuring the day.
-            if entry.steps.saturating_add(entry.h) > ctx.max_steps {
+            if official_step_budget_exhausted(entry.steps, entry.h, ctx.max_steps) {
                 continue;
             }
 
@@ -395,7 +402,7 @@ impl MultiAgentAStar {
                 let origin_cost =
                     ctx.map.get(entry.coord).and_then(BaseStepCost::for_cell).map_or(0, |c| c.0);
                 let steps_after = entry.steps.saturating_add(origin_cost);
-                if steps_after.saturating_add(h_after) > ctx.max_steps {
+                if official_step_budget_exhausted(steps_after, h_after, ctx.max_steps) {
                     continue;
                 }
                 let state_key = (neighbor, next_time, next_fuel);
@@ -417,22 +424,16 @@ impl MultiAgentAStar {
             }
         }
 
-        // Reconstruct path from goal back to start. We never generate
-        // Wait actions in this loop, so all transitions are hex moves.
-        let path = goal_state.map(|state| {
-            let mut reverse_actions: Vec<Action> = Vec::new();
-            let mut cur = state;
-            while cur != (ctx.start, 0, ctx.initial_fuel) {
-                let Some(prev) = came_from.get(&cur).copied() else { break };
-                reverse_actions.push(action_between_hex(prev.0, cur.0));
-                cur = prev;
-            }
-            reverse_actions.reverse();
-            Path { steps: reverse_actions }
-        });
+        let path = goal_state.map(|state| reconstruct_hex_path(ctx, &came_from, state));
 
         let failure = if path.is_none() {
-            Some(diagnose_multi(ctx, (self.heuristic)(ctx.start, ctx.goal)))
+            // `min_cost` must be in official steps, the unit `max_steps` is
+            // denominated in — a move count made every budget overrun look
+            // like `Unreachable`. See `estimate_min_steps` in `crate::solver`.
+            Some(diagnose_multi(
+                ctx,
+                crate::solver::estimate_min_steps(&ctx.map, ctx.start, ctx.goal),
+            ))
         } else {
             None
         };
@@ -574,7 +575,46 @@ fn action_between_hex(from: HexCoord, to: HexCoord) -> Action {
     Action::Wait
 }
 
+/// Reconstruct the move sequence from `state` back to the start.
+///
+/// No `Wait` action is ever generated in this search, so every transition is
+/// a hex move.
+fn reconstruct_hex_path(
+    ctx: &SolveContext,
+    came_from: &HashMap<(HexCoord, u32, u32), (HexCoord, u32, u32)>,
+    state: (HexCoord, u32, u32),
+) -> Path {
+    let mut reverse_actions: Vec<Action> = Vec::new();
+    let mut cur = state;
+    while cur != (ctx.start, 0, ctx.initial_fuel) {
+        let Some(prev) = came_from.get(&cur).copied() else { break };
+        reverse_actions.push(action_between_hex(prev.0, cur.0));
+        cur = prev;
+    }
+    reverse_actions.reverse();
+    Path { steps: reverse_actions }
+}
+
+/// Whether an official step budget is already blown at this node.
+///
+/// `steps` is the official step cost accrued so far (every move billed the
+/// cell it **departed**) and `h` the heuristic's estimate of the moves still
+/// to go. Every move costs at least 1 official step, so `h` lower-bounds
+/// what is left to pay and the sum is a sound lower bound on the finished
+/// cost: pruning here can never discard a prefix the remaining budget could
+/// still afford. At the goal `h` is 0, so the same predicate is an exact
+/// feasibility test — which is what makes an over-budget path *rejected*
+/// rather than merely de-ranked.
+fn official_step_budget_exhausted(steps: u32, h: u32, max_steps: u32) -> bool {
+    steps.saturating_add(h) > max_steps
+}
+
 fn diagnose_multi(ctx: &SolveContext, min_cost: u32) -> SolverFailure {
+    // `u32::MAX` is the "no path exists" sentinel; it must be caught before
+    // the budget comparison, since `MAX > max_steps` is trivially true.
+    if min_cost == u32::MAX {
+        return SolverFailure::Unreachable;
+    }
     if min_cost > ctx.max_steps {
         SolverFailure::ExceedsStepBudget { min_cost }
     } else {
@@ -593,6 +633,46 @@ mod tests {
 
     fn open_map() -> HexMap {
         HexMap::new(8, 8, vec![CellKind::Plain; 64]).unwrap()
+    }
+
+    /// The multi-agent search enforces the day budget in the same official
+    /// units as the single-agent one, and *rejects* an over-budget plan
+    /// rather than merely de-ranking it.
+    ///
+    /// Four plain moves east is 4 moves but 8 official steps (each departs a
+    /// plain cell worth 2), so a 6-step budget is infeasible and the planner
+    /// must return no path with an `ExceedsStepBudget` whose `min_cost` is in
+    /// official steps (8), not moves (4).
+    ///
+    /// Two agents, not one: `plan_one` delegates to the base `AstarSolver`
+    /// while the reservation table is empty, so with a single agent this
+    /// would only re-test the single-agent fix. The **second** agent is the
+    /// first to run the multi-agent search proper, so it is what pins this.
+    #[test]
+    fn over_budget_plan_is_rejected_in_official_steps() {
+        // Agent 0 goes first and succeeds, committing reservations so the
+        // table is non-empty by the time agent 1 runs the real search.
+        let first =
+            SolveContext::new(open_map(), HexCoord::new(0, 0), HexCoord::new(1, 0), 100, 50)
+                .expect("valid context");
+        let over_budget =
+            SolveContext::new(open_map(), HexCoord::new(0, 4), HexCoord::new(4, 4), 100, 6)
+                .expect("valid context");
+
+        let planner = MultiAgentAStar::new(vec![AgentId(0), AgentId(1)]);
+        let plan = planner.plan(&[first, over_budget]);
+
+        let agent_plan = &plan.plans[1];
+        assert!(
+            agent_plan.path().is_none(),
+            "an over-budget plan must be rejected, not de-ranked, got {:?}",
+            agent_plan.result.path
+        );
+        assert_eq!(
+            agent_plan.result.failure,
+            Some(SolverFailure::ExceedsStepBudget { min_cost: 8 }),
+            "min_cost must be official steps (8), not the 4-move hex distance"
+        );
     }
 
     #[test]

@@ -176,9 +176,9 @@ pub enum MapLayout {
 /// branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CellKind {
-    /// Passable. Step cost 1, fuel cost 1.
+    /// Passable. Step cost 2, fuel cost 1.
     Plain,
-    /// Passable, slow. Step cost 2, fuel cost 2.
+    /// Passable, slow. Step cost 3, fuel cost 2.
     Mountain,
     /// Impassable — [`HexMap::neighbors`] never returns ponds.
     Pond,
