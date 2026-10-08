@@ -34,7 +34,7 @@ pub mod two_opt;
 pub mod types;
 
 pub use dual_direction::{Direction, DualDirectionLoop, ccw_position, cw_position, score_dual};
-pub use multi_loop::{ClusteringStrategy, MultiLoopComposer};
+pub use multi_loop::{ClusteringStrategy, MultiLoopComposer, SurplusMode};
 pub use or_opt::{OR_OPT_MAX_LEN, apply_or_opt, apply_or_opt_pass, gap_is_legal, or_opt_delta};
 pub use score::{DailyScore, DayObservation, ScoreRanking, ScoreReport, simulate_day};
 pub use solver::{
