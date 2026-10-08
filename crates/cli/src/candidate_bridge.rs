@@ -495,4 +495,79 @@ mod tests {
         assert!(CandidateBridge::from_registry_id("loop:budget=element").is_err());
         assert!(CandidateBridge::from_registry_id("no-such-algo").is_err());
     }
+    #[test]
+    fn campaign_candidate_matches_live_bridge_on_every_day() {
+        use bench::adapters::walk::BudgetMode;
+        use bench::case::CaseSpec;
+        use engine::model::{AgentActions, AgentKind};
+        let case: CaseSpec =
+            serde_json::from_str(include_str!("../../bench/tests/fixtures/arena-701.json"))
+                .expect("701");
+        for pattern in ["P,S", "P,S,S,P,S"] {
+            let kinds = bench::kinds::resolve_kinds(
+                Some(&bench::kinds::parse_kinds(pattern).expect("kinds")),
+                case.setting.agents.len(),
+            );
+            let team = TeamId::new("player-a").expect("team");
+            let setting = case.to_engine_setting_with_kinds(&team, Some(&kinds)).expect("setting");
+            let mut state = ModelMatchState::new(setting.clone()).expect("state");
+            let id = "coverage:budget=official";
+            let bridge = CandidateBridge::from_registry_id(id).expect("candidate");
+            *bridge.slots.setting.lock().expect("slot") = Some(setting);
+            let offline = bench::CandidateRegistry::builtin()
+                .build(id)
+                .expect("candidate")
+                .build_solver()
+                .expect("solver");
+            let sim = engine::MatchSim::new(case.sim_config().expect("config"));
+            while !state.is_finished() {
+                let width = i32::from(state.setting.map.size.width);
+                let agents: Vec<_> = state
+                    .agents
+                    .iter()
+                    .map(|a| {
+                        json!({
+                            "kind": if a.kind == AgentKind::Patrol { 0 } else { 1 },
+                            "pos": a.pos.row * width + a.pos.col, "fuel": a.fuel.min(i32::MAX as u32)
+                        })
+                    })
+                    .collect();
+                let traffics: Vec<_> = state
+                    .setting
+                    .map
+                    .roads()
+                    .map(|c| {
+                        let status = match c.terrain {
+                            engine::model::Terrain::Road(TrafficState::Busy) => 1,
+                            engine::model::Terrain::Road(TrafficState::Jammed) => 2,
+                            _ => 0,
+                        };
+                        json!({"pos": c.coord.row * width + c.coord.col, "status": status})
+                    })
+                    .collect();
+                *bridge.slots.live_state.lock().expect("slot") = Some(serde_json::from_value(json!({
+                    "endsAt": 0, "day": state.day, "agents": agents, "others": [], "traffics": traffics
+                })).expect("wire state"));
+                let ctx = ModelSolverContext::from_state(&state);
+                let plan = offline.decide(&ctx);
+                assert_eq!(BudgetMode::Official.apply(&ctx, plan.clone()), plan);
+                let wire = SolverContext::new(
+                    crate::solver_adapter::dummy_match_snapshot(),
+                    team.clone(),
+                    ctx.agent_ids.clone(),
+                    ctx.day,
+                    ctx.day_steps,
+                    60_000,
+                );
+                let decision = bridge.decide(&wire);
+                assert!(decision.metadata.get("fallback").is_none());
+                let expected: Vec<_> = plan.actions.iter().copied().map(wire_action).collect();
+                assert_eq!(decision.actions, expected, "live parity day {} {pattern}", state.day);
+                for chunk in plan.actions.chunks(ctx.agent_ids.len()) {
+                    sim.step(&mut state, &AgentActions::new(chunk.to_vec()));
+                }
+            }
+            assert_eq!(state.illegal_action_count, 0);
+        }
+    }
 }
