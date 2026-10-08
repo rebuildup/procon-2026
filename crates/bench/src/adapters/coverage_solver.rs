@@ -32,10 +32,12 @@ impl CandidateFactory for CoverageFactory {
         if spec.param("budget") != Some("official") {
             return Err(CandidateError::Build("coverage requires budget=official".into()));
         }
-        Ok(Box::new(CoverageCandidate))
+        Ok(Box::new(CoverageCandidate { variety_first: true }))
     }
 }
-pub struct CoverageCandidate;
+pub struct CoverageCandidate {
+    pub(crate) variety_first: bool,
+}
 
 #[derive(Clone, Copy)]
 struct Route {
@@ -174,7 +176,7 @@ impl Solver for CoverageCandidate {
                             let route = paths[index(map, s.pos)];
                             (route.cost <= ctx.day_steps - used[i] && route.first.is_some())
                                 .then_some((
-                                    reserved.contains(&s.series),
+                                    self.variety_first && reserved.contains(&s.series),
                                     route.cost,
                                     s.series,
                                     index(map, s.pos),

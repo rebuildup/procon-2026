@@ -95,3 +95,6 @@ pub(crate) fn reject_unknown_params(
     }
     Ok(())
 }
+
+pub mod harvest_solver;
+pub use harvest_solver::HarvestFactory;
