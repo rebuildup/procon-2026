@@ -55,10 +55,18 @@ impl Solver for SearchCandidate {
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let mut best = CoverageCandidate { variant: 0 }.decide(ctx);
         let mut score = replay_score(ctx, &best);
+        // The wall clock is bounded from both sides (Issue #311, live
+        // match 1762's revision=-1): the explicit `time_budget_ms` and the
+        // per-day answer window the coordinator hands us as `remaining_ms`.
+        // Whichever is shorter wins, with a 3s margin for adapter +
+        // normalize + POST — a plan that answers after `endsAt` is
+        // discarded server-side no matter how good it is.
         let deadline = if self.time_budget_ms == 0 {
             None
         } else {
-            Some(Instant::now() + Duration::from_millis(u64::from(self.time_budget_ms)))
+            let budget = Duration::from_millis(u64::from(self.time_budget_ms));
+            let window = Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(3_000)));
+            Some(Instant::now() + budget.min(window))
         };
         let Some(deadline) = deadline else {
             for trial in 1..self.trials {
