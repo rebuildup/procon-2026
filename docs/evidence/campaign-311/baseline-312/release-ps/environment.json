@@ -1,0 +1,39 @@
+{
+  "source_commit_sha": "bcfa0be46816178ba4d1d0b97f4b6a662b81e4bd",
+  "profile": "release",
+  "kinds": "P,S",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "processor": "arm",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "oracle_refill": false,
+  "response_time_policy": "Measured daily solver time under the release profile; this is the competition-representative response_time axis.",
+  "command": [
+    "/Users/rebui/work/procon-campaign-312/target/release/procon-eval",
+    "--cases",
+    "all",
+    "--case-files",
+    "crates/bench/tests/fixtures/arena-701.json,docs/evidence/campaign-311/baseline-312/import-live-match.json",
+    "--generated",
+    "open:seed=1:days=3:fuel=tight,road-heavy:seed=1:days=3:fuel=tight,many-series:seed=3:days=3",
+    "--kinds",
+    "P,S",
+    "--candidates",
+    "multiloop:grid=2x2:walk=astar:assign=all:budget=official,multiloop:kmeans=5:seed=42:walk=astar:assign=all:budget=official,multiloop:kmeans=8:seed=42:walk=astar:assign=all:budget=official,loop:iterations=128:initial=greedy:walk=astar:assign=all:budget=official",
+    "--baseline",
+    "multiloop:grid=2x2:walk=astar:assign=all:budget=official",
+    "--output-dir",
+    "/Users/rebui/work/procon-campaign-312/docs/evidence/campaign-311/baseline-312/release-ps"
+  ],
+  "build": [
+    "cargo",
+    "+stable",
+    "build",
+    "--offline",
+    "--locked",
+    "-p",
+    "bench",
+    "--bin",
+    "procon-eval",
+    "--release"
+  ]
+}
