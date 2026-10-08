@@ -670,7 +670,7 @@ mod tests {
 
         // The optimizer must have produced at least one prediction (for
         // `s0`'s observed congestion).
-        assert!(!plan.predicted_traffic.is_empty());
+        assert_ne!(plan.predicted_traffic.len(), 0);
         let s0_pred =
             plan.predicted_traffic.iter().find(|p| p.coord == HexCoord::new(1, 0)).unwrap();
         assert!(s0_pred.predicted_level > 0.5);

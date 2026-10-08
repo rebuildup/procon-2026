@@ -1,5 +1,5 @@
 //! Daily coverage first, followed by marginal harvest, with joint fuel replay.
-//! Planning uses the same engine rules as evaluation and live CandidateBridge.
+//! Planning uses the same engine rules as evaluation and live `CandidateBridge`.
 use std::cmp::Reverse;
 use std::collections::{BTreeSet, BinaryHeap};
 
@@ -46,7 +46,8 @@ struct Route {
     first: Option<Direction>,
 }
 fn index(map: &MapGrid, p: HexCoord) -> usize {
-    p.row as usize * usize::from(map.size.width) + p.col as usize
+    usize::try_from(p.row).expect("in-bounds row") * usize::from(map.size.width)
+        + usize::try_from(p.col).expect("in-bounds column")
 }
 // One shortest-path tree per active vehicle. Stable queue and direction order
 // make ties reproducible. Fuel is a conservative feasibility bound, not score.
@@ -106,6 +107,24 @@ fn legal_step(
     Action::wait(agent.id)
 }
 
+fn supply_pairs(
+    state: &engine::model::MatchState,
+    patrols: &[usize],
+) -> (Vec<Option<usize>>, BTreeSet<usize>) {
+    let n = state.agents.len();
+    let mut pairs = vec![None; n];
+    let mut assigned = BTreeSet::new();
+    for (i, agent) in state.agents.iter().enumerate().filter(|(_, a)| a.kind == AgentKind::Supply) {
+        let paths = routes(&state.setting.map, agent, false);
+        if let Some(&p) = patrols.iter().min_by_key(|&&p| {
+            (assigned.contains(&p), paths[index(&state.setting.map, state.agents[p].pos)].cost, p)
+        }) {
+            pairs[i] = Some(p);
+            assigned.insert(p);
+        }
+    }
+    (pairs, assigned)
+}
 impl Solver for CoverageCandidate {
     fn name(&self) -> &'static str {
         "coverage"
@@ -122,23 +141,7 @@ impl Solver for CoverageCandidate {
         let n = state.agents.len();
         let patrols: Vec<_> =
             (0..n).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
-        let mut pairs = vec![None; n];
-        let mut assigned = BTreeSet::new();
-        for (i, agent) in
-            state.agents.iter().enumerate().filter(|(_, a)| a.kind == AgentKind::Supply)
-        {
-            let paths = routes(&state.setting.map, agent, false);
-            if let Some(&p) = patrols.iter().min_by_key(|&&p| {
-                (
-                    assigned.contains(&p),
-                    paths[index(&state.setting.map, state.agents[p].pos)].cost,
-                    p,
-                )
-            }) {
-                pairs[i] = Some(p);
-                assigned.insert(p);
-            }
-        }
+        let (pairs, assigned) = supply_pairs(&state, &patrols);
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
         let sim = MatchSim::default();
