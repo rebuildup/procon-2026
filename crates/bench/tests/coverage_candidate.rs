@@ -11,7 +11,7 @@ fn setting(fuel: u32) -> MatchSetting {
             (0..8).map(move |col| {
                 let pos = HexCoord::new(col, row);
                 let spot = (row == 1 && (1..=4).contains(&col)).then_some(Spot {
-                    series: if col < 3 { 1 } else { (col - 1) as u32 },
+                    series: if col < 3 { 1 } else { u32::try_from(col - 1).unwrap() },
                     pos,
                     max_stock: 3,
                     current_stock: 3,
