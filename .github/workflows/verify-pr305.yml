@@ -1,0 +1,23 @@
+name: One-shot PR 306 Rust validation
+on:
+  push:
+    branches: ['305']
+    paths: ['.github/workflows/verify-pr305.yml']
+permissions:
+  contents: read
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Unit tests
+        run: cargo test --workspace --locked
