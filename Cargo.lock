@@ -1980,6 +1980,7 @@ dependencies = [
 name = "solver-astar"
 version = "0.2.0"
 dependencies = [
+ "domain",
  "thiserror 2.0.21",
 ]
 

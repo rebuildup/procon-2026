@@ -14,4 +14,9 @@ workspace = true
 [dependencies]
 thiserror = { workspace = true }
 
+# The step-cost contract is a restatement of `domain::cell::MOVE_STEPS`, so the
+# contract test reads that table directly rather than trusting this crate's
+# own copy. Dev-only: the library stays free of a `domain` dependency, as
+# `lib.rs` documents.
 [dev-dependencies]
+domain = { workspace = true }
