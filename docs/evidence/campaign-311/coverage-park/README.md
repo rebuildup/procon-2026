@@ -52,9 +52,21 @@ PROCON_SOURCE_COMMIT_SHA=$(git rev-parse HEAD) ./target/release/procon-eval \
 
 | variant | 701 D | 701 B | outcome |
 |---|---:|---:|---|
-| park=risk (risk preference in coverage key) | 178 | 287 | worse: risk preference leaked into coverage phase |
+| park=risk (risk preference in coverage key) | 178 | 287 | risk preference leaked into coverage phase |
 | park=risk (harvest-only, threshold budget/4) | 194 | 334 | day 6 collapsed to 14 (repositioning stranded patrols) |
 | park=far (farthest-first harvest, no fuel guard) | 194 | 240 | fuel exhaustion: patrol fuel hit 0 for 3 consecutive days |
 | park=far (day_claimed spreading, no threshold) | 192 | 349 | short days scatter; days 6/8 lost 2 each |
 | park=far (day_claimed, threshold >= 60) | 195 | 362 | day 2 +1 but day 6 −1 (day-5 spreading hurt day-6 start) |
-| **park=far (day_claimed, >= 70 && tomorrow >= 70)** | **198** | 358 | **adopted** |
+| **park=far (day_claimed, >= 70 && tomorrow >= 70)** | **198** | **358** | **adopted** |
+| owner-aware claims (repel only other agents) | 196 | 351 | day 2 perfect but day 6/8 worse (commitment vs sweep) |
+| coverage-phase-only spreading | 193 | 335 | harvest repositioning is essential for D gain |
+| approach-target (move toward unreachable unacquired) | 196 | 343 | day-end transit ruins next-day start positions |
+| distance-limited spread (cost <= 15) | 151 | 230 | repositioning requires far targets; nearby spread is noise |
+| cross-day miss memory | 194 | 363 | boost disrupts long-day coverage (day 8 lost 4) |
+| fuel-aware supply pairing | 192 | 360 | nearest-supply keeps escort proximity better |
+| threshold sweep 65/70/75 | 198 | 358 | plateau; 80 breaks day 8 (7/20) |
+
+## Live arena evidence
+
+4 consecutive completed matches with `coverage:budget=official:park=far` @ `6ff04c1`:
+match 1752 (4d), 1754 (8d), 1756 (4d), 1758 (4d). Match 1760 (7-agent) rejected server-side.
