@@ -25,7 +25,11 @@
 //! 3. **Assign** agents to regions round-robin (lowest region index first,
 //!    wrapping at the agent count). When there are more regions than agents,
 //!    the surplus regions share the last agent. When there are more agents
-//!    than regions, the surplus agents are left idle for the day.
+//!    than regions, the surplus agents are left idle for the day — unless
+//!    [`SurplusMode::Split`] hands each of them a tail chunk of the longest
+//!    tour (Issue #252, the `surplus` parameter). `balance` (also Issue
+//!    #252) collapses one-spot regions before this step so no Patrol parks
+//!    after a single visit.
 //! 4. **Distribute** each agent's combined visit order across `days` using
 //!    round-robin interleaving so that no single agent is overloaded on
 //!    the first day.
@@ -102,6 +106,20 @@ impl ClusteringStrategy {
     }
 }
 
+/// What to do with the agents the region round-robin leaves empty when there
+/// are more agents than regions (Issue #252).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SurplusMode {
+    /// `surplus=idle` (default): an agent with no region waits the whole
+    /// day — byte-identical to the pre-#252 round-robin.
+    #[default]
+    Idle,
+    /// `surplus=split`: every empty agent receives a contiguous tail chunk
+    /// of the current longest tour (its owner keeps at least one spot), so
+    /// every agent walks something.
+    Split,
+}
+
 /// Multi-loop composer: partition spots into regions, build an independent
 /// greedy (+ optional 2-opt) loop per region, and assign agents to regions.
 #[derive(Debug, Clone)]
@@ -116,6 +134,12 @@ pub struct MultiLoopComposer {
     /// Whether to refine each region's loop with 2-opt best-improvement
     /// passes until a local optimum is reached.
     pub refine: bool,
+    /// Merge every one-spot region into the smallest non-empty other region
+    /// before touring (`balance`, Issue #252). Default `false`.
+    pub balance: bool,
+    /// How agents the round-robin leaves empty are treated
+    /// (`surplus`, Issue #252). Default [`SurplusMode::Idle`].
+    pub surplus: SurplusMode,
 }
 
 impl Default for MultiLoopComposer {
@@ -124,16 +148,19 @@ impl Default for MultiLoopComposer {
             num_regions: 4,
             clustering: ClusteringStrategy::Grid { rows: 2, cols: 2 },
             refine: true,
+            balance: false,
+            surplus: SurplusMode::Idle,
         }
     }
 }
 
 impl MultiLoopComposer {
     /// Construct a composer with the given number of regions and clustering
-    /// strategy. Refinement defaults to enabled.
+    /// strategy. Refinement defaults to enabled; `balance` / `surplus` keep
+    /// their byte-identical defaults (off / idle) until set explicitly.
     #[must_use]
     pub fn new(num_regions: usize, clustering: ClusteringStrategy) -> Self {
-        Self { num_regions, clustering, refine: true }
+        Self { num_regions, clustering, refine: true, balance: false, surplus: SurplusMode::Idle }
     }
 
     /// Construct a composer that disables per-region 2-opt refinement. Useful
@@ -141,7 +168,7 @@ impl MultiLoopComposer {
     /// partitioning / assignment shape.
     #[must_use]
     pub fn without_refinement(num_regions: usize, clustering: ClusteringStrategy) -> Self {
-        Self { num_regions, clustering, refine: false }
+        Self { num_regions, clustering, refine: false, balance: false, surplus: SurplusMode::Idle }
     }
 
     /// Build a greedy (+ optional 2-opt) loop through the spots in a region.
@@ -198,6 +225,12 @@ impl Solver for MultiLoopComposer {
         while regions.len() < self.num_regions {
             regions.push(Vec::new());
         }
+        // Issue #252 `balance`: a one-spot region parks its Patrol after a
+        // single visit (the live-692 defect). Off by default — byte
+        // identical until the candidate asks for it.
+        if self.balance {
+            balance_regions(&mut regions);
+        }
 
         // 2. Build a tour per region. We need the actual Spot objects so we
         // can run nearest-neighbor and 2-opt on coordinates.
@@ -220,6 +253,12 @@ impl Solver for MultiLoopComposer {
         for (region_idx, tour) in region_tours.iter().enumerate() {
             let agent_idx = region_idx % agents_count;
             per_agent_tours[agent_idx].extend(tour);
+        }
+        // Issue #252 `surplus`: the round-robin leaves an agent empty when
+        // there are more agents than regions (and whenever `balance` emptied
+        // a region). Off by default — those agents wait, as before.
+        if self.surplus == SurplusMode::Split {
+            split_surplus(&mut per_agent_tours);
         }
 
         // 4. Distribute each agent's combined visit order across days using
@@ -259,6 +298,65 @@ impl Solver for MultiLoopComposer {
         }
 
         Ok(SolveOutcome { plans, score })
+    }
+}
+
+// ----------------------------------------------------------------------
+// Issue #252 balance / surplus
+// ----------------------------------------------------------------------
+
+/// Merge every one-spot region into the smallest non-empty other region
+/// (fewest spots, lowest index on ties) — Issue #252 `balance`.
+///
+/// The donor is left empty; the round-robin still assigns regions by index,
+/// so the agent that loses its only region may end up empty-handed and is
+/// then picked up by [`split_surplus`] when `surplus=split` is also on.
+/// Padding empties are never targets (they carry nothing) and never donors
+/// (their length is 0, not 1). While any one-spot donor exists there are at
+/// least two non-empty regions — the donor is one — so a target always
+/// exists and the loop terminates by emptying donors.
+fn balance_regions(regions: &mut [Vec<u32>]) {
+    while let Some(donor) = regions.iter().position(|r| r.len() == 1) {
+        let Some(target) = regions
+            .iter()
+            .enumerate()
+            .filter(|(i, r)| *i != donor && !r.is_empty())
+            .min_by_key(|(i, r)| (r.len(), *i))
+            .map(|(i, _)| i)
+        else {
+            break;
+        };
+        let moved = std::mem::take(&mut regions[donor]);
+        regions[target].extend(moved);
+    }
+}
+
+/// Give every empty agent a contiguous tail of the current longest tour —
+/// Issue #252 `surplus=split`.
+///
+/// The donor keeps at least one spot (`len >= 2` to donate, half rounded
+/// down so at least one remains), so a tour never migrates wholesale and
+/// oscillates between agents. Ties on length resolve to the lowest agent
+/// index, and each iteration either fills one empty agent or returns, so
+/// the loop terminates. Regions of single spots cannot be shared this way —
+/// [`balance_regions`] is what collapses those first.
+fn split_surplus(per_agent_tours: &mut [Vec<u32>]) {
+    loop {
+        let Some(empty) = per_agent_tours.iter().position(Vec::is_empty) else {
+            return;
+        };
+        let Some(donor) = per_agent_tours
+            .iter()
+            .enumerate()
+            .filter(|(_, tour)| tour.len() >= 2)
+            .max_by_key(|(i, tour)| (tour.len(), std::cmp::Reverse(*i)))
+            .map(|(i, _)| i)
+        else {
+            return;
+        };
+        let take = per_agent_tours[donor].len() / 2;
+        let tail = per_agent_tours[donor].split_off(per_agent_tours[donor].len() - take);
+        per_agent_tours[empty].extend(tail);
     }
 }
 
@@ -501,5 +599,71 @@ mod tests {
             MultiLoopComposer::new(0, ClusteringStrategy::KMeans { k: 0, max_iters: 1, seed: 0 });
         let err = composer.solve(&problem).unwrap_err();
         assert_eq!(err, SolverError::ZeroRegions);
+    }
+
+    /// Issue #252: `balance` / `surplus` default to the legacy behaviour, so
+    /// every canonical id that does not spell them out is byte-identical.
+    #[test]
+    fn balance_and_surplus_default_to_the_legacy_behaviour() {
+        let composer = MultiLoopComposer::new(4, ClusteringStrategy::Grid { rows: 2, cols: 2 });
+        assert!(!composer.balance, "balance must default to off");
+        assert_eq!(composer.surplus, SurplusMode::Idle, "surplus must default to idle");
+        assert!(!MultiLoopComposer::default().balance);
+        assert_eq!(MultiLoopComposer::default().surplus, SurplusMode::Idle);
+        assert!(!MultiLoopComposer::without_refinement(4, composer.clustering).balance);
+    }
+
+    /// Issue #252 (現象1): one-spot regions collapse into the smallest
+    /// non-empty neighbour, no spot is lost, and no one-spot region is left
+    /// behind to park its Patrol.
+    #[test]
+    fn balance_regions_collapses_one_spot_regions() {
+        let mut regions = vec![vec![0, 1, 2], vec![3], vec![4, 5], vec![6]];
+        balance_regions(&mut regions);
+        assert!(
+            regions.iter().all(|r| r.len() != 1),
+            "no one-spot region may survive balance: {regions:?}"
+        );
+        let mut all: Vec<u32> = regions.iter().flatten().copied().collect();
+        all.sort_unstable();
+        assert_eq!(all, (0..7).collect::<Vec<u32>>(), "every spot survives exactly once");
+    }
+
+    /// The degenerate all-singletons input still terminates: donors pair up
+    /// with their nearest-sized neighbour and no one-spot region survives.
+    #[test]
+    fn balance_regions_terminates_on_all_singletons() {
+        let mut regions = vec![vec![0], vec![1], vec![2], vec![3]];
+        balance_regions(&mut regions);
+        assert!(
+            regions.iter().all(|r| r.len() != 1),
+            "singletons must pair up, not stay alone: {regions:?}"
+        );
+        let mut all: Vec<u32> = regions.iter().flatten().copied().collect();
+        all.sort_unstable();
+        assert_eq!(all, (0..4).collect::<Vec<u32>>(), "every spot survives exactly once");
+    }
+
+    /// Issue #252 (現象1/現象2): `surplus=split` hands every empty agent a
+    /// tail of the longest tour — nobody is left with nothing, and no spot
+    /// is duplicated or dropped.
+    #[test]
+    fn split_surplus_fills_every_empty_agent() {
+        let mut tours = vec![vec![0, 1, 2, 3], vec![], vec![], vec![]];
+        split_surplus(&mut tours);
+        assert!(tours.iter().all(|t| !t.is_empty()), "every agent gets a tour: {tours:?}");
+        let mut all: Vec<u32> = tours.iter().flatten().copied().collect();
+        all.sort_unstable();
+        assert_eq!(all, (0..4).collect::<Vec<u32>>(), "spots stay unique and complete");
+    }
+
+    /// A single-spot tour cannot be shared without emptying its owner, so
+    /// `surplus=split` leaves it alone instead of ping-ponging the spot
+    /// between two agents forever.
+    #[test]
+    fn split_surplus_never_empties_a_single_spot_tour() {
+        let mut tours = vec![vec![7], vec![]];
+        split_surplus(&mut tours);
+        assert_eq!(tours, vec![vec![7], vec![]], "nothing to split: the empty agent stays empty");
     }
 }

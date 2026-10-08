@@ -739,8 +739,8 @@ mod tests {
             cat.algorithms.iter().find(|a| a.algorithm == "loop").expect("loop in catalog");
         let keys: Vec<_> = loop_entry.params.iter().map(|p| p.key.as_str()).collect();
         // Canonical id order: `operators` (#191), `lookahead` (#193), `walk`
-        // (#215), `assign` (#235), then `budget` (#255) appended last —
-        // older ids keep their exact shape.
+        // (#215), `assign` (#235), `budget` (#255), then `fuelpair` (#252)
+        // appended last — older ids keep their exact shape.
         assert_eq!(
             keys,
             vec![
@@ -751,7 +751,8 @@ mod tests {
                 "lookahead",
                 "walk",
                 "assign",
-                "budget"
+                "budget",
+                "fuelpair"
             ]
         );
         let json = serde_json::to_string_pretty(&cat).unwrap();

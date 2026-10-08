@@ -423,6 +423,18 @@ fn direction_between(from: HexCoord, to: HexCoord) -> Option<Direction> {
 }
 
 /// Decide which [`SolverFailure`] to report when no path was found.
+///
+/// **Unit note (Issue #304):** callers pass `hex_distance` — a *move count*
+/// — while `ctx.max_steps` is the official terrain-weighted budget since
+/// #302. The two are not the same unit: every move costs at least one
+/// official step, so this comparison can only *under*-report an overrun (it
+/// fires when even the cheapest geometry cannot fit, and `min_cost` states
+/// the distance rather than the official cost of the terrain it crosses).
+/// It is diagnostics only — no path selection reads it — and
+/// `crate::solver::estimate_min_steps` is the official-unit estimator that
+/// fixed the same mismatch in `diagnose` / `diagnose_multi`. Adopting it
+/// here would be a behaviour-preserving test/label change; deliberately
+/// left out of #304's scope.
 fn diagnose_failure(ctx: &SolveContext, min_cost: u32) -> SolverFailure {
     if min_cost > ctx.max_steps {
         SolverFailure::ExceedsStepBudget { min_cost }
