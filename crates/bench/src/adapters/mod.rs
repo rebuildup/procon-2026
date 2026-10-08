@@ -16,6 +16,8 @@
 pub mod astar_solver;
 pub mod astar_walk;
 pub mod context;
+pub mod coverage_solver;
+pub use coverage_solver::CoverageFactory;
 pub mod greedy_solver;
 pub mod loop_solver;
 pub mod multiloop_solver;

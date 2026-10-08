@@ -1,0 +1,73 @@
+use bench::CandidateRegistry;
+use domain::{MatchId, PlayerId};
+use engine::MatchSim;
+use engine::model::{
+    Agent, Cell, HexCoord, MapGrid, MapSize, MatchSetting, MatchState, SolverContext, Spot, Terrain,
+};
+
+fn setting(fuel: u32) -> MatchSetting {
+    let cells = (0..8)
+        .flat_map(|row| {
+            (0..8).map(move |col| {
+                let pos = HexCoord::new(col, row);
+                let spot = (row == 1 && (1..=4).contains(&col)).then_some(Spot {
+                    series: if col < 3 { 1 } else { (col - 1) as u32 },
+                    pos,
+                    max_stock: 3,
+                    current_stock: 3,
+                });
+                Cell { coord: pos, terrain: Terrain::Plain, spot }
+            })
+        })
+        .collect();
+    MatchSetting {
+        match_id: MatchId::new("coverage-test").unwrap(),
+        team: PlayerId::new("player-a").unwrap(),
+        map: MapGrid::new(MapSize::new(8, 8).unwrap(), cells).unwrap(),
+        agents: vec![
+            Agent::patrol_with_fuel(0, HexCoord::new(0, 1), fuel),
+            Agent::supply(1, HexCoord::new(0, 1)),
+            Agent::supply(2, HexCoord::new(0, 2)),
+        ],
+        day_steps: 16,
+        num_days: 2,
+        day_steps_by_day: Vec::new(),
+    }
+}
+
+#[test]
+fn coverage_replans_daily_and_harvests_after_covering_series() {
+    let solver = CandidateRegistry::builtin()
+        .build("coverage:budget=official")
+        .expect("registered coverage candidate")
+        .build_solver()
+        .unwrap();
+    let result = MatchSim::default().run(setting(32), solver.as_ref()).unwrap();
+    assert_eq!((result.variety, result.daily_variety_sum, result.total_balls), (3, 6, 8));
+    assert_eq!(result.illegal_action_count, 0);
+}
+
+#[test]
+fn coverage_uses_supply_contact_to_continue_beyond_initial_fuel() {
+    let solver = CandidateRegistry::builtin()
+        .build("coverage:budget=official")
+        .expect("registered coverage candidate")
+        .build_solver()
+        .unwrap();
+    let result = MatchSim::default().run(setting(2), solver.as_ref()).unwrap();
+    assert_eq!((result.variety, result.daily_variety_sum, result.total_balls), (3, 6, 8));
+    assert_eq!(result.fuel_short_count, 0);
+}
+
+#[test]
+fn coverage_does_not_depend_on_offline_only_series_history() {
+    let solver = CandidateRegistry::builtin()
+        .build("coverage:budget=official")
+        .expect("registered coverage candidate")
+        .build_solver()
+        .unwrap();
+    let mut state = MatchState::new(setting(32)).unwrap();
+    let original = solver.decide(&SolverContext::from_state(&state));
+    state.series_taken.extend([1, 2, 3]);
+    assert_eq!(solver.decide(&SolverContext::from_state(&state)), original);
+}
