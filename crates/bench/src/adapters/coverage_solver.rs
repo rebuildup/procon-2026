@@ -296,6 +296,10 @@ impl Solver for CoverageCandidate {
             output.extend(actions.iter().copied());
             sim.step(&mut state, &AgentActions::new(actions));
         }
-        AgentActions::new(output)
+        // Apply official budget truncation so the plan is always within the
+        // terrain-weighted day budget. Without this the server rejects the
+        // plan with `revision = -1` (Issue #331 live match 1796).
+        let plan = AgentActions::new(output);
+        crate::adapters::walk::BudgetMode::Official.apply(ctx, plan)
     }
 }
