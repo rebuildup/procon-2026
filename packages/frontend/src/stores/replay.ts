@@ -4,7 +4,7 @@
  * Holds the transport state for a single loaded `Replay` instance:
  *   - `currentStep`  : index of the step currently shown.
  *   - `isPlaying`    : whether the transport is auto-advancing.
- *   - `rate`         : playback rate multiplier (`1 | 2 | 4`).
+ *   - `rate`         : playback rate multiplier (`1 | 2 | 4 | 8 | 16 | 32`).
  *
  * Pure reactive state + action helpers (`play`, `pause`, `setStep`,
  * `setRate`). The actual `setInterval` driver lives inside `ReplayViewer`
@@ -16,9 +16,9 @@ import { createSignal } from 'solid-js';
 
 import type { GameState } from '@/lib/protocol';
 
-export type PlaybackRate = 1 | 2 | 4;
+export type PlaybackRate = 1 | 2 | 4 | 8 | 16 | 32;
 
-export const PLAYBACK_RATES: ReadonlyArray<PlaybackRate> = [1, 2, 4];
+export const PLAYBACK_RATES: ReadonlyArray<PlaybackRate> = [1, 2, 4, 8, 16, 32];
 
 /**
  * A persisted recording of a match. Each `step` is a single `GameState`

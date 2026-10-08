@@ -2,3 +2,5 @@ node_modules
 dist
 bun.lock
 package-lock.json
+# Vendored upstream sources must stay byte-identical (see src/vendor/primer/README.md).
+src/vendor

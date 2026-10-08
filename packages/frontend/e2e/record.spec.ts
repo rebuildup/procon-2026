@@ -1,3 +1,4 @@
+import { setting, day } from './team-fixture';
 /**
  * One recorded scenario per frontend route.
  *
@@ -5,11 +6,10 @@
  * `manifest.json` entry (see `./recording.ts`). Run with `bun run record`
  * or `just record`; never part of CI.
  */
-import { readFileSync } from 'node:fs';
 
 import { expect, test } from '@playwright/test';
 
-import { LIVE_SNAPSHOT_FIXTURE, recordScenario } from './recording';
+import { recordScenario } from './recording';
 
 test.describe('frontend screen recording', () => {
   test('home', async ({ browser }) => {
@@ -91,22 +91,8 @@ test.describe('frontend screen recording', () => {
       name: 'live',
       route: '/live',
       setup: async (page) => {
-        // `/match-state.json` is a gitignored CLI output; serve the committed
-        // schemaVersion-1 fixture instead so the HUD is deterministic even on
-        // a fresh clone. `lastUpdateUnix` is stamped at fulfill time so the
-        // "Last update" clock reads like a live poll.
-        const fixture = JSON.parse(readFileSync(LIVE_SNAPSHOT_FIXTURE, 'utf8')) as Record<
-          string,
-          unknown
-        >;
-        await page.route(
-          (url) => url.pathname === '/match-state.json',
-          (route) =>
-            route.fulfill({
-              contentType: 'application/json',
-              body: JSON.stringify({ ...fixture, lastUpdateUnix: Math.floor(Date.now() / 1000) }),
-            }),
-        );
+        await page.route('**/api/match/setting', (route) => route.fulfill({ json: setting }));
+        await page.route('**/api/match', (route) => route.fulfill({ json: day() }));
       },
       ready: (page) =>
         expect(

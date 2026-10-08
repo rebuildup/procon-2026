@@ -10,7 +10,7 @@
 .app-main {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 .PageLayout-content {
   min-width: 0;
@@ -28,4 +28,161 @@
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.official-example .map-stage {
+  height: 88px;
+}
+
+.match-json {
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.hex-inspector {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cell-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hex-inspector .cell-details {
+  height: 100%;
+}
+.cell-metadata {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.cell-metadata p,
+.data-cell-content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.cell-occupants {
+  min-height: 0;
+  overflow: auto;
+}
+.playback-rates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--base-size-8);
+}
+.data-table {
+  min-width: 0;
+}
+
+.cell-details h3 {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-preview {
+  width: var(--base-size-32);
+  height: var(--base-size-32);
+  flex-shrink: 0;
+}
+.legend-grid,
+.legend-series {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--base-size-4) var(--base-size-8);
+}
+.legend-series {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.legend-series > div {
+  flex-direction: column;
+}
+.legend-series span {
+  margin-left: 0 !important;
+}
+.legend-preview[data-mark] {
+  width: var(--base-size-24);
+  height: var(--base-size-24);
+}
+
+.app-main .PageLayout {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  margin-block: 0;
+  padding-block-start: calc(var(--base-size-24) + var(--Layout-outer-spacing-y));
+  padding-block-end: var(--Layout-outer-spacing-x);
+}
+.app-main .PageLayout-columns {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.app-main .PageLayout-content,
+.app-main .PageLayout-pane {
+  height: 100%;
+  min-height: 0;
+}
+.app-main .PageLayout-content {
+  overflow: hidden;
+}
+.app-main .PageLayout-pane {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-inline-end: var(--base-size-4);
+}
+.map-frame,
+.app-main .map-stage {
+  height: 100%;
+  min-height: 0;
+}
+.app-main .official-example .PageLayout-content {
+  overflow-y: auto;
+}
+.app-main .official-example .map-frame {
+  height: auto;
+}
+.app-main .official-example .map-stage {
+  height: 88px;
+}
+@media (max-width: 767px) {
+  .app-main .PageLayout-columns {
+    grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+  }
+}
+
+.viewer-overlay {
+  pointer-events: none;
+}
+.legend-terrain {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.legend-terrain dt,
+.legend-terrain dd {
+  display: block !important;
+  margin-left: 0 !important;
+  white-space: nowrap;
+}
+
+.vehicle-kind {
+  gap: var(--base-size-4);
+  vertical-align: middle;
+}
+.vehicle-kind .legend-preview[data-mark] {
+  width: var(--base-size-16);
+  height: var(--base-size-16);
+}
+
+.data-table[data-scroll] {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.data-table[data-scroll] > table {
+  min-width: 20rem;
 }

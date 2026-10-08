@@ -65,6 +65,7 @@ export interface ManifestScenario {
   readonly chromiumVersion: string;
   readonly webgpu: WebGpuProbe;
   readonly recordedAt: string;
+  readonly viewport: { width: number; height: number };
 }
 
 export interface Manifest {
@@ -80,6 +81,7 @@ export interface Scenario {
   readonly name: string;
   /** Route relative to `baseURL`. */
   readonly route: string;
+  readonly viewport?: { width: number; height: number };
   /** Network fixtures to install before navigating (e.g. the live snapshot). */
   readonly setup?: (page: Page) => Promise<void>;
   /** Resolve once the page has rendered what this scenario is meant to show. */
@@ -138,7 +140,7 @@ function upsertScenario(entry: ManifestScenario): void {
   manifest.scenarios = [...others, entry].sort((a, b) => a.name.localeCompare(b.name));
   manifest.generatedAt = new Date().toISOString();
   manifest.commit = gitCommit();
-  manifest.viewport = { width: VIEWPORT.width, height: VIEWPORT.height };
+  manifest.viewport = entry.viewport;
   manifest.recordMs = RECORD_MS;
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
@@ -150,10 +152,11 @@ function upsertScenario(entry: ManifestScenario): void {
 export async function recordScenario(browser: Browser, scenario: Scenario): Promise<void> {
   mkdirSync(RAW_DIR, { recursive: true });
   const startedAt = Date.now();
+  const viewport = scenario.viewport ?? VIEWPORT;
   const context = await browser.newContext({
     baseURL: BASE_URL,
-    viewport: VIEWPORT,
-    recordVideo: { dir: RAW_DIR, size: VIEWPORT },
+    viewport,
+    recordVideo: { dir: RAW_DIR, size: viewport },
   });
 
   try {
@@ -198,6 +201,7 @@ export async function recordScenario(browser: Browser, scenario: Scenario): Prom
       chromiumVersion: browser.version(),
       webgpu,
       recordedAt: new Date().toISOString(),
+      viewport,
     });
   } finally {
     // No-op when the happy path already closed it; guarantees teardown on error.

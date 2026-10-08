@@ -14,7 +14,9 @@
     "format:check": "prettier --check .",
     "test": "bun test --conditions=browser src",
     "record": "playwright test",
-    "record:install": "playwright install chromium"
+    "record:install": "playwright install chromium",
+    "record:match": "bun scripts/record-match.mjs",
+    "record:live": "bun scripts/record-live.mjs"
   },
   "dependencies": {
     "@kobalte/core": "^0.13.14",

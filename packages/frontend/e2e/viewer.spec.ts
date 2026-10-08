@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { LIVE_SNAPSHOT_FIXTURE } from './recording';
+import { setting, day } from './team-fixture';
 
 test('replay transport, scores, keyboard scrub and map navigation', async ({ page }) => {
   await page.goto('/replays');
@@ -48,47 +47,41 @@ test('routes fit desktop and narrow viewports; theme persists', async ({ page })
   expect(errors).toEqual([]);
 });
 
-test('live feed preserves old wire timestamps and marks failed polling as stale', async ({
-  page,
-}) => {
-  const fixture = JSON.parse(readFileSync(LIVE_SNAPSHOT_FIXTURE, 'utf8')) as Record<
-    string,
-    unknown
-  >;
-  let phase: 'running' | 'error' | 'offline' = 'running';
-  await page.route(
-    (url) => url.pathname === '/match-state.json',
-    (route) =>
-      phase === 'offline'
-        ? route.fulfill({ status: 404, body: '' })
-        : route.fulfill({
-            contentType: 'application/json',
-            body: JSON.stringify({
-              ...fixture,
-              status: phase,
-              error: phase === 'error' ? 'Solver failed' : null,
-              lastUpdateUnix: 0,
-            }),
-          }),
+test('live team feed updates fuel and keeps the last map on failure', async ({ page }) => {
+  let offline = false;
+  let fuel = 100;
+  await page.route('**/api/match/setting', (route) => route.fulfill({ json: setting }));
+  await page.route('**/api/match', (route) =>
+    offline
+      ? route.fulfill({ status: 503 })
+      : route.fulfill({ json: { ...day(), agents: [{ kind: 0, pos: 10, fuel }] } }),
   );
   await page.goto('/live');
   await expect(page.getByTestId('live-status-badge')).toHaveText('Running');
-  await expect(page.getByText('00:00:00', { exact: true })).toBeVisible();
-  phase = 'error';
-  await expect(page.getByTestId('live-status-badge')).toHaveText('Error');
-  await expect(page.getByRole('alert')).toHaveText('Solver failed');
-  phase = 'offline';
+  await expect(
+    page.getByRole('table', { name: '自チームの車両' }).getByText('100', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId('map-viewer')).toBeVisible();
+  fuel = 75;
+  await expect(
+    page.getByRole('table', { name: '自チームの車両' }).getByText('75', { exact: true }),
+  ).toBeVisible();
+  offline = true;
   await expect(page.getByTestId('live-status-badge')).toHaveText('Stale', { timeout: 10000 });
-  await expect(page.getByRole('alert')).toHaveText('Solver failed');
+  await expect(
+    page.getByRole('table', { name: '自チームの車両' }).getByText('75', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId('map-viewer')).toBeVisible();
 });
 
 test('missing live feed leaves the connecting state', async ({ page }) => {
   await page.route(
-    (url) => url.pathname === '/match-state.json',
+    (url) => url.pathname === '/api/match/setting',
     (route) => route.fulfill({ status: 404, body: '' }),
   );
   await page.goto('/live');
   await expect(page.getByTestId('live-status-badge')).toHaveText('No data', { timeout: 10000 });
+  await expect(page.getByTestId('map-viewer')).toHaveCount(0);
 });
 
 test('unsupported GPU automatically uses a complete Canvas scene without SVG DOM', async ({
@@ -181,6 +174,8 @@ test('replay shortcuts respect native controls and Escape cancels a held scrub',
 test('all routes keep the visualizer primary and information in the Primer pane', async ({
   page,
 }) => {
+  await page.route('**/api/match/setting', (route) => route.fulfill({ json: setting }));
+  await page.route('**/api/match', (route) => route.fulfill({ json: day() }));
   for (const route of ['/', '/replays', '/solvers', '/live']) {
     await page.goto(route);
     const content = page.locator('.PageLayout-content');
@@ -243,6 +238,7 @@ test('viewer actions stay English; domain terms and rule sources connect to offi
     'href',
     'https://rebuildup.dev/share/procon2026#s1-p10',
   );
+  await page.getByText('ルール', { exact: true }).click();
   const topics = page.getByRole('navigation', { name: 'Rules by topic' }).getByRole('link');
   await expect(topics).toHaveCount(3);
   for (const [index, section] of ['map', 'agents', 'spots'].entries())
@@ -259,4 +255,105 @@ test('viewer actions stay English; domain terms and rule sources connect to offi
     'href',
     'https://rebuildup.dev/share/procon2026#time',
   );
+});
+
+test('live reserves the map frame while waiting and exposes received JSON', async ({ page }) => {
+  let ready = false;
+  await page.route('**/api/match/setting', (route) =>
+    ready ? route.fulfill({ json: setting }) : route.fulfill({ status: 503 }),
+  );
+  await page.route('**/api/match', (route) => route.fulfill({ json: day() }));
+  await page.goto('/live');
+  const frame = page.getByRole('region', { name: 'Visualizer', exact: true });
+  await expect(frame).toHaveAttribute('aria-busy', 'true');
+  const before = await frame.boundingBox();
+  ready = true;
+  await expect(page.getByTestId('map-viewer')).toBeVisible();
+  expect(await frame.boundingBox()).toEqual(before);
+  await page.getByText('JSON', { exact: true }).click();
+  const json = page.getByLabel('試合データ JSON');
+  await expect(json).toBeVisible();
+  expect(JSON.parse((await json.textContent())!).setting).toEqual(setting);
+  await page.setViewportSize({ width: 420, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('keyboard and wheel zoom preserve the visible center after panning', async ({ page }) => {
+  await page.goto('/');
+  const map = page.getByTestId('map-viewer');
+  await map.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowDown');
+  const camera = async () =>
+    JSON.parse((await map.getAttribute('data-camera'))!) as { x: number; y: number; zoom: number };
+  const before = await camera();
+  await page.keyboard.press('+');
+  const keyboard = await camera();
+  expect(keyboard.zoom).toBeCloseTo(before.zoom * 1.1);
+  expect(keyboard.x / keyboard.zoom).toBeCloseTo(before.x / before.zoom);
+  expect(keyboard.y / keyboard.zoom).toBeCloseTo(before.y / before.zoom);
+  await map.dispatchEvent('wheel', { deltaY: 100 });
+  const wheel = await camera();
+  expect(wheel.zoom).toBeCloseTo(before.zoom);
+  expect(wheel.x).toBeCloseTo(before.x);
+  expect(wheel.y).toBeCloseTo(before.y);
+});
+
+test('all pages show a legend and replay transport aligns at high speeds', async ({ page }) => {
+  for (const route of ['/', '/replays', '/solvers', '/live', '/examples/q6']) {
+    await page.goto(route);
+    await expect(page.getByRole('heading', { name: 'Legend', exact: true })).toBeVisible();
+  }
+  await page.goto('/replays');
+  const previous = await page.getByLabel('Step backward', { exact: true }).boundingBox();
+  const first = await page.getByLabel('First step', { exact: true }).boundingBox();
+  expect(first?.x).toBe(previous?.x);
+  expect(first?.width).toBe(previous?.width);
+  await expect(page.getByRole('progressbar', { name: 'Replay steps' })).toHaveAttribute(
+    'aria-valuenow',
+    '1',
+  );
+  await page.getByText('32×', { exact: true }).click();
+  await expect(page.getByRole('radio', { name: '32×' })).toBeChecked();
+  await page.getByLabel('Play', { exact: true }).click();
+  await expect(page.getByTestId('replay-current-step')).toHaveText('5 / 5');
+  await expect(page.getByRole('progressbar', { name: 'Replay steps' })).toHaveAttribute(
+    'aria-valuenow',
+    '5',
+  );
+  await expect(page.getByRole('table', { name: 'Score (demo)' })).toBeVisible();
+});
+
+test('legend shows distinct map terrain tiles and object icons in a compact grid', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const legend = page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Legend', exact: true }) });
+  const tiles = legend.locator('canvas[data-terrain]');
+  await expect(tiles).toHaveCount(6);
+  await expect(legend.locator('canvas[data-mark]')).toHaveCount(8);
+  await expect
+    .poll(() =>
+      tiles.evaluateAll((canvases) =>
+        canvases.every((node) => {
+          const canvas = node as HTMLCanvasElement;
+          return canvas
+            .getContext('2d')!
+            .getImageData(0, 0, 64, 64)
+            .data.some((value, index) => index % 4 === 3 && value > 0);
+        }),
+      ),
+    )
+    .toBe(true);
+  const signatures = await tiles.evaluateAll((canvases) =>
+    canvases.map((node) => (node as HTMLCanvasElement).toDataURL()),
+  );
+  expect(new Set(signatures).size).toBe(6);
+  expect((await legend.boundingBox())!.height).toBeLessThan(430);
+  await expect(legend.getByText('混雑', { exact: true })).toBeVisible();
+  await expect(legend.getByText('波', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 420, height: 800 });
+  expect((await legend.boundingBox())!.height).toBeLessThan(430);
 });

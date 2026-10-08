@@ -43,24 +43,48 @@ function markerCasing(node: Node): Node {
   };
 }
 /** Full hex: original pattern, halo, keyline and one centered domain occupant. */
-export function tileSvgContent(terrain: Terrain, mark?: Mark): string {
+export function tileSvgContent(terrain: Terrain, mark?: Mark, traffic = 0): string {
   if (terrain === 'empty') return '';
   const template = structure.hex[{ plain: 0, mountain: 4, water: 2, road: 1 }[terrain]]!;
   const [x, y] = template.center;
   let content = `<g transform="translate(${-x!},${-y!})">${svgNode({ ...template.fill, attrs: { ...template.fill.attrs, stroke: 'none' } })}</g>`;
+  const roadColor = '#b8bdc3';
+  const baseColors = { plain: '#b58b60', road: roadColor, mountain: '#a4c88a', water: '#69b8d4' };
+  const hexPoints = '0,-30 26,-15 26,15 0,30 -26,15 -26,-15';
+  if (terrain === 'plain')
+    content =
+      `<polygon points="${hexPoints}" fill="#b58b60"/>` +
+      [-15, -5, 5, 15]
+        .flatMap((y) =>
+          [-15, -5, 5, 15].map((x) => `<circle cx="${x}" cy="${y}" r="0.7" fill="#856342"/>`),
+        )
+        .join('');
+  if (terrain === 'road')
+    content = `<polygon points="${hexPoints}" fill="${roadColor}"/><g clip-path="url(#terrain-clip)"><path d="${Array.from({ length: 13 }, (_, i) => `M-39,${i * 10 - 40}l78,-45`).join(' ')}" fill="none" stroke="#68717b" stroke-width="${[1, 3, 5][traffic] ?? 1}"/></g>`;
+  if (terrain === 'mountain')
+    content = `<polygon points="${hexPoints}" fill="#a4c88a"/><g clip-path="url(#terrain-clip)"><path d="${[-21, -7, 7, 21].map((y) => `M-30,${y}H30`).join(' ')}" fill="none" stroke="#86aa6c" stroke-width="3.5"/></g>`;
+  if (terrain === 'water')
+    content = `<polygon points="${hexPoints}" fill="#69b8d4"/><g clip-path="url(#terrain-clip)"><path d="${[-21, -7, 7, 21].map((y) => `M-40,${y}q5,-4 10,0t10,0t10,0t10,0t10,0t10,0t10,0t10,0`).join(' ')}" fill="none" stroke="#4996b3" stroke-width="1.6"/></g>`;
   if (mark) {
     const pattern = template.fill.children[0]!.attrs['data-fill-pattern']!;
     const id = pattern.slice(5, -1);
     const base = structure.defs.children.find((node) => node.attrs.id === id)!.children[0]!.attrs
       .fill!;
-    content += `<circle cx="0" cy="0" r="16.5" fill="${base}"/>`;
+    content += `<circle cx="0" cy="0" r="16.5" fill="${baseColors[terrain] ?? base}"/>`;
     const shape = glyphs[mark].map(svgNode).join('');
     const casing = glyphs[mark].map((node) => svgNode(markerCasing(node))).join('');
-    content += `<g transform="translate(-20,-20) scale(2.5)">${casing}${shape}</g>`;
+    content += `<g transform="translate(-22,-22) scale(2.75)">${casing}${shape}</g>`;
   }
   return content;
 }
-export function tileIndex(terrain: Terrain, mark?: Mark): number {
+export function tileIndex(terrain: Terrain, mark?: Mark, traffic = 0): number {
+  if (terrain === 'road' && traffic > 0)
+    return (
+      INK_TILE +
+      1 +
+      (traffic - 1) * (markNames.length + 1) +
+      (mark ? markNames.indexOf(mark) + 1 : 0)
+    );
   return (
     terrains.indexOf(terrain) * (markNames.length + 1) + (mark ? markNames.indexOf(mark) + 1 : 0)
   );
@@ -87,13 +111,20 @@ async function rasterize(width: number, height: number, body: string): Promise<O
 /** Exactly two SVG rasterizations, shared across routes and both renderers. */
 export function loadHexAssets(): Promise<void> {
   return (pending ??= (async () => {
-    const count = INK_TILE + 1;
-    let tiles = svgNode(structure.defs);
+    const count = INK_TILE + 1 + 2 * (markNames.length + 1);
+    let tiles =
+      svgNode(structure.defs) +
+      '<defs><clipPath id="terrain-clip"><polygon points="0,-30 26,-15 26,15 0,30 -26,15 -26,-15"/></clipPath></defs>';
     for (const terrain of terrains)
       for (const mark of [undefined, ...markNames]) {
         const index = tileIndex(terrain, mark),
           origin = tileSource(index);
         tiles += `<g transform="translate(${origin.x + TILE_SIZE / 2},${origin.y + TILE_SIZE / 2}) scale(${TILE_SIZE / TILE_VIEW_SIZE})"><g transform="scale(${HEX_INSET})">${tileSvgContent(terrain, mark)}</g></g>`;
+      }
+    for (const traffic of [1, 2])
+      for (const mark of [undefined, ...markNames]) {
+        const origin = tileSource(tileIndex('road', mark, traffic));
+        tiles += `<g transform="translate(${origin.x + TILE_SIZE / 2},${origin.y + TILE_SIZE / 2}) scale(${(TILE_SIZE / TILE_VIEW_SIZE) * HEX_INSET})">${tileSvgContent('road', mark, traffic)}</g>`;
       }
     for (const [index, stroke, width] of [
       [HALO_TILE, '#ffffff', '4.5'],
@@ -114,12 +145,12 @@ export function loadHexAssets(): Promise<void> {
     const glyphBody = markNames
       .map(
         (name, index) =>
-          `<g transform="translate(${index * GLYPH_SIZE},0) scale(${GLYPH_SIZE / 16})">${glyphs[name].map(svgNode).join('')}</g>`,
+          `<g transform="translate(${index * GLYPH_SIZE},0) scale(${GLYPH_SIZE / 16})">${glyphs[name].map(svgNode).join('')}</g><g transform="translate(${index * GLYPH_SIZE},${GLYPH_SIZE}) scale(${GLYPH_SIZE / 16})">${glyphs[name].map((node) => svgNode(markerCasing(node))).join('')}${glyphs[name].map(svgNode).join('')}</g>`,
       )
       .join('');
     const [tileAtlas, glyphAtlas] = await Promise.all([
       rasterize(TILE_COLUMNS * TILE_SIZE, Math.ceil(count / TILE_COLUMNS) * TILE_SIZE, tiles),
-      rasterize(markNames.length * GLYPH_SIZE, GLYPH_SIZE, glyphBody),
+      rasterize(markNames.length * GLYPH_SIZE, GLYPH_SIZE * 2, glyphBody),
     ]);
     loaded = { tiles: tileAtlas, glyphs: glyphAtlas };
   })());

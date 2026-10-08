@@ -7,6 +7,7 @@ import {
   TILE_WORLD_SIZE,
   HALO_TILE,
   INK_TILE,
+  HEX_INSET,
   type Terrain,
 } from './hex-assets';
 export { markNames, GLYPH_SIZE, glyphAtlas, loadHexAssets } from './hex-assets';
@@ -20,14 +21,24 @@ export interface Camera {
   y: number;
   zoom: number;
 }
+/** Keep the world point at the visible viewport center fixed while zooming. */
+export function zoomCamera(camera: Camera, factor: number): Camera {
+  const zoom = Math.min(4, Math.max(0.5, camera.zoom * factor));
+  if (zoom === camera.zoom) return camera;
+  const ratio = zoom / camera.zoom;
+  return { x: camera.x * ratio, y: camera.y * ratio, zoom };
+}
+
 export interface ViewerCell {
   readonly x: number;
   readonly y: number;
   readonly terrain: Terrain;
+  readonly traffic?: number | undefined;
 }
 export interface ViewerMark {
   readonly cell: number;
   readonly mark: Mark;
+  readonly progress?: { value: number | null; max: number } | undefined;
 }
 export interface ViewerScene {
   readonly cells: readonly ViewerCell[];
@@ -85,18 +96,73 @@ export function fixtureScene(
   fixtures.set(key, result);
   return result;
 }
-export function sceneTransform(scene: ViewerScene, width: number, height: number, camera: Camera) {
-  const half = TILE_WORLD_SIZE / 2;
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  for (const cell of scene.cells) {
-    minX = Math.min(minX, cell.x - half);
-    minY = Math.min(minY, cell.y - half);
-    maxX = Math.max(maxX, cell.x + half);
-    maxY = Math.max(maxY, cell.y + half);
+const geometries = new WeakMap<
+  ViewerScene,
+  {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    bins: Map<string, number[]>;
   }
+>();
+function geometry(scene: ViewerScene) {
+  const cached = geometries.get(scene);
+  if (cached) return cached;
+  const half = TILE_WORLD_SIZE / 2;
+  const result = {
+    minX: Infinity,
+    minY: Infinity,
+    maxX: -Infinity,
+    maxY: -Infinity,
+    bins: new Map<string, number[]>(),
+  };
+  scene.cells.forEach((cell, index) => {
+    result.minX = Math.min(result.minX, cell.x - half);
+    result.minY = Math.min(result.minY, cell.y - half);
+    result.maxX = Math.max(result.maxX, cell.x + half);
+    result.maxY = Math.max(result.maxY, cell.y + half);
+    const key = `${Math.floor(cell.x / TILE_WORLD_SIZE)},${Math.floor(cell.y / TILE_WORLD_SIZE)}`;
+    const bin = result.bins.get(key) ?? [];
+    bin.push(index);
+    result.bins.set(key, bin);
+  });
+  geometries.set(scene, result);
+  return result;
+}
+
+/** Inverse camera transform followed by nearby hex polygon tests; no pixel readback. */
+export function hitTestCell(
+  scene: ViewerScene,
+  width: number,
+  height: number,
+  camera: Camera,
+  x: number,
+  y: number,
+): number | null {
+  const transform = sceneTransform(scene, width, height, camera);
+  const worldX = (x - transform.x) / transform.scale;
+  const worldY = (y - transform.y) / transform.scale;
+  const binX = Math.floor(worldX / TILE_WORLD_SIZE),
+    binY = Math.floor(worldY / TILE_WORLD_SIZE);
+  const bins = geometry(scene).bins;
+  const scale = (23 / 30) * HEX_INSET;
+  for (let row = binY - 1; row <= binY + 1; row++) {
+    for (let col = binX - 1; col <= binX + 1; col++) {
+      for (const index of bins.get(`${col},${row}`) ?? []) {
+        const cell = scene.cells[index]!;
+        const dx = Math.abs(worldX - cell.x),
+          dy = Math.abs(worldY - cell.y);
+        if (cell.terrain !== 'empty' && dx <= 26 * scale && dy <= 30 * scale - (dx * 15) / 26)
+          return index;
+      }
+    }
+  }
+  return null;
+}
+
+export function sceneTransform(scene: ViewerScene, width: number, height: number, camera: Camera) {
+  const { minX, minY, maxX, maxY } = geometry(scene);
   const fit = Math.min(
     Math.max(1, width - 32) / (maxX - minX),
     Math.max(1, height - 32) / (maxY - minY),
@@ -166,7 +232,7 @@ export function hexInstances(scene: ViewerScene): HexInstance[] {
     return {
       x: cell.x - TILE_WORLD_SIZE / 2,
       y: cell.y - TILE_WORLD_SIZE / 2,
-      tile: tileIndex(cell.terrain, occupants.get(index)),
+      tile: tileIndex(cell.terrain, occupants.get(index), cell.traffic),
     };
   });
   compositions.set(scene, instances);
