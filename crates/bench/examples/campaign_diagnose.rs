@@ -1,5 +1,5 @@
-//! Replay a candidate with canonical MatchSim and emit daily loss diagnostics.
-//! Usage: campaign_diagnose CASE_JSON CANDIDATE KINDS
+//! Replay a candidate with canonical `MatchSim` and emit daily loss diagnostics.
+//! Usage: `campaign_diagnose CASE_JSON CANDIDATE KINDS`
 use bench::{CandidateRegistry, CaseSpec};
 use engine::{
     MatchSim,
