@@ -166,6 +166,9 @@ impl Solver for CandidateBridge {
             day: ctx.day,
             day_steps: ctx.day_steps,
             agent_ids: ctx.my_agent_ids.clone(),
+            // The coordinator's answer window (Q&A Q3), so a time-capped
+            // candidate can never out-stay the day deadline (Issue #311).
+            remaining_ms: u32::try_from(ctx.remaining_time_ms).unwrap_or(u32::MAX),
         };
         let plan = self.inner.decide(&model_ctx);
         if !plan.is_well_shaped(&ctx.my_agent_ids, ctx.day_steps) {
