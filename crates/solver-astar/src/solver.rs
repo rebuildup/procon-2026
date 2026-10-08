@@ -489,6 +489,6 @@ mod tests {
         let solver = AstarSolver::default();
         let result = solver.solve(&ctx);
         let path = result.path.expect("path");
-        assert!(path.steps.is_empty());
+        assert_eq!(path.steps, Vec::new());
     }
 }

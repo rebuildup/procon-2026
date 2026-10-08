@@ -701,6 +701,6 @@ mod tests {
     fn validate_batch_empty_returns_empty_vec() {
         let b = sample_bounds();
         let out = validate_batch(&[], b, &always_passable).expect("empty batch is trivially valid");
-        assert!(out.is_empty());
+        assert_eq!(out.len(), 0);
     }
 }

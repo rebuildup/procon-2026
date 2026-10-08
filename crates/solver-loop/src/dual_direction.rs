@@ -383,14 +383,14 @@ mod tests {
         let agents = vec![agent(0, 0, 0)];
         let (coll, refill) = DualDirectionLoop::split_agents(&agents);
         assert_eq!(coll.len(), 1);
-        assert!(refill.is_empty());
+        assert_eq!(refill.len(), 0);
     }
 
     #[test]
     fn split_agents_handles_empty() {
         let (coll, refill) = DualDirectionLoop::split_agents(&[]);
-        assert!(coll.is_empty());
-        assert!(refill.is_empty());
+        assert_eq!(coll.len(), 0);
+        assert_eq!(refill.len(), 0);
     }
 
     #[test]
@@ -453,9 +453,9 @@ mod tests {
         assert_eq!(plans[0][2], vec![99, 97]);
         assert!(plans[0][3].is_empty(), "refill agent 3 has no day-0 spots");
         // Day 1: collect agent 1 = cw[1]=11, cw[3]=13; refill agent 3 = ccw[1]=98.
-        assert!(plans[1][0].is_empty());
+        assert_eq!(plans[1][0].len(), 0);
         assert_eq!(plans[1][1], vec![11, 13]);
-        assert!(plans[1][2].is_empty());
+        assert_eq!(plans[1][2].len(), 0);
         assert_eq!(plans[1][3], vec![98, 96]);
     }
 
@@ -477,7 +477,7 @@ mod tests {
         // contributes. Defensive default.
         let plans = distribute_dual_plan(&[1, 2, 3], &[4, 5, 6], 1, 0, 0);
         assert_eq!(plans.len(), 1);
-        assert!(plans[0].is_empty());
+        assert_eq!(plans[0].len(), 0);
     }
 
     #[test]

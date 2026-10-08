@@ -221,7 +221,7 @@ mod tests {
         let sol = solver.decide(&fixture());
         // Score must be non-degenerate: at least the greedy outcome.
         assert!(sol.score.distinct_series >= 1);
-        assert!(!sol.actions.is_empty());
+        assert_ne!(sol.actions.len(), 0);
     }
 
     #[test]
@@ -252,7 +252,7 @@ mod tests {
             Agent { id: 0, coord: HexCoord::new(0, 0), fuel_budget: 0, step_budget: 0 },
         );
         let sol = solver.decide(&instance);
-        assert!(sol.actions.is_empty());
+        assert_eq!(sol.actions.len(), 0);
         assert_eq!(sol.score, DayScore::default());
     }
 }
