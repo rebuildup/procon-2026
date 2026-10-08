@@ -891,7 +891,7 @@ mod tests {
             exercised += 1;
             assert!(!leg.is_empty(), "a returned leg carries at least one element");
             assert!(
-                leg.len() as u32 <= max_steps,
+                u32::try_from(leg.len()).is_ok_and(|len| len <= max_steps),
                 "element count {} exceeds the given budget {max_steps}",
                 leg.len()
             );
