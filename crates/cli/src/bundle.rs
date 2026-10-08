@@ -464,6 +464,6 @@ printf '{"reason":"compiler-artifact","target":{"name":"procon"},"executable":"p
         // Non-UTF8 bytes — must not panic and must not flag anything.
         let files = vec![entry("procon", &[0xff, 0xfe, 0x00, 0x01, 0x80])];
         let findings = lint_secrets(&files);
-        assert!(findings.is_empty());
+        assert_eq!(findings.len(), 0);
     }
 }

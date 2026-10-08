@@ -314,7 +314,7 @@ mod tests {
 
         assert_eq!(patrol_fuel(&s, "p0"), 50, "patrol fuel must be unchanged");
         assert_eq!(report.refueled_count(), 0);
-        assert!(report.refueled.is_empty());
+        assert_eq!(report.refueled.len(), 0);
         assert_eq!(s.refueled_today, 0);
     }
 
@@ -334,7 +334,7 @@ mod tests {
 
         assert_eq!(patrol_fuel(&s, "p0"), cap, "patrol fuel must be unchanged at cap");
         assert_eq!(report.refueled_count(), 0);
-        assert!(report.refueled.is_empty());
+        assert_eq!(report.refueled.len(), 0);
         // No actual refuel occurred → counter must not change (cap reached = no event).
         assert_eq!(s.refueled_today, 7);
     }

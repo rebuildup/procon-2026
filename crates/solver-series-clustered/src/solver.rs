@@ -193,7 +193,7 @@ mod tests {
         };
         let resp = SeriesClusteredSolver::with_default_config().solve(req);
         assert_eq!(resp.plans.len(), 2);
-        assert!(!resp.plans.is_empty());
+        assert_ne!(resp.plans.len(), 0);
         // Variety = 2 distinct series touched.
         assert_eq!(resp.variety, 2);
     }

@@ -742,7 +742,7 @@ mod tests {
         let setting = tiny();
         let mut solver = GreedySolver;
         let outcome = solver.decide(&setting, &setting.agents[0], (0, 0), (2, 2));
-        assert!(!outcome.actions.is_empty());
+        assert_ne!(outcome.actions.len(), 0);
     }
 
     #[test]

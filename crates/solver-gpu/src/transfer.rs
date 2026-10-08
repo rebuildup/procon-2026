@@ -364,8 +364,8 @@ mod tests {
         let ctx = GpuContext::new();
         assert!(!ctx.has_state());
         assert!(ctx.grid().is_none());
-        assert!(ctx.agents().is_empty());
-        assert!(ctx.spots().is_empty());
+        assert_eq!(ctx.agents().len(), 0);
+        assert_eq!(ctx.spots().len(), 0);
         assert!(ctx.last_kernel().is_none());
     }
 
