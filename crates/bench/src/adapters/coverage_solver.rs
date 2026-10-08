@@ -166,6 +166,12 @@ impl Solver for CoverageCandidate {
                 0
             }
         };
+        // Only spread on maps where nearest-first cannot cover all series
+        // (Issue #331). Small boards are already covered by greedy proximity.
+        let spread_map = {
+            let size = &state.setting.map.size;
+            usize::from(size.width) >= 24 || usize::from(size.height) >= 24
+        };
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
         let sim = MatchSim::default();
@@ -200,11 +206,8 @@ impl Solver for CoverageCandidate {
                     }
                     continue;
                 }
-                let paths = &patrol_paths
-                    .iter()
-                    .find(|(j, _)| *j == i)
-                    .expect("patrol route computed")
-                    .1;
+                let paths =
+                    &patrol_paths.iter().find(|(j, _)| *j == i).expect("patrol route computed").1;
                 let target =
                     map.cells()
                         .iter()
@@ -224,6 +227,7 @@ impl Solver for CoverageCandidate {
                                     // before a short day can strand the next start
                                     // (Issue #331).
                                     self.park_risk
+                                        && spread_map
                                         && ctx.day_steps >= 70
                                         && tomorrow_budget >= 70
                                         && day_claimed.contains(&s.series),
