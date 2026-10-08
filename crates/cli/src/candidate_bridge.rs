@@ -527,7 +527,7 @@ mod tests {
                     .iter()
                     .map(|a| {
                         json!({
-                            "kind": if a.kind == AgentKind::Patrol { 0 } else { 1 },
+                            "kind": i32::from(a.kind != AgentKind::Patrol),
                             "pos": a.pos.row * width + a.pos.col, "fuel": a.fuel.min(i32::MAX as u32)
                         })
                     })
