@@ -87,7 +87,7 @@ use solver_astar::{
     TrafficState as AstarTraffic,
 };
 
-use super::walk::step_towards;
+use super::walk::{BudgetMode, step_towards};
 
 /// Column mirror between the engine's grid and the planning grid.
 ///
@@ -244,8 +244,15 @@ pub(crate) fn plan_leg_path(
             AstarAction::Wait => ActionKind::Wait,
         })
         .collect();
-    // Defensive: A* only emits paths whose weighted cost fits `max_steps`
-    // (and every step weighs ≥ 1), but never trust that on the way out.
+    // Defensive truncate — the adapter deliberately *relies* on the solver's
+    // guarantee here rather than re-deriving it (Issue #304). Since #302 A*
+    // measures `max_steps` in official terrain-weighted steps and every plan
+    // element costs at least one of them, `path.steps.len() <= max_steps`
+    // already holds on the way in, so this can only ever be a no-op;
+    // `leg_paths_fit_the_budget_they_are_given` pins exactly that. The
+    // day-level budget is `walk::BudgetMode::Official`'s
+    // `truncate_to_official_budget` at the submission boundary — if that
+    // contract ever changes, it changes in one place, not here.
     plan.truncate(max_steps);
 
     if !plan_is_executable(start, fuel, &plan, engine_map) {
@@ -266,12 +273,36 @@ pub(crate) fn plan_leg_path(
 /// same contract [`super::walk::plan_walk`] documents). The returned vector
 /// always has exactly `day_steps` entries and never contains a move the
 /// engine would reject.
+///
+/// # Which clock the legs are budgeted in (Issue #304)
+///
+/// `budget` says which clock this walk plans against, and it decides both
+/// what a *pending* leg may cost and when movement must stop:
+///
+/// * [`BudgetMode::Element`] (default) — the legacy element clock: a leg
+///   gets `day_steps - step` (elements left in the day) and `max_steps`
+///   travels in those units, exactly as every pre-#255 id has run.
+/// * [`BudgetMode::Official`] — the official terrain-weighted clock the
+///   wire enforces (`engine::wire_plan`: move bills its origin cell, wait
+///   bills 1). `official_used` accrues as elements are *emitted*, a leg is
+///   planned with what is actually left to spend, and no move whose origin
+///   cost no longer fits is emitted. Without this the leg budget
+///   (`day_steps - step` elements ≥ official remaining) overstates the
+///   allowance, A* fills the day with movement the wire then cuts at the
+///   submission boundary, and what `MatchSim` runs drifts from what the
+///   server executes — the live 701 gap (#255) at planning time instead of
+///   at truncation time.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one day replay: arrival, leg planning and emission stay readable in one place"
+)]
 fn plan_agent_day(
     engine_map: &MapGrid,
     astar_map: Option<&HexMap>,
     agent: Option<&Agent>,
     targets: &[HexCoord],
     day_steps: usize,
+    budget: BudgetMode,
 ) -> Vec<ActionKind> {
     let Some(agent) = agent else {
         return vec![ActionKind::Wait; day_steps];
@@ -289,6 +320,12 @@ fn plan_agent_day(
     // `step_towards` for the rest of the day (see the module docs), and is
     // reset on arrival so a later leg gets a fresh plan.
     let mut leg_fallback = false;
+    // Official terrain-weighted steps already emitted — maintained only for
+    // `BudgetMode::Official` (see the function docs). `day_steps` doubles as
+    // the official `daySteps` scalar: the engine clock is `day_steps`
+    // elements *and* the wire budget is `day_steps` weighted steps.
+    let day_budget = u32::try_from(day_steps).unwrap_or(u32::MAX);
+    let mut official_used: u32 = 0;
 
     for step in 0..day_steps {
         // Arrival (also covers an agent that starts on its first target, and
@@ -309,7 +346,14 @@ fn plan_agent_day(
             }
             let goal = targets[leg];
             if !leg_fallback {
-                let remaining = u32::try_from(day_steps - step).unwrap_or(u32::MAX);
+                // The budget `plan_leg_path` hands to A* — in `max_steps`
+                // units, which since #302 are official weighted steps. The
+                // element clock keeps the legacy `day_steps - step`; the
+                // official clock counts what the wire would still accept.
+                let remaining = match budget {
+                    BudgetMode::Element => u32::try_from(day_steps - step).unwrap_or(u32::MAX),
+                    BudgetMode::Official => day_budget.saturating_sub(official_used),
+                };
                 let planned = astar_map.and_then(|map| {
                     plan_leg_path(
                         map,
@@ -345,21 +389,38 @@ fn plan_agent_day(
         };
 
         // Apply the chosen action to the tracked (pos, fuel). Anything the
-        // engine would downgrade — out of bounds, impassable, unaffordable —
+        // engine would downgrade — out of bounds, impassable, unaffordable,
+        // or (official clock) no longer payable out of the weighted budget —
         // is emitted as a Wait instead, so this walk can never produce an
-        // `illegal` / `fuel_short` event.
-        match kind {
+        // `illegal` / `fuel_short` event, nor an element the wire cuts.
+        let billed_from = pos;
+        let emitted = match kind {
             ActionKind::Move(dir) => {
                 let next = dir.step(pos);
                 let cost = engine_map
                     .get(next)
                     .filter(|cell| cell.terrain.traversable())
                     .map(|cell| engine_fuel_cost(cell.terrain));
+                // Official clock only: refuse a move whose *origin* cell
+                // would push the weighted sum past `daySteps` — exactly the
+                // check `engine::wire_plan::normalize_day_plan` runs at the
+                // submission boundary, pulled forward so the plan itself
+                // never contains movement that boundary would drop.
+                let official_ok = match budget {
+                    BudgetMode::Element => true,
+                    BudgetMode::Official => origin_step_cost(engine_map, billed_from)
+                        .is_some_and(|step| official_used.saturating_add(step) <= day_budget),
+                };
                 match cost {
+                    _ if !official_ok => {
+                        leg_path.clear();
+                        leg_fallback = true;
+                        ActionKind::Wait
+                    }
                     Some(cost) if fuel >= cost => {
                         fuel -= cost;
                         pos = next;
-                        plan.push(ActionKind::Move(dir));
+                        ActionKind::Move(dir)
                     }
                     _ => {
                         // The planned path (or the greedy fallback) disagrees
@@ -367,14 +428,30 @@ fn plan_agent_day(
                         // re-plan from here next step.
                         leg_path.clear();
                         leg_fallback = true;
-                        plan.push(ActionKind::Wait);
+                        ActionKind::Wait
                     }
                 }
             }
-            ActionKind::Wait => plan.push(ActionKind::Wait),
+            ActionKind::Wait => ActionKind::Wait,
+        };
+        plan.push(emitted);
+        // Official clock: every emitted element costs what the wire charges
+        // for it — a move bills the cell it departs, a wait bills 1.
+        if matches!(budget, BudgetMode::Official) {
+            official_used = official_used.saturating_add(match emitted {
+                ActionKind::Wait => 1,
+                ActionKind::Move(_) => origin_step_cost(engine_map, billed_from).unwrap_or(0),
+            });
         }
     }
     plan
+}
+
+/// Official weighted step cost of moving *out of* `at` — the origin-cell
+/// billing `engine::wire_plan` enforces at the submission boundary.
+/// `None` when the cell is off the map or impassable.
+fn origin_step_cost(engine_map: &MapGrid, at: HexCoord) -> Option<u32> {
+    engine_map.get(at).and_then(|cell| engine::wire_plan::terrain_step_cost(cell.terrain))
 }
 
 /// Build one day's step-major plan for `walk=astar`: every controlled agent
@@ -388,8 +465,17 @@ fn plan_agent_day(
 ///
 /// The result is always well-shaped (`agent_count * day_steps` actions, one
 /// per controlled agent per step, in `ctx.agent_ids` order).
+///
+/// `budget` is the candidate's [`BudgetMode`] — it is **the same value the
+/// caller applies after the walk** (`self.budget.apply(...)`), threaded in
+/// so the escort projection ([`super::walk`]'s `day_paths`) and the final
+/// plan are walked against the same clock (Issue #304).
 #[must_use]
-pub fn plan_walk_astar(ctx: &SolverContext<'_>, targets: &[Vec<HexCoord>]) -> AgentActions {
+pub fn plan_walk_astar(
+    ctx: &SolverContext<'_>,
+    targets: &[Vec<HexCoord>],
+    budget: BudgetMode,
+) -> AgentActions {
     let map = &ctx.state.setting.map;
     let day_steps = usize::try_from(ctx.day_steps).unwrap_or(0);
     let astar_map = to_astar_map(map);
@@ -401,7 +487,7 @@ pub fn plan_walk_astar(ctx: &SolverContext<'_>, targets: &[Vec<HexCoord>]) -> Ag
         .map(|(i, id)| {
             let agent = ctx.state.agents.iter().find(|a| a.id == *id);
             let list = targets.get(i).map_or(&[][..], |list| list.as_slice());
-            plan_agent_day(map, astar_map.as_ref(), agent, list, day_steps)
+            plan_agent_day(map, astar_map.as_ref(), agent, list, day_steps, budget)
         })
         .collect();
 
@@ -531,7 +617,7 @@ mod tests {
             "the repro must oscillate without touching a spot: {greedy_positions:?}"
         );
 
-        let astar = plan_walk_astar(&ctx, &targets);
+        let astar = plan_walk_astar(&ctx, &targets, BudgetMode::Element);
         assert!(astar.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
         let astar_positions = positions(&astar, start, 3, 0);
         // In list order: (4, 0) first, then (0, 0) — and then the agent
@@ -566,7 +652,7 @@ mod tests {
         let ctx = SolverContext::from_state(&state);
         let targets = vec![vec![HexCoord::new(2, 0), HexCoord::new(5, 0)]];
 
-        let plan = plan_walk_astar(&ctx, &targets);
+        let plan = plan_walk_astar(&ctx, &targets, BudgetMode::Element);
         assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
         assert_eq!(
             positions(&plan, start, 3, 0),
@@ -597,7 +683,7 @@ mod tests {
         let ctx = SolverContext::from_state(&state);
         let targets = vec![vec![HexCoord::new(2, 0)]];
 
-        let plan = plan_walk_astar(&ctx, &targets);
+        let plan = plan_walk_astar(&ctx, &targets, BudgetMode::Element);
         assert_eq!(
             agent_kinds(&plan, 3, 0),
             vec![ActionKind::Move(Direction::Left)],
@@ -657,7 +743,7 @@ mod tests {
         };
         let state = MatchState::new(setting).expect("valid state");
         let ctx = SolverContext::from_state(&state);
-        let plan = plan_walk_astar(&ctx, &[vec![goal]]);
+        let plan = plan_walk_astar(&ctx, &[vec![goal]], BudgetMode::Element);
 
         assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
         assert!(
@@ -674,7 +760,7 @@ mod tests {
             .expect("valid state");
         let ctx = SolverContext::from_state(&state);
         for targets in [vec![vec![]], vec![Vec::new(), Vec::new()]] {
-            let plan = plan_walk_astar(&ctx, &targets);
+            let plan = plan_walk_astar(&ctx, &targets, BudgetMode::Element);
             assert_eq!(plan.actions.len(), ctx.agent_ids.len() * ctx.day_steps as usize);
             assert!(plan.actions.iter().all(|a| matches!(a.kind, ActionKind::Wait)));
         }
@@ -725,7 +811,7 @@ mod tests {
         };
         let state = MatchState::new(setting).expect("valid state");
         let ctx = SolverContext::from_state(&state);
-        let plan = plan_walk_astar(&ctx, &[vec![goal]]);
+        let plan = plan_walk_astar(&ctx, &[vec![goal]], BudgetMode::Element);
         assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
 
         let mut pos = start;
@@ -741,5 +827,162 @@ mod tests {
             pos = next;
         }
         assert_eq!(pos, goal, "the agent routes around the pond onto the spot");
+    }
+
+    /// The official terrain-weighted cost of replaying `leg` from `start`
+    /// (`engine::wire_plan` billing: each move charges the cell it departs,
+    /// each wait charges 1) — the unit `plan_leg_path`'s `max_steps` is
+    /// denominated in since #302.
+    fn official_leg_cost(map: &MapGrid, start: HexCoord, leg: &[ActionKind]) -> u32 {
+        let mut pos = start;
+        let mut total = 0;
+        for kind in leg {
+            match kind {
+                ActionKind::Wait => total += 1,
+                ActionKind::Move(dir) => {
+                    total += origin_step_cost(map, pos).expect("no pond under the leg");
+                    pos = dir.step(pos);
+                }
+            }
+        }
+        total
+    }
+
+    /// Issue #304 (item 2): the defensive `plan.truncate(max_steps)` inside
+    /// `plan_leg_path` is a no-op because A* hands back paths whose *official*
+    /// cost fits `max_steps` (post-#302 units), and every element of such a
+    /// path costs at least one official step — so element count ≤ official
+    /// cost ≤ budget. Both halves of that claim are pinned here: the adapter
+    /// may rely on the solver's guarantee, not re-derive it.
+    #[test]
+    fn leg_paths_fit_the_budget_they_are_given() {
+        let size = MapSize::new(8, 8).expect("8x8 is in range");
+        // A plain field with a full mountain band at col 4, so a west→east
+        // leg must pay both billing directions: plain departures (2) and the
+        // mountain departure (3).
+        let mut cells = Vec::with_capacity(64);
+        for row in 0..8 {
+            for col in 0..8 {
+                let coord = HexCoord::new(col, row);
+                let terrain = if col == 4 { Terrain::Mountain } else { Terrain::Plain };
+                cells.push(Cell { coord, terrain, spot: None });
+            }
+        }
+        let engine_map = MapGrid::new(size, cells).expect("valid map");
+        let astar_map = to_astar_map(&engine_map).expect("mirrored map converts");
+        let start = HexCoord::new(0, 4);
+        let goal = HexCoord::new(7, 4);
+
+        // 15 is the cheapest official cost (4 plain + mountain + 2 plain
+        // departures); budgets below that legitimately produce no path.
+        let mut exercised = 0;
+        for max_steps in [10, 15, 17, 30, 100] {
+            let Some(leg) = plan_leg_path(
+                &astar_map,
+                &engine_map,
+                start,
+                100,
+                goal,
+                max_steps,
+                CostPolicy::default(),
+            ) else {
+                continue;
+            };
+            exercised += 1;
+            assert!(!leg.is_empty(), "a returned leg carries at least one element");
+            assert!(
+                u32::try_from(leg.len()).is_ok_and(|len| len <= max_steps),
+                "element count {} exceeds the given budget {max_steps}",
+                leg.len()
+            );
+            let official = official_leg_cost(&engine_map, start, &leg);
+            assert!(
+                official <= max_steps,
+                "official weighted cost {official} exceeds the given budget {max_steps}"
+            );
+        }
+        assert!(exercised >= 3, "the invariants must be checked on real legs, not just failures");
+    }
+
+    /// Issue #304 (extension): under `budget=official` the A* legs are
+    /// budgeted in the *weighted* day clock, so the finished plan never
+    /// contains movement the wire boundary would cut — every planned move
+    /// survives `normalize_day_plan` verbatim. The legacy element clock
+    /// plans one leg too far and loses a move at that boundary (the live-701
+    /// gap, #255); the contrast assertion keeps this test honest.
+    #[test]
+    fn official_clock_keeps_every_planned_move_across_the_wire_boundary() {
+        let start = HexCoord::new(0, 4);
+        let waypoints = [HexCoord::new(2, 4), HexCoord::new(7, 4)];
+        let state = MatchState::new(setting(&waypoints, start, 13)).expect("valid state");
+        let ctx = SolverContext::from_state(&state);
+        let targets = vec![waypoints.to_vec(), vec![], vec![]];
+
+        // Step-major plan → per-agent wire bodies (the exact run-length
+        // encoding `walk::truncate_to_official_budget` builds).
+        let encode = |plan: &AgentActions| -> Vec<Vec<i32>> {
+            let agent_count = ctx.agent_ids.len();
+            (0..agent_count)
+                .map(|slot| {
+                    let mut codes: Vec<i32> = Vec::new();
+                    let mut wait_run = 0i32;
+                    for kind in agent_kinds(plan, agent_count, slot) {
+                        match kind {
+                            ActionKind::Wait => wait_run += 1,
+                            ActionKind::Move(dir) => {
+                                if wait_run > 0 {
+                                    codes.push(-wait_run);
+                                    wait_run = 0;
+                                }
+                                codes.push(dir as i32);
+                            }
+                        }
+                    }
+                    if wait_run > 0 {
+                        codes.push(-wait_run);
+                    }
+                    codes
+                })
+                .collect()
+        };
+        let moves =
+            |body: &[i32]| -> Vec<i32> { body.iter().copied().filter(|c| *c >= 0).collect() };
+        let normalize = |body: &[Vec<i32>]| -> Vec<Vec<i32>> {
+            engine::wire_plan::normalize_day_plan(
+                &ctx.state.setting.map,
+                &ctx.state.agents,
+                &ctx.agent_ids,
+                ctx.day_steps,
+                &body.to_vec(),
+            )
+            .expect("the walk's plan is submittable")
+        };
+
+        // Official clock: nothing the boundary would cut was ever planned.
+        let official_body = encode(&plan_walk_astar(&ctx, &targets, BudgetMode::Official));
+        let official_norm = normalize(&official_body);
+        assert!(
+            moves(&official_body[0]).len() >= 6,
+            "the scenario must plan real movement, got {:?}",
+            official_body[0]
+        );
+        for (body, norm) in official_body.iter().zip(&official_norm) {
+            assert_eq!(
+                moves(body),
+                moves(norm),
+                "official clock: the wire boundary cut a planned move"
+            );
+        }
+
+        // Contrast: the element clock plans past the weighted budget and the
+        // boundary drops a move — otherwise this test would prove nothing.
+        let element_body = encode(&plan_walk_astar(&ctx, &targets, BudgetMode::Element));
+        let element_norm = normalize(&element_body);
+        assert!(
+            moves(&element_body[0]).len() > moves(&element_norm[0]).len(),
+            "element clock must still over-plan (planned {:?} -> normalized {:?})",
+            moves(&element_body[0]),
+            moves(&element_norm[0])
+        );
     }
 }
