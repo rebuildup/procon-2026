@@ -136,7 +136,7 @@ fn actions_are_non_empty_on_non_trivial_instance() {
     let instance = cluster_instance();
     let solver = LocalSearchSolver::new(LocalSearchConfig::deterministic(500, 3.0, 0.1, 4));
     let sol = solver.decide(&instance);
-    assert!(!sol.actions.is_empty());
+    assert_ne!(sol.actions.len(), 0);
     assert!(sol.score > DayScore::default());
 }
 

@@ -499,7 +499,7 @@ fn registration_match_and_evidence_record_form_one_coherent_run() {
         assert_eq!(parsed.registration_attempts, Some(1));
         assert_eq!(parsed.arena_match_id.as_deref(), Some("m-full"));
         assert_eq!(parsed.team_id, "arena-team");
-        assert!(!parsed.revisions.is_empty());
+        assert_ne!(parsed.revisions.len(), 0);
 
         // Issue #236 — per-day evidence: the budgets from `/setting`
         // recorded once, plus one summary per played day carrying the

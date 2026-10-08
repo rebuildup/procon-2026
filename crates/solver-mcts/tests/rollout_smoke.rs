@@ -226,7 +226,7 @@ fn empty_action_set_is_reported_as_error() {
         taken: vec![Action(0)],
         cumulative_value: 1.0,
     };
-    assert!(exhausted.legal_actions().is_empty());
+    assert_eq!(exhausted.legal_actions(), Vec::new());
 
     let policy = RolloutPolicy::default();
     let err = policy

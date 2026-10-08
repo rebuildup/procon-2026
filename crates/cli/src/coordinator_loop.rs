@@ -1286,8 +1286,8 @@ mod tests {
 
     #[test]
     fn zero_agents_yields_empty_kinds() {
-        assert!(agent_kinds_for(0, "loop", None).is_empty());
-        assert!(agent_kinds_for(0, "loop", Some(&pattern("P,S"))).is_empty());
+        assert_eq!(agent_kinds_for(0, "loop", None).len(), 0);
+        assert_eq!(agent_kinds_for(0, "loop", Some(&pattern("P,S"))).len(), 0);
     }
 
     /// Issue #238's composition AC, live: `P,P,P,P,S` fields 4 patrol +
