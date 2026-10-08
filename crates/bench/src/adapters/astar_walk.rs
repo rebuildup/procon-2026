@@ -292,6 +292,10 @@ pub(crate) fn plan_leg_path(
 ///   submission boundary, and what `MatchSim` runs drifts from what the
 ///   server executes — the live 701 gap (#255) at planning time instead of
 ///   at truncation time.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one day replay: arrival, leg planning and emission stay readable in one place"
+)]
 fn plan_agent_day(
     engine_map: &MapGrid,
     astar_map: Option<&HexMap>,

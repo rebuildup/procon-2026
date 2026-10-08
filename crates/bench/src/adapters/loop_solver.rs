@@ -89,8 +89,8 @@ use solver_loop::{
 };
 
 use super::walk::{
-    AssignMode, BudgetMode, WalkMode, parse_assign, parse_budget, parse_walk, plan_walk_with,
-    step_towards,
+    AssignMode, AssignOpts, BudgetMode, FuelpairMode, WalkMode, parse_assign, parse_budget,
+    parse_fuelpair, parse_walk, plan_walk_with, step_towards,
 };
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
@@ -146,6 +146,13 @@ pub const PARAMS: &[ParamSpec] = &[
         doc: "day budget clock: element (default; daySteps movement elements, byte-identical) | \
               official (truncate the finished plan to the official weighted budget before \
               simulating, Issue #255)",
+    },
+    ParamSpec {
+        key: "fuelpair",
+        required: false,
+        doc: "Supply-to-Patrol pairing: nearest (default; day-start geometry, byte-identical) \
+              | need (fuel-first pairing plus a rendezvous tail for unescorted Patrols, \
+              Issue #252)",
     },
 ];
 
@@ -219,6 +226,8 @@ pub struct LoopCandidate {
     assign: AssignMode,
     /// Which clock the finished plan is checked against ([`super::walk::BudgetMode`]).
     budget: BudgetMode,
+    /// How Supplies pair to Patrols ([`super::walk::FuelpairMode`], Issue #252).
+    fuelpair: FuelpairMode,
 }
 
 impl LoopCandidate {
@@ -231,6 +240,7 @@ impl LoopCandidate {
         let walk = parse_walk(spec)?;
         let assign = parse_assign(spec)?;
         let budget = parse_budget(spec)?;
+        let fuelpair = parse_fuelpair(spec)?;
         Ok(Self {
             inner: LoopSolver::with_operators(initial, iterations, operators),
             id: spec.id(),
@@ -238,6 +248,7 @@ impl LoopCandidate {
             walk,
             assign,
             budget,
+            fuelpair,
         })
     }
 
@@ -304,9 +315,11 @@ impl Solver for LoopCandidate {
             // and consumes it with that walker's semantics (per-step pursuit
             // under `greedy`, ordered-waypoint replay under `astar`).
             Ok(targets) => {
+                let opts =
+                    AssignOpts { walk: self.walk, budget: self.budget, fuelpair: self.fuelpair };
                 let plan = plan_walk_with(
                     ctx,
-                    &self.assign.apply(ctx, targets, self.walk, self.budget),
+                    &self.assign.apply(ctx, targets, opts),
                     self.walk,
                     self.budget,
                 );
@@ -1228,10 +1241,21 @@ mod tests {
         let entry = cat.algorithms.iter().find(|a| a.algorithm == "loop").expect("loop listed");
         let keys: Vec<&str> = entry.params.iter().map(|p| p.key.as_str()).collect();
         // `assign` (#235) is appended after `walk` (#215), `budget` (#255)
-        // after `assign`: every older canonical id keeps its exact shape.
+        // after `assign`, `fuelpair` (#252) after `budget`: every older
+        // canonical id keeps its exact shape.
         assert_eq!(
             keys,
-            ["iterations", "initial", "seed", "operators", "lookahead", "walk", "assign", "budget"]
+            [
+                "iterations",
+                "initial",
+                "seed",
+                "operators",
+                "lookahead",
+                "walk",
+                "assign",
+                "budget",
+                "fuelpair"
+            ]
         );
     }
 

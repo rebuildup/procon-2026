@@ -80,8 +80,10 @@ fn build_solver(id: &str) -> Box<dyn Solver> {
 // 1. schema / catalog
 // ---------------------------------------------------------------------------
 
-/// `walk` is appended last in **both** factories, so every pre-existing
-/// canonical id keeps its bytes (Issue #215 design, AC 1).
+/// Canonical parameter order for **both** factories: parameters are only
+/// ever appended (`walk` #215 → `assign` #235 → `budget` #255 →
+/// `fuelpair`/`balance`/`surplus` #252), so every pre-existing canonical id
+/// keeps its bytes (Issue #215 design, AC 1).
 #[test]
 fn walk_is_the_last_canonical_parameter_of_both_factories() {
     let catalog = CandidateRegistry::builtin().catalog();
@@ -97,9 +99,16 @@ fn walk_is_the_last_canonical_parameter_of_both_factories() {
                 "walk",
                 "assign",
                 "budget",
+                "fuelpair",
             ],
         ),
-        ("multiloop", vec!["grid", "kmeans", "seed", "refine", "walk", "assign", "budget"]),
+        (
+            "multiloop",
+            vec![
+                "grid", "kmeans", "seed", "refine", "walk", "assign", "budget", "balance",
+                "surplus", "fuelpair",
+            ],
+        ),
     ] {
         let entry = catalog
             .algorithms
