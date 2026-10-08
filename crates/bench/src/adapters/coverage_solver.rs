@@ -133,7 +133,7 @@ impl Solver for CoverageCandidate {
         let mut state = fresh_day_state(ctx);
         let n = state.agents.len();
         let patrols = patrol_order(&state, self.variant);
-        let (pairs, assigned) = supply_pairs(&state, &patrols);
+        let (_pairs, assigned) = supply_pairs(&state, &patrols);
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
         let sim = MatchSim::default();
@@ -193,19 +193,45 @@ impl Solver for CoverageCandidate {
                 if used[i] >= ctx.day_steps {
                     continue;
                 }
-                if let Some(p) = pairs[i] {
-                    let goal = match actions[p].kind {
-                        ActionKind::Move(dir) => dir.step(state.agents[p].pos),
-                        ActionKind::Wait => state.agents[p].pos,
-                    };
-                    let paths = routes(&state.setting.map, &state.agents[i], false);
-                    actions[i] = legal_step(
-                        &state.agents[i],
-                        paths[index(&state.setting.map, goal)].first,
-                        &state.setting.map,
-                        ctx.day_steps - used[i],
-                    );
+                if state.agents[i].kind != AgentKind::Supply {
+                    continue;
                 }
+                // Refuel duty (Issue #311): a Supply serves the *neediest*
+                // Patrol each step — lowest tank ratio first, nearest on
+                // ties — instead of shadowing one fixed escort. With one
+                // Supply and several Patrols the fixed pair left the rest
+                // dry (live 1787 day 3: three of four Patrols parked the
+                // whole day); the roaming target keeps the fleet moving,
+                // and co-location refuels top the tank up automatically.
+                let paths = routes(&state.setting.map, &state.agents[i], false);
+                let needy = (0..n)
+                    .filter(|&p| state.agents[p].kind == AgentKind::Patrol)
+                    .min_by(|&a, &b| {
+                        let (fa, fb) = (&state.agents[a], &state.agents[b]);
+                        let ra = (u64::from(fa.fuel), u64::from(fa.fuel_cap.max(1)));
+                        let rb = (u64::from(fb.fuel), u64::from(fb.fuel_cap.max(1)));
+                        // fuel/cap ascending, then walk cost, then index.
+                        ra.0
+                            .saturating_mul(rb.1)
+                            .cmp(&rb.0.saturating_mul(ra.1))
+                            .then_with(|| {
+                                let ca = paths[index(&state.setting.map, fa.pos)].cost;
+                                let cb = paths[index(&state.setting.map, fb.pos)].cost;
+                                ca.cmp(&cb)
+                            })
+                            .then_with(|| a.cmp(&b))
+                    });
+                let Some(p) = needy else { continue };
+                let goal = match actions[p].kind {
+                    ActionKind::Move(dir) => dir.step(state.agents[p].pos),
+                    ActionKind::Wait => state.agents[p].pos,
+                };
+                actions[i] = legal_step(
+                    &state.agents[i],
+                    paths[index(&state.setting.map, goal)].first,
+                    &state.setting.map,
+                    ctx.day_steps - used[i],
+                );
             }
             for i in 0..n {
                 if used[i] < ctx.day_steps {
