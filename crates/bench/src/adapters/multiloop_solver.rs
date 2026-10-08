@@ -37,11 +37,12 @@
 //! receives a list at all — Issue #235, see [`super::walk::AssignMode`]).
 
 use engine::model::{AgentActions, Solver, SolverContext};
-use solver_loop::{ClusteringStrategy, MultiLoopComposer, Solver as _};
+use solver_loop::{ClusteringStrategy, MultiLoopComposer, Solver as _, SurplusMode};
 
 use super::loop_solver::{agent_targets, problem_from_state};
 use super::walk::{
-    AssignMode, BudgetMode, WalkMode, parse_assign, parse_budget, parse_walk, plan_walk_with,
+    AssignMode, AssignOpts, BudgetMode, FuelpairMode, WalkMode, parse_assign, parse_budget,
+    parse_fuelpair, parse_walk, plan_walk_with,
 };
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 
@@ -91,6 +92,27 @@ pub const PARAMS: &[ParamSpec] = &[
               official (truncate the finished plan to the official weighted budget before \
               simulating, Issue #255)",
     },
+    ParamSpec {
+        key: "balance",
+        required: false,
+        doc: "collapse one-spot regions into the smallest larger one before touring: \
+              off (default; byte-identical) | on (Issue #252 — a one-spot region parks \
+              its Patrol after a single visit)",
+    },
+    ParamSpec {
+        key: "surplus",
+        required: false,
+        doc: "agents the region round-robin leaves empty: idle (default; wait all day, \
+              byte-identical) | split (take a contiguous tail of the longest tour, \
+              Issue #252)",
+    },
+    ParamSpec {
+        key: "fuelpair",
+        required: false,
+        doc: "Supply-to-Patrol pairing: nearest (default; day-start geometry, byte-identical) \
+              | need (fuel-first pairing plus a rendezvous tail for unescorted Patrols, \
+              Issue #252)",
+    },
 ];
 
 /// Widest accepted grid dimension: the contest map is at most
@@ -127,6 +149,10 @@ pub struct MultiLoopCandidate {
     assign: AssignMode,
     /// Which clock the finished plan is checked against ([`super::walk::BudgetMode`]).
     budget: BudgetMode,
+    /// How Supplies pair to Patrols ([`super::walk::FuelpairMode`], Issue
+    /// #252). `balance` / `surplus` live on `inner` (the composer acts on
+    /// them during `solve`), so they are not mirrored here.
+    fuelpair: FuelpairMode,
 }
 
 impl MultiLoopCandidate {
@@ -138,12 +164,17 @@ impl MultiLoopCandidate {
         let walk = parse_walk(spec)?;
         let assign = parse_assign(spec)?;
         let budget = parse_budget(spec)?;
-        let inner = if refine {
+        let fuelpair = parse_fuelpair(spec)?;
+        let balance = parse_balance(spec)?;
+        let surplus = parse_surplus(spec)?;
+        let mut inner = if refine {
             MultiLoopComposer::new(num_regions, clustering)
         } else {
             MultiLoopComposer::without_refinement(num_regions, clustering)
         };
-        Ok(Self { inner, id: spec.id(), walk, assign, budget })
+        inner.balance = balance;
+        inner.surplus = surplus;
+        Ok(Self { inner, id: spec.id(), walk, assign, budget, fuelpair })
     }
 }
 
@@ -159,9 +190,11 @@ impl Solver for MultiLoopCandidate {
         match self.inner.solve(&problem) {
             Ok(outcome) => {
                 let per_agent = agent_targets(ctx, &outcome);
+                let opts =
+                    AssignOpts { walk: self.walk, budget: self.budget, fuelpair: self.fuelpair };
                 let plan = plan_walk_with(
                     ctx,
-                    &self.assign.apply(ctx, per_agent, self.walk, self.budget),
+                    &self.assign.apply(ctx, per_agent, opts),
                     self.walk,
                     self.budget,
                 );
@@ -321,6 +354,34 @@ fn parse_refine(spec: &CandidateSpec) -> Result<bool, CandidateError> {
     }
 }
 
+/// Parse `balance=off|on`; absent means off (byte-identical default,
+/// Issue #252).
+///
+/// # Errors
+/// [`CandidateError::InvalidParameter`] for any value other than
+/// `off` / `on`.
+fn parse_balance(spec: &CandidateSpec) -> Result<bool, CandidateError> {
+    match spec.param("balance") {
+        None | Some("off") => Ok(false),
+        Some("on") => Ok(true),
+        Some(other) => Err(invalid_param("balance", other, "expected off | on")),
+    }
+}
+
+/// Parse `surplus=idle|split`; absent means idle (byte-identical default,
+/// Issue #252).
+///
+/// # Errors
+/// [`CandidateError::InvalidParameter`] for any value other than
+/// `idle` / `split`.
+fn parse_surplus(spec: &CandidateSpec) -> Result<SurplusMode, CandidateError> {
+    match spec.param("surplus") {
+        None | Some("idle") => Ok(SurplusMode::Idle),
+        Some("split") => Ok(SurplusMode::Split),
+        Some(other) => Err(invalid_param("surplus", other, "expected idle | split")),
+    }
+}
+
 /// Convenience constructor for [`CandidateError::InvalidParameter`].
 fn invalid_param(key: &str, value: &str, reason: impl Into<String>) -> CandidateError {
     CandidateError::InvalidParameter {
@@ -396,9 +457,16 @@ mod tests {
         let entry =
             cat.algorithms.iter().find(|a| a.algorithm == "multiloop").expect("multiloop listed");
         let keys: Vec<&str> = entry.params.iter().map(|p| p.key.as_str()).collect();
-        // `walk` (#215), then `assign` (#235), then `budget` (#255):
-        // each is appended, so older canonical ids keep their exact shape.
-        assert_eq!(keys, ["grid", "kmeans", "seed", "refine", "walk", "assign", "budget"]);
+        // `walk` (#215), then `assign` (#235), then `budget` (#255), then
+        // `balance` / `surplus` / `fuelpair` (#252): each is appended, so
+        // older canonical ids keep their exact shape.
+        assert_eq!(
+            keys,
+            [
+                "grid", "kmeans", "seed", "refine", "walk", "assign", "budget", "balance",
+                "surplus", "fuelpair"
+            ]
+        );
     }
 
     #[test]

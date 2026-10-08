@@ -211,6 +211,66 @@ pub(crate) fn parse_budget(spec: &CandidateSpec) -> Result<BudgetMode, Candidate
     }
 }
 
+/// How Supply agents are paired to Patrols (`fuelpair=`, Issue #252).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum FuelpairMode {
+    /// `fuelpair=nearest` (default): each Supply escorts the nearest Patrol
+    /// with a free escort slot — byte-identical to the pre-#252 pairing.
+    #[default]
+    Nearest,
+    /// `fuelpair=need`: pair to the neediest Patrol first (lowest fuel
+    /// residue; distance breaks ties only), and give every Patrol no Supply
+    /// was free for a **rendezvous tail** — the end cell of the nearest
+    /// Supply's projected day path, where that Supply parks — so it can
+    /// still be refuelled before it strands (Issue #252 現象2, directions
+    /// a + b together: with `ceil(S/P) = 1` there is always at least one
+    /// unescorted Patrol once Patrols outnumber Supplies).
+    Need,
+}
+
+/// Parse `fuelpair=nearest|need`; absent is [`FuelpairMode::Nearest`].
+///
+/// # Errors
+/// [`CandidateError::InvalidParameter`] for any other value.
+pub(crate) fn parse_fuelpair(spec: &CandidateSpec) -> Result<FuelpairMode, CandidateError> {
+    match spec.param("fuelpair") {
+        None | Some("nearest") => Ok(FuelpairMode::Nearest),
+        Some("need") => Ok(FuelpairMode::Need),
+        Some(other) => Err(CandidateError::InvalidParameter {
+            key: "fuelpair".to_owned(),
+            value: other.to_owned(),
+            reason: "expected nearest | need".to_owned(),
+        }),
+    }
+}
+
+/// The knobs [`AssignMode::apply`] threads through: which walker projects
+/// the escort paths, which clock the projection plans in (Issue #304), and
+/// how Supplies pair (Issue #252).
+///
+/// Bundled rather than added as further positional arguments — `apply`
+/// already carries `walk` and `budget`, and a third would make the call
+/// sites unreadable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AssignOpts {
+    /// Walker used for the escort projection *and* the final walk.
+    pub walk: WalkMode,
+    /// Clock the projection plans in (must match the caller's post-walk
+    /// `budget.apply`).
+    pub budget: BudgetMode,
+    /// Supply-to-Patrol pairing rule.
+    pub fuelpair: FuelpairMode,
+}
+
+impl AssignOpts {
+    /// Legacy defaults — the element clock and nearest pairing every
+    /// pre-#252 canonical id resolves to.
+    #[must_use]
+    pub fn element(walk: WalkMode) -> Self {
+        Self { walk, budget: BudgetMode::Element, fuelpair: FuelpairMode::Nearest }
+    }
+}
+
 /// Build one day's plan with the selected walk mode.
 ///
 /// `WalkMode::Greedy` is exactly [`plan_walk`] (the dispatcher adds nothing
@@ -329,21 +389,22 @@ impl AssignMode {
     /// `self` is [`Self::Agents`] the vector is returned untouched, so the
     /// default path never re-allocates or re-orders anything.
     ///
-    /// `walk` selects the walker used to project the paired Patrol's path for
-    /// [`Self::Escort`] and [`Self::All`]; the other modes ignore it (the
-    /// caller still walks the returned lists with the same `walk`, so the two
-    /// stay consistent). `budget` rides along for the same reason: the
-    /// projection and the final walk must be planned against the same clock
-    /// (Issue #304), or an escorted Supply would follow a path its Patrol no
-    /// longer walks.
+    /// `opts.walk` selects the walker used to project the paired Patrol's
+    /// path for [`Self::Escort`] and [`Self::All`]; the other modes ignore
+    /// it (the caller still walks the returned lists with the same walker,
+    /// so the two stay consistent). `opts.budget` rides along for the same
+    /// reason: the projection and the final walk must be planned against
+    /// the same clock (Issue #304), or an escorted Supply would follow a
+    /// path its Patrol no longer walks. `opts.fuelpair` picks the pairing
+    /// rule and its rendezvous extension (Issue #252).
     #[must_use]
     pub fn apply(
         self,
         ctx: &SolverContext<'_>,
         mut targets: Vec<Vec<HexCoord>>,
-        walk: WalkMode,
-        budget: BudgetMode,
+        opts: AssignOpts,
     ) -> Vec<Vec<HexCoord>> {
+        let AssignOpts { walk, budget, fuelpair } = opts;
         match self {
             Self::Agents => targets,
             Self::Patrol => {
@@ -362,7 +423,7 @@ impl AssignMode {
                 // 1. Pair every Supply with its nearest Patrol (day-start
                 //    geometry only, capacity-capped — Issue #250, see
                 //    [`pair_supplies`]). Supplies nobody can escort wait.
-                let (pairs, wait) = pair_supplies(ctx);
+                let (pairs, wait) = pair_supplies(ctx, fuelpair);
                 for index in wait {
                     if let Some(list) = targets.get_mut(index) {
                         list.clear();
@@ -395,6 +456,13 @@ impl AssignMode {
                         *list = paths.get(patrol).cloned().unwrap_or_default();
                     }
                 }
+                // 5. Issue #252: under `fuelpair=need`, hand the Patrols no
+                //    Supply was free for a rendezvous tail (Issue #252 現象2
+                //    direction b) — now that the Supply lists *are* the
+                //    projections, `paths` is exactly where each Supply ends.
+                if fuelpair == FuelpairMode::Need {
+                    append_rendezvous(ctx, &mut targets, &pairs, &paths);
+                }
                 targets
             }
             Self::All => {
@@ -409,7 +477,7 @@ impl AssignMode {
                 //    can never regress against escort under `walk=astar`
                 //    (the ordered walk visits the prefix identically, then
                 //    keeps going where escort would have parked).
-                let (pairs, wait) = pair_supplies(ctx);
+                let (pairs, wait) = pair_supplies(ctx, fuelpair);
                 for index in wait {
                     if let Some(list) = targets.get_mut(index) {
                         list.clear();
@@ -474,6 +542,10 @@ impl AssignMode {
                         *list = paths.get(patrol).cloned().unwrap_or_default();
                     }
                 }
+                // 4. Same rendezvous extension as `escort` (Issue #252).
+                if fuelpair == FuelpairMode::Need {
+                    append_rendezvous(ctx, &mut targets, &pairs, &paths);
+                }
                 targets
             }
         }
@@ -501,7 +573,15 @@ impl AssignMode {
 /// empties their lists so they wait, exactly like `assign=patrol`). A Supply
 /// whose day-start cell is unknown appears in neither — it keeps its own
 /// list, as `assign=escort` has always done.
-fn pair_supplies(ctx: &SolverContext<'_>) -> (Vec<(usize, usize)>, Vec<usize>) {
+///
+/// `fuelpair` picks the selection key (Issue #252): [`FuelpairMode::Nearest`]
+/// keeps the geometry-only rule above; [`FuelpairMode::Need`] ranks by the
+/// Patrol's remaining fuel first — the tank about to strand wins the scarce
+/// escorts — with distance demoted to a tie-break.
+fn pair_supplies(
+    ctx: &SolverContext<'_>,
+    fuelpair: FuelpairMode,
+) -> (Vec<(usize, usize)>, Vec<usize>) {
     let patrols: Vec<usize> = ctx
         .agent_ids
         .iter()
@@ -530,7 +610,21 @@ fn pair_supplies(ctx: &SolverContext<'_>) -> (Vec<(usize, usize)>, Vec<usize>) {
             .map(|(_, patrol)| patrol)
             .min_by_key(|&patrol| {
                 let patrol_pos = ctx.agent_ids.get(patrol).and_then(|pid| pos_of(ctx, *pid));
-                (patrol_pos.map_or(u32::MAX, |p| hex_distance(supply_pos, p)), patrol)
+                let distance = patrol_pos.map_or(u32::MAX, |p| hex_distance(supply_pos, p));
+                // Issue #252: `need` ranks by the Patrol's remaining fuel
+                // first (lowest wins the scarce escort) and demotes distance
+                // to a tie-break; `nearest` keeps its old ordering — the
+                // constant leading component does not reorder it.
+                let fuel_rank = match fuelpair {
+                    FuelpairMode::Nearest => 0,
+                    FuelpairMode::Need => ctx
+                        .state
+                        .agents
+                        .iter()
+                        .find(|a| ctx.agent_ids.get(patrol) == Some(&a.id))
+                        .map_or(u32::MAX, |a| a.fuel),
+                };
+                (fuel_rank, distance, patrol)
             })
         else {
             // No Patrol to escort: wait, exactly like `assign=patrol`.
@@ -543,6 +637,54 @@ fn pair_supplies(ctx: &SolverContext<'_>) -> (Vec<(usize, usize)>, Vec<usize>) {
         pairs.push((index, paired));
     }
     (pairs, wait)
+}
+
+/// Issue #252 (現象2, direction b): give every Patrol that no Supply was
+/// free for a **rendezvous tail** — the end cell of the nearest such
+/// Supply's projected day path.
+///
+/// Run *after* the paired Supply lists have been replaced by `paths`, so a
+/// cell picked here is where a Supply will actually be standing (it parks
+/// once the projection is consumed). The tail is appended to whatever the
+/// Patrol already had, so its own tour keeps priority and the rendezvous is
+/// only asked for with whatever day budget is left. Patrols that already
+/// have an escort are skipped; `pairs` / `paths` are indexed exactly as
+/// [`AssignMode::Escort`] builds them (agent positions in `ctx.agent_ids`).
+fn append_rendezvous(
+    ctx: &SolverContext<'_>,
+    targets: &mut [Vec<HexCoord>],
+    pairs: &[(usize, usize)],
+    paths: &[Vec<HexCoord>],
+) {
+    let escorted: Vec<usize> = pairs.iter().map(|&(_, patrol)| patrol).collect();
+    for (index, id) in ctx.agent_ids.iter().enumerate() {
+        if kind_of(ctx, *id) != Some(AgentKind::Patrol) || escorted.contains(&index) {
+            continue;
+        }
+        let Some(from) = pos_of(ctx, *id) else {
+            continue;
+        };
+        // Nearest Supply end; ties resolve to the lower pair index, so the
+        // choice is deterministic.
+        let mut best: Option<(HexCoord, (u32, usize))> = None;
+        for (pair, &(_, patrol)) in pairs.iter().enumerate() {
+            let Some(end) = paths.get(patrol).and_then(|path| path.last()).copied() else {
+                continue;
+            };
+            let key = (hex_distance(from, end), pair);
+            if best.is_none_or(|(_, best_key)| key < best_key) {
+                best = Some((end, key));
+            }
+        }
+        let Some((cell, _)) = best else {
+            continue;
+        };
+        if let Some(list) = targets.get_mut(index) {
+            if list.last() != Some(&cell) {
+                list.push(cell);
+            }
+        }
+    }
 }
 
 /// Look up a controlled agent's kind by id through `ctx.state`.
@@ -958,11 +1100,11 @@ mod tests {
             vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(3, 3)], vec![HexCoord::new(4, 4)]];
 
         let untouched =
-            AssignMode::Agents.apply(&ctx, targets.clone(), WalkMode::Greedy, BudgetMode::Element);
+            AssignMode::Agents.apply(&ctx, targets.clone(), AssignOpts::element(WalkMode::Greedy));
         assert_eq!(untouched, targets, "assign=agents must be a no-op");
 
         let filtered =
-            AssignMode::Patrol.apply(&ctx, targets, WalkMode::Greedy, BudgetMode::Element);
+            AssignMode::Patrol.apply(&ctx, targets, AssignOpts::element(WalkMode::Greedy));
         assert_eq!(
             filtered,
             vec![vec![HexCoord::new(2, 0)], Vec::new(), Vec::new()],
@@ -1011,7 +1153,7 @@ mod tests {
         assert_ne!(paths[0], paths[1], "the two patrols must walk different paths");
 
         let escorted =
-            AssignMode::Escort.apply(&ctx, targets.clone(), WalkMode::Greedy, BudgetMode::Element);
+            AssignMode::Escort.apply(&ctx, targets.clone(), AssignOpts::element(WalkMode::Greedy));
         // Handover (Issue #250): each paired Supply's own share is appended to
         // the Patrol list — the own tour stays a prefix, nothing is dropped.
         assert_eq!(
@@ -1064,7 +1206,7 @@ mod tests {
         let ctx = SolverContext::from_state(&st);
         let targets = vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(5, 5)], vec![]];
         let escorted =
-            AssignMode::Escort.apply(&ctx, targets, WalkMode::Greedy, BudgetMode::Element);
+            AssignMode::Escort.apply(&ctx, targets, AssignOpts::element(WalkMode::Greedy));
         assert!(
             escorted.iter().all(Vec::is_empty),
             "no Patrol to follow, so every Supply waits, got {escorted:?}"
@@ -1111,7 +1253,7 @@ mod tests {
             vec![HexCoord::new(3, 3)],
         ];
         let escorted =
-            AssignMode::Escort.apply(&ctx, targets, WalkMode::Greedy, BudgetMode::Element);
+            AssignMode::Escort.apply(&ctx, targets, AssignOpts::element(WalkMode::Greedy));
 
         // capacity = ceil(2 supplies / 2 patrols) = 1: the first Supply takes
         // patrol0's only slot, so the second is forced onto patrol1.
@@ -1174,7 +1316,7 @@ mod tests {
         let run = |mode: AssignMode| -> Option<u32> {
             let plan = plan_walk(
                 &ctx,
-                &mode.apply(&ctx, targets.clone(), WalkMode::Greedy, BudgetMode::Element),
+                &mode.apply(&ctx, targets.clone(), AssignOpts::element(WalkMode::Greedy)),
             );
             assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
             let mut run_state = MatchState::new(setting.clone()).unwrap();
@@ -1252,7 +1394,7 @@ mod tests {
         let supply1_cells = |walk: WalkMode| -> Vec<HexCoord> {
             let plan = plan_walk_with(
                 &ctx,
-                &AssignMode::Escort.apply(&ctx, targets.clone(), walk, BudgetMode::Element),
+                &AssignMode::Escort.apply(&ctx, targets.clone(), AssignOpts::element(walk)),
                 walk,
                 BudgetMode::Element,
             );
@@ -1304,7 +1446,7 @@ mod tests {
         let run = |mode: AssignMode| -> Option<u32> {
             let plan = plan_walk_with(
                 &ctx,
-                &mode.apply(&ctx, targets.clone(), WalkMode::Astar, BudgetMode::Element),
+                &mode.apply(&ctx, targets.clone(), AssignOpts::element(WalkMode::Astar)),
                 WalkMode::Astar,
                 BudgetMode::Element,
             );
@@ -1389,14 +1531,13 @@ mod tests {
                 .collect();
 
             let applied =
-                AssignMode::All.apply(&ctx, targets.clone(), WalkMode::Greedy, BudgetMode::Element);
+                AssignMode::All.apply(&ctx, targets.clone(), AssignOpts::element(WalkMode::Greedy));
             // The escort lists are `assign=all`'s prefix — that is the
             // non-regression contract against kinds.
             let escorted = AssignMode::Escort.apply(
                 &ctx,
                 targets.clone(),
-                WalkMode::Greedy,
-                BudgetMode::Element,
+                AssignOpts::element(WalkMode::Greedy),
             );
 
             for (index, kind) in kinds.iter().enumerate() {
@@ -1427,7 +1568,7 @@ mod tests {
             }
 
             // Supplies: escort projection over the unioned Patrol lists.
-            let (pairs, wait) = pair_supplies(&ctx);
+            let (pairs, wait) = pair_supplies(&ctx, FuelpairMode::Nearest);
             assert!(wait.is_empty(), "{pattern}: capacity covers every Supply here");
             let paths = day_paths(&ctx, &applied, WalkMode::Greedy, BudgetMode::Element);
             for (supply, patrol) in pairs {
@@ -1445,8 +1586,7 @@ mod tests {
             let default = AssignMode::Agents.apply(
                 &ctx,
                 targets.clone(),
-                WalkMode::Greedy,
-                BudgetMode::Element,
+                AssignOpts::element(WalkMode::Greedy),
             );
             assert_ne!(applied, default, "{pattern}: assign=all must change the lists");
         }
@@ -1474,7 +1614,7 @@ mod tests {
         let ctx = SolverContext::from_state(&st);
         let targets =
             vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(5, 5)], vec![HexCoord::new(6, 6)]];
-        let applied = AssignMode::All.apply(&ctx, targets, WalkMode::Greedy, BudgetMode::Element);
+        let applied = AssignMode::All.apply(&ctx, targets, AssignOpts::element(WalkMode::Greedy));
         assert!(
             applied.iter().all(Vec::is_empty),
             "nobody to walk, so everyone waits: {applied:?}"
