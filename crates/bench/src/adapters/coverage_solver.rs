@@ -42,7 +42,7 @@ impl CandidateFactory for CoverageFactory {
         }
         let park_risk = match spec.param("park") {
             None | Some("none") => false,
-            Some("risk") | Some("far") => true,
+            Some("risk" | "far") => true,
             Some(other) => {
                 return Err(CandidateError::Build(format!("unknown park mode {other:?}")));
             }
@@ -141,6 +141,60 @@ fn supply_pairs(
     (pairs, assigned)
 }
 
+/// One patrol step: harvest in place, walk to a coverage target, or walk to
+/// the nearest harvest target. `spread_window` enables park-mode spreading
+/// across unclaimed series (Issue #331); the caller decides when that window
+/// is open. Updates `reserved` / `day_claimed` with the chosen series.
+fn patrol_step(
+    state: &engine::model::MatchState,
+    agent: &Agent,
+    paths: &[Route],
+    remaining: u32,
+    spread_window: bool,
+    day_claimed: &mut BTreeSet<u32>,
+    reserved: &mut BTreeSet<u32>,
+) -> Action {
+    let map = &state.setting.map;
+    let can_pick_here = map.get(agent.pos).and_then(|c| c.spot.as_ref()).is_some_and(|s| {
+        s.current_stock > 0 && !agent_at_daily_pick_cap(agent, agent.pos, &state.spot_picks_today)
+    });
+    if can_pick_here {
+        if let Some(spot) = map.get(agent.pos).and_then(|c| c.spot.as_ref()) {
+            reserved.insert(spot.series);
+        }
+        return Action::wait(agent.id);
+    }
+    let target = map
+        .cells()
+        .iter()
+        .filter_map(|c| c.spot.as_ref())
+        .filter(|s| {
+            s.current_stock > 0 && !agent_at_daily_pick_cap(agent, s.pos, &state.spot_picks_today)
+        })
+        .filter_map(|s| {
+            let route = paths[index(map, s.pos)];
+            (route.cost <= remaining && route.first.is_some()).then_some((
+                reserved.contains(&s.series),
+                // Park: spread across unclaimed series only on medium+ days
+                // whose tomorrow is also medium+. Short days scatter patrols;
+                // spreading the day before a short day can strand the next
+                // start (Issue #331).
+                spread_window && day_claimed.contains(&s.series),
+                route.cost,
+                s.series,
+                index(map, s.pos),
+                route.first,
+            ))
+        })
+        .min_by_key(|x| (x.0, x.1, x.2, x.3, x.4));
+    if let Some((_, _, _, series, _, first)) = target {
+        reserved.insert(series);
+        day_claimed.insert(series);
+        return legal_step(agent, first, map, remaining);
+    }
+    Action::wait(agent.id)
+}
+
 impl Solver for CoverageCandidate {
     fn name(&self) -> &'static str {
         "coverage"
@@ -166,12 +220,14 @@ impl Solver for CoverageCandidate {
                 0
             }
         };
-        // Only spread on maps where nearest-first cannot cover all series
-        // (Issue #331). Small boards are already covered by greedy proximity.
-        let spread_map = {
-            let size = &state.setting.map.size;
-            usize::from(size.width) >= 24 || usize::from(size.height) >= 24
-        };
+        // Park spreading opens only on medium+ days whose tomorrow is also
+        // medium+, and only on maps where nearest-first cannot cover all
+        // series (Issue #331). Small boards are covered by greedy proximity.
+        let size = &state.setting.map.size;
+        let spread_window = self.park_risk
+            && (usize::from(size.width) >= 24 || usize::from(size.height) >= 24)
+            && ctx.day_steps >= 70
+            && tomorrow_budget >= 70;
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
         let sim = MatchSim::default();
@@ -184,7 +240,6 @@ impl Solver for CoverageCandidate {
             let mut actions: Vec<_> = state.agents.iter().map(|a| Action::wait(a.id)).collect();
             let mut reserved =
                 state.series_acquired_by_day.get(&ctx.day).cloned().unwrap_or_default();
-            let mut claimed: BTreeSet<u32> = BTreeSet::new();
             let patrol_paths: Vec<(usize, Vec<Route>)> = patrols
                 .iter()
                 .map(|&i| (i, routes(&state.setting.map, &state.agents[i], assigned.contains(&i))))
@@ -193,57 +248,17 @@ impl Solver for CoverageCandidate {
                 if used[i] >= ctx.day_steps {
                     continue;
                 }
-                let agent = &state.agents[i];
-                let map = &state.setting.map;
-                let can_pick_here =
-                    map.get(agent.pos).and_then(|c| c.spot.as_ref()).is_some_and(|s| {
-                        s.current_stock > 0
-                            && !agent_at_daily_pick_cap(agent, agent.pos, &state.spot_picks_today)
-                    });
-                if can_pick_here {
-                    if let Some(spot) = map.get(agent.pos).and_then(|c| c.spot.as_ref()) {
-                        reserved.insert(spot.series);
-                    }
-                    continue;
-                }
                 let paths =
                     &patrol_paths.iter().find(|(j, _)| *j == i).expect("patrol route computed").1;
-                let target =
-                    map.cells()
-                        .iter()
-                        .filter_map(|c| c.spot.as_ref())
-                        .filter(|s| {
-                            s.current_stock > 0
-                                && !agent_at_daily_pick_cap(agent, s.pos, &state.spot_picks_today)
-                        })
-                        .filter_map(|s| {
-                            let route = paths[index(map, s.pos)];
-                            (route.cost <= ctx.day_steps - used[i] && route.first.is_some())
-                                .then_some((
-                                    reserved.contains(&s.series),
-                                    // Park: spread across unclaimed series only on
-                                    // medium+ days whose tomorrow is also medium+.
-                                    // Short days scatter patrols; spreading the day
-                                    // before a short day can strand the next start
-                                    // (Issue #331).
-                                    self.park_risk
-                                        && spread_map
-                                        && ctx.day_steps >= 70
-                                        && tomorrow_budget >= 70
-                                        && day_claimed.contains(&s.series),
-                                    route.cost,
-                                    s.series,
-                                    index(map, s.pos),
-                                    route.first,
-                                ))
-                        })
-                        .min_by_key(|x| (x.0, x.1, x.2, x.3, x.4));
-                if let Some((_, _, _, series, _, first)) = target {
-                    reserved.insert(series);
-                    claimed.insert(series);
-                    day_claimed.insert(series);
-                    actions[i] = legal_step(agent, first, map, ctx.day_steps - used[i]);
-                }
+                actions[i] = patrol_step(
+                    &state,
+                    &state.agents[i],
+                    paths,
+                    ctx.day_steps - used[i],
+                    spread_window,
+                    &mut day_claimed,
+                    &mut reserved,
+                );
             }
             for i in 0..n {
                 if used[i] >= ctx.day_steps {
