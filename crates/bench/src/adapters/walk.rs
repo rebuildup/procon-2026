@@ -217,15 +217,20 @@ pub(crate) fn parse_budget(spec: &CandidateSpec) -> Result<BudgetMode, Candidate
 /// to it — pinned by `plan_walk_with_greedy_is_exactly_plan_walk`);
 /// `WalkMode::Astar` is [`super::astar_walk::plan_walk_astar`]. Either way
 /// the result is a well-shaped step-major plan.
+///
+/// `budget` is the candidate's [`BudgetMode`] — the A* walk plans its legs
+/// against it (Issue #304) and the caller applies the same value to the
+/// finished plan, so planning and truncation always share one clock.
 #[must_use]
 pub fn plan_walk_with(
     ctx: &SolverContext<'_>,
     targets: &[Vec<HexCoord>],
     mode: WalkMode,
+    budget: BudgetMode,
 ) -> AgentActions {
     match mode {
         WalkMode::Greedy => plan_walk(ctx, targets),
-        WalkMode::Astar => super::astar_walk::plan_walk_astar(ctx, targets),
+        WalkMode::Astar => super::astar_walk::plan_walk_astar(ctx, targets, budget),
     }
 }
 
@@ -327,13 +332,17 @@ impl AssignMode {
     /// `walk` selects the walker used to project the paired Patrol's path for
     /// [`Self::Escort`] and [`Self::All`]; the other modes ignore it (the
     /// caller still walks the returned lists with the same `walk`, so the two
-    /// stay consistent).
+    /// stay consistent). `budget` rides along for the same reason: the
+    /// projection and the final walk must be planned against the same clock
+    /// (Issue #304), or an escorted Supply would follow a path its Patrol no
+    /// longer walks.
     #[must_use]
     pub fn apply(
         self,
         ctx: &SolverContext<'_>,
         mut targets: Vec<Vec<HexCoord>>,
         walk: WalkMode,
+        budget: BudgetMode,
     ) -> Vec<Vec<HexCoord>> {
         match self {
             Self::Agents => targets,
@@ -378,7 +387,7 @@ impl AssignMode {
                 // 3. Project AFTER the handover so the Supply follows the
                 //    extended path — the cells the Patrol will actually walk
                 //    with the handed-over spots included.
-                let paths = day_paths(ctx, &targets, walk);
+                let paths = day_paths(ctx, &targets, walk, budget);
 
                 // 4. Replace each paired Supply's list with the projection.
                 for &(supply, patrol) in &pairs {
@@ -459,7 +468,7 @@ impl AssignMode {
 
                 // 3. Project AFTER the extension so each Supply follows the
                 //    final post-union path of its paired Patrol.
-                let paths = day_paths(ctx, &targets, walk);
+                let paths = day_paths(ctx, &targets, walk, budget);
                 for &(supply, patrol) in &pairs {
                     if let Some(list) = targets.get_mut(supply) {
                         *list = paths.get(patrol).cloned().unwrap_or_default();
@@ -558,8 +567,9 @@ fn day_paths(
     ctx: &SolverContext<'_>,
     targets: &[Vec<HexCoord>],
     walk: WalkMode,
+    budget: BudgetMode,
 ) -> Vec<Vec<HexCoord>> {
-    let plan = plan_walk_with(ctx, targets, walk);
+    let plan = plan_walk_with(ctx, targets, walk, budget);
     let per_agent = ctx.agent_ids.len();
     let day_steps = ctx.day_steps as usize;
     let mut positions: Vec<HexCoord> =
@@ -947,10 +957,12 @@ mod tests {
         let targets =
             vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(3, 3)], vec![HexCoord::new(4, 4)]];
 
-        let untouched = AssignMode::Agents.apply(&ctx, targets.clone(), WalkMode::Greedy);
+        let untouched =
+            AssignMode::Agents.apply(&ctx, targets.clone(), WalkMode::Greedy, BudgetMode::Element);
         assert_eq!(untouched, targets, "assign=agents must be a no-op");
 
-        let filtered = AssignMode::Patrol.apply(&ctx, targets, WalkMode::Greedy);
+        let filtered =
+            AssignMode::Patrol.apply(&ctx, targets, WalkMode::Greedy, BudgetMode::Element);
         assert_eq!(
             filtered,
             vec![vec![HexCoord::new(2, 0)], Vec::new(), Vec::new()],
@@ -995,10 +1007,11 @@ mod tests {
         assert_eq!(hex_distance(HexCoord::new(1, 6), HexCoord::new(0, 7)), 2);
         assert_eq!(hex_distance(HexCoord::new(1, 6), HexCoord::new(0, 0)), 6);
 
-        let paths = day_paths(&ctx, &targets, WalkMode::Greedy);
+        let paths = day_paths(&ctx, &targets, WalkMode::Greedy, BudgetMode::Element);
         assert_ne!(paths[0], paths[1], "the two patrols must walk different paths");
 
-        let escorted = AssignMode::Escort.apply(&ctx, targets.clone(), WalkMode::Greedy);
+        let escorted =
+            AssignMode::Escort.apply(&ctx, targets.clone(), WalkMode::Greedy, BudgetMode::Element);
         // Handover (Issue #250): each paired Supply's own share is appended to
         // the Patrol list — the own tour stays a prefix, nothing is dropped.
         assert_eq!(
@@ -1013,7 +1026,7 @@ mod tests {
         );
         // The projection runs AFTER the handover, so the supplies follow the
         // extended paths, not the pre-handover ones.
-        let extended = day_paths(&ctx, &escorted, WalkMode::Greedy);
+        let extended = day_paths(&ctx, &escorted, WalkMode::Greedy, BudgetMode::Element);
         assert_eq!(
             escorted[2], extended[0],
             "supply2 pairs with the nearest patrol (patrol0) and walks its extended path"
@@ -1050,7 +1063,8 @@ mod tests {
         .unwrap();
         let ctx = SolverContext::from_state(&st);
         let targets = vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(5, 5)], vec![]];
-        let escorted = AssignMode::Escort.apply(&ctx, targets, WalkMode::Greedy);
+        let escorted =
+            AssignMode::Escort.apply(&ctx, targets, WalkMode::Greedy, BudgetMode::Element);
         assert!(
             escorted.iter().all(Vec::is_empty),
             "no Patrol to follow, so every Supply waits, got {escorted:?}"
@@ -1096,7 +1110,8 @@ mod tests {
             vec![HexCoord::new(4, 4)],
             vec![HexCoord::new(3, 3)],
         ];
-        let escorted = AssignMode::Escort.apply(&ctx, targets, WalkMode::Greedy);
+        let escorted =
+            AssignMode::Escort.apply(&ctx, targets, WalkMode::Greedy, BudgetMode::Element);
 
         // capacity = ceil(2 supplies / 2 patrols) = 1: the first Supply takes
         // patrol0's only slot, so the second is forced onto patrol1.
@@ -1110,7 +1125,7 @@ mod tests {
             vec![HexCoord::new(5, 7), HexCoord::new(3, 3)],
             "patrol1 gains supply3's share — forced by the capacity cap, not by distance"
         );
-        let extended = day_paths(&ctx, &escorted, WalkMode::Greedy);
+        let extended = day_paths(&ctx, &escorted, WalkMode::Greedy, BudgetMode::Element);
         assert_eq!(
             escorted[3], extended[1],
             "supply3 escorts patrol1 despite patrol0 being nearer"
@@ -1157,7 +1172,10 @@ mod tests {
 
         let is_refuel = |e: &engine::transitions::StepEvent| matches!(e, engine::transitions::StepEvent::Picked { series, .. } if *series == u32::MAX);
         let run = |mode: AssignMode| -> Option<u32> {
-            let plan = plan_walk(&ctx, &mode.apply(&ctx, targets.clone(), WalkMode::Greedy));
+            let plan = plan_walk(
+                &ctx,
+                &mode.apply(&ctx, targets.clone(), WalkMode::Greedy, BudgetMode::Element),
+            );
             assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
             let mut run_state = MatchState::new(setting.clone()).unwrap();
             let sim = engine::MatchSim::default();
@@ -1232,8 +1250,12 @@ mod tests {
 
         // Walk supply1's cells under each mode: fold its Move actions.
         let supply1_cells = |walk: WalkMode| -> Vec<HexCoord> {
-            let plan =
-                plan_walk_with(&ctx, &AssignMode::Escort.apply(&ctx, targets.clone(), walk), walk);
+            let plan = plan_walk_with(
+                &ctx,
+                &AssignMode::Escort.apply(&ctx, targets.clone(), walk, BudgetMode::Element),
+                walk,
+                BudgetMode::Element,
+            );
             assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
             let mut pos = HexCoord::new(4, 0);
             let mut cells = vec![pos];
@@ -1282,8 +1304,9 @@ mod tests {
         let run = |mode: AssignMode| -> Option<u32> {
             let plan = plan_walk_with(
                 &ctx,
-                &mode.apply(&ctx, targets.clone(), WalkMode::Astar),
+                &mode.apply(&ctx, targets.clone(), WalkMode::Astar, BudgetMode::Element),
                 WalkMode::Astar,
+                BudgetMode::Element,
             );
             assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
             let mut run_state = MatchState::new(setting.clone()).unwrap();
@@ -1365,10 +1388,16 @@ mod tests {
                 .chain([shared])
                 .collect();
 
-            let applied = AssignMode::All.apply(&ctx, targets.clone(), WalkMode::Greedy);
+            let applied =
+                AssignMode::All.apply(&ctx, targets.clone(), WalkMode::Greedy, BudgetMode::Element);
             // The escort lists are `assign=all`'s prefix — that is the
             // non-regression contract against kinds.
-            let escorted = AssignMode::Escort.apply(&ctx, targets.clone(), WalkMode::Greedy);
+            let escorted = AssignMode::Escort.apply(
+                &ctx,
+                targets.clone(),
+                WalkMode::Greedy,
+                BudgetMode::Element,
+            );
 
             for (index, kind) in kinds.iter().enumerate() {
                 if *kind != AgentKind::Patrol {
@@ -1400,7 +1429,7 @@ mod tests {
             // Supplies: escort projection over the unioned Patrol lists.
             let (pairs, wait) = pair_supplies(&ctx);
             assert!(wait.is_empty(), "{pattern}: capacity covers every Supply here");
-            let paths = day_paths(&ctx, &applied, WalkMode::Greedy);
+            let paths = day_paths(&ctx, &applied, WalkMode::Greedy, BudgetMode::Element);
             for (supply, patrol) in pairs {
                 assert_eq!(
                     applied[supply], paths[patrol],
@@ -1413,7 +1442,12 @@ mod tests {
             }
 
             // The mode is a real switch, not a synonym for the default.
-            let default = AssignMode::Agents.apply(&ctx, targets.clone(), WalkMode::Greedy);
+            let default = AssignMode::Agents.apply(
+                &ctx,
+                targets.clone(),
+                WalkMode::Greedy,
+                BudgetMode::Element,
+            );
             assert_ne!(applied, default, "{pattern}: assign=all must change the lists");
         }
     }
@@ -1440,7 +1474,7 @@ mod tests {
         let ctx = SolverContext::from_state(&st);
         let targets =
             vec![vec![HexCoord::new(2, 0)], vec![HexCoord::new(5, 5)], vec![HexCoord::new(6, 6)]];
-        let applied = AssignMode::All.apply(&ctx, targets, WalkMode::Greedy);
+        let applied = AssignMode::All.apply(&ctx, targets, WalkMode::Greedy, BudgetMode::Element);
         assert!(
             applied.iter().all(Vec::is_empty),
             "nobody to walk, so everyone waits: {applied:?}"
@@ -1642,11 +1676,14 @@ mod tests {
         let ctx = SolverContext::from_state(&st);
         let targets = vec![vec![HexCoord::new(2, 0)], vec![], vec![]];
         assert_eq!(
-            plan_walk_with(&ctx, &targets, WalkMode::Greedy),
+            plan_walk_with(&ctx, &targets, WalkMode::Greedy, BudgetMode::Element),
             plan_walk(&ctx, &targets),
             "walk=greedy must be byte-for-byte the pre-#215 walk"
         );
         // And so is the omitted parameter, resolved through the mode default.
-        assert_eq!(plan_walk_with(&ctx, &targets, WalkMode::default()), plan_walk(&ctx, &targets));
+        assert_eq!(
+            plan_walk_with(&ctx, &targets, WalkMode::default(), BudgetMode::Element),
+            plan_walk(&ctx, &targets)
+        );
     }
 }

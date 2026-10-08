@@ -279,11 +279,11 @@ impl LoopCandidate {
     ) -> Vec<Vec<HexCoord>> {
         let per_agent = agent_targets(ctx, outcome);
         if self.inner.operators != OperatorSet::Extended
-            || agents_reaching_a_spot(ctx, &per_agent, self.walk) > 0
+            || agents_reaching_a_spot(ctx, &per_agent, self.walk, self.budget) > 0
         {
             return per_agent;
         }
-        rescue_anchor(ctx, outcome, &per_agent, self.walk)
+        rescue_anchor(ctx, outcome, &per_agent, self.walk, self.budget)
     }
 }
 
@@ -304,8 +304,12 @@ impl Solver for LoopCandidate {
             // and consumes it with that walker's semantics (per-step pursuit
             // under `greedy`, ordered-waypoint replay under `astar`).
             Ok(targets) => {
-                let plan =
-                    plan_walk_with(ctx, &self.assign.apply(ctx, targets, self.walk), self.walk);
+                let plan = plan_walk_with(
+                    ctx,
+                    &self.assign.apply(ctx, targets, self.walk, self.budget),
+                    self.walk,
+                    self.budget,
+                );
                 self.budget.apply(ctx, plan)
             }
             Err(err) => {
@@ -455,6 +459,7 @@ fn agents_reaching_a_spot(
     ctx: &SolverContext<'_>,
     targets: &[Vec<HexCoord>],
     walk: WalkMode,
+    budget: BudgetMode,
 ) -> usize {
     let map = &ctx.state.setting.map;
     let day_steps = ctx.day_steps as usize;
@@ -487,7 +492,7 @@ fn agents_reaching_a_spot(
             .count(),
         WalkMode::Astar => {
             // Trace the very plan the candidate would emit, step-major.
-            let plan = super::astar_walk::plan_walk_astar(ctx, targets);
+            let plan = super::astar_walk::plan_walk_astar(ctx, targets, budget);
             let agent_count = ctx.agent_ids.len();
             ctx.agent_ids
                 .iter()
@@ -595,6 +600,7 @@ fn rescue_anchor(
     outcome: &solver_loop::SolveOutcome,
     default: &[Vec<HexCoord>],
     walk: WalkMode,
+    budget: BudgetMode,
 ) -> Vec<Vec<HexCoord>> {
     let n_agents = ctx.agent_ids.len();
     let Some(tour) = tour_from_outcome(outcome, n_agents) else {
@@ -602,7 +608,7 @@ fn rescue_anchor(
     };
 
     let mut best = default.to_vec();
-    let mut best_hits = agents_reaching_a_spot(ctx, &best, walk);
+    let mut best_hits = agents_reaching_a_spot(ctx, &best, walk, budget);
     if best_hits == n_agents {
         return best;
     }
@@ -620,7 +626,7 @@ fn rescue_anchor(
                 anchor.rotate_left(1);
             }
             let candidate = targets_for_tour(ctx, &anchor, n_agents);
-            let hits = agents_reaching_a_spot(ctx, &candidate, walk);
+            let hits = agents_reaching_a_spot(ctx, &candidate, walk, budget);
             if hits > best_hits {
                 best_hits = hits;
                 best = candidate;
@@ -864,18 +870,30 @@ mod tests {
             let outcome = solver.solve(&problem).expect("solve");
             let tour =
                 tour_from_outcome(&outcome, problem.agents.len()).expect("clean round-robin");
-            let reached =
-                agents_reaching_a_spot(&ctx, &agent_targets(&ctx, &outcome), WalkMode::Greedy);
+            let reached = agents_reaching_a_spot(
+                &ctx,
+                &agent_targets(&ctx, &outcome),
+                WalkMode::Greedy,
+                BudgetMode::Element,
+            );
             println!("{ops:?}: reachable_agents={reached}/{} tour={tour:?}", problem.agents.len());
             outcomes.push((tour, outcome));
         }
 
         let (classic_tour, classic_outcome) = &outcomes[0];
         let (extended_tour, extended_outcome) = &outcomes[1];
-        let classic_hits =
-            agents_reaching_a_spot(&ctx, &agent_targets(&ctx, classic_outcome), WalkMode::Greedy);
-        let extended_hits =
-            agents_reaching_a_spot(&ctx, &agent_targets(&ctx, extended_outcome), WalkMode::Greedy);
+        let classic_hits = agents_reaching_a_spot(
+            &ctx,
+            &agent_targets(&ctx, classic_outcome),
+            WalkMode::Greedy,
+            BudgetMode::Element,
+        );
+        let extended_hits = agents_reaching_a_spot(
+            &ctx,
+            &agent_targets(&ctx, extended_outcome),
+            WalkMode::Greedy,
+            BudgetMode::Element,
+        );
 
         // The two operator sets must actually disagree about the array —
         // otherwise there would be no defect to rescue.
@@ -901,7 +919,7 @@ mod tests {
         // …and whatever `targets_for` hands out stays walkable.
         let rescued = extended_candidate().targets_for(&ctx, extended_outcome);
         assert!(
-            agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy) >= 1,
+            agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy, BudgetMode::Element) >= 1,
             "the Issue #207 rescue must never degrade the anchor to an unwalkable set"
         );
     }
@@ -925,14 +943,15 @@ mod tests {
         let unreachable = vec![vec![HexCoord::new(-99, -99)]; n_agents];
 
         assert_eq!(
-            agents_reaching_a_spot(&ctx, &unreachable, WalkMode::Greedy),
+            agents_reaching_a_spot(&ctx, &unreachable, WalkMode::Greedy, BudgetMode::Element),
             0,
             "the premise: no agent can stand on a spot from an off-map target"
         );
-        let rescued = rescue_anchor(&ctx, &outcome, &unreachable, WalkMode::Greedy);
+        let rescued =
+            rescue_anchor(&ctx, &outcome, &unreachable, WalkMode::Greedy, BudgetMode::Element);
         assert_ne!(rescued, unreachable, "the scan must replace an unusable anchor");
         assert!(
-            agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy) >= 1,
+            agents_reaching_a_spot(&ctx, &rescued, WalkMode::Greedy, BudgetMode::Element) >= 1,
             "and the replacement must be walkable"
         );
     }
@@ -970,7 +989,7 @@ mod tests {
         );
         let mut outcome = solver.solve(&problem).expect("solve");
         let default = agent_targets(&ctx, &outcome);
-        if agents_reaching_a_spot(&ctx, &default, WalkMode::Greedy) > 0 {
+        if agents_reaching_a_spot(&ctx, &default, WalkMode::Greedy, BudgetMode::Element) > 0 {
             assert_eq!(
                 candidate.targets_for(&ctx, &outcome),
                 default,
@@ -1105,11 +1124,11 @@ mod tests {
         let targets = agent_targets(&ctx, &outcome);
 
         assert!(
-            agents_reaching_a_spot(&ctx, &targets, WalkMode::Greedy) >= 1,
+            agents_reaching_a_spot(&ctx, &targets, WalkMode::Greedy, BudgetMode::Element) >= 1,
             "greedy must reach a spot now that the distance measures the even-r grid"
         );
         assert!(
-            agents_reaching_a_spot(&ctx, &targets, WalkMode::Astar) >= 1,
+            agents_reaching_a_spot(&ctx, &targets, WalkMode::Astar, BudgetMode::Element) >= 1,
             "walk=astar must reach where it did before"
         );
 
