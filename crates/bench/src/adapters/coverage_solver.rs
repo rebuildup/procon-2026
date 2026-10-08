@@ -1,5 +1,11 @@
-//! Daily coverage first, followed by marginal harvest, with joint fuel replay.
-//! Planning uses the same engine rules as evaluation and live `CandidateBridge`.
+//! Daily coverage first, followed by marginal harvest or risk repositioning,
+//! with joint fuel replay. Planning uses the same engine rules as evaluation
+//! and live `CandidateBridge`.
+//!
+//! `park=none` (default) harvests the nearest reserved spot after coverage.
+//! `park=risk` instead drives end-of-day movement toward series that would be
+//! out of reach for the next (shorter) day, so the following day starts close
+//! to them (Issue #331).
 use std::cmp::Reverse;
 use std::collections::{BTreeSet, BinaryHeap};
 
@@ -15,8 +21,10 @@ fn step_cost(terrain: Terrain) -> u32 {
 }
 
 pub struct CoverageFactory;
-const PARAMS: &[ParamSpec] =
-    &[ParamSpec { key: "budget", required: true, doc: "official (required)" }];
+const PARAMS: &[ParamSpec] = &[
+    ParamSpec { key: "budget", required: true, doc: "official (required)" },
+    ParamSpec { key: "park", required: false, doc: "none (default) | risk" },
+];
 impl CandidateFactory for CoverageFactory {
     fn algorithm(&self) -> &'static str {
         "coverage"
@@ -32,10 +40,19 @@ impl CandidateFactory for CoverageFactory {
         if spec.param("budget") != Some("official") {
             return Err(CandidateError::Build("coverage requires budget=official".into()));
         }
-        Ok(Box::new(CoverageCandidate))
+        let park_risk = match spec.param("park") {
+            None | Some("none") => false,
+            Some("risk") | Some("far") => true,
+            Some(other) => {
+                return Err(CandidateError::Build(format!("unknown park mode {other:?}")));
+            }
+        };
+        Ok(Box::new(CoverageCandidate { park_risk }))
     }
 }
-pub struct CoverageCandidate;
+pub struct CoverageCandidate {
+    park_risk: bool,
+}
 
 #[derive(Clone, Copy)]
 struct Route {
@@ -123,6 +140,7 @@ fn supply_pairs(
     }
     (pairs, assigned)
 }
+
 impl Solver for CoverageCandidate {
     fn name(&self) -> &'static str {
         "coverage"
@@ -140,13 +158,31 @@ impl Solver for CoverageCandidate {
         let patrols: Vec<_> =
             (0..n).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
         let (pairs, assigned) = supply_pairs(&state, &patrols);
+        let tomorrow_budget = {
+            let tomorrow = ctx.day.saturating_add(1);
+            if tomorrow < state.setting.num_days {
+                state.setting.day_steps_for(tomorrow)
+            } else {
+                0
+            }
+        };
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
         let sim = MatchSim::default();
+        // Day-scoped claim set: once a patrol targets a series, no other patrol
+        // (or later step) re-targets it. Park mode keeps this across steps so
+        // agents spread across series instead of converging (Issue #331).
+        let mut day_claimed: BTreeSet<u32> =
+            state.series_acquired_by_day.get(&ctx.day).cloned().unwrap_or_default();
         for _ in 0..ctx.day_steps {
             let mut actions: Vec<_> = state.agents.iter().map(|a| Action::wait(a.id)).collect();
             let mut reserved =
                 state.series_acquired_by_day.get(&ctx.day).cloned().unwrap_or_default();
+            let mut claimed: BTreeSet<u32> = BTreeSet::new();
+            let patrol_paths: Vec<(usize, Vec<Route>)> = patrols
+                .iter()
+                .map(|&i| (i, routes(&state.setting.map, &state.agents[i], assigned.contains(&i))))
+                .collect();
             for &i in &patrols {
                 if used[i] >= ctx.day_steps {
                     continue;
@@ -164,7 +200,11 @@ impl Solver for CoverageCandidate {
                     }
                     continue;
                 }
-                let paths = routes(map, agent, assigned.contains(&i));
+                let paths = &patrol_paths
+                    .iter()
+                    .find(|(j, _)| *j == i)
+                    .expect("patrol route computed")
+                    .1;
                 let target =
                     map.cells()
                         .iter()
@@ -178,15 +218,26 @@ impl Solver for CoverageCandidate {
                             (route.cost <= ctx.day_steps - used[i] && route.first.is_some())
                                 .then_some((
                                     reserved.contains(&s.series),
+                                    // Park: spread across unclaimed series only on
+                                    // medium+ days whose tomorrow is also medium+.
+                                    // Short days scatter patrols; spreading the day
+                                    // before a short day can strand the next start
+                                    // (Issue #331).
+                                    self.park_risk
+                                        && ctx.day_steps >= 70
+                                        && tomorrow_budget >= 70
+                                        && day_claimed.contains(&s.series),
                                     route.cost,
                                     s.series,
                                     index(map, s.pos),
                                     route.first,
                                 ))
                         })
-                        .min_by_key(|x| (x.0, x.1, x.2, x.3));
-                if let Some((_, _, series, _, first)) = target {
+                        .min_by_key(|x| (x.0, x.1, x.2, x.3, x.4));
+                if let Some((_, _, _, series, _, first)) = target {
                     reserved.insert(series);
+                    claimed.insert(series);
+                    day_claimed.insert(series);
                     actions[i] = legal_step(agent, first, map, ctx.day_steps - used[i]);
                 }
             }
