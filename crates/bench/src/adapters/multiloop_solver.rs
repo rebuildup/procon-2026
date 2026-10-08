@@ -159,8 +159,12 @@ impl Solver for MultiLoopCandidate {
         match self.inner.solve(&problem) {
             Ok(outcome) => {
                 let per_agent = agent_targets(ctx, &outcome);
-                let plan =
-                    plan_walk_with(ctx, &self.assign.apply(ctx, per_agent, self.walk), self.walk);
+                let plan = plan_walk_with(
+                    ctx,
+                    &self.assign.apply(ctx, per_agent, self.walk, self.budget),
+                    self.walk,
+                    self.budget,
+                );
                 self.budget.apply(ctx, plan)
             }
             Err(err) => {
