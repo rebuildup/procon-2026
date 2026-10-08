@@ -154,8 +154,8 @@ fn batch_writes_machine_readable_results_that_reaggregate() {
 
     // Every required durable field survives the round trip.
     for r in &reread {
-        assert!(!r.candidate_id.is_empty());
-        assert!(!r.case_id.is_empty());
+        assert_ne!(r.candidate_id.len(), 0);
+        assert_ne!(r.case_id.len(), 0);
         assert_eq!(r.source_commit_sha, "test-commit");
         assert!(r.is_scored());
     }
@@ -633,7 +633,7 @@ fn a_flat_deadline_kills_a_legal_run_but_the_case_window_does_not() {
         survived.status_detail
     );
     assert!(survived.is_scored());
-    assert!(survived.day_budget_exceeded_days.is_empty());
+    assert_eq!(survived.day_budget_exceeded_days.len(), 0);
 }
 
 #[test]

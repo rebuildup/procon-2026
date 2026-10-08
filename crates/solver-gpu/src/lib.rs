@@ -222,7 +222,7 @@ mod tests {
         ctx.upload_state(&map, &[], &[]).unwrap();
         ctx.dispatch(Kernel::ShortestPath { queries: vec![] }).unwrap();
         let results = solver.run(&ctx).unwrap();
-        assert!(results.is_empty());
+        assert_eq!(results.len(), 0);
     }
 
     #[test]
