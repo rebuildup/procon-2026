@@ -187,6 +187,9 @@ mod tests {
         let searched =
             SearchCandidate { trials: 1_048_576, seed: 42, time_budget_ms: 150 }.decide(&ctx);
         assert!(searched.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
-        assert!(replay_score(&ctx, &searched) >= coverage_score, "retention keeps at least the base");
+        assert!(
+            replay_score(&ctx, &searched) >= coverage_score,
+            "retention keeps at least the base"
+        );
     }
 }

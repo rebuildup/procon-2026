@@ -72,12 +72,24 @@ fn coverage_does_not_depend_on_offline_only_series_history() {
     assert_eq!(solver.decide(&SolverContext::from_state(&state)), original);
 }
 
+/// Issue #311: the wire normalizer judges plans the way the server does —
+/// Q6/Q10 ticks (a move consumes its origin cell's step count), fuel charged
+/// in the reflection phase, and Supply refuel whenever the two share a cell.
+/// Its only liberty is **cutting**: the output keeps an action prefix of the
+/// input and turns the rest into waits, and it is idempotent.
+///
+/// Full preservation is *not* a valid contract. On arena-701's day 8 a plan
+/// costs 74 weighted ticks for a 53-tick day and contains moves the day's
+/// fuel cannot pay under the official replay; the pre-tick normalizer passed
+/// those through and the server discarded the whole answer with
+/// `revision=-1` (live match 1762). What `budget=official` keeps is exactly
+/// what live executes, which is the property that matters.
 #[test]
-fn coverage_official_normalization_preserves_every_action() {
+fn coverage_normalization_only_cuts_and_pads() {
     use bench::adapters::walk::BudgetMode;
     use bench::case::CaseSpec;
     use bench::kinds::{parse_kinds, resolve_kinds};
-    use engine::model::AgentActions;
+    use engine::model::{ActionKind, AgentActions};
     let case: CaseSpec = serde_json::from_str(include_str!("fixtures/arena-701.json")).unwrap();
     for pattern in ["P,S", "P,S,S,P,S"] {
         let kinds = resolve_kinds(Some(&parse_kinds(pattern).unwrap()), case.setting.agents.len());
@@ -94,10 +106,31 @@ fn coverage_official_normalization_preserves_every_action() {
         while !state.is_finished() {
             let ctx = SolverContext::from_state(&state);
             let plan = solver.decide(&ctx);
+            let applied = BudgetMode::Official.apply(&ctx, plan.clone());
+            let n = ctx.agent_ids.len();
+            for slot in 0..n {
+                let input: Vec<ActionKind> =
+                    plan.actions.iter().skip(slot).step_by(n).map(|a| a.kind).collect();
+                let output: Vec<ActionKind> =
+                    applied.actions.iter().skip(slot).step_by(n).map(|a| a.kind).collect();
+                let mut kept = 0;
+                while kept < output.len() && kept < input.len() && output[kept] == input[kept] {
+                    kept += 1;
+                }
+                assert!(
+                    output[kept..].iter().all(|k| matches!(k, ActionKind::Wait)),
+                    "day {} {pattern} slot {slot}: normalization may only replace a suffix \
+                     with waits, got {:?} vs {:?}",
+                    state.day,
+                    &output[kept..],
+                    &input[kept.min(input.len())..]
+                );
+            }
+            // Idempotent: re-running the official judge changes nothing.
             assert_eq!(
-                BudgetMode::Official.apply(&ctx, plan.clone()),
-                plan,
-                "normalization changed day {} {pattern}",
+                BudgetMode::Official.apply(&ctx, applied.clone()),
+                applied,
+                "day {} {pattern}: normalization must be idempotent",
                 state.day
             );
             for chunk in plan.actions.chunks(kinds.len()) {

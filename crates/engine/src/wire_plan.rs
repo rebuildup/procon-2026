@@ -100,7 +100,7 @@
 
 use protocol::match_config::ActionPlanBody;
 
-use crate::model::{Agent, Cell, Direction, HexCoord, MapGrid, Terrain};
+use crate::model::{Agent, AgentKind, Cell, Direction, HexCoord, MapGrid, Terrain};
 use crate::transitions::phase_fuel;
 
 /// One wire move judged by the official rules: `(destination, step cost,
@@ -316,68 +316,217 @@ pub fn normalize_day_plan(
         })
         .collect::<Result<_, _>>()?;
     let n = shadow.len();
-    let mut out = vec![Vec::new(); n];
-    let mut used = vec![0u32; n];
-    let mut cursor = vec![0usize; n];
-    let mut waits = vec![0u32; n];
-    let mut stopped = vec![false; n];
-    let mut events = Vec::new();
-    // Replay every agent on the engine's shared element timeline. Budget
-    // accounting remains origin-weighted; Supply contact follows MatchSim.
-    while used.iter().any(|&u| u < day_steps) {
-        let mut moves = Vec::new();
-        for i in 0..n {
-            if used[i] >= day_steps {
-                continue;
-            }
-            if waits[i] == 0 && !stopped[i] {
-                match body[i].get(cursor[i]).copied() {
-                    Some(code) if code < 0 => {
-                        waits[i] = code.unsigned_abs().min(day_steps - used[i]);
-                        cursor[i] += 1;
-                    }
-                    Some(code) => {
-                        let movement = direction_for_wire(code).and_then(|dir| {
-                            let origin = map.get(shadow[i].pos)?;
-                            official_move(&shadow[i], origin, dir, map).ok()
-                        });
-                        if let Some((to, step, fuel)) = movement {
-                            if step <= day_steps - used[i] {
-                                out[i].push(code);
-                                used[i] += step;
-                                cursor[i] += 1;
-                                moves.push((i, to, fuel));
-                                continue;
-                            }
-                        }
-                        stopped[i] = true;
-                    }
-                    None => stopped[i] = true,
-                }
-            }
-            // A stopped plan pads with waits, but still participates in
-            // Supply contact on each shared step.
-            if waits[i] > 0 {
-                waits[i] -= 1;
-            }
-            if let Some(last) = out[i].last_mut().filter(|c| **c < 0) {
-                *last -= 1;
+
+    // Decode each inner list into per-action codes (wait runs expand to
+    // individual `-1` waits) so the tick replay below can schedule them.
+    let mut plans: Vec<Vec<i32>> = Vec::with_capacity(n);
+    for inner in body {
+        let mut actions = Vec::new();
+        for &code in inner {
+            if code <= -1 {
+                actions.extend(std::iter::repeat_n(-1, code.unsigned_abs() as usize));
             } else {
-                out[i].push(-1);
+                actions.push(code);
             }
-            used[i] += 1;
         }
-        for (i, to, fuel) in moves {
-            let id = shadow[i].id;
-            shadow[i].pos = to;
-            phase_fuel(&mut shadow, &[(id, fuel)], &mut events);
+        plans.push(actions);
+    }
+
+    // Tick-accurate replay (Q&A Q6 / Q10 — the server's acceptance judge).
+    //
+    // The day is `day_steps` ticks. An action is *reserved* in the action
+    // phase of tick `c`, reflects in the reflection phase of tick `c + 1`
+    // (fuel charge → move → acquire → refuel, in that order), and consumes
+    // the origin cell's step count so the next reservation opens at
+    // `c + cost`. Tick 0 is action-only, tick `day_steps` reflection-only.
+    // Refueling runs in *every* reflection phase: a Patrol sharing a cell
+    // with a Supply tops up to cap. The old weighted-interleaving replay
+    // advanced agents by unequal "used" units per iteration and checked
+    // contact at those misaligned boundaries, so a plan could rely on a
+    // refuel the server never grants and die at acceptance with
+    // `revision=-1` (live match 1762).
+    let mut kept: Vec<Vec<i32>> = vec![Vec::new(); n];
+    let mut cursor = vec![0usize; n];
+    let mut next_reserve = vec![0u32; n];
+    let mut stopped = vec![false; n];
+    let mut pending: Vec<Option<i32>> = vec![None; n];
+    let mut ticks_used = vec![0u32; n];
+    let mut events = Vec::new();
+
+    // Tick 0: action phase only (no reflection before the first command).
+    for i in 0..n {
+        reserve_next(
+            map,
+            &mut shadow,
+            &mut plans,
+            &mut kept,
+            &mut cursor,
+            &mut pending,
+            &mut stopped,
+            &mut next_reserve,
+            &mut ticks_used,
+            i,
+            0,
+            day_steps,
+        );
+    }
+
+    for tick in 1..=day_steps {
+        // Reflection phase: consume the action reserved last tick.
+        for i in 0..n {
+            let Some(code) = pending[i].take() else { continue };
+            if code < 0 {
+                continue; // waits reflect as nothing
+            }
+            let Some(dir) = direction_for_wire(code) else { continue };
+            let origin_terrain = match map.get(shadow[i].pos) {
+                Some(cell) => cell.terrain,
+                None => continue,
+            };
+            let agent_id = shadow[i].id;
+            // Fuel (表1) is charged at the reflection; Supplies are exempt.
+            phase_fuel(
+                &mut shadow,
+                &[(agent_id, crate::rules::fuel_cost(origin_terrain))],
+                &mut events,
+            );
+            shadow[i].pos = dir.step(shadow[i].pos);
         }
+        // Refuel: every tick, any Patrol co-located with a Supply tops up
+        // (Q6: 燃料の補給 is the last step of the reflection phase).
         let positions: Vec<_> = shadow.iter().map(|a| a.pos).collect();
         for pos in positions {
             crate::transitions::refill_fuel_if_supply_present(&mut shadow, pos, &mut events);
         }
+        // Action phase (the final tick has none).
+        if tick == day_steps {
+            break;
+        }
+        for i in 0..n {
+            if stopped[i] || next_reserve[i] != tick {
+                continue;
+            }
+            reserve_next(
+                map,
+                &mut shadow,
+                &mut plans,
+                &mut kept,
+                &mut cursor,
+                &mut pending,
+                &mut stopped,
+                &mut next_reserve,
+                &mut ticks_used,
+                i,
+                tick,
+                day_steps,
+            );
+        }
+    }
+
+    // A cut plan's tail becomes waits so every agent's ticks sum exactly to
+    // `day_steps` (Q6: "最後に待機を指定して,既定のステップ数と一致させてください").
+    for i in 0..n {
+        let pad = day_steps.saturating_sub(ticks_used[i]);
+        kept[i].extend(std::iter::repeat_n(-1, pad as usize));
+    }
+
+    // Re-encode: contiguous waits collapse to `-N`, moves keep their code.
+    let mut out = Vec::with_capacity(n);
+    for actions in &kept {
+        let mut codes: Vec<i32> = Vec::with_capacity(actions.len());
+        let mut wait_run = 0i32;
+        for &code in actions {
+            if code < 0 {
+                wait_run += 1;
+            } else {
+                if wait_run > 0 {
+                    codes.push(-wait_run);
+                    wait_run = 0;
+                }
+                codes.push(code);
+            }
+        }
+        if wait_run > 0 {
+            codes.push(-wait_run);
+        }
+        out.push(codes);
     }
     Ok(out)
+}
+
+/// Reserve one agent's next action at `tick` (the action phase).
+///
+/// An action is only reserved when it is feasible at *command* time — the
+/// official judge rejects the whole answer for a move that is illegal
+/// (pond / off-board) or unaffordable at the moment it is given (Q6). When
+/// the plan would run past `day_steps` it stops here and the remaining
+/// ticks become waits ("最後に待機を指定して,既定のステップ数と一致").
+#[allow(clippy::too_many_lines, reason = "one reservation: decode, judge, schedule")]
+fn reserve_next(
+    map: &MapGrid,
+    shadow: &mut [Agent],
+    plans: &mut [Vec<i32>],
+    kept: &mut [Vec<i32>],
+    cursor: &mut [usize],
+    pending: &mut [Option<i32>],
+    stopped: &mut [bool],
+    next_reserve: &mut [u32],
+    ticks_used: &mut [u32],
+    i: usize,
+    tick: u32,
+    day_steps: u32,
+) {
+    let plan = &plans[i];
+    let Some(&code) = plan.get(cursor[i]) else {
+        stopped[i] = true;
+        return;
+    };
+    let cost: u32 = if code < 0 {
+        1
+    } else {
+        let Some(dir) = direction_for_wire(code) else {
+            stopped[i] = true;
+            return;
+        };
+        let Some(origin) = map.get(shadow[i].pos) else {
+            stopped[i] = true;
+            return;
+        };
+        let target = dir.step(shadow[i].pos);
+        let Some(target_cell) = map.get(target) else {
+            stopped[i] = true;
+            return;
+        };
+        if !target_cell.terrain.traversable() {
+            stopped[i] = true;
+            return;
+        }
+        // Fuel sufficiency is judged when the command is given (Q6); the
+        // fuel of 表1 (not the step cost) lands in the next reflection.
+        // Supplies are exempt from the fuel table (only Patrols consume).
+        if shadow[i].kind == AgentKind::Patrol
+            && !shadow[i].can_afford(crate::rules::fuel_cost(origin.terrain))
+        {
+            stopped[i] = true;
+            return;
+        }
+        match terrain_step_cost(origin.terrain) {
+            Some(cost) => cost,
+            None => {
+                stopped[i] = true;
+                return;
+            }
+        }
+    };
+    if tick + cost > day_steps {
+        stopped[i] = true;
+        return;
+    }
+    kept[i].push(code);
+    cursor[i] += 1;
+    pending[i] = Some(code);
+    next_reserve[i] = tick + cost;
+    ticks_used[i] += cost;
 }
 
 #[cfg(test)]
@@ -543,6 +692,40 @@ mod tests {
 
     /// Whatever comes out of the normalizer passes the official validation
     /// (weighted sum exact, every move legal).
+    /// Q10 tick occupancy: a plain move consumes 2 ticks of the day, so a
+    /// 3-move plan only fits a 6-tick day and a 5-tick day must pad the cut
+    /// tail with waits ("最後に待機を指定して…一致させてください").
+    #[test]
+    fn a_move_occupies_its_step_count_and_the_cut_tail_becomes_waits() {
+        let map = grid(&FLAT);
+        let patrol = patrol_at(0, 0, 100);
+
+        let fits =
+            normalize_day_plan(&map, &[patrol.clone()], &[0], 6, &vec![vec![2, 2, 2]]).unwrap();
+        assert_eq!(fits, vec![vec![2, 2, 2]], "3 plain moves == 6 ticks, nothing to cut");
+
+        let tight = normalize_day_plan(&map, &[patrol], &[0], 5, &vec![vec![2, 2, 2]]).unwrap();
+        assert_eq!(
+            tight,
+            vec![vec![2, 2, -1]],
+            "the third move cannot fit 5 ticks: 2 moves + 1 wait"
+        );
+        assert_eq!(weighted_sum(&map, HexCoord::new(0, 0), &tight[0]), 5);
+    }
+
+    /// Q6: a move command given without the fuel to pay for it invalidates
+    /// the whole answer, so normalization must cut it and pad — the patrol
+    /// below can pay for one plain move (fuel 1) and nothing more.
+    #[test]
+    fn a_move_the_patrol_cannot_afford_is_cut_and_padded() {
+        let map = grid(&FLAT);
+        let patrol = patrol_at(0, 0, 1);
+        let body = vec![vec![2, 2]];
+        let normalized = normalize_day_plan(&map, &[patrol], &[0], 4, &body).unwrap();
+        assert_eq!(normalized, vec![vec![2, -2]], "second move is unaffordable without a refill");
+        assert_eq!(weighted_sum(&map, HexCoord::new(0, 0), &normalized[0]), 4);
+    }
+
     #[test]
     fn normalized_output_always_passes_official_validation() {
         let cases: &[(char, u32, &[i32])] = &[

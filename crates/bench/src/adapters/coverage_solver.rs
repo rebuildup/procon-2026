@@ -132,13 +132,7 @@ impl Solver for CoverageCandidate {
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let mut state = fresh_day_state(ctx);
         let n = state.agents.len();
-        let mut patrols: Vec<_> =
-            (0..n).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
-        if !patrols.is_empty() {
-            let rotation =
-                usize::try_from(self.variant % patrols.len() as u64).expect("bounded rotation");
-            patrols.rotate_left(rotation);
-        }
+        let patrols = patrol_order(&state, self.variant);
         let (pairs, assigned) = supply_pairs(&state, &patrols);
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
@@ -251,4 +245,15 @@ fn fresh_day_state(ctx: &SolverContext<'_>) -> engine::model::MatchState {
         }
     }
     state
+}
+
+fn patrol_order(state: &engine::model::MatchState, variant: u64) -> Vec<usize> {
+    let n = state.agents.len();
+    let mut patrols: Vec<_> =
+        (0..n).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
+    if !patrols.is_empty() {
+        let rotation = usize::try_from(variant % patrols.len() as u64).expect("bounded rotation");
+        patrols.rotate_left(rotation);
+    }
+    patrols
 }
