@@ -24,3 +24,27 @@
 - 正本: `docs/pdf/` の原本PDF（募集要項 / フォーマット / Q&A 各弾）
 - 判断に使う仕様は、ガイドで当たりをつけたあと原本PDFで確認する
 - `docs/contest/team-context.md` の「公式資料は原本PDFを正とする」方針は本ファイルでも変更しない
+
+## official-md/ — 公式資料の Markdown 写経（参照用）
+
+cslab-nituc/procon2026 の `docs/src/official/{guideline,q-1}.md` を無改変コピー。
+勝敗判定4tier・地形/燃料/在庫/交通ルール・Q1–Q21 のパラメータ範囲を全文検索できる参照用。
+**正本は `docs/pdf/` の原本PDF**（写経との齟齬があれば原本が正）。`@@CONFIDENTIAL@@` 継承。
+詳細と出典 commit は `official-md/README.md`。
+
+## procon2026-diary/ — 開発日記 2026-04-26（参照用・CONFIDENTIAL）
+
+cslab-nituc/procon2026 の戦略考察頁（loop-tour・系列カバレッジ優先・逆方向補給ペア案）。
+**着想の参照のみ**、本リポの文書へは転載しない（team-context.md 並走ルール）。
+詳細は `procon2026-diary/README.md`。
+
+## live-match/ — 公式サーバー実演のプロトコル録画
+
+公式配布サーバーをローカルで動かした2チーム4日分の実 HTTP 応答・提出プラン（Issue #309）。
+protocol/wire 形式の参照と `arena import-case` の可否調査に使う。詳細は `live-match/PROVENANCE.md`。
+
+## 取扱注意（Issue #309 / 2026-10-08）
+
+上記3ディレクトリは `docs/contest/team-context.md` §CONFIDENTIAL フラグの扱い 3.
+（原著作者クレジット + `@@CONFIDENTIAL@@` 明示）に従って取り込んだもの。
+判断の正本は変わらず `docs/pdf/` の原本PDFと `docs/contest/` の方針。
