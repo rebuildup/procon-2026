@@ -673,6 +673,73 @@ mod tests {
         assert_eq!(first.plans, again.plans, "kmeans partition must be deterministic");
     }
 
+    /// Issue #252: the new keys parse, land on the composer / pairing rule,
+    /// and the defaults leave every one of them untouched (byte-identical
+    /// canonical ids); bad values are rejected at build time.
+    #[test]
+    fn issue252_params_parse_onto_the_composer_and_pairing() {
+        let spec =
+            CandidateSpec::parse("multiloop:grid=1x2:balance=on:surplus=split:fuelpair=need")
+                .expect("id parses");
+        let candidate = MultiLoopCandidate::from_spec(&spec).expect("builds");
+        assert!(candidate.inner.balance, "balance must reach the composer");
+        assert_eq!(candidate.inner.surplus, SurplusMode::Split, "surplus must reach the composer");
+        assert_eq!(candidate.fuelpair, FuelpairMode::Need, "fuelpair must reach the candidate");
+
+        let legacy = MultiLoopCandidate::from_spec(
+            &CandidateSpec::parse("multiloop:grid=1x2").expect("id parses"),
+        )
+        .expect("builds");
+        assert!(!legacy.inner.balance, "balance defaults off");
+        assert_eq!(legacy.inner.surplus, SurplusMode::Idle, "surplus defaults idle");
+        assert_eq!(legacy.fuelpair, FuelpairMode::Nearest, "fuelpair defaults nearest");
+
+        for bad in [
+            "multiloop:grid=1x2:balance=maybe",
+            "multiloop:grid=1x2:surplus=never",
+            "multiloop:grid=1x2:fuelpair=sometimes",
+        ] {
+            let spec = CandidateSpec::parse(bad).expect("the grammar accepts any value");
+            assert!(MultiLoopCandidate::from_spec(&spec).is_err(), "{bad} must be rejected");
+        }
+    }
+
+    /// Issue #252 現象1 end-to-end: `surplus=split` feeds the regionless
+    /// agent of `grid=1x2` a tour and it actually moves — live 692's
+    /// zero-ball Patrol. The default parks it, pinned by
+    /// `grid_partition_gives_each_agent_its_own_region`.
+    #[test]
+    fn surplus_split_makes_the_regionless_agent_move() {
+        let state = two_cluster_state();
+        let ctx = SolverContext::from_state(&state);
+
+        let spec = CandidateSpec::parse("multiloop:grid=1x2:surplus=split").expect("id parses");
+        let built = MultiLoopCandidate::from_spec(&spec).expect("builds");
+        let outcome = built.inner.solve(&problem_from_state(&ctx)).expect("solve");
+        let targets = agent_targets(&ctx, &outcome);
+        assert!(!targets[2].is_empty(), "the surplus agent must get a tour: {targets:?}");
+        let mut all: Vec<engine::model::HexCoord> = targets.concat();
+        all.sort_by_key(|c| (c.row, c.col));
+        let mut unique = all.clone();
+        unique.dedup();
+        assert_eq!(unique.len(), 4, "spots stay unique and complete: {targets:?}");
+
+        let reg = CandidateRegistry::builtin();
+        let candidate = reg.build("multiloop:grid=1x2:surplus=split").expect("valid id");
+        let solver = candidate.build_solver().expect("builds");
+        let plan = solver.decide(&ctx);
+        let surplus_moves = plan
+            .actions
+            .iter()
+            .enumerate()
+            .filter(|(i, action)| {
+                i % 3 == 2 && matches!(action.kind, engine::model::ActionKind::Move(_))
+            })
+            .count();
+        assert!(surplus_moves > 0, "the split agent must move at least once, plan={plan:?}");
+        assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
+    }
+
     /// Issue #215 — `walk` is schema-gated and appended last on `multiloop`
     /// too: both legal values build inside canonical ids, any other value is
     /// `InvalidParameter`, and an unknown key still loses to the schema.

@@ -1275,6 +1275,84 @@ mod tests {
         assert_ne!(escorted[3], extended[0], "capacity cap must beat pure nearest-neighbour here");
     }
 
+    /// Issue #252 (現象2, directions a+b): `fuelpair=need` ranks pairing by
+    /// the Patrol's remaining fuel first — the tank closest to stranding
+    /// wins the scarce escort even when another Patrol is nearer — and hands
+    /// every unescorted Patrol a rendezvous tail. The default `nearest`
+    /// keeps the old geometry-only rule and adds no tail (byte-identical).
+    #[test]
+    fn fuelpair_need_pairs_by_fuel_and_leaves_a_rendezvous_tail() {
+        let map = map_with_spots();
+        let st = MatchState::new(MatchSetting {
+            match_id: MatchId::new("fuelpair-need").unwrap(),
+            team: PlayerId::new("player-a").unwrap(),
+            map,
+            agents: vec![
+                // Nearest to both Supplies, but a full tank …
+                Agent::patrol_with_fuel(0, HexCoord::new(0, 0), 100),
+                // … while these two are far away and running dry.
+                Agent::patrol_with_fuel(1, HexCoord::new(0, 7), 50),
+                Agent::patrol_with_fuel(2, HexCoord::new(7, 7), 10),
+                Agent::supply(3, HexCoord::new(1, 0)),
+                Agent::supply(4, HexCoord::new(1, 1)),
+            ],
+            day_steps: 4,
+            num_days: 1,
+            day_steps_by_day: Vec::new(),
+        })
+        .unwrap();
+        let ctx = SolverContext::from_state(&st);
+        let targets = vec![
+            vec![HexCoord::new(2, 0)],
+            vec![HexCoord::new(5, 7)],
+            vec![HexCoord::new(4, 4)],
+            vec![HexCoord::new(4, 4)],
+            vec![HexCoord::new(3, 3)],
+        ];
+
+        // Default: geometry only — the nearest Supply takes patrol0's slot.
+        let (nearest, _) = pair_supplies(&ctx, FuelpairMode::Nearest);
+        assert_eq!(nearest[0], (3, 0), "nearest keeps supply3 -> patrol0");
+
+        // `need`: fuel ascending — patrol2 (10) first, patrol1 (50) second;
+        // the full-tank patrol0, nearest of all, gets nothing.
+        let (pairs, wait) = pair_supplies(&ctx, FuelpairMode::Need);
+        assert!(wait.is_empty(), "every Supply still pairs: {wait:?}");
+        let paired_patrols: Vec<usize> = pairs.iter().map(|&(_, patrol)| patrol).collect();
+        assert_eq!(paired_patrols, vec![2, 1], "lowest-fuel Patrols first: {pairs:?}");
+
+        // … so the unescorted patrol0 gains exactly one rendezvous cell
+        // under `need`, appended after its own tour.
+        let need = AssignOpts {
+            walk: WalkMode::Greedy,
+            budget: BudgetMode::Element,
+            fuelpair: FuelpairMode::Need,
+        };
+        let tailed = AssignMode::Escort.apply(&ctx, targets.clone(), need);
+        assert_eq!(&tailed[0][..targets[0].len()], targets[0], "own tour stays a prefix");
+        assert_eq!(
+            tailed[0].len(),
+            targets[0].len() + 1,
+            "exactly one rendezvous cell, got {:?}",
+            tailed[0]
+        );
+
+        // Default: patrol0 *is* the nearest pairing, so it gains supply3's
+        // share by handover — and nothing else: no rendezvous tail.
+        let plain =
+            AssignMode::Escort.apply(&ctx, targets.clone(), AssignOpts::element(WalkMode::Greedy));
+        assert_eq!(
+            plain[0],
+            vec![HexCoord::new(2, 0), HexCoord::new(4, 4)],
+            "`nearest` adds only the handover, never a rendezvous tail"
+        );
+        assert!(
+            plain[1].len() <= targets[1].len() + targets[4].len(),
+            "escorted lists only ever gain their handover share: {:?}",
+            plain[1]
+        );
+    }
+
     /// Issue #248 AC — the engine end of the contract under **`walk=greedy`**
     /// (the default): `assign=escort` puts the Supply on the paired Patrol's
     /// cell mid-day and the official same-cell refill rule fires (`Picked`
