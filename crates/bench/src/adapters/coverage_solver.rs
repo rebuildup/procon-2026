@@ -130,14 +130,7 @@ impl Solver for CoverageCandidate {
         "coverage"
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
-        let mut state = ctx.state.clone();
-        // Live bridge supplies fresh day stock. Offline day-start state still
-        // has yesterday's residual stock until the first MatchSim step.
-        for cell in state.setting.map.cells_mut() {
-            if let Some(spot) = &mut cell.spot {
-                spot.current_stock = spot.max_stock;
-            }
-        }
+        let mut state = fresh_day_state(ctx);
         let n = state.agents.len();
         let mut patrols: Vec<_> =
             (0..n).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
@@ -246,4 +239,16 @@ pub(crate) fn mix(mut x: u64) -> u64 {
     x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
     x ^ (x >> 31)
+}
+
+fn fresh_day_state(ctx: &SolverContext<'_>) -> engine::model::MatchState {
+    let mut state = ctx.state.clone();
+    // Live bridge supplies fresh day stock. Offline day-start state still
+    // has yesterday's residual stock until the first MatchSim step.
+    for cell in state.setting.map.cells_mut() {
+        if let Some(spot) = &mut cell.spot {
+            spot.current_stock = spot.max_stock;
+        }
+    }
+    state
 }

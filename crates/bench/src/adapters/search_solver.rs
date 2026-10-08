@@ -1,5 +1,5 @@
 //! Seeded reconstruction changes representatives and vehicle assignment.
-//! Candidate retention replays actual actions with MatchSim, never a tour proxy.
+//! Candidate retention replays actual actions with `MatchSim`, never a tour proxy.
 use super::coverage_solver::{CoverageCandidate, mix};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 use engine::model::{AgentActions, Solver, SolverContext};
