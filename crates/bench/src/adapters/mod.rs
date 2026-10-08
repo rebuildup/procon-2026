@@ -95,3 +95,6 @@ pub(crate) fn reject_unknown_params(
     }
     Ok(())
 }
+
+pub mod repeat_tour_solver;
+pub use repeat_tour_solver::RepeatTourFactory;

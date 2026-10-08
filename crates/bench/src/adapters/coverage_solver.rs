@@ -32,10 +32,12 @@ impl CandidateFactory for CoverageFactory {
         if spec.param("budget") != Some("official") {
             return Err(CandidateError::Build("coverage requires budget=official".into()));
         }
-        Ok(Box::new(CoverageCandidate))
+        Ok(Box::new(CoverageCandidate { repeat_tour: false }))
     }
 }
-pub struct CoverageCandidate;
+pub struct CoverageCandidate {
+    pub(crate) repeat_tour: bool,
+}
 
 #[derive(Clone, Copy)]
 struct Route {
@@ -140,6 +142,7 @@ impl Solver for CoverageCandidate {
         let patrols: Vec<_> =
             (0..n).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
         let (pairs, assigned) = supply_pairs(&state, &patrols);
+        let ranks = self.repeat_tour.then(|| tour_ranks(&state.setting.map, &state.agents));
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
         let sim = MatchSim::default();
@@ -184,7 +187,14 @@ impl Solver for CoverageCandidate {
                                     route.first,
                                 ))
                         })
-                        .min_by_key(|x| (x.0, x.1, x.2, x.3));
+                        .min_by_key(|x| {
+                            (
+                                ranks.is_none() && x.0,
+                                ranks.as_ref().map_or(x.1 as usize, |r| r[i][x.3]),
+                                x.2,
+                                x.3,
+                            )
+                        });
                 if let Some((_, _, series, _, first)) = target {
                     reserved.insert(series);
                     actions[i] = legal_step(agent, first, map, ctx.day_steps - used[i]);
@@ -228,4 +238,30 @@ impl Solver for CoverageCandidate {
         }
         AgentActions::new(output)
     }
+}
+
+fn tour_ranks(map: &MapGrid, agents: &[Agent]) -> Vec<Vec<usize>> {
+    agents
+        .iter()
+        .map(|agent| {
+            let mut cursor = Agent::supply(agent.id, agent.pos);
+            let mut ranks = vec![usize::MAX; map.cells().len()];
+            for rank in 0..map.cells().len() {
+                let paths = routes(map, &cursor, true);
+                let next = map
+                    .cells()
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, c)| c.spot.is_some() && ranks[*i] == usize::MAX)
+                    .min_by_key(|(i, _)| (paths[*i].cost, *i));
+                let Some((i, cell)) = next else { break };
+                if paths[i].cost == u32::MAX {
+                    break;
+                }
+                ranks[i] = rank;
+                cursor.pos = cell.coord;
+            }
+            ranks
+        })
+        .collect()
 }
