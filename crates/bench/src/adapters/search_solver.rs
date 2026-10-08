@@ -15,6 +15,7 @@ use super::coverage_solver::{CoverageCandidate, mix};
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 use engine::model::{AgentActions, Solver, SolverContext};
 pub struct SearchFactory;
+type ScoredTrial = (u64, (usize, u32), AgentActions);
 const PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "trials",
@@ -53,6 +54,7 @@ impl Solver for SearchCandidate {
         "search"
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+        let started = Instant::now();
         let mut best = CoverageCandidate { variant: 0 }.decide(ctx);
         let mut score = replay_score(ctx, &best);
         // The wall clock is bounded from both sides (Issue #311, live
@@ -61,15 +63,20 @@ impl Solver for SearchCandidate {
         // Whichever is shorter wins, with a 3s margin for adapter +
         // normalize + POST — a plan that answers after `endsAt` is
         // discarded server-side no matter how good it is.
-        let deadline = if self.time_budget_ms == 0 {
-            None
-        } else {
-            let budget = Duration::from_millis(u64::from(self.time_budget_ms));
-            let window = Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(3_000)));
-            Some(Instant::now() + budget.min(window))
+        let live_window = (ctx.remaining_ms != u32::MAX)
+            .then(|| Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(3_000))));
+        let search_budget = (self.time_budget_ms > 0)
+            .then(|| Duration::from_millis(u64::from(self.time_budget_ms)));
+        let deadline = match (live_window, search_budget) {
+            (Some(a), Some(b)) => Some(started + a.min(b)),
+            (Some(a), None) | (None, Some(a)) => Some(started + a),
+            (None, None) => None,
         };
-        let Some(deadline) = deadline else {
+        if self.time_budget_ms == 0 {
             for trial in 1..self.trials {
+                if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                    break;
+                }
                 let plan =
                     CoverageCandidate { variant: mix(self.seed.wrapping_add(u64::from(trial))) }
                         .decide(ctx);
@@ -80,7 +87,8 @@ impl Solver for SearchCandidate {
                 }
             }
             return best;
-        };
+        }
+        let deadline = deadline.expect("explicit search time budget");
 
         // Wall-clock mode: fan the trials out over the machine's cores and
         // stop launching new work at the deadline (Issue #311 — millisecond
@@ -88,11 +96,11 @@ impl Solver for SearchCandidate {
         let threads = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 16);
         let next = AtomicU64::new(1);
         let stop = AtomicBool::new(false);
-        let winners: Mutex<Vec<(u64, (usize, u32), AgentActions)>> = Mutex::new(Vec::new());
+        let winners: Mutex<Vec<ScoredTrial>> = Mutex::new(Vec::new());
         std::thread::scope(|scope| {
             for _ in 0..threads {
                 scope.spawn(|| {
-                    let mut local: Option<(u64, (usize, u32), AgentActions)> = None;
+                    let mut local: Option<ScoredTrial> = None;
                     while !stop.load(Ordering::Relaxed) && Instant::now() < deadline {
                         let trial = next.fetch_add(1, Ordering::Relaxed);
                         if trial >= u64::from(self.trials) {
@@ -187,6 +195,9 @@ mod tests {
         let searched =
             SearchCandidate { trials: 1_048_576, seed: 42, time_budget_ms: 150 }.decide(&ctx);
         assert!(searched.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
-        assert!(replay_score(&ctx, &searched) >= coverage_score, "retention keeps at least the base");
+        assert!(
+            replay_score(&ctx, &searched) >= coverage_score,
+            "retention keeps at least the base"
+        );
     }
 }
