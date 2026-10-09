@@ -581,6 +581,30 @@ sha256 再検証（`58d1a644`）のうえ再投入（本試合）。**cargo の 
   - `--kinds-auto`（同構成）: 10/10 全日受理・kinds 決定 1.5s 内（試行 S構成 251 ball vs 全車巡回 75 ball → 補給1台を正しく選択）・day0 以降の計算性能劣化なし
   - いずれも token/email ログ検出 0 件
 
+## 公式スコア + 実測（match 1962 = **`--kinds-auto` 初投入**・16×16/9日・UI `#1963 第2卓`）
+
+`fleet:budget=official:budget_ms=10000` @ `5ddb153` + **`--kinds-auto`**（同一 binary/worktree）。
+16×16 / 9日 / 4台（**auto が選択: S,P,P,P**）・daySteps [59,38,72,44,116,76,102,96,107]。UI `#1963 第2卓`（卓id ずれ）。
+**window は 06:15 JST**（予約コメントを 06:30 と書いたが、06:12:14 起動時点で 06:15 枠の pre-match が既に開いており `--next` が即登録 — #317 に訂正記録。運用ルール: window W は [W開始後, W−3分前] に起動する）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | 優勝以外に価値はありますか? | 10 | 90 | 286 | 63.8s |
+| 2 | うどん | 10 | 90 | 285 | 343.4s |
+| **3** | **ユ（当方）** | **10** | **90** | **284** | **12.6s** |
+| 4–10 | 堀大輔 / 𰻞𰻞 / 牛めし / ネオユニヴァース / ramen / まうす / admin is GOD | 10 | 90 / 83 | 259–283 | 4.1–384.7s |
+
+- **rank 3/10: V=10, D=90/90 MAX, B=284（1位差 −2）, 回答 12.6s ≈ 1.4s/日, rate 763→818 (+55)**
+- revisions [3,15,27,41,51,64,75,87,99] — 9/9 全日受理・1日1 POST・error なし
+- **`--kinds-auto` の実戦観測（#317 指示項目）**:
+  1. `POST /agent` は締切内に受理（kinds 決定 21:15:03.44、試行完了後即提出）
+  2. **選択は「補給 1 台」構成**（試行: S,P,P,P balls=318 vs 全車巡回 P,P,P,P balls=179 → S 構成を採用。全車巡回は棄却され燃料枯渇問題は未発生）
+  3. 試行の予測 balls=318 に対し実戦 B=284（**offline 試行は他チーム交通を含まないため過大評価 — 既知の限界どおり**）
+  4. 種別決定に使った時間: 約 1.5 秒（打ち切り上限どおり。実試合の計画は chains=4・1.4s/日で劣化なし）
+  5. 全車巡回選択は発生せず → 燃料枯渇・日別種類数低下は観測対象外（試行で棄却された）
+  6. 試行スレッドの本戦影響: day0 以降の回答 ~1.4s/日は match 1960（3.6s/日・24×24）と整合 — **影響なし**
+- 試行ログは `run-1962-fleet-auto.log`（`agent kinds trial` / `agent kinds selected for POST /agent`）
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -789,7 +813,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **27 行**（1810 … 1954 / 1960、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **28 行**（1810 … 1960 / 1962、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -816,6 +840,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1950-fleet.log` | match 1950（fleet 標準・24×24/10日 純 B 競争。除去済み） |
 | `run-1954-fleet.log` | match 1954（fleet 標準・16×16/5日 rank 5。除去済み） |
 | `run-1960-fleet-5ddb153.log` | match 1960（**fleet 新版 `5ddb153` 初投入**・budget 10000・rank 1。除去済み） |
+| `run-1962-fleet-auto.log` | match 1962（`--kinds-auto` 初投入・kinds 試行/選択ログ含む・rank 3。除去済み） |
 | `verify-5ddb153/` | 新版 `5ddb153` の投入前検証（公式ローカルサーバー・701盤面 10日×7台・燃料上限12）: `fixed7/`（固定kinds）/ `auto7/`（`--kinds-auto`）各 `summary.json`（SHA・candidate・revisions・binary hash）+ `cli.log`（`predicted_ends`・kinds 試行ログ）+ `server.log` |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
