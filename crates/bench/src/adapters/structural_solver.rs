@@ -10,8 +10,8 @@ use std::collections::{BinaryHeap, HashMap};
 use std::time::{Duration, Instant};
 
 use crate::adapters::coverage_solver::CoverageCandidate;
-use crate::adapters::walk::BudgetMode;
-use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
+use crate::adapters::walk::{BudgetMode, hex_distance};
+use crate::candidate::{CandidateError, CandidateFactory, CandidateRegistry, CandidateSpec, ParamSpec};
 use engine::MatchSim;
 use engine::model::{
     Action, ActionKind, AgentActions, AgentKind, Direction, HexCoord, MapGrid, Solver,
@@ -338,6 +338,70 @@ fn build_plan(
     BudgetMode::Official.apply(ctx, AgentActions::new(result))
 }
 
+/// Every still-stocked spot whose series the baseline has missed today.
+/// The result is indexed exactly like `spots` from the same map's cells().
+fn missing_spot_indices(ctx: &SolverContext<'_>, plan: &AgentActions) -> Vec<usize> {
+    let mut state = ctx.state.clone();
+    let sim = MatchSim::default();
+    for actions in plan.actions.chunks_exact(ctx.agent_ids.len()) {
+        sim.step(&mut state, &AgentActions::new(actions.to_vec()));
+    }
+    let seen = state.series_acquired_by_day.get(&ctx.day);
+    ctx.state
+        .setting
+        .map
+        .cells()
+        .iter()
+        .filter_map(|c| c.spot.as_ref())
+        .enumerate()
+        .filter(|(_, spot)| {
+            spot.current_stock > 0 && seen.is_none_or(|known| !known.contains(&spot.series))
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// Repair operation: insert an uncollected series in the least detouring
+/// Patrol route. Only the official replay can determine if it fits today.
+fn insert_missing(
+    ctx: &SolverContext<'_>,
+    orders: &mut VisitOrder,
+    patrols: &[usize],
+    spots: &[HexCoord],
+    missing: &[usize],
+    rng: &mut Rng,
+) -> bool {
+    if missing.is_empty() {
+        return false;
+    }
+    let spot = missing[rng.index(missing.len())];
+    let mut best: Option<(u32, usize, usize)> = None;
+    for &p in patrols {
+        if orders[p].contains(&spot) {
+            continue;
+        }
+        let Some(agent) = ctx.state.agents.iter().find(|a| a.id == ctx.agent_ids[p]) else {
+            continue;
+        };
+        for at in 0..=orders[p].len() {
+            let from = if at == 0 { agent.pos } else { spots[orders[p][at - 1]] };
+            let next = orders[p].get(at).map(|&i| spots[i]);
+            let detour = hex_distance(from, spots[spot])
+                .saturating_add(next.map_or(0, |to| hex_distance(spots[spot], to)))
+                .saturating_sub(next.map_or(0, |to| hex_distance(from, to)));
+            if best.is_none_or(|b| detour < b.0) {
+                best = Some((detour, p, at));
+            }
+        }
+    }
+    if let Some((_, p, at)) = best {
+        orders[p].insert(at, spot);
+        true
+    } else {
+        false
+    }
+}
+
 type Score = (u32, u32, u32, u32);
 fn replay_score(ctx: &SolverContext<'_>, candidate: &AgentActions) -> Option<Score> {
     let mut state = ctx.state.clone();
@@ -377,13 +441,20 @@ impl Solver for StructuralCandidate {
         "structural"
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
-        let baseline =
-            CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }.decide(ctx);
+        let started = Instant::now();
+        let coverage = CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }
+            .decide(ctx);
         if ctx.agent_ids.is_empty() || ctx.day_steps == 0 {
-            return baseline;
+            return coverage;
         }
+        // Start from a genuinely competitive plan, not just a greedy route.
+        // The total live budget includes this baseline computation.
+        let baseline = CandidateRegistry::builtin()
+            .build("anytime:trials=64:seed=42:budget=official")
+            .and_then(|c| c.build_solver())
+            .map_or_else(|_| coverage.clone(), |solver| solver.decide(ctx));
         let Some(mut best_score) = replay_score(ctx, &baseline) else {
-            return baseline;
+            return coverage;
         };
         let map = &ctx.state.setting.map;
         let spots: Vec<_> =
@@ -404,7 +475,7 @@ impl Solver for StructuralCandidate {
         if spots.is_empty() || patrols.is_empty() {
             return baseline;
         }
-        let started = Instant::now();
+        let missed = missing_spot_indices(ctx, &baseline);
         let deadline = if self.trials > 0 {
             None // fixed-trial mode contains no timing decisions
         } else {
@@ -427,7 +498,12 @@ impl Solver for StructuralCandidate {
             }
             trial += 1;
             let mut proposal = current.clone();
-            mutate(&mut proposal, &patrols, spots.len(), &mut rng);
+            // Direct series repair runs before general SA when today has gaps.
+            if trial % 3 != 0
+                || !insert_missing(ctx, &mut proposal, &patrols, &spots, &missed, &mut rng)
+            {
+                mutate(&mut proposal, &patrols, spots.len(), &mut rng);
+            }
             // Alternate shortest-time and fuel-aware route choices.
             let fuel_weight = match rng.index(3) {
                 0 => 0,
