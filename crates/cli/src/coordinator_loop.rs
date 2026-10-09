@@ -115,8 +115,8 @@ pub struct CoordinatorLoopConfig {
     /// one grammar and one rejection set.
     pub agent_kinds: Option<Vec<EngineAgentKind>>,
     /// Choose the composition by simulating the match before `POST /agent`
-    /// (live `--kinds-auto`, Issue #371): one Supply in the best slot, or no
-    /// Supply when the simulation says the tanks last. Ignored when
+    /// (live `--kinds-auto`, Issue #371): one Supply (slot 0), or no Supply
+    /// when the simulation says the tanks last. Ignored when
     /// [`agent_kinds`](Self::agent_kinds) is `Some`.
     pub auto_kinds: bool,
     /// Maximum number of `POST /agent` attempts before giving up. Each

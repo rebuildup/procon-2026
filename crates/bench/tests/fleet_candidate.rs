@@ -101,7 +101,7 @@ fn fleet_all_supply_returns_a_well_shaped_day() {
 }
 
 /// 701 cannot be played without a Supply (the tanks run dry mid-match), so
-/// the pre-match simulation must field exactly one, having tried every slot.
+/// the pre-match simulation must field one, having tried both compositions.
 #[test]
 fn choose_kinds_fields_one_supply_on_701() {
     use bench::adapters::fleet_solver::choose_kinds;
@@ -109,7 +109,7 @@ fn choose_kinds_fields_one_supply_on_701() {
     let case: CaseSpec = serde_json::from_str(include_str!("fixtures/arena-701.json")).unwrap();
     let team = PlayerId::new("player-a").unwrap();
     let (kinds, trials) = choose_kinds(&case.setting, &team, std::time::Duration::from_secs(120));
-    assert_eq!(trials.len(), 6, "five Supply slots plus the all-Patrol team");
+    assert_eq!(trials.len(), 2, "one Supply and the all-Patrol team");
     assert_eq!(kinds.len(), 5);
     assert_eq!(kinds.iter().filter(|&&k| k == AgentKind::Supply).count(), 1);
     let chosen = trials.iter().find(|t| t.kinds == kinds).expect("chosen composition was tried");

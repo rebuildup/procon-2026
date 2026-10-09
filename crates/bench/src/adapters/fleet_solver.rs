@@ -126,6 +126,9 @@ impl Rng {
 }
 
 struct PatrolInfo {
+    /// Fuel the patrol may burn today (its tank, or a paced share of it
+    /// when no Supply can ever refill it).
+    budget: u32,
     agent: usize,
     start: usize,
     fuel: u32,
@@ -157,6 +160,8 @@ struct World {
     via: [Vec<Vec<(u16, u32)>>; NM],
     steps: u32,
     tomorrow: Option<u32>,
+    /// `(today's steps, later days' steps)` when tanks are paced.
+    pace: Option<(u64, u64)>,
     patrols: Vec<PatrolInfo>,
     supplies: Vec<SupplyInfo>,
     new_series: Vec<bool>,
@@ -170,7 +175,8 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
 
 impl World {
     #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
-    fn new(state: &MatchState, steps: u32, tomorrow: Option<u32>) -> Self {
+    fn new(state: &MatchState, steps: u32, later: &[u32]) -> Self {
+        let tomorrow = later.first().copied();
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
         let cells = map.cells();
@@ -211,12 +217,28 @@ impl World {
             let start = nodes.len();
             nodes.push(cell_index(width, agent.pos.col, agent.pos.row));
             if agent.kind == AgentKind::Patrol {
-                patrols.push(PatrolInfo { agent: a, start, fuel: agent.fuel, cap: agent.fuel_cap });
+                patrols.push(PatrolInfo {
+                    budget: agent.fuel,
+                    agent: a,
+                    start,
+                    fuel: agent.fuel,
+                    cap: agent.fuel_cap,
+                });
             } else {
                 supplies.push(SupplyInfo { agent: a, start });
             }
         }
         let nn = nodes.len();
+        // Without a Supply the tanks must last the match: pace them by each
+        // day's share of the remaining steps.
+        let later_steps: u64 = later.iter().map(|&x| u64::from(x)).sum();
+        let pace =
+            (supplies.is_empty() && later_steps > 0).then_some((u64::from(steps), later_steps));
+        if let Some((today, rest)) = pace {
+            for patrol in &mut patrols {
+                patrol.budget = paced(patrol.fuel, today, today + rest);
+            }
+        }
         let series_slots = series.iter().copied().max().map_or(0, |m| m as usize + 1);
         let mut new_series = vec![true; series_slots];
         for &s in &state.series_taken {
@@ -240,6 +262,7 @@ impl World {
             via: std::array::from_fn(|_| vec![Vec::new(); nn * nn]),
             steps,
             tomorrow,
+            pace,
             patrols,
             supplies,
             new_series,
@@ -475,7 +498,7 @@ impl World {
         let mut lines: Vec<Timeline> = (0..np)
             .map(|p| Timeline {
                 visits: vec![Visit { node: self.patrols[p].start, arr: 0, dep: 0, next: 0 }],
-                fuel: self.patrols[p].fuel,
+                fuel: self.patrols[p].budget,
                 ..Timeline::default()
             })
             .collect();
@@ -572,12 +595,21 @@ impl World {
         if let Some(tomorrow) = self.tomorrow {
             let starts: Vec<Start> = lines
                 .iter()
-                .map(|line| {
+                .zip(&self.patrols)
+                .map(|(line, patrol)| {
                     let (node, offset) = line.pending.map_or_else(
                         || (line.visits.last().expect("non-empty").node, 0),
                         |(to, at)| (to, at - self.steps),
                     );
-                    Start { node, offset, fuel: line.fuel, escorted: line.escorted }
+                    let fuel = match self.pace {
+                        // Paced: tomorrow's share of what is really left.
+                        Some((_, rest)) => {
+                            let left = patrol.fuel - (patrol.budget - line.fuel.min(patrol.budget));
+                            paced(left, u64::from(tomorrow), rest)
+                        }
+                        None => line.fuel,
+                    };
+                    Start { node, offset, fuel, escorted: line.escorted }
                 })
                 .collect();
             let (d, b) = self.greedy(&starts, tomorrow, None);
@@ -707,7 +739,7 @@ impl World {
             .map(|p| Start {
                 node: self.patrols[p].start,
                 offset: 0,
-                fuel: self.patrols[p].fuel,
+                fuel: self.patrols[p].budget,
                 escorted: escorted[p],
             })
             .collect();
@@ -964,6 +996,13 @@ impl World {
     }
 }
 
+/// Share of `fuel` for a day of `day` steps out of `total` remaining steps,
+/// with headroom so a day that needs a little more is not cut short.
+fn paced(fuel: u32, day: u64, total: u64) -> u32 {
+    let share = u64::from(fuel) * day * 130 / (total.max(1) * 100);
+    u32::try_from(share).unwrap_or(u32::MAX).min(fuel)
+}
+
 fn action(agent: usize, dir: Option<Direction>) -> Action {
     let id = u8::try_from(agent).expect("agent id");
     dir.map_or_else(|| Action::wait(id), |d| Action::step(id, d))
@@ -1019,9 +1058,9 @@ impl Solver for FleetCandidate {
         {
             return fallback();
         }
-        let tomorrow = (ctx.day + 1 < state.setting.num_days)
-            .then(|| state.setting.day_steps_for(ctx.day + 1));
-        let world = World::new(state, ctx.day_steps, tomorrow);
+        let later: Vec<u32> =
+            (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
+        let world = World::new(state, ctx.day_steps, &later);
         let deadline = (self.budget_ms > 0).then(|| {
             let budget = Duration::from_millis(u64::from(self.budget_ms));
             let window = if ctx.remaining_ms == u32::MAX {
@@ -1088,20 +1127,22 @@ pub struct KindsTrial {
     pub score: (u32, u32, u32),
 }
 
-/// Search length of a composition trial: enough to rank compositions, short
-/// enough that every trial of an 8-agent, 10-day match ends within seconds.
-const KINDS_TRIAL_ITERS: u32 = 2_500;
+/// Search length of a composition trial: two whole-match simulations of an
+/// 8-agent, 10-day board still end within a couple of seconds.
+const KINDS_TRIAL_ITERS: u32 = 8_000;
 
 /// Choose the `POST /agent` composition by simulating the match (Issue #371).
 ///
-/// Trials: one Supply in each agent slot, and no Supply at all. Each trial
-/// plays the whole match offline with a short `fleet` search. The best
-/// one-Supply slot wins by `(variety, daily variety, balls)`; the all-Patrol
-/// team replaces it only when it loses nothing on the first two axes and
-/// gains at least 8% balls, because without a Supply nothing can recover a
-/// day that drifts from the simulation.
+/// Two trials play the whole match offline with a short `fleet` search: one
+/// Supply (slot 0) and no Supply at all. The all-Patrol team is chosen only
+/// when it loses nothing on variety and daily variety and gains at least 5%
+/// balls — it fields one more Patrol, which wins short, fuel-rich matches by
+/// about 20% balls, but nothing can refuel it if a day drifts from the
+/// simulation. Which slot holds the Supply is not searched: short trials
+/// could not rank the slots reliably (measured: choosing by trial lost daily
+/// variety on tight boards).
 ///
-/// Trials still running at `window` are ignored. With no finished trial the
+/// A trial still running at `window` is ignored; without both trials the
 /// answer is one Supply in slot 0, the composition the offline evidence was
 /// measured with.
 #[must_use]
@@ -1120,7 +1161,7 @@ pub fn choose_kinds(
     };
     let mut compositions: Vec<Vec<AgentKind>> = vec![vec![AgentKind::Patrol; n]];
     if n >= 2 {
-        compositions.extend((0..n).map(one_supply));
+        compositions.push(one_supply(0));
     }
     let (sender, receiver) = std::sync::mpsc::channel();
     for kinds in compositions {
@@ -1152,20 +1193,16 @@ pub fn choose_kinds(
             Err(_) => break,
         }
     }
-    let slot = |t: &KindsTrial| t.kinds.iter().position(|&k| k == AgentKind::Supply);
-    trials.sort_by_key(|t| slot(t).unwrap_or(usize::MAX));
-    let supplied = |t: &&KindsTrial| t.kinds.contains(&AgentKind::Supply);
-    // Ties keep the lowest Supply slot: `max_by_key` returns the last
-    // maximum, so iterate the slots downwards.
-    let best_supplied = trials.iter().filter(supplied).rev().max_by_key(|t| t.score);
-    let all_patrol = trials.iter().find(|t| !supplied(t));
-    let chosen = match (best_supplied, all_patrol) {
+    // Report order: the one-Supply trial first.
+    trials.sort_by_key(|t| !t.kinds.contains(&AgentKind::Supply));
+    let supplied = trials.iter().find(|t| t.kinds.contains(&AgentKind::Supply));
+    let all_patrol = trials.iter().find(|t| !t.kinds.contains(&AgentKind::Supply));
+    let chosen = match (supplied, all_patrol) {
         (Some(one), Some(zero)) => {
             let keeps_variety = (zero.score.0, zero.score.1) >= (one.score.0, one.score.1);
-            let gains = u64::from(zero.score.2) * 100 >= u64::from(one.score.2) * 108;
+            let gains = u64::from(zero.score.2) * 100 >= u64::from(one.score.2) * 105;
             if keeps_variety && gains { zero.kinds.clone() } else { one.kinds.clone() }
         }
-        (Some(one), None) => one.kinds.clone(),
         _ => fallback,
     };
     (chosen, trials)

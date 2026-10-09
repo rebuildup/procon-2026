@@ -142,8 +142,8 @@ enum Cmd {
         kinds: Option<KindsPattern>,
 
         /// Choose the composition by simulating the match with the `fleet`
-        /// planner before `POST /agent` (Issue #371): one Supply in the best
-        /// slot, or no Supply when the tanks last the whole match. Meant for
+        /// planner before `POST /agent` (Issue #371): one Supply (slot 0), or
+        /// no Supply when the tanks last the whole match. Meant for
         /// `--candidate fleet:…`; an explicit `--kinds` wins.
         #[arg(long, conflicts_with = "kinds")]
         kinds_auto: bool,
