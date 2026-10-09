@@ -567,6 +567,20 @@ sha256 再検証（`58d1a644`）のうえ再投入（本試合）。**cargo の 
 - 1位 優勝以外 99（差 −7）・6位 admin は D=54 → 当方が tier2 で上回り rank 5
 - revisions [7,19,33,45,59] 全日受理・1日1 POST・燃料給油サイクル作動（#1P 50→65・#2P 40→65 回復）・座礁 0 台
 
+## 公式スコア + 実測（match 1960 = **fleet 新版 `5ddb153` 初投入**・24×24/7日・UI `#1961 第2卓`）
+
+`fleet:budget=official:budget_ms=10000` @ **`5ddb153a16d44bb34c2c3ed5cea4aa8044f95bf0`**（PR #372 head・binary `10172dc74ba13cae47ffc458967b7ebd552f99c1dc74b4d522b7f90b81feb8a2`・別worktree `.worktrees/arena-5ddb153` + 別target `arena-5ddb153-target`）。24×24 / 7日 / 5台（S,P,P,P,P）・daySteps [49,48,48,60,57,69,57]・燃料 cap147。UI `#1961 第2卓`（卓id ずれ）。
+
+- **🏆 rank 1/10（fleet 系初の優勝）: V=20, D=140/140（2位以下は 139 — 当方のみ MAX クラスタ）, B=242（2位 Kuronica 236・差 +6）, 回答 25.5s ≈ 3.6s/日, rate 583→763 (+180)**
+- 回答時間が旧版 budget 5000 の 5.5–5.65s/日 → **3.6s/日**に短縮（探索予算の適応制御が効いている。収束した盤面で探索を早打ち切りする `5ddb153` の head commit「stop the live fleet search early on boards that converge sooner」の実戦効果）
+- revisions [4,16,27,37,48,58,70] 全日受理・1日1 POST・登録 1 poll（二重登録なし）・座礁 0 台
+- `fleet day plan` 全日 `clean=true`・chains=4・`predicted_ends` 提出済み（翌日一致は cli ログで確認可能）
+- **旧版との同条件比較ではない**（SHA 変更 + budget 5000→10000）。本試合は最新版の実戦動作確認であり、手法の寄与分解は未確定
+- 事前検証（公式ローカルサーバー・`verify-5ddb153/`）: 701盤面 10日×7台・燃料上限12の負荷構成で
+  - 固定kinds `S,P,P,P,P,P,P,P`（budget 10000・15s窓）: 10/10 全日受理（revision 1–10）・`predicted_ends` 9/9 遷移一致・計画完了は日開始+7s（余裕 8s）
+  - `--kinds-auto`（同構成）: 10/10 全日受理・kinds 決定 1.5s 内（試行 S構成 251 ball vs 全車巡回 75 ball → 補給1台を正しく選択）・day0 以降の計算性能劣化なし
+  - いずれも token/email ログ検出 0 件
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -775,7 +789,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **26 行**（1810 … 1950 / 1954、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **27 行**（1810 … 1954 / 1960、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -801,6 +815,8 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1946-fleet.log` | match 1946（fleet・32×32/10日/7台 rank 5。除去済み） |
 | `run-1950-fleet.log` | match 1950（fleet 標準・24×24/10日 純 B 競争。除去済み） |
 | `run-1954-fleet.log` | match 1954（fleet 標準・16×16/5日 rank 5。除去済み） |
+| `run-1960-fleet-5ddb153.log` | match 1960（**fleet 新版 `5ddb153` 初投入**・budget 10000・rank 1。除去済み） |
+| `verify-5ddb153/` | 新版 `5ddb153` の投入前検証（公式ローカルサーバー・701盤面 10日×7台・燃料上限12）: `fixed7/`（固定kinds）/ `auto7/`（`--kinds-auto`）各 `summary.json`（SHA・candidate・revisions・binary hash）+ `cli.log`（`predicted_ends`・kinds 試行ログ）+ `server.log` |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了

@@ -1,0 +1,22 @@
+{
+  "source_sha": "5ddb153a16d44bb34c2c3ed5cea4aa8044f95bf0",
+  "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cli_sha256": "10172dc74ba13cae47ffc458967b7ebd552f99c1dc74b4d522b7f90b81feb8a2",
+  "candidate": "fleet:budget=official:budget_ms=10000",
+  "kinds": "auto",
+  "exit_code": 0,
+  "days": 10,
+  "revisions": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "limitation": "Local official binary, single team, shortened windows; not arena score parity."
+}
