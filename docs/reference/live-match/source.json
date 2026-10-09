@@ -1,0 +1,24 @@
+{
+  "source": "Official verification server: isolated local match",
+  "serverSha256": "769e101cbc6b80cce7732dae1e10d911ed1e9efefd3b1f94b6381652aa7741c1",
+  "driverSha256": "f82396963a989235e368e7376cdab4b04071fae41227bcc7e7a376379a2d3627",
+  "drivers": [
+    "one horizontal move per day then wait",
+    "wait"
+  ],
+  "days": 4,
+  "daySteps": [
+    20,
+    20,
+    20,
+    20
+  ],
+  "daySeconds": [
+    12,
+    12,
+    12,
+    12
+  ],
+  "driversCompleted": true,
+  "note": "GET /setting and GET / responses; no interpolated steps or mock positions. Official example config with daySeconds shortened for recording. Driver plans are communication checks, not a competitive solver."
+}

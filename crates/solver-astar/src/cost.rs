@@ -6,8 +6,8 @@
 //!
 //! | Cell              | Step cost | Fuel cost |
 //! |-------------------|-----------|-----------|
-//! | Plain             | 1         | 1         |
-//! | Mountain          | 2         | 2         |
+//! | Plain             | 2         | 1         |
+//! | Mountain          | 3         | 2         |
 //! | Road (Smooth)     | 1         | 2         |
 //! | Road (Busy)       | 2         | 2         |
 //! | Road (Jammed)     | 4         | 2         |
@@ -23,30 +23,27 @@
 
 use crate::hex::{CellKind, TrafficState};
 
-/// Base step cost of a cell. Matches the recruitment document's table.
+/// Base step cost of a cell. Matches the recruitment document's table
+/// (募集要項 表1 / Q&A Q11), canonical at `domain::cell::MOVE_STEPS` and
+/// restated by the engine at `engine::wire_plan::terrain_step_cost`.
 ///
-/// **Known unit divergence:** the official `daySteps` budget counts the
-/// *origin* cell's cost with `domain::cell::MOVE_STEPS` (plain 2 / mountain 3
-/// / road 1·2·4 — cross-check `engine::wire_plan::terrain_step_cost`), while
-/// this table bills the *entered* cell as plain 1 / mountain 2.
-/// [`SolveContext::max_steps`] mirrors `daySteps`, so every `<= max_steps`
-/// budget check in this crate runs in mixed units and can hand back a path
-/// the wire-level `normalize_agent_plan` later truncates mid-walk.
-/// `budget=official` fixes that for the `loop` / `multiloop` candidates; the
-/// `astar` candidate has no such knob yet. Aligning the table re-costs every
-/// A* candidate (scores shift, `plain_step_cost_is_one` and
-/// `mountain_step_cost_is_two` pin the current values), so it is tracked as a
-/// follow-up instead of landing with the fuel-scaling fix.
+/// The unit is the official `daySteps` step: terrain-weighted steps, *not*
+/// answer elements. [`SolveContext::max_steps`] is denominated in it, so every
+/// budget comparison in this crate must use this table and nothing else.
+///
+/// This table does **not** decide *which* cell a move is billed — the official
+/// rule charges the cell a move **departs**. The A* search applies that when it
+/// accumulates `steps`; see [`crate::solver`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BaseStepCost(pub u32);
 
 impl BaseStepCost {
-    /// Plain cell: 1 step.
-    pub const PLAIN: Self = Self(1);
-    /// Mountain cell: 2 steps.
-    pub const MOUNTAIN: Self = Self(2);
+    /// Plain cell: 2 steps.
+    pub const PLAIN: Self = Self(2);
+    /// Mountain cell: 3 steps.
+    pub const MOUNTAIN: Self = Self(3);
 
-    /// Step cost of entering `cell`; `None` for ponds (impassable).
+    /// Step cost of `cell`; `None` for ponds (impassable).
     ///
     /// This is the *unscaled* cost — the unit [`SolveContext::max_steps`] is
     /// expressed in. Fuel scaling (see [`CostPolicy::conservative`]) applies
@@ -252,13 +249,13 @@ mod tests {
     }
 
     #[test]
-    fn plain_step_cost_is_one() {
-        assert_eq!(policy(10).weighted_cost(CellKind::Plain, 10), Some(1));
+    fn plain_step_cost_is_two() {
+        assert_eq!(policy(10).weighted_cost(CellKind::Plain, 10), Some(2));
     }
 
     #[test]
-    fn mountain_step_cost_is_two() {
-        assert_eq!(policy(10).weighted_cost(CellKind::Mountain, 10), Some(2));
+    fn mountain_step_cost_is_three() {
+        assert_eq!(policy(10).weighted_cost(CellKind::Mountain, 10), Some(3));
     }
 
     #[test]

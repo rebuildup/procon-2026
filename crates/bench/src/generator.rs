@@ -2217,8 +2217,8 @@ mod tests {
         assert_eq!(sel[1].case_id(), "generated:v2:road-heavy:seed=1:fuel=tight");
 
         // An empty selection selects nothing (generated cases are opt-in).
-        assert!(parse_selection("").expect("empty parses").is_empty());
-        assert!(parse_selection("   ").expect("blank parses").is_empty());
+        assert_eq!(parse_selection("").expect("empty parses").len(), 0);
+        assert_eq!(parse_selection("   ").expect("blank parses").len(), 0);
     }
 
     #[test]

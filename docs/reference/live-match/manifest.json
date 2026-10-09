@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-10-04T13:10:16.673Z",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "recordMs": 1000,
+  "scenarios": [
+    {
+      "name": "live-canvas-dark",
+      "route": "/live",
+      "video": "live-canvas-dark.webm",
+      "screenshot": "live-canvas-dark.png",
+      "videoBytes": 4727732,
+      "durationMs": 51375,
+      "chromiumVersion": "153.0.8010.12",
+      "webgpu": {
+        "api": false,
+        "adapter": false
+      },
+      "recordedAt": "2026-10-04T13:10:16.670Z",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "name": "live-desktop",
+      "route": "/live",
+      "video": "live-desktop.webm",
+      "screenshot": "live-desktop.png",
+      "videoBytes": 5302930,
+      "durationMs": 50669,
+      "chromiumVersion": "153.0.8010.12",
+      "webgpu": {
+        "api": true,
+        "adapter": true
+      },
+      "recordedAt": "2026-10-04T13:10:15.964Z",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    }
+  ],
+  "baseCommit": "1fd8356ce264cd93a8b2b758d59a7091532f1b34",
+  "commit": "3e7aa36e6947148bcb2519fb8b90b7bbb7873bf3"
+}
