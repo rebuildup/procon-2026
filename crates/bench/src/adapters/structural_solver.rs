@@ -93,8 +93,14 @@ impl Rng {
         x
     }
     fn index(&mut self, len: usize) -> usize {
-        if len == 0 { 0 } else { (self.next() % len as u64) as usize }
+        if len == 0 {
+            0
+        } else {
+            let bound = u64::try_from(len).expect("usize always fits u64 on supported targets");
+            usize::try_from(self.next() % bound).expect("random index is smaller than len")
+        }
     }
+    #[allow(clippy::cast_precision_loss, reason = "shifting away 11 bits leaves exactly 53 random bits")]
     fn probability(&mut self) -> f64 {
         (self.next() >> 11) as f64 / ((1u64 << 53) as f64)
     }
@@ -104,7 +110,8 @@ type VisitOrder = Vec<Vec<usize>>;
 type PathCache = HashMap<(HexCoord, HexCoord, u32), Option<Vec<Direction>>>;
 
 fn cell_idx(map: &MapGrid, p: HexCoord) -> usize {
-    (p.row as usize) * usize::from(map.size.width) + (p.col as usize)
+    usize::try_from(p.row).expect("position is in bounds") * usize::from(map.size.width)
+        + usize::try_from(p.col).expect("position is in bounds")
 }
 
 /// Weighted Dijkstra: duration is primary; lambda creates alternative
@@ -348,8 +355,8 @@ fn replay_score(ctx: &SolverContext<'_>, candidate: &AgentActions) -> Option<Sco
     }
     let variety = state.series_taken.len() as u32;
     let today = state.series_acquired_by_day.get(&ctx.day).map_or(0, |s| s.len() as u32);
-    let balls = state.agents.iter().map(engine::model::Agent::total_inventory).sum();
-    let fuel = state
+    let balls: u32 = state.agents.iter().map(engine::model::Agent::total_inventory).sum();
+    let fuel: u32 = state
         .agents
         .iter()
         .filter(|a| a.kind == AgentKind::Patrol)
