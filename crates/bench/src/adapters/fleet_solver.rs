@@ -717,10 +717,19 @@ impl World {
         let np = sol.routes.len();
         let spot = |rng: &mut Rng| u16::try_from(rng.below(self.spots)).expect("node");
         match rng.below(10) {
-            0 | 1 => {
+            0 => {
                 let p = rng.below(np);
                 let at = rng.below(sol.routes[p].len() + 1);
                 sol.routes[p].insert(at, spot(rng));
+            }
+            1 => {
+                // Cheapest insertion of a spot the patrol does not visit yet.
+                let p = rng.below(np);
+                let node = spot(rng);
+                if !sol.routes[p].contains(&node) {
+                    let at = self.cheapest_slot(sol, p, usize::from(node));
+                    sol.routes[p].insert(at, node);
+                }
             }
             2 => {
                 let p = rng.below(np);
@@ -734,7 +743,11 @@ impl World {
                 if !sol.routes[p].is_empty() {
                     let from = rng.below(sol.routes[p].len());
                     let node = sol.routes[p].remove(from);
-                    let at = rng.below(sol.routes[q].len() + 1);
+                    let at = if rng.below(2) == 0 {
+                        rng.below(sol.routes[q].len() + 1)
+                    } else {
+                        self.cheapest_slot(sol, q, usize::from(node))
+                    };
                     sol.routes[q].insert(at, node);
                 }
             }
@@ -798,6 +811,26 @@ impl World {
         }
     }
 
+    /// Route position where inserting `node` adds the least travel time.
+    fn cheapest_slot(&self, sol: &Solution, p: usize, node: usize) -> usize {
+        let m = usize::from(sol.metric[p]);
+        let route = &sol.routes[p];
+        let leg = |a: usize, b: usize| u64::from(self.t(m, a, b));
+        (0..=route.len())
+            .min_by_key(|&at| {
+                let before =
+                    if at == 0 { self.patrols[p].start } else { usize::from(route[at - 1]) };
+                match route.get(at) {
+                    Some(&after) => {
+                        let after = usize::from(after);
+                        (leg(before, node) + leg(node, after)).saturating_sub(leg(before, after))
+                    }
+                    None => leg(before, node),
+                }
+            })
+            .unwrap_or(0)
+    }
+
     /// Drop the route tail the day never reaches (keeps mutations useful).
     fn trim(sol: &mut Solution, eval: &Evaluation) {
         for (p, line) in eval.lines.iter().enumerate() {
@@ -816,6 +849,8 @@ impl World {
             return (best, current_eval);
         }
         let (t0, t1) = (400.0f64, 5.0f64);
+        let started = Instant::now();
+        let mut live_progress = 0.0f64;
         let mut i = 0u32;
         loop {
             let progress = match deadline {
@@ -826,11 +861,17 @@ impl World {
                     f64::from(i) / f64::from(iters.max(1))
                 }
                 Some(end) => {
-                    if i % 256 == 0 && Instant::now() >= end {
-                        break;
+                    // Live: cool along the wall-clock window, so the schedule
+                    // completes whatever the machine's speed.
+                    if i % 256 == 0 {
+                        let now = Instant::now();
+                        if now >= end {
+                            break;
+                        }
+                        let window = end.duration_since(started).as_secs_f64().max(1e-3);
+                        live_progress = now.duration_since(started).as_secs_f64() / window;
                     }
-                    // Live: cool on a fixed schedule, then keep polishing.
-                    (f64::from(i) / 200_000.0).min(1.0)
+                    live_progress
                 }
             };
             i += 1;
@@ -963,7 +1004,10 @@ impl Solver for FleetCandidate {
             let window = if ctx.remaining_ms == u32::MAX {
                 budget
             } else {
-                Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(5_000)))
+                // Keep a third of the answer window (0.5 s..5 s) for the
+                // replay check, encoding and the round trip.
+                let margin = (ctx.remaining_ms / 3).clamp(500, 5_000);
+                Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(margin)))
             };
             started + budget.min(window)
         });
