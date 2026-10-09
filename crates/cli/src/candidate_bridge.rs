@@ -168,6 +168,41 @@ impl Solver for CandidateBridge {
             agent_ids: ctx.my_agent_ids.clone(),
         };
         let plan = self.inner.decide(&model_ctx);
+        // Log plan structure for rejection diagnosis (Issue #331).
+        {
+            let n = ctx.my_agent_ids.len();
+            let ds = ctx.day_steps as usize;
+            let expected = n * ds;
+            if plan.actions.len() == expected {
+                let mut moves = vec![0usize; n];
+                let mut waits = vec![0usize; n];
+                for step in 0..ds {
+                    for (i, a) in plan.actions[step * n..step * n + n].iter().enumerate() {
+                        match a.kind {
+                            ModelActionKind::Move(_) => moves[i] += 1,
+                            ModelActionKind::Wait => waits[i] += 1,
+                        }
+                    }
+                }
+                tracing::info!(
+                    candidate = %self.candidate_id,
+                    n_agents = n,
+                    day_steps = ds,
+                    moves = ?moves,
+                    waits = ?waits,
+                    "plan generated"
+                );
+            } else {
+                tracing::warn!(
+                    candidate = %self.candidate_id,
+                    n_agents = n,
+                    day_steps = ds,
+                    actual_len = plan.actions.len(),
+                    expected_len = expected,
+                    "plan has wrong length"
+                );
+            }
+        }
         if !plan.is_well_shaped(&ctx.my_agent_ids, ctx.day_steps) {
             return self.fallback(ctx, "candidate returned a malformed plan");
         }

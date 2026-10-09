@@ -632,6 +632,11 @@ pub async fn run_coordinator_loop(
             snap.revisions.push(*revision);
             snap.last_update_unix = unix_now();
             snap.error = Some(format!("rejected day={day} revision={revision}"));
+                tracing::error!(
+                    day,
+                    revision,
+                    "plan rejected by server"
+                );
             write_snapshot(&cfg, &snap);
         }
         Err(e) => {
