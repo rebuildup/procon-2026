@@ -284,6 +284,24 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 - **観測価値**: ①6P1S kinds は**台数が 7 未満のマッチでは Supply 欠落の縮退構成になる**（kinds 循環の構造的性質 — 7台マッチ限定の実験オプション）。②**Supply 欠落時の D/B 崩落の定量化**（D −21・B 60）＝**補給の価値の実測**として #339/#311 の燃料議論の裏付け。③それでも rank 8・rate +23 — フィールド構成（無回答チーム等）次第でスコア悪化でも順位は保ちうる。
 - 盤面・構成が異なるため 1891 との因果比較はしない。
 
+## 公式スコア + 実測（match 1903 = **release 統合 Anytime**（PR #354 分）・UI `#1905 第3卓`）
+
+`anytime:budget_ms=5000:seed=42:budget=official` @ **`426321ae183dabf74389f7f05b8480de17583008`**（**現 release tip** — PR #365 merge。新ENGINE + #360 retune + **#354 anytime（B 改善受理）**。PR #364 の振動修正は不含 = 別候補）。
+バイナリ sha256 `d9e067f2…`（専用 target・`--locked`）。16×16 / 7日 / **4台**（P,S,P,S）。UI `#1905 第3卓`（3卓・卓id ずれ）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | うどん | 10 | 70 | 169 | 11.5s |
+| 2–7 | やじゅうせんぱい / newPC / WhiteBoy / admin / 𰻞𰻞 / Papasta | 10 | 70 | 156–169 | 8.1–270.4s |
+| **8** | **ユ（当方）** | **10** | **68** | **124** | **14.4s** |
+| 9–10 | まうす / hoghog | 10 | 67 / 34 | 103 / 73 | 10.6s / 299.1s |
+
+- **D=68/70（−2）・B=124/169（73% = 歴代最高比率）・rank 8・rate 211→228（+17、2試合連続上昇。3試合累計 188→228）**
+- revisions [5,20,31,45,61,73,85] — 7/7 全日受理・1日1 POST・error なし
+- 燃料 cap49: 全 agent 恒常（座礁 0）・4/4 全日稼働
+- 回答 14.4s ≈ 2.1s/日 — 小盤では早期打ち切りが頻発（5s 予算未満）
+- 旧版との比較は盤面差（4台・16×16）があるため因果断定せず。**B 比率の向上傾向（51→55→51→68→73%）は #354 の B 改善受理が効き始めた可能性**（要継続観測）
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -492,7 +510,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **9 行**（1810 / 1811 / 1857 / 1869 / 1883 / 1885 / 1888 / 1891 / 1894、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **10 行**（1810 … 1894 / 1903、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -501,6 +519,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1885-b30.log` | match 1885 の同上（budget 30s ablation・早期打ち切り実測。除去済み） |
 | `run-1888-s7.log` / `run-1891-retune.log` | match 1888（seed ablation）/ 1891（Stage 2 系初投入）の同上（除去済み） |
 | `run-1894-6p1s.log` | match 1894（6P1S 構成・Supply 欠落の縮退観測。除去済み） |
+| `run-1903-rel-anytime.log` | match 1903（release 統合 anytime・`426321ae`/`d9e067f2`。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
