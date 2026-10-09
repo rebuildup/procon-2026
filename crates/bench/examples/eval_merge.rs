@@ -10,6 +10,12 @@
 //! * the merged ranking is `bench::AggregateReport::build`, the same struct
 //!   `procon-eval` writes, so it refuses mixed commits exactly as upstream;
 //! * every pairwise / per-condition win-draw-loss call goes through
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::type_complexity
+)]
 //!   `domain::compare_scores`, the official lexicographic comparison
 //!   (variety → daily variety sum → total balls → response time).
 //!
@@ -149,6 +155,9 @@ struct Provenance {
     baseline: String,
 }
 
+// Offline aggregation tool: counts fit u32 comfortably; main drives the
+// whole merge/report flow (kept in one place by design).
+#[allow(clippy::too_many_lines)]
 fn main() -> ExitCode {
     let args = Args::parse();
     if !(3..=4).contains(&args.axes) {
@@ -393,9 +402,8 @@ fn build_pairwise(runs: &[RunRecord], baseline: &str, axes: u8) -> Vec<PairCell>
             let (mut w, mut d, mut l, mut nc) = (0u32, 0u32, 0u32, 0u32);
             let mut losing_boards = Vec::new();
             for (board, per_candidate) in &boards {
-                let (ra, rb) = match (per_candidate.get(a), per_candidate.get(b)) {
-                    (Some(ra), Some(rb)) => (ra, rb),
-                    _ => continue,
+                let (Some(ra), Some(rb)) = (per_candidate.get(a), per_candidate.get(b)) else {
+                    continue;
                 };
                 if !ra.is_scored() || !rb.is_scored() {
                     nc += 1;
@@ -471,7 +479,7 @@ fn build_conditions(runs: &[RunRecord], baseline: &str, axes: u8) -> Vec<Conditi
                 continue;
             }
             let slot = acc
-                .entry((ck.clone(), (*cid).to_owned()))
+                .entry((ck.clone(), cid.to_owned()))
                 .or_insert((0, 0, 0, 0, 0, 0.0, 0.0, 0.0));
             slot.0 += 1;
             if !rec.is_scored() || !base.is_scored() {
@@ -492,7 +500,7 @@ fn build_conditions(runs: &[RunRecord], baseline: &str, axes: u8) -> Vec<Conditi
     let mut rows: Vec<ConditionRow> = acc
         .into_iter()
         .map(|((ck, cid), (n, w, d, l, u, sv, sd, sb))| {
-            let scored = (n - u).max(1) as f64;
+            let scored = f64::from((n - u).max(1));
             ConditionRow {
                 condition: ck,
                 candidate: cid,
