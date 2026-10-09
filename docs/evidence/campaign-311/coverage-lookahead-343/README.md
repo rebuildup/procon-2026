@@ -7,6 +7,7 @@
 - Parent source SHA: `0d913f2651729fbf270390e255ae664a92901fc6`
 - Evaluated solver source SHA: `081aa070364489011328dbade65e94bb2d27c0e7`
 - Day-trace harness SHA: `b0c0723437f169065ef082eb1dfd960466ebef35`
+- Post-evaluation validation guard SHA: `e42b9d0be39470e1ad3c1a79844501a5c7ad9e83`
 - Baseline: `coverage:budget=official:park=far`
 - Agent kinds: `P,S,P,S,P`
 - Ranking: 公式辞書順 `(variety, daily_variety_sum, total_balls, response_time_us lower)`
@@ -96,6 +97,8 @@ timeout --kill-after=5s 90s env PROCON_SOURCE_COMMIT_SHA=081aa070364489011328dba
 - `cargo build --release --locked -p bench --bin procon-eval`: pass
 - `procon-eval --list-candidates`: `lookahead=none|next` を確認
 - ignored day8 trace: pass（試合全10日、18.04秒）
+
+評価後のguard commit `e42b9d0` は `lookahead=next` と `time_budget_ms>0` の組み合わせをrejectします。翌日replayの追加処理にwall-clock時間予算を適用しない誤用を防ぐための候補設定validationです。上記評価candidateはすべて `time_budget_ms=0`（省略）なので、記録済みscore / timingには影響しません。guard commit後にbench test・clippy・Release evaluator buildを再実行しました。
 
 10-case screen（180秒deadline、40 records）:
 
