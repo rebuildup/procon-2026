@@ -1,0 +1,84 @@
+{
+  "binary_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "source_sha": "8728ed5d421947d477e11fdcba5cfdcb085467db",
+  "requests": [
+    {
+      "path": "/agent",
+      "body": [
+        0,
+        1
+      ],
+      "status": 200,
+      "response": null
+    },
+    {
+      "path": "/",
+      "body": null,
+      "status": 200,
+      "response": {
+        "endsAt": 1791496367,
+        "day": 0,
+        "agents": [
+          {
+            "kind": 0,
+            "pos": 0,
+            "fuel": 2
+          },
+          {
+            "kind": 1,
+            "pos": 2,
+            "fuel": 2
+          }
+        ],
+        "others": [],
+        "traffics": [
+          {
+            "pos": 1,
+            "status": 0
+          },
+          {
+            "pos": 2,
+            "status": 0
+          }
+        ]
+      }
+    },
+    {
+      "path": "/",
+      "body": [
+        [
+          2,
+          2,
+          -1
+        ],
+        [
+          5,
+          5,
+          -2
+        ]
+      ],
+      "status": 200,
+      "response": {
+        "revision": -1
+      }
+    },
+    {
+      "path": "/",
+      "body": [
+        [
+          2,
+          -2
+        ],
+        [
+          5,
+          5,
+          -2
+        ]
+      ],
+      "status": 200,
+      "response": {
+        "revision": 1
+      }
+    }
+  ]
+}
