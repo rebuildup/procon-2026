@@ -65,6 +65,9 @@ fn fleet_requires_official_budget_and_rejects_bad_values() {
     assert!(build("fleet:budget=official:chains=4").is_ok());
     assert!(build("fleet:budget=official:chains=0").is_err());
     assert!(build("fleet:budget=official:chains=9").is_err());
+    assert!(build("fleet:budget=official:lns=50").is_ok());
+    assert!(build("fleet:budget=official:lns=101").is_err());
+    assert!(build("fleet:budget=official:lns=half").is_err());
     assert!(build("fleet:budget=official:budget_ms=500:adapt=off").is_ok());
     assert!(build("fleet:budget=official:adapt=sometimes").is_err());
 }
@@ -147,4 +150,18 @@ fn fleet_chains_stay_legal_when_tomorrow_decides() {
     play_701("fleet:budget=official:iters=300:seed=3:chains=3", "P,P,P,P,P");
     let (daily, _) = play_701("fleet:budget=official:iters=600:seed=3:chains=2", "S,P,P,P,P");
     assert!(daily >= 196, "daily variety sum {daily}");
+}
+
+/// Ruin-and-recreate moves (Issue #374) must keep the day legal and every
+/// series covered, and stay reproducible for a fixed id.
+#[test]
+fn fleet_lns_stays_legal_and_reproducible() {
+    let id = "fleet:budget=official:iters=1500:seed=42:lns=50";
+    let (daily, balls) = play_701(id, "S,P,P,P,P");
+    assert!(daily >= 198, "daily variety sum {daily}");
+    assert!(balls >= 480, "balls {balls}");
+    let (_, state) = state_701("S,P,P,P,P");
+    let ctx = SolverContext::from_state(&state);
+    assert_eq!(solver(id).decide(&ctx), solver(id).decide(&ctx));
+    play_701("fleet:budget=official:iters=300:seed=5:lns=100", "P,P,P,P,P");
 }
