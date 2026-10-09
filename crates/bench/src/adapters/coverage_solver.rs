@@ -347,6 +347,39 @@ impl Solver for CoverageCandidate {
                     );
                 }
             }
+            // Fuel-return override (Issue #339): when a Patrol's fuel is low,
+            // move toward its paired Supply instead of pursuing targets.
+            // This prevents stranding when the Supply is chasing but never
+            // catching up.
+            if self.fuel_aware {
+                for &pi in &patrols {
+                    if used[pi] >= ctx.day_steps {
+                        continue;
+                    }
+                    let fuel = state.agents[pi].fuel;
+                    if fuel < 30 {
+                        // Find paired supply
+                        if let Some(si) = pairs
+                            .iter()
+                            .enumerate()
+                            .find(|(_, p)| p.map_or(false, |pp| pp == pi))
+                            .map(|(i, _)| i)
+                        {
+                            let supply_pos = state.agents[si].pos;
+                            let paths = routes(&state.setting.map, &state.agents[pi], true);
+                            let goal = paths[index(&state.setting.map, supply_pos)].first;
+                            if goal.is_some() {
+                                actions[pi] = legal_step(
+                                    &state.agents[pi],
+                                    goal,
+                                    &state.setting.map,
+                                    ctx.day_steps - used[pi],
+                                );
+                            }
+                        }
+                    }
+                }
+            }
             for i in 0..n {
                 if used[i] < ctx.day_steps {
                     used[i] += match actions[i].kind {
