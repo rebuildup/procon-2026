@@ -88,8 +88,8 @@ pub struct TournamentConfig {
     /// [`crate::evaluate::EvalConfig::oracle_refill`].
     #[serde(default)]
     pub oracle_refill: bool,
-    /// Maximum concurrent evaluations (Issue #331).  (default) is sequential.
-    ///  means auto (use available parallelism).
+    /// Maximum concurrent evaluations (Issue #331). `1` (default) is
+    /// sequential. `0` means auto ([`std::thread::available_parallelism`]).
     #[serde(default)]
     pub jobs: usize,
 }
@@ -119,6 +119,8 @@ impl TournamentConfig {
     }
 
     /// Set the maximum concurrent evaluations (Issue #331).
+    ///
+    /// `1` is sequential; `0` is auto ([`std::thread::available_parallelism`]).
     #[must_use]
     pub fn with_jobs(mut self, jobs: usize) -> Self {
         self.jobs = jobs;

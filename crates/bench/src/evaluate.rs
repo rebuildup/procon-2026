@@ -340,7 +340,7 @@ pub struct EvalConfig {
     /// (see [`Self::resolved_jobs`]). Values > 1 use a bounded worker pool.
     ///
     /// **Response-time fairness**: when `jobs > 1`, CPU contention inflates
-    /// `response_time_us`. Axes 1–3 (variety, daily_variety_sum, total_balls)
+    /// `response_time_us`. Axes 1–3 (variety, `daily_variety_sum`, `total_balls`)
     /// are unaffected; axis 4 must be re-measured sequentially for final
     /// ranking (Issue #331).
     pub jobs: usize,
@@ -796,9 +796,7 @@ impl Evaluator {
         // Shared job queue: (case_idx, candidate_idx).
         let queue: std::sync::Arc<std::sync::Mutex<Vec<(usize, usize)>>> =
             std::sync::Arc::new(std::sync::Mutex::new(
-                (0..n_cases)
-                    .flat_map(|ci| (0..n_candidates).map(move |ki| (ci, ki)))
-                    .collect(),
+                (0..n_cases).flat_map(|ci| (0..n_candidates).map(move |ki| (ci, ki))).collect(),
             ));
 
         // Pre-allocated result slots (None until filled).
@@ -809,23 +807,27 @@ impl Evaluator {
             for _ in 0..jobs {
                 let queue = std::sync::Arc::clone(&queue);
                 let results = std::sync::Arc::clone(&results);
-                scope.spawn(move || loop {
-                    let job = {
-                        let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
-                        q.pop()
-                    };
-                    let Some((ci, ki)) = job else { break };
-                    let record = self.evaluate_one(&candidates[ki], &cases[ci]);
-                    let slot = ci * n_candidates + ki;
-                    let mut r = results.lock().unwrap_or_else(|e| e.into_inner());
-                    r[slot] = Some(record);
+                scope.spawn(move || {
+                    loop {
+                        let job = {
+                            let mut q =
+                                queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            q.pop()
+                        };
+                        let Some((ci, ki)) = job else { break };
+                        let record = self.evaluate_one(&candidates[ki], &cases[ci]);
+                        let slot = ci * n_candidates + ki;
+                        let mut r =
+                            results.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        r[slot] = Some(record);
+                    }
                 });
             }
         });
 
         // Collect and unwrap: every slot must be filled.
         let mut out = Vec::with_capacity(total);
-        let mut r = results.lock().unwrap_or_else(|e| e.into_inner());
+        let mut r = results.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         for slot in r.iter_mut() {
             out.push(slot.take().expect("every (case, candidate) slot filled"));
         }
@@ -1185,7 +1187,7 @@ mod tests {
             isolation: Isolation::Thread,
             kinds: None,
             oracle_refill: false,
-        jobs: 1,
+            jobs: 1,
         });
 
         // Pretend a worker came back with its own (wrong) identity.
@@ -1227,7 +1229,7 @@ mod tests {
             isolation: Isolation::Thread,
             kinds: None,
             oracle_refill: false,
-        jobs: 1,
+            jobs: 1,
         });
 
         // Pretend a worker came back spelling the id its own way.
