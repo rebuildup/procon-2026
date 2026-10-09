@@ -532,6 +532,24 @@ sha256 再検証（`58d1a644`）のうえ再投入（本試合）。**cargo の 
 - 1位 優勝以外 120（差 −9）・9位 牛めし 110 → tier3 決着
 - revisions [9,23,38,54,69,83] 全日受理・1日1 POST・燃料給油サイクル作動（#1P 42→63・#2P 34→47→63・#3P 33→63 回復）・座礁 0 台
 
+## 公式スコア + 実測（match 1946 = **rank 5/10**・fleet 標準 config・32×32/10日/7台・UI `#1947 第2卓`）
+
+`fleet:budget=official:budget_ms=5000` @ `7de05df`。**32×32 / 10日 / 7台**（S,P×6 — 最大クラス）・daySteps [240,67,221,182,115,210,171,92,199,123]・燃料 cap344。UI `#1947 第2卓`（卓id ずれ）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | うどん | 22 | 220 | 943 | 395.4s |
+| 2–4 | 🤖ramen / admin / 🤖牛めしセット | 22 | 220 | 914–923 | 22.6–155.2s |
+| **5** | **ユ（当方）** | **22** | **220** | **887** | **54.6s** |
+| 6–10 | ヘキサンジオール / apikey… / admin is GOD / 優勝以外 / まうす | 22 | 213–219 | 749–963 | 68.3–459.2s |
+
+- **D=220/220 MAX**（1位と同点・上位 5 チームが MAX）→ **B で rank 5 確定**（1位差 −56 = 94%）
+- **回答 54.6s ÷ 10 ≈ 5.5s/日**（budget 5000 設定どおり・10日マッチ 2 度目の完走）
+- revisions [7,20,35,50,67,85,100,114,134,152] 全日受理・1日1 POST・error なし
+- 燃料 cap344: 給油サイクル全日作動（#1P 149→338、#2P 271→344→233→281 など）・**座礁 0 台・7/7 全日稼働**（moves 9–209/日）
+- **rate 497→552 (+55・累計 188→552 = +364)**
+- **同クラス比較**: 1810（coverage park=far・32×32/5日/7台）B=138/340 = **41%** → 本試合 **94%**。日数差（5→10日）はあるが、32×32/7台クラスでの fleet の B 改善は本セッション最大
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -740,7 +758,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **23 行**（1810 … 1942 / 1944、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **24 行**（1810 … 1944 / 1946、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -763,6 +781,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1938-fleet.log` | match 1938（fleet 標準・24×24/10日。除去済み） |
 | `run-1942-fleet.log` | match 1942（fleet・32×32/7台クラス初観測。除去済み） |
 | `run-1944-fleet.log` | match 1944（fleet 標準・16×16/6日 純 B 競争。除去済み） |
+| `run-1946-fleet.log` | match 1946（fleet・32×32/10日/7台 rank 5。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
