@@ -831,13 +831,27 @@ pub struct SolverContext<'a> {
     pub day: u32,
     pub day_steps: u32,
     pub agent_ids: Vec<u8>,
+    /// Wall-clock budget left for answering this day, in milliseconds.
+    ///
+    /// The live bridge fills this from the coordinator's answer window
+    /// (Q&A Q3: `daySeconds[day]`, measured against the server deadline);
+    /// [`Self::from_state`] has no clock, so it reports `u32::MAX` and a
+    /// time-capped search degenerates to its explicit `time_budget_ms`.
+    pub remaining_ms: u32,
 }
 
 impl<'a> SolverContext<'a> {
     #[must_use]
     pub fn from_state(state: &'a MatchState) -> Self {
         let agent_ids = state.setting.agent_ids();
-        Self { team: state.team(), state, day: state.day, day_steps: state.day_steps(), agent_ids }
+        Self {
+            team: state.team(),
+            state,
+            day: state.day,
+            day_steps: state.day_steps(),
+            agent_ids,
+            remaining_ms: u32::MAX,
+        }
     }
 }
 

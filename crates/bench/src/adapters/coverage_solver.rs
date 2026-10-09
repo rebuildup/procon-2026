@@ -32,10 +32,12 @@ impl CandidateFactory for CoverageFactory {
         if spec.param("budget") != Some("official") {
             return Err(CandidateError::Build("coverage requires budget=official".into()));
         }
-        Ok(Box::new(CoverageCandidate))
+        Ok(Box::new(CoverageCandidate { variant: 0 }))
     }
 }
-pub struct CoverageCandidate;
+pub struct CoverageCandidate {
+    pub(crate) variant: u64,
+}
 
 #[derive(Clone, Copy)]
 struct Route {
@@ -128,17 +130,9 @@ impl Solver for CoverageCandidate {
         "coverage"
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
-        let mut state = ctx.state.clone();
-        // Live bridge supplies fresh day stock. Offline day-start state still
-        // has yesterday's residual stock until the first MatchSim step.
-        for cell in state.setting.map.cells_mut() {
-            if let Some(spot) = &mut cell.spot {
-                spot.current_stock = spot.max_stock;
-            }
-        }
+        let mut state = fresh_day_state(ctx);
         let n = state.agents.len();
-        let patrols: Vec<_> =
-            (0..n).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
+        let patrols = patrol_order(&state, self.variant);
         let (pairs, assigned) = supply_pairs(&state, &patrols);
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
@@ -165,26 +159,31 @@ impl Solver for CoverageCandidate {
                     continue;
                 }
                 let paths = routes(map, agent, assigned.contains(&i));
-                let target =
-                    map.cells()
-                        .iter()
-                        .filter_map(|c| c.spot.as_ref())
-                        .filter(|s| {
-                            s.current_stock > 0
-                                && !agent_at_daily_pick_cap(agent, s.pos, &state.spot_picks_today)
-                        })
-                        .filter_map(|s| {
-                            let route = paths[index(map, s.pos)];
-                            (route.cost <= ctx.day_steps - used[i] && route.first.is_some())
-                                .then_some((
-                                    reserved.contains(&s.series),
-                                    route.cost,
-                                    s.series,
-                                    index(map, s.pos),
-                                    route.first,
-                                ))
-                        })
-                        .min_by_key(|x| (x.0, x.1, x.2, x.3));
+                let target = map
+                    .cells()
+                    .iter()
+                    .filter_map(|c| c.spot.as_ref())
+                    .filter(|s| {
+                        s.current_stock > 0
+                            && !agent_at_daily_pick_cap(agent, s.pos, &state.spot_picks_today)
+                    })
+                    .filter_map(|s| {
+                        let route = paths[index(map, s.pos)];
+                        (route.cost <= ctx.day_steps - used[i] && route.first.is_some()).then_some(
+                            (
+                                reserved.contains(&s.series),
+                                route.cost,
+                                s.series,
+                                index(map, s.pos),
+                                route.first,
+                            ),
+                        )
+                    })
+                    .min_by_key(|x| {
+                        let jitter =
+                            if self.variant == 0 { 0 } else { mix(self.variant ^ x.3 as u64) % 8 };
+                        (x.0, u64::from(x.1) * (8 + jitter), x.2, x.3)
+                    });
                 if let Some((_, _, series, _, first)) = target {
                     reserved.insert(series);
                     actions[i] = legal_step(agent, first, map, ctx.day_steps - used[i]);
@@ -226,6 +225,34 @@ impl Solver for CoverageCandidate {
             output.extend(actions.iter().copied());
             sim.step(&mut state, &AgentActions::new(actions));
         }
-        AgentActions::new(output)
+        super::walk::BudgetMode::Official.apply(ctx, AgentActions::new(output))
     }
+}
+
+pub(crate) fn mix(mut x: u64) -> u64 {
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
+}
+
+fn patrol_order(state: &engine::model::MatchState, variant: u64) -> Vec<usize> {
+    let mut patrols: Vec<_> =
+        (0..state.agents.len()).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
+    if !patrols.is_empty() {
+        let rotation = usize::try_from(variant % patrols.len() as u64).expect("bounded rotation");
+        patrols.rotate_left(rotation);
+    }
+    patrols
+}
+
+fn fresh_day_state(ctx: &SolverContext<'_>) -> engine::model::MatchState {
+    let mut state = ctx.state.clone();
+    // Live bridge supplies fresh day stock. Offline day-start state still
+    // has yesterday's residual stock until the first MatchSim step.
+    for cell in state.setting.map.cells_mut() {
+        if let Some(spot) = &mut cell.spot {
+            spot.current_stock = spot.max_stock;
+        }
+    }
+    state
 }
