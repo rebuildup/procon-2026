@@ -1,0 +1,208 @@
+# Arena 2026-10-09 10:30/10:45 — 5+台 coverage 2連続完走 と回答時間の検証
+
+外部アリーナ（`https://procon37arena.online`）への external 専任セッション初回投入。
+統合 SHA `60ed527` の `coverage:budget=official:park=far` で **5+ エージェントの試合を
+2 連続 completed**（match 1810: 7台 / match 1811: 5台）。優先課題「5台以上の plan
+rejection」（#317 / #331）の仮説——**過去の拒否は tick 修正 `8728ed5`（PR #324）未統合の
+SHA で起きていた**——を支持する結果。加えて match 1810 の**回答時間累積 3.6s** について
+公式 UI 値・ログ推定値・コード経路の三方照合を行った（下記「回答時間の検証」）。
+
+- source（両試合共通）: `60ed527db5cdfbd706cc3d816e88ff43c3295a44`（`8728ed5` + `2c5800d` + `6ff04c1` + `e37c5b0` を含む origin/333 tip）
+- 実行: 外部アリーナ専任セッション（single-operator。投入依頼・SHA 変更は #317 に記録）
+- 台帳: #326。関連: #317（選抜）、PR #332（候補本体）、#311（親）
+
+## 試合結果（§5 形式）
+
+| 項目 | match **1810** | match **1811** |
+|---|---|---|
+| 窓 / 実行日時 | 2026-10-09 10:30 JST（登録 10:27:10、記録 10:36:05） | 2026-10-09 10:45 JST（登録 10:42:10、記録 10:51:35） |
+| Candidate / SHA | `coverage:budget=official:park=far` / `60ed527` | 同一 |
+| agent kinds / 台数 | P,S,P,S,P,S,P / **7 台**（4P+3S） | P,S,P,S,P / **5 台**（3P+2S） |
+| 判定 | **completed 5/5** | **completed 6/6** |
+| 全日の revision | **[3, 23, 58, 93, 127]** | **[1, 20, 34, 51, 69, 82]** |
+| daySteps | [72, 75, 95, 78, 93]（daySeconds 全日 60） | [66, 133, 64, 102, 64, 167] |
+| 盤 / 日数（UI） | 32×32 / 5 日 / 7 台 | 32×32 / 6 日 / 5 台（UI 表示） |
+| 公式順位・4軸 | **10 位/10**: V=27, D累積=116, B=138, 回答累積 **3.6s** | 結果表公開待ち（終了直後） |
+| 燃料 | 初期 145。**agent#6（Patrol）のみ 145→90→13→0** で day3 枯渇（day3-4 全待機）。他 6 台は全日 145 | evidence 参照 |
+| error / 不正行動 | null / ログに reject・invalid シグナルなし | 同一 |
+| evidence | `runs.jsonl`（2 行）/ `run-1030.log` / `run-1045.log`（RUST_LOG=debug、token 検出 0 件） | 同一 |
+
+## 公式スコア（arena Web UI、match 1810）
+
+32×32 / 5日 / 7台。順位は (1) 種類数 → (2) 日別種類累積 → (3) 玉数 → (4) 回答時間累積
+の辞書順。
+
+| 順位 | チーム | 種類数 | 種類数累積 | 玉数 | 回答時間累積 |
+|---:|---|---:|---:|---:|---:|
+| 1 | 信州そば | 27 | 135 | 340 | 127.5s |
+| 2 | チーム-ae2f | 27 | 135 | 338 | 158.5s |
+| 3 | 優勝以外に価値はありますか? | 27 | 135 | 337 | 189.7s |
+| 4 | 0f0 | 27 | 135 | 335 | 89.2s |
+| 5 | ありがとう抹茶スーパーカップ | 27 | 135 | 332 | 225.9s |
+| 6 | うどん | 27 | 135 | 329 | 183.5s |
+| 7 | 2x | 27 | 135 | 329 | 209.3s *（回答時間で決着） |
+| 8 | 🤖 SOBA | 27 | 135 | 319 | 15.4s |
+| 9 | samaset | 27 | 135 | 259 | 142.9s |
+| **10** | **ユ（当方）** | **27** | **116** | **138** | **3.6s** |
+
+読み取り:
+
+- **順位は第 2 軸（D 累積 116 vs 135）で確定**。第 4 軸（回答時間）は不使用 —
+  3.6s の計測値は順位に寄与していない（＝速いことが損ではない、逆に 4 軸は最大級の強み）。
+- 第 1 軸は全 10 チーム 27 で同点。第 3 軸 B=138 は 1 位の 340 の 41%。
+- 上位 9 チームは全員 D=135（27×5 の MAX）— **32×32・27 系列で 27/日を毎日取り切れて
+  いないことが主原因**（#331 の match 1762 分析 D=51/189 からは大幅改善だが MAX 未達）。
+
+## 回答時間の検証（追加指示への回答）
+
+### 結論
+
+**不一致なし。公式累積 3.6s はログとコード経路で完全に説明できる。**
+60 秒間隔の提出は**計算時間ではなく `endsAt` まで sleep している**ためで、
+1 日あたりの実計算は **34〜50 ms**（5 日合計 ≈ 0.2 s）。
+
+### 三方照合
+
+| 出典 | 値 |
+|---|---|
+| **公式 UI（arena results、match 1810）** | **回答時間の累積 = 3.6s**（5 日分） |
+| **ログ推定（`run-1030.log`、wall UTC）** | day0 ≈ 2.6–3.0s + day1-4 各 0.15–0.25s ≈ **合計 3.4–4.0s** |
+| 判定 | 公式値 3.6s は推定レンジ内 → **整合** |
+
+### 時系列（match 1810、すべて UTC / tracing の wall clock）
+
+| 事象 | day0 | day1 | day2 | day3 | day4 |
+|---|---|---|---|---|---|
+| GET /（day 状態）完了 | 01:32:05.472 | 01:33:05.673 | 01:34:05.826 | 01:35:06.018 | 01:36:05.211 |
+| ソルバ decide 完了（`plan generated`） | 01:32:05.510 | 01:33:05.714 | 01:34:05.876 | 01:35:06.052 | 01:36:05.251 |
+| decide 所要 | **38 ms** | **41 ms** | **50 ms** | **34 ms** | **39 ms** |
+| POST / 送信 → 応答完了 | 01:32:05.510 → .560（**50 ms**） | .714 → .763（**49 ms**） | .876 → .956（**80 ms**） | .052 → .109（**57 ms**） | .251 → .301（**50 ms**） |
+| 睡眠（前日応答後 → 次 GET） | —（開始待ち、下記） | **60.003 s** | 60.002 s | 60.003 s | 60.002 s |
+
+day0 の開始待ち（計測時間を構成しないが 3.6s の大半の寄与）:
+
+- 01:30:01.786 `POST /agent` 受理 → 01:30:01.877 より **`starts_at` が positive になるまで
+  GET / を ~2 秒間隔で poll（57 回）** → 01:31:59.28 時点でまだ 0。
+- **`starts_at` は 01:31:59.28–01:32:01.38 に positive へ** → 以後 0.5 秒間隔の day 状態 poll
+  （01:32:01.44 … 01:32:05.47 の 8 回）→ 01:32:05.47 で day0 状態取得 → decide 38 ms →
+  01:32:05.56 受理。
+- **day0 の公式計測 ≈ 2.6–3.0s**（窓開始の推定 01:32:02.5–01:32:03 から受理 01:32:05.56 まで）
+  — 内訳は **day 状態 poll の待ち**であって、計算ではない。
+
+### コード経路の確認（追加指示 §2）
+
+- `crates/cli/src/coordinator_loop.rs:934-936` — 提出受理後に
+  `let diff = state.ends_at - now; sleep(from_secs(diff))` で **`endsAt` まで sleep**。
+  60 秒間隔の提出はこの sleep の結果であり、60 秒計算しているわけではない（**確認できた**）。
+- `coordinator_loop.rs:1102-1104` `solver_budget_ms` — `endsAt`(秒)×1000 − now − 5000 ms の
+  **残り時間**を time-budget 付き solver（`search` 等）に渡す。coverage は決定的貪欲で
+  これを使わず 40 ms 台で返す。
+- **`endsAt` は i64 の unix 秒**（wire テスト JSON `"endsAt":100`、`×1000` で ms 化）。
+  **秒精度しかないため、ミリ秒以下の公式計測時間を wire から復元することはできない**。
+  UI の 3.6s はサーバ側時計の値であり、私側ログでの再分解は上記レンジ까が限界。
+- 比較対象の混同禁止: **`RunRecord.response_time_us`（offline の decide() 積算＝第 4 軸の
+  近似）とも、プロセス全体 elapsed（244 秒 wall、ほぼ sleep）とも別物**。
+- 時計の注記: tracing タイムスタンプは **wall UTC**（単調時計ではない）。サーバと本体の
+  時計歪みは未測定（上記の一致から小さいと推定）。
+
+### 採点への影響（追加指示 §4）
+
+- **累積 3.6s は正常**（bot 15.4s、他 89–226s の分布に対し最速）。問題としては扱わない。
+- 第 4 軸は同点決着時のみ使用 — **1810 の順位は第 2 軸で確定したため、速い回答が
+  第 1〜3 軸を悪化させたという証拠は無い**（むしろ 4 軸は無償の強み）。
+- 渡す仮説（比較計測担当 → #312）: 32×32 の D 欠落（116/135）と B 差（138/340）は
+  **アルゴリズム構造の問題**であり時間予算の問題ではない、ただし `search`（20s/日）が
+  「時間で玉数を買う」反実仮想として対置可能 — 比較計測で分離検証されたい。
+
+## 検証仮説と結果（優先事項 2）
+
+**仮説**: 過去の coverage 5+ 台拒否（1760 / 1796 / 1798 / 1800）は、公式 tick 補給修正
+`8728ed5`（PR #324）が統合**以前**の SHA で実行されたためであり、修正統合済み SHA では
+5+ 台でも revision=-1 が再現しない。
+
+**根拠（投入前の ancestry 検証）**: `8728ed5` の commit は 2026-10-09 06:52 JST、
+PR #324 merge（`3549886`）は 09:48 JST。`git merge-base --is-ancestor` で `8728ed5` は
+`6ff04c1`（01:55）・`2c5800d`（08:42）の祖先に**ならない** — 過去の coverage 拒否試合は
+**誰も tick 修正を含んでいない**。
+
+| match | 時刻 (JST) | SHA | 台数 | tick修正 `8728ed5` | 結果 |
+|---|---|---|---|---|---|
+| 1760 | 10/09 03:30 | `6ff04c1` | 7 | ✗ | rejected day=0 |
+| 1796 | 10/09 08:30 | `6ff04c1` | 5 | ✗ | rejected day=3 |
+| 1798 | 10/09 08:45 | `2c5800d` | 7 | ✗ | rejected day=1（重複投入で contaminated、下記） |
+| 1800 | 10/09 09:00 | `2c5800d` | ? | ✗ | rejected day=8 |
+| **1810** | **10/09 10:30** | **`60ed527`** | **7** | **✓** | **completed 5/5** |
+| **1811** | **10/09 10:45** | **`60ed527`** | **5** | **✓** | **completed 6/6** |
+
+**結果: 仮説を支持（5+ 台 2 連続完走）**。`2c5800d` 単独の 1798/1800 は拒否されており
+差分は `8728ed5`。ただし同一 SHA での 2 件であり、マップ・台数は試合ごとに異なるため
+因果の完全証明ではない — 継続投入で再現性を確認する。
+
+## 投入前の分析（気づきの記録）
+
+1. **過去の全 coverage 拒否は修正以前の SHA**（上表の通り）。修正統合後の coverage
+   投入は 1810 が初回。
+2. **重複投入の実例 — match 1798**: 08:45 窓に release030 worktree（search @`71724bf`）と
+   campaign-331（coverage @`2c5800d`）の 2 セッションが同一 team token で同時投入し、
+   両 evidence が同一 match_id 1798 / 同一 window を記録。当該 window の両拒否記録は
+   contaminated として扱う。以後は本セッションが外部アリーナを single-operator で専有。
+3. **wire_plan の tick 修正が 2 系統に分岐**: `8728ed5`（release-0-4-0 / PR #324 系）と
+   `5de53d9`（branch 315 系）は `wire_plan.rs` の結果内容が異なる（233+/169−）。
+   search @`5de53d9` は 5 台 completed 実績（1787）。両系統の調和は開発側の判断事項。
+4. **#326 台帳 rows 9-10 の時刻ずれ**: 台帳の 07:30/07:45 に対し evidence の
+   window_unix は 08:30/08:45 JST（rows 1-8 は一致）。
+5. **PR #332 head `9183d81` はコンパイル不能**: merge commit（parents `e37c5b0` +
+   `3549886`）で `search_solver.rs` の `CoverageCandidate { variant: 0 }` 初期化が
+   `park_risk` フィールドに未追従（E0063 ×3）。投入 SHA を origin/331 tip から
+   origin/333 tip `60ed527`（同一統合内容・初期化一貫）へ変更（#317 / PR #332 に記録）。
+6. **`just` が mise shim 未設定で動作しない**: `mise ERROR No version is set for shim:
+   just`。arena.md の等価直接起動（`cargo run … coordinator --arena --next`）で代替。
+
+## 試合内の観察（開発へのフィードバック）
+
+- **燃料枯渇（独立課題として起票）**: match 1810 の agent#6（Patrol）のみ
+  145→90→13→0（day3 枯渇、day3-4 全日待機）。day2 に moves 8 / waits 84 へ低下。
+  3 Supply でも 7 台中 1 台が給油圏外にいる構造。4 Patrol 構成の玉数天井
+  （#311 checkpoint）とは別軸の損失。
+- **day cadence**: 2 日目以降は `endsAt` sleep で 60 秒ぴったり（上記時系列）。
+- **登録**: lobby open 直後 1 発目 `no match is scheduled right now`、2 発目（+10s）で
+  `lobby: you are registered …` — arena.md の成功パターンどおり。登録後 poll 停止を確認。
+- **`starts_at` flip まで ~2 分**: departure（01:30:01）→ positive（01:32:00 頃）。
+  day0 の公式計測のほぼ全量がこの区間の後半 + day 状態 poll に使われる。
+
+## 再現手順
+
+```bash
+# 隔離 worktree で pinned SHA をビルド（just は mise 未設定のため直接起動）
+git worktree add --detach .worktrees/arena-60ed527 60ed527
+cp .infisical.json .worktrees/arena-60ed527/   # token は Infisical runtime 注入のみ
+cd .worktrees/arena-60ed527
+CARGO_TARGET_DIR=<shared>/target cargo build --release --locked --bin procon
+
+# 次の cadence window まで待って 1 試合のみ（token を引数にしない）
+PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
+  infisical run --env=dev -- cargo run --release --locked --bin procon -- \
+    coordinator --arena --next --candidate 'coverage:budget=official:park=far'
+```
+
+- 衝突確認: 投入前に coordinator プロセスを `ps` で確認し、#317 に予約コメントを残す。
+- evidence: `target/arena/runs.jsonl`（本ディレクトリにコピー済み、2 行）。
+- 試合中の heavy eval は実行しない（#326 運用規律）。
+
+## ファイル
+
+| ファイル | 内容 |
+|---|---|
+| `runs.jsonl` | evidence 2 行（`record_kind: "arena-run"`、schema は arena.md） |
+| `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
+| `run-1045.log` | match 1811 の同上（token 検出 0 件） |
+| `source-sha.txt` | `60ed527db5cdfbd706cc3d816e88ff43c3295a44` |
+
+## 未了
+
+- [ ] match 1811 の公式結果（順位・4 軸）— UI の結果表公開待ち → #326 台帳へ
+- [ ] 日別の公式回答時間 — UI は**累積のみ**公開（日別は無い）。wire `endsAt` は秒精度のため復元不可（上記）
+- [ ] 計測ログ強化（decide ms / HTTP RTT / 受理時刻 / server deadline、単調時計+UTC）→ Issue 起票済み
+- [ ] Patrol 燃料枯渇（1810 agent#6）→ 独立課題として Issue 起票済み
+- [ ] 仮説の再現性確認（次窗以降の 5+ 台投入）
+- [ ] `9183d81` の build 修正（PR #332）、`8728ed5` / `5de53d9` の調和（開発側）
