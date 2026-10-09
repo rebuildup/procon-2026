@@ -581,7 +581,11 @@ impl World {
                 })
                 .collect();
             let (d, b) = self.greedy(&starts, tomorrow, None);
-            score += (d * W_SERIES + b * W_BALL) * TOMORROW_NUM / TOMORROW_DEN;
+            // Tomorrow's series are worth nearly as much as today's; its
+            // balls are not counted (the greedy estimate is too coarse and
+            // trading today's sure balls for it measured worse).
+            let _ = b;
+            score += d * W_SERIES * TOMORROW_NUM / TOMORROW_DEN;
             for (p, start) in starts.iter().enumerate() {
                 let full = i64::from(self.patrols[p].cap.min(tomorrow));
                 let have = if start.escorted { full } else { i64::from(start.fuel).min(full) };
