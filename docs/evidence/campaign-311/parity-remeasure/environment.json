@@ -1,0 +1,46 @@
+{
+  "source_sha": "59a550248c6be57ef95fc6f68793bd5141f00cef",
+  "source_note": "origin/342-parity @ 59a5502 (PR #355, bench: rank whole-response rejections as invalid). Branch 342-remeasure worktree HEAD is this exact commit; every record in runs.jsonl carries source_commit_sha = this value.",
+  "harness": "procon-eval (crates/bench/src/bin/procon-eval.rs), invoked directly — NOT via scripts/campaign/baseline.py (that script pins the #312 multiloop corpus and writes TMPDIR under .runtime/, which this task forbids). response_time_policy adopted from baseline.py release wording.",
+  "profile": "release (cargo +stable build --offline --locked -p bench --bin procon-eval --release, CARGO_INCREMENTAL=0)",
+  "response_time_policy": "Measured daily solver time under the release profile; this is the competition-representative response_time axis. jobs=1 (sequential) — parallelism would make axis-4 unreliable.",
+  "response_time_units": "runs.jsonl response_time_us / daily_response_us / elapsed_us are MICROSECONDS (us). aggregate.json score tuple field total_response_time_ms is MILLISECONDS = floor(response_time_us / 1000) and is the axis-4 ranking value. Cross-checked per record: 1715150 us -> 1715 ms, 112424 -> 112, 98936 -> 98, 8906 -> 8, 299360 -> 299, 16377 -> 16, 143 -> 0. No 100x unit slip.",
+  "kinds": "P,S,P,S,P",
+  "candidates": [
+    "coverage:budget=official:park=none",
+    "coverage:budget=official:park=far",
+    "search:trials=16:seed=42:budget=official"
+  ],
+  "baseline": "coverage:budget=official:park=none",
+  "cases": [
+    "fixture:701 (crates/bench/tests/fixtures/arena-701.json, VERIFIED map 24x24, 10 days, daySteps [146,183,76,180,135,144,59,136,53,120], 24 spots, 5 agents)",
+    "fixture:medium-16x16 (VERIFIED map 16x16, 1 day, 4 agents)",
+    "fixture:large-32x32 (VERIFIED map 32x32, 1 day, 8 agents)",
+    "fixture:small-8x8 (VERIFIED map 8x8, 1 day, 3 agents)"
+  ],
+  "size_labels_note": "The v2 generator only has size classes 8 / 16 / 32 (crates/bench/src/generator.rs: MapSize::MIN=8, medium=16, MapSize::MAX=32); a 24x24 case cannot be generated. The only 24x24 case in the corpus is fixture:701, whose raw JSON map width=height=24 was verified directly. This resolves the past 'mislabeled 24x24' review finding: any other case labeled 24x24 in prior evidence was in fact 8/16/32.",
+  "lookahead_variant_status": "The #344 lookahead candidate (origin/343 evidence: search:trials=4:seed=42:budget=official:park=far:lookahead=next) is NOT buildable at 59a5502: the parity-branch search factory params are trials/seed/time_budget_ms/budget only — park and lookahead were removed by the search rework on this branch (registry rejects: algorithm \"search\" does not take parameter \"park\"; see lookahead-unbuildable.txt). Recorded as a fact, not fixed, per task contract. Its before numbers are cited from origin/343 evidence only.",
+  "any_fuelaware_status": "No any/fuelaware algorithm exists in CandidateRegistry::builtin() at 59a5502 (registered: wait, loop, multiloop, greedy, nearest, astar, coverage, search). Recorded as a fact, not fixed.",
+  "command": [
+    "PROCON_SOURCE_COMMIT_SHA=59a550248c6be57ef95fc6f68793bd5141f00cef",
+    "./target/release/procon-eval",
+    "--cases", "small-8x8,medium-16x16,large-32x32",
+    "--case-files", "crates/bench/tests/fixtures/arena-701.json",
+    "--kinds", "P,S,P,S,P",
+    "--candidates", "coverage:budget=official:park=none,coverage:budget=official:park=far,search:trials=16:seed=42:budget=official",
+    "--baseline", "coverage:budget=official:park=none",
+    "--output-dir", "docs/evidence/campaign-311/parity-remeasure",
+    "--quiet"
+  ],
+  "build": ["cargo", "+stable", "build", "--offline", "--locked", "-p", "bench", "--bin", "procon-eval", "--release"],
+  "platform": "macOS 27.0.1 arm64 (Darwin)",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "oracle_refill": false,
+  "load_gate": "uptime checked before the run: load average 2.14 (threshold ~8) — within budget.",
+  "before_evidence_citations": {
+    "coverage_pair_before": "docs/evidence/campaign-311/coverage-park-remeasure/ on origin/342-parity — source-sha 18253a4f8ba80571927d06f47a23c51550ef644b (coverage tree byte-identical to 8f4cc89), kinds P,S,P,S,P, release profile. 701: park=none 20/194/377, park=far 20/198/358; small-8x8 2/2/7 both; medium-16x16 4/4/9 both; large-32x32 4/4/14 both.",
+    "search_before": "docs/evidence/campaign-311/search-first/ on origin/340 — source_commit_sha a6dfe64705e85890a4d55e033ce3431ddce31f3d (pre-parity engine), 701 runs kinds P,S,P,S,P. trials=16: 701 20/195/386 (resp 2583127 us), medium-16x16 4/4/11 (14713 us), large-32x32 4/4/17 (262443 us), small-8x8 2/2/7 (1847 us). Profile not recorded in that evidence (no environment.json there).",
+    "lookahead_before": "docs/evidence/campaign-311/coverage-lookahead-343/confirmation/ on origin/343 — source_commit_sha 081aa070364489011328dbade65e94bb2d27c0e7. lookahead=next on 701: trials=4 20/198/367, trials=8 20/198/370; medium-16x16 4/4/11; large-32x32 4/4/19; small-8x8 2/2/7. Not re-measurable at 59a5502 (params removed)."
+  },
+  "provisional_caveat": "Pre-parity numbers were MatchSim-provisional (pre-e59c213 engine simulates official rules loosely). Post-parity numbers are post-parity MatchSim numbers and still internal-evaluator results: official-server acceptance does not equal evaluator correctness (no official server binary on this machine; see coverage-park-remeasure README)."
+}

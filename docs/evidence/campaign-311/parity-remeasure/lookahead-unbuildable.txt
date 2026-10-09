@@ -1,0 +1,35 @@
+Lookahead candidate (#344, origin/343) is not buildable at 59a5502 — recorded as a fact, not fixed.
+
+Attempted ID (exact form documented in docs/evidence/campaign-311/coverage-lookahead-343/ on origin/343, source 081aa07):
+
+  search:trials=4:seed=42:budget=official:park=far:lookahead=next
+
+Command:
+
+  ./target/release/procon-eval --cases small-8x8 \
+    --candidates 'search:trials=4:seed=42:budget=official:park=far:lookahead=next' \
+    --output-dir /tmp/lookahead-attempt
+
+Result (stderr):
+
+  error: bad candidate id "search:trials=4:seed=42:budget=official:park=far:lookahead=next": algorithm "search" does not take parameter "park"
+
+Cause: at 59a5502 the parity-branch search factory (crates/bench/src/adapters/search_solver.rs)
+declares PARAMS = trials, seed, time_budget_ms, budget only. The park and lookahead
+parameters that existed in the origin/343 version of the same file are gone — the
+search rework on 342-parity rebuilt the candidate as "bounded seeded daily
+reconstruction with canonical action replay" without them. Per the task contract
+this is recorded, not fixed.
+
+`procon-eval --list-candidates` catalog excerpt at 59a5502 (confirms the schema):
+
+  search
+      Bounded seeded daily reconstruction with canonical action replay
+      :trials=…  (optional) 1..1048576 deterministic reconstructions (default 8)
+      :seed=…  (optional) reconstruction seed (default 42)
+      :time_budget_ms=…  (optional) wall-clock cap per day plan ...
+      :budget=…  (required) official (required)
+
+Related fact: no `any` / `fuelaware` algorithm exists in CandidateRegistry::builtin()
+at 59a5502. Registered algorithms: wait, loop, multiloop, greedy, nearest, astar,
+coverage, search.
