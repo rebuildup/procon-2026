@@ -1,11 +1,12 @@
-//! Daily coverage first, followed by marginal harvest or risk repositioning,
-//! with joint fuel replay. Planning uses the same engine rules as evaluation
-//! and live `CandidateBridge`.
+//! Daily coverage first, followed by marginal harvest, with joint fuel replay.
+//! Planning uses the same engine rules as evaluation and live `CandidateBridge`.
 //!
-//! `park=none` (default) harvests the nearest reserved spot after coverage.
-//! `park=risk` instead drives end-of-day movement toward series that would be
-//! out of reach for the next (shorter) day, so the following day starts close
-//! to them (Issue #331).
+//! `park=none` (default) harvests the nearest reserved spot after coverage and
+//! is byte-identical to the pre-#331 candidate. `park=far` keeps a day-scoped
+//! claim set across steps and deprioritizes already-claimed series, so patrols
+//! spread across unclaimed series instead of converging (Issue #331). The
+//! spreading window opens only on medium+ days (today and tomorrow both >= 70
+//! steps) whose map edge reaches 24.
 use std::cmp::Reverse;
 use std::collections::{BTreeSet, BinaryHeap};
 
@@ -23,7 +24,7 @@ fn step_cost(terrain: Terrain) -> u32 {
 pub struct CoverageFactory;
 const PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "budget", required: true, doc: "official (required)" },
-    ParamSpec { key: "park", required: false, doc: "none (default) | risk" },
+    ParamSpec { key: "park", required: false, doc: "none (default) | far" },
 ];
 impl CandidateFactory for CoverageFactory {
     fn algorithm(&self) -> &'static str {
@@ -42,16 +43,21 @@ impl CandidateFactory for CoverageFactory {
         }
         let park_risk = match spec.param("park") {
             None | Some("none") => false,
-            Some("risk" | "far") => true,
+            Some("far" | "risk") => true,
             Some(other) => {
                 return Err(CandidateError::Build(format!("unknown park mode {other:?}")));
             }
         };
-        Ok(Box::new(CoverageCandidate { park_risk }))
+        Ok(Box::new(CoverageCandidate { park_risk, variant: 0 }))
     }
 }
 pub struct CoverageCandidate {
-    park_risk: bool,
+    /// `park=far` / `park=risk` spreading mode (Issue #331); `park=none`
+    /// keeps the pre-#331 target order byte-identical.
+    pub(crate) park_risk: bool,
+    /// Search-solver trial seed: rotates patrol order and jitters the
+    /// coverage cost key when non-zero (release-side #312/#313 tooling).
+    pub(crate) variant: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -144,13 +150,16 @@ fn supply_pairs(
 /// One patrol step: harvest in place, walk to a coverage target, or walk to
 /// the nearest harvest target. `spread_window` enables park-mode spreading
 /// across unclaimed series (Issue #331); the caller decides when that window
-/// is open. Updates `reserved` / `day_claimed` with the chosen series.
+/// is open. `variant` jitters the coverage cost key for search-solver trials
+/// (#312/#313); it is 0 for every registered `coverage` candidate. Updates
+/// `reserved` / `day_claimed` with the chosen series.
 fn patrol_step(
     state: &engine::model::MatchState,
     agent: &Agent,
     paths: &[Route],
     remaining: u32,
     spread_window: bool,
+    variant: u64,
     day_claimed: &mut BTreeSet<u32>,
     reserved: &mut BTreeSet<u32>,
 ) -> Action {
@@ -186,7 +195,10 @@ fn patrol_step(
                 route.first,
             ))
         })
-        .min_by_key(|x| (x.0, x.1, x.2, x.3, x.4));
+        .min_by_key(|x| {
+            let jitter = if variant == 0 { 0 } else { mix(variant ^ x.4 as u64) % 8 };
+            (x.0, x.1, u64::from(x.2) * (8 + jitter), x.3, x.4)
+        });
     if let Some((_, _, _, series, _, first)) = target {
         reserved.insert(series);
         day_claimed.insert(series);
@@ -200,17 +212,9 @@ impl Solver for CoverageCandidate {
         "coverage"
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
-        let mut state = ctx.state.clone();
-        // Live bridge supplies fresh day stock. Offline day-start state still
-        // has yesterday's residual stock until the first MatchSim step.
-        for cell in state.setting.map.cells_mut() {
-            if let Some(spot) = &mut cell.spot {
-                spot.current_stock = spot.max_stock;
-            }
-        }
+        let mut state = fresh_day_state(ctx);
         let n = state.agents.len();
-        let patrols: Vec<_> =
-            (0..n).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
+        let patrols = patrol_order(&state, self.variant);
         let (pairs, assigned) = supply_pairs(&state, &patrols);
         let tomorrow_budget = {
             let tomorrow = ctx.day.saturating_add(1);
@@ -256,6 +260,7 @@ impl Solver for CoverageCandidate {
                     paths,
                     ctx.day_steps - used[i],
                     spread_window,
+                    self.variant,
                     &mut day_claimed,
                     &mut reserved,
                 );
@@ -298,8 +303,39 @@ impl Solver for CoverageCandidate {
         }
         // Apply official budget truncation so the plan is always within the
         // terrain-weighted day budget. Without this the server rejects the
-        // plan with `revision = -1` (Issue #331 live match 1796).
+        // plan with `revision = -1` (Issue #331 live match 1796). This is the
+        // single normalization path: `BudgetMode::Official` re-runs
+        // `engine::wire_plan::normalize_day_plan`, the same rule the wire
+        // applies (#255 / #324), so decide() output is a fixed point of it.
         let plan = AgentActions::new(output);
         crate::adapters::walk::BudgetMode::Official.apply(ctx, plan)
     }
+}
+
+pub(crate) fn mix(mut x: u64) -> u64 {
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
+}
+
+fn patrol_order(state: &engine::model::MatchState, variant: u64) -> Vec<usize> {
+    let mut patrols: Vec<_> =
+        (0..state.agents.len()).filter(|&i| state.agents[i].kind == AgentKind::Patrol).collect();
+    if !patrols.is_empty() {
+        let rotation = usize::try_from(variant % patrols.len() as u64).expect("bounded rotation");
+        patrols.rotate_left(rotation);
+    }
+    patrols
+}
+
+fn fresh_day_state(ctx: &SolverContext<'_>) -> engine::model::MatchState {
+    let mut state = ctx.state.clone();
+    // Live bridge supplies fresh day stock. Offline day-start state still
+    // has yesterday's residual stock until the first MatchSim step.
+    for cell in state.setting.map.cells_mut() {
+        if let Some(spot) = &mut cell.spot {
+            spot.current_stock = spot.max_stock;
+        }
+    }
+    state
 }
