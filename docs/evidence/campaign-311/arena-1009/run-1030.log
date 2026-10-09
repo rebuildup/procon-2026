@@ -1,5 +1,3 @@
-A new release of infisical is available: 0.43.139 -> 0.43.140
-Using profile 'rebuild.up.up@gmail.com--rebuildup-v0f-v' (org rebuildup) via directory scope /Users/rebui/work/procon-2026
 [90m2026-10-09T10:24:31+09:00[0m [32mINF[0m Injecting 1 Infisical secrets into your application process
 warning: unused import: `MapGrid`
  --> crates/bench/src/adapters/tour_solver.rs:9:40
@@ -11,7 +9,7 @@ warning: unused import: `MapGrid`
 
 warning: `bench` (lib) generated 1 warning (run `cargo fix --lib -p bench` to apply 1 suggestion)
     Finished `release` profile [optimized] target(s) in 0.21s
-     Running `/Users/rebui/work/procon-2026/target/release/procon coordinator --arena --next --candidate 'coverage:budget=official:park=far'`
+     Running `procon coordinator --arena --next --candidate 'coverage:budget=official:park=far'`
 [2m2026-10-09T01:24:32.176967Z[0m [32m INFO[0m agent kind composition selected [3mkinds[0m[2m=[0mP,S
 [2m2026-10-09T01:24:32.177494Z[0m [32m INFO[0m offline candidate selected for the live run [3mcandidate[0m[2m=[0mcoverage:budget=official:park=far
 [2m2026-10-09T01:24:32.177520Z[0m [32m INFO[0m coordinator loop strategy selected [3msolver[0m[2m=[0m"candidate"
