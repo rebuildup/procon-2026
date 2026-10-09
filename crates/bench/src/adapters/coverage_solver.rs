@@ -25,6 +25,7 @@ pub struct CoverageFactory;
 const PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "budget", required: true, doc: "official (required)" },
     ParamSpec { key: "park", required: false, doc: "none (default) | far" },
+    ParamSpec { key: "fuelaware", required: false, doc: "false (default) | true" },
 ];
 impl CandidateFactory for CoverageFactory {
     fn algorithm(&self) -> &'static str {
@@ -48,10 +49,13 @@ impl CandidateFactory for CoverageFactory {
                 return Err(CandidateError::Build(format!("unknown park mode {other:?}")));
             }
         };
-        Ok(Box::new(CoverageCandidate { park_risk, variant: 0 }))
+        let fuel_aware = spec.param("fuelaware") == Some("true");
+        Ok(Box::new(CoverageCandidate { park_risk, variant: 0, fuel_aware }))
     }
 }
 pub struct CoverageCandidate {
+    /// Use fuel-aware supply pairing (Issue #342).
+    pub fuel_aware: bool,
     /// `park=far` / `park=risk` spreading mode (Issue #331); `park=none`
     /// keeps the pre-#331 target order byte-identical.
     pub(crate) park_risk: bool,
@@ -147,6 +151,46 @@ fn supply_pairs(
     (pairs, assigned)
 }
 
+/// Fuel-aware supply pairing (Issue #342).
+/// Assigns supplies to fuel-needy patrols first, then by proximity.
+/// This prevents the #339 scenario where one patrol runs out of fuel
+/// while supplies are nearby but assigned to other patrols.
+fn supply_pairs_fuel_aware(
+    state: &engine::model::MatchState,
+    patrols: &[usize],
+) -> (Vec<Option<usize>>, BTreeSet<usize>) {
+    let n = state.agents.len();
+    let mut pairs = vec![None; n];
+    let mut assigned = BTreeSet::new();
+    
+    // Sort patrols by fuel (lowest first = most needy).
+    let mut patrol_order: Vec<usize> = patrols.to_vec();
+    patrol_order.sort_by_key(|&p| (state.agents[p].fuel, p));
+    
+    // Assign supplies to neediest patrols first.
+    let mut supply_indices: Vec<usize> = (0..n)
+        .filter(|&i| state.agents[i].kind == AgentKind::Supply)
+        .collect();
+    
+    for &p in &patrol_order {
+        if supply_indices.is_empty() {
+            break;
+        }
+        let paths = routes(&state.setting.map, &state.agents[p], true);
+        let best = supply_indices
+            .iter()
+            .enumerate()
+            .min_by_key(|&(_, &s)| (paths[index(&state.setting.map, state.agents[s].pos)].cost, s))
+            .map(|(idx, _)| idx);
+        if let Some(idx) = best {
+            let s = supply_indices.remove(idx);
+            pairs[s] = Some(p);
+            assigned.insert(p);
+        }
+    }
+    (pairs, assigned)
+}
+
 /// Coverage-target key policy for one day: the park spreading window plus the
 /// search-trial jitter seed (Issue #331 + release-side #312/#313).
 #[derive(Clone, Copy)]
@@ -224,7 +268,19 @@ impl Solver for CoverageCandidate {
         let mut state = fresh_day_state(ctx);
         let n = state.agents.len();
         let patrols = patrol_order(&state, self.variant);
-        let (pairs, assigned) = supply_pairs(&state, &patrols);
+        // Use fuel-aware pairing only when fuel pressure exists (Issue #342).
+        // This avoids disrupting normal assignment when no fuel issue exists.
+        let min_patrol_fuel = patrols
+            .iter()
+            .map(|&p| state.agents[p].fuel)
+            .min()
+            .unwrap_or(u32::MAX);
+        let has_fuel_pressure = min_patrol_fuel < 50; // threshold
+        let (pairs, assigned) = if self.fuel_aware && has_fuel_pressure {
+            supply_pairs_fuel_aware(&state, &patrols)
+        } else {
+            supply_pairs(&state, &patrols)
+        };
         let tomorrow_budget = {
             let tomorrow = ctx.day.saturating_add(1);
             if tomorrow < state.setting.num_days {
@@ -289,6 +345,39 @@ impl Solver for CoverageCandidate {
                         &state.setting.map,
                         ctx.day_steps - used[i],
                     );
+                }
+            }
+            // Fuel-return override (Issue #339): when a Patrol's fuel is low,
+            // move toward its paired Supply instead of pursuing targets.
+            // This prevents stranding when the Supply is chasing but never
+            // catching up.
+            if self.fuel_aware {
+                for &pi in &patrols {
+                    if used[pi] >= ctx.day_steps {
+                        continue;
+                    }
+                    let fuel = state.agents[pi].fuel;
+                    if fuel < 30 {
+                        // Find paired supply
+                        if let Some(si) = pairs
+                            .iter()
+                            .enumerate()
+                            .find(|(_, p)| p.map_or(false, |pp| pp == pi))
+                            .map(|(i, _)| i)
+                        {
+                            let supply_pos = state.agents[si].pos;
+                            let paths = routes(&state.setting.map, &state.agents[pi], true);
+                            let goal = paths[index(&state.setting.map, supply_pos)].first;
+                            if goal.is_some() {
+                                actions[pi] = legal_step(
+                                    &state.agents[pi],
+                                    goal,
+                                    &state.setting.map,
+                                    ctx.day_steps - used[pi],
+                                );
+                            }
+                        }
+                    }
                 }
             }
             for i in 0..n {
