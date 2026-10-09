@@ -172,8 +172,6 @@ impl Solver for AnytimeCandidate {
         "anytime"
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
-        let started = Instant::now();
-
         // Initial solution: park=far (current best). Byte-identical to the
         // `coverage:budget=official:park=far` baseline, so returning it
         // unchanged cannot score below that candidate's full-match D.
@@ -188,23 +186,25 @@ impl Solver for AnytimeCandidate {
             return best;
         }
 
-        // Offline mode (`trials > 0`): exact trial count, no wall clock, so
+        // Offline mode (`trials > 0`): exact trial count, ZERO wall-clock
+        // reads (`Instant::now()` exists only in the live branch below), so
         // the same id+seed always returns the same plan (reproducible
         // measurements). Live mode (`budget_ms`): wall-clock stop — the
         // explored variant count varies with CPU load, which is fine in a
         // match and wrong for recorded evidence.
         let offline = self.trials > 0;
+        // `None` in offline mode: no wall clock anywhere on the offline path.
         let deadline = if offline {
-            // Unused in offline mode; kept so the live branch stays uniform.
-            started
+            None
         } else {
+            let started = Instant::now();
             let live_window = (ctx.remaining_ms != u32::MAX)
                 .then(|| Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(5_000))));
             let search_budget = Duration::from_millis(u64::from(self.budget_ms));
-            match live_window {
+            Some(match live_window {
                 Some(live) => started + live.min(search_budget),
                 None => started + search_budget,
-            }
+            })
         };
 
         // Deterministic anytime exploration (Issue #342).
@@ -218,7 +218,7 @@ impl Solver for AnytimeCandidate {
                 if trial > u64::from(self.trials) {
                     break;
                 }
-            } else if Instant::now() >= deadline {
+            } else if Instant::now() >= deadline.expect("live mode has a wall-clock deadline") {
                 break;
             }
             // Generate variant with deterministic seed.
