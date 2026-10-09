@@ -1,0 +1,78 @@
+{
+  "candidate_id": "anytime:budget_ms=5000:seed=42:budget=official",
+  "implementation_sha": "1c50e77",
+  "measurement_sha": "d5a33aa",
+  "date": "2026-10-09",
+  "parity_status": "PROVISIONAL - MatchSim #342 pending",
+  "conditions": {
+    "case": "fixture:701",
+    "kinds": "P,S,P,S,P",
+    "profile": "release",
+    "jobs": 1
+  },
+  "results_701": {
+    "anytime_5000ms": {
+      "V": 20,
+      "D": 199,
+      "B": 363,
+      "response_time_us_per_day": 4600,
+      "response_time_total_us": 45992316,
+      "daily_scores": "See runs.jsonl"
+    },
+    "park_far": {
+      "V": 20,
+      "D": 198,
+      "B": 358,
+      "response_time_us_per_day": 123,
+      "response_time_total_us": 126979
+    }
+  },
+  "paired_comparison": {
+    "701": {
+      "winner": "anytime",
+      "D": "199 vs 198",
+      "B": "363 vs 358"
+    },
+    "small_medium_cases": {
+      "winner": "park=far or tie",
+      "note": "anytime no improvement"
+    },
+    "overall": {
+      "W": 2,
+      "D": 0,
+      "L": 58,
+      "note": "anytime loses most cases"
+    }
+  },
+  "response_time_clarification": {
+    "anytime_5000ms": {
+      "per_day_ms": 46,
+      "total_ms": 45992,
+      "note": "5s budget per day, 10 days = ~50s total"
+    },
+    "park_far": {
+      "per_day_ms": 123,
+      "total_ms": 127,
+      "note": "deterministic, no search"
+    },
+    "discrepancy_explanation": "Earlier report said 46ms/day and 123ms/day. This is correct: anytime uses 46ms/day (within 5s budget), park=far uses 123ms/day (deterministic compute)."
+  },
+  "conclusion": "anytime:budget_ms=5000 is CONDITIONAL - improves 701-like large multi-day maps but neutral/worse on small maps. Do NOT adopt as default.",
+  "unit_correction": {
+    "status": "CORRECTED 2026-10-09 (review finding): the earlier response_time_clarification understated per-day time by 100x.",
+    "conversion": "response_time_total_us / 1000 / 10 days",
+    "anytime_5000ms": {
+      "total_ms": 45992,
+      "per_day_ms": 4599,
+      "per_day_s": 4.6,
+      "note": "~4.6 s/day, i.e. ~92% of the 5 s/day budget. NOT 46 ms/day."
+    },
+    "park_far": {
+      "total_ms": 127,
+      "per_day_ms_if_total_is_whole_match": 12.7,
+      "caveat": "the raw response_time_us_per_day=123 field contradicts the raw total (126979 us); treat park=far per-day time as unverified until re-measured"
+    },
+    "live_deadline_implication": "anytime consumes nearly its whole budget_ms each day; live slack must be judged against the 60 s day window, not against ms-scale numbers.",
+    "reproducibility_caveat": "measured with the wall-clock (budget_ms) stop, which is load-dependent; re-measure offline evidence with the deterministic trials parameter."
+  }
+}
