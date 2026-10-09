@@ -1,0 +1,29 @@
+{
+  "ENGINE_timeline_sha": "abe2454",
+  "anytime_implementation_sha": "839af41",
+  "date": "2026-10-09",
+  "parity_status": "OFFICIAL TIMELINE COMPLIANT",
+  "701_results": {
+    "coverage_park_far": {
+      "V": 20,
+      "D": 185,
+      "B": 427,
+      "time_s": 0.1
+    },
+    "anytime_5000ms": {
+      "V": 20,
+      "D": 199,
+      "B": 459,
+      "time_s": 50.0
+    },
+    "classification": "D_WIN",
+    "detail": "V same (20=20), D+14 (199 vs 185), B+32 (459 vs 427)"
+  },
+  "classification_rules": {
+    "V_WIN": "anytime V > baseline V",
+    "D_WIN": "V same AND anytime D > baseline D",
+    "B_WIN": "V/D same AND anytime B > baseline B",
+    "TIE": "V/D/B all equal"
+  },
+  "correction_note": "Previous reports classified 701 improvements as B_WIN. With V equal and D higher, the correct classification is D_WIN per official dictionary order."
+}
