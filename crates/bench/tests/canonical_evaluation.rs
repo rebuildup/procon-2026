@@ -733,6 +733,8 @@ fn record_fixture(candidate_id: &str) -> RunRecord {
         day_budget_exceeded_days: Vec::new(),
         daily_response_us: vec![100],
         daily_varieties: vec![1],
+        daily_ball_counts: Vec::new(),
+        rejected_days: Vec::new(),
         agent_kinds: None,
         agent_ball_counts: None,
         oracle_refill: false,

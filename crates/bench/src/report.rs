@@ -182,6 +182,8 @@ mod tests {
             day_budget_exceeded_days: Vec::new(),
             daily_response_us: vec![600, 634],
             daily_varieties: vec![2, 3],
+            daily_ball_counts: Vec::new(),
+            rejected_days: Vec::new(),
             agent_kinds: None,
             agent_ball_counts: None,
             oracle_refill: false,

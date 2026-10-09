@@ -715,6 +715,19 @@ pub struct MatchState {
     /// 「順位決定」tier 2, 「各日の種類数の累積」). A series re-acquired on a
     /// later day counts again for that later day.
     pub series_acquired_by_day: BTreeMap<u32, BTreeSet<u32>>,
+    /// Balls acquired on each day, keyed by day. Diagnostic per-day
+    /// breakdown of tier 3 (`total_balls` is the sum of this map) — the
+    /// "which day improved" axis candidate comparisons attach evidence to
+    /// (Issue #377). Supply agents never contribute (they cannot pick).
+    #[serde(default)]
+    pub balls_acquired_by_day: BTreeMap<u32, u32>,
+    /// Days whose whole daily response the official server would have
+    /// rejected (Q&A Q6). The per-day counterpart of
+    /// [`Self::rejected_response_count`], flushed from
+    /// [`Self::day_response_invalid`] at each day boundary — this is the
+    /// per-day acceptance axis (Issue #377). Diagnostic evidence only.
+    #[serde(default)]
+    pub rejected_days: BTreeSet<u32>,
     /// Per-agent queue of actions accepted at an action phase but not yet
     /// started (Q6: the daily answer is a sequential action list — the next
     /// action is reserved when the previous one completes).
@@ -763,6 +776,8 @@ impl MatchState {
             series_taken: BTreeSet::new(),
             series_first_taken_at: BTreeMap::new(),
             series_acquired_by_day: BTreeMap::new(),
+            balls_acquired_by_day: BTreeMap::new(),
+            rejected_days: BTreeSet::new(),
             illegal_action_count: 0,
             fuel_short_count: 0,
             action_queues: BTreeMap::new(),
@@ -810,6 +825,27 @@ impl MatchState {
         (0..self.num_days())
             .map(|d| self.series_acquired_by_day.get(&d).map_or(0, |series| series.len() as u32))
             .collect()
+    }
+
+    /// Balls acquired on each day, indexed by day, length `num_days`. Days
+    /// with no acquisition contribute `0`.
+    ///
+    /// This is the per-day breakdown of tier 3 (`total_balls` is the sum of
+    /// this vector). Diagnostic evidence — see [`Self::balls_acquired_by_day`].
+    #[must_use]
+    pub fn daily_balls(&self) -> Vec<u32> {
+        (0..self.num_days())
+            .map(|d| self.balls_acquired_by_day.get(&d).copied().unwrap_or(0))
+            .collect()
+    }
+
+    /// Days whose whole response would have been rejected, ascending.
+    ///
+    /// `rejected_response_count` is the count; this is the same set with the
+    /// day attached (Issue #377 per-day acceptance axis).
+    #[must_use]
+    pub fn rejected_day_list(&self) -> Vec<u32> {
+        self.rejected_days.iter().copied().collect()
     }
 }
 

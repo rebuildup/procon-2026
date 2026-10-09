@@ -214,6 +214,18 @@ pub struct RunRecord {
     /// breakdown lets a later re-aggregation change the policy without
     /// re-running the batch.
     pub daily_varieties: Vec<u32>,
+    /// Balls acquired on each day, one entry per simulated day (Issue #377).
+    ///
+    /// `total_balls` is the sum of this vector (tier 3). This is the per-day
+    /// axis a candidate comparison attaches its "which day improved" evidence
+    /// to, mirroring what `daily_varieties` does for tier 2.
+    #[serde(default)]
+    pub daily_ball_counts: Vec<u32>,
+    /// Days (zero-based) whose whole response the official server would have
+    /// rejected (Q&A Q6) — the per-day counterpart of
+    /// [`Self::rejected_response_count`] (Issue #377 per-day acceptance axis).
+    #[serde(default)]
+    pub rejected_days: Vec<u32>,
     /// The team composition this run actually fielded, one entry per agent
     /// slot in `ctx.agent_ids` order (Issue #235).
     ///
@@ -316,6 +328,8 @@ impl RunRecord {
             day_budget_exceeded_days: Vec::new(),
             daily_response_us: Vec::new(),
             daily_varieties: Vec::new(),
+            daily_ball_counts: Vec::new(),
+            rejected_days: Vec::new(),
             // No final state was reached, so there is no team to report —
             // `None` rather than a composition that was never observed.
             agent_kinds: None,
@@ -1034,6 +1048,11 @@ impl Evaluator {
             day_budget_exceeded_days,
             daily_response_us: timings.daily_response_us,
             daily_varieties,
+            // Per-day tier-3 breakdown and per-day acceptance verdicts
+            // (Issue #377): the axes a candidate comparison cites when it
+            // argues "which day/path improved and why".
+            daily_ball_counts: run.final_state.daily_balls(),
+            rejected_days: run.final_state.rejected_day_list(),
             // Read back from the simulated setting, not from the flag: what
             // the engine actually fielded is the evidence (Issue #235).
             agent_kinds: Some(
@@ -1375,6 +1394,39 @@ mod tests {
         );
         // `wait` would be all zeros — prove the vector is not vacuous.
         assert!(counts.iter().sum::<u32>() > 0, "the greedy loop must collect at least one ball");
+    }
+
+    /// Issue #377 — `daily_ball_counts` is the per-day tier-3 axis: one
+    /// entry per simulated day, summing to `total_balls`; `rejected_days`
+    /// stays consistent with `rejected_response_count` on a clean run.
+    #[test]
+    fn daily_ball_counts_has_one_entry_per_day_and_sums_to_total_balls() {
+        let reg = registry();
+        let candidate = reg.build("loop:iterations=2:initial=greedy").unwrap();
+        let case = CaseSpec::from_bundled_fixture("small-8x8").unwrap();
+        let record = Evaluator::new(config()).evaluate_one(&candidate, &case);
+        assert_eq!(
+            record.status,
+            RunStatus::Success,
+            "{}",
+            record.status_detail.unwrap_or_default()
+        );
+
+        assert_eq!(
+            record.daily_ball_counts.len(),
+            record.daily_varieties.len(),
+            "one ball entry per simulated day, same length as the tier-2 axis"
+        );
+        assert_eq!(
+            record.daily_ball_counts.iter().sum::<u32>(),
+            record.total_balls,
+            "the per-day tallies must add up to tier 3"
+        );
+        assert_eq!(
+            u32::try_from(record.rejected_days.len()).unwrap(),
+            record.rejected_response_count,
+            "the per-day rejection set must match the whole-response counter"
+        );
     }
 
     #[test]

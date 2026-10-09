@@ -169,6 +169,7 @@ impl MatchSim {
             // Whole-response verdict (Q6): flush the day's flag.
             if state.day_response_invalid {
                 state.rejected_response_count = state.rejected_response_count.saturating_add(1);
+                state.rejected_days.insert(state.day);
             }
             // 6. Traffic update — at the end of the current day.
             let updates =
