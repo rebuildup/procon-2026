@@ -58,6 +58,12 @@ const PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "seed", required: false, doc: "search seed (default 42)" },
     ParamSpec {
+        key: "lns",
+        required: false,
+        doc: "percentage of moves that ruin and recreate a neighbourhood of spots, \
+              0..100 (default 0 = the plain fleet move set)",
+    },
+    ParamSpec {
         key: "chains",
         required: false,
         doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
@@ -106,11 +112,15 @@ impl CandidateFactory for FleetFactory {
                 return Err(CandidateError::Build(format!("unknown adapt mode {other:?}")));
             }
         };
+        let lns = parse(spec, "lns", 0usize)?;
+        if lns > 100 {
+            return Err(CandidateError::Build(format!("lns must be 0..=100, got {lns}")));
+        }
         let chains = parse(spec, "chains", 1u32)?;
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, lns }))
     }
 }
 
@@ -122,6 +132,8 @@ pub struct FleetCandidate {
     pub chains: u32,
     /// Live: shrink the window on boards whose search converges sooner.
     pub adapt: bool,
+    /// Percentage of moves that are ruin-and-recreate (Issue #374).
+    pub lns: usize,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -199,6 +211,8 @@ struct World {
     supplies: Vec<SupplyInfo>,
     new_series: Vec<bool>,
     series_slots: usize,
+    /// Percentage of moves that are ruin-and-recreate (0 = off).
+    lns: usize,
 }
 
 fn cell_index(width: usize, col: i32, row: i32) -> usize {
@@ -208,7 +222,7 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
 
 impl World {
     #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
-    fn new(state: &MatchState, steps: u32, later: &[u32]) -> Self {
+    fn new(state: &MatchState, steps: u32, later: &[u32], lns: usize) -> Self {
         let tomorrow = later.first().copied();
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
@@ -300,6 +314,7 @@ impl World {
             supplies,
             new_series,
             series_slots,
+            lns,
         };
         for m in 0..NM {
             for u in 0..nn {
@@ -789,6 +804,10 @@ impl World {
     fn mutate(&self, sol: &mut Solution, rng: &mut Rng) {
         let np = sol.routes.len();
         let spot = |rng: &mut Rng| u16::try_from(rng.below(self.spots)).expect("node");
+        if self.lns > 0 && rng.below(100) < self.lns {
+            self.ruin_recreate(sol, rng);
+            return;
+        }
         match rng.below(10) {
             0 => {
                 let p = rng.below(np);
@@ -881,6 +900,66 @@ impl World {
                     }
                 }
             }
+        }
+    }
+
+    /// Large neighbourhood move: drop every visit to the spots around a
+    /// random centre from all routes, then put each dropped spot back into
+    /// the patrol and slot where it adds the least travel time (random
+    /// order, each patrol at most once per spot).
+    fn ruin_recreate(&self, sol: &mut Solution, rng: &mut Rng) {
+        let centre = rng.below(self.spots);
+        let radius = 2 + rng.below(5);
+        let mut near: Vec<usize> = (0..self.spots).collect();
+        near.sort_by_key(|&v| self.t(BAL, centre, v).min(self.t(BAL, v, centre)));
+        near.truncate(radius);
+        let mut pool: Vec<(usize, u16)> = Vec::new();
+        for (p, route) in sol.routes.iter_mut().enumerate() {
+            route.retain(|&v| {
+                let hit = near.contains(&usize::from(v));
+                if hit {
+                    pool.push((p, v));
+                }
+                !hit
+            });
+        }
+        // Also offer each ruined spot to one more random patrol.
+        for &v in &near {
+            pool.push((rng.below(sol.routes.len()), u16::try_from(v).expect("node")));
+        }
+        for i in (1..pool.len()).rev() {
+            pool.swap(i, rng.below(i + 1));
+        }
+        for (owner, v) in pool {
+            // Mostly back to a patrol that had it, sometimes to the cheapest.
+            let p = if rng.below(3) == 0 {
+                (0..sol.routes.len())
+                    .filter(|&q| !sol.routes[q].contains(&v))
+                    .min_by_key(|&q| self.insertion_cost(sol, q, usize::from(v)))
+                    .unwrap_or(owner)
+            } else {
+                owner
+            };
+            if !sol.routes[p].contains(&v) {
+                let at = self.cheapest_slot(sol, p, usize::from(v));
+                sol.routes[p].insert(at, v);
+            }
+        }
+    }
+
+    /// Travel time added by the cheapest insertion of `node` into patrol `p`.
+    fn insertion_cost(&self, sol: &Solution, p: usize, node: usize) -> u64 {
+        let m = usize::from(sol.metric[p]);
+        let route = &sol.routes[p];
+        let leg = |a: usize, b: usize| u64::from(self.t(m, a, b));
+        let at = self.cheapest_slot(sol, p, node);
+        let before = if at == 0 { self.patrols[p].start } else { usize::from(route[at - 1]) };
+        match route.get(at) {
+            Some(&after) => {
+                let after = usize::from(after);
+                (leg(before, node) + leg(node, after)).saturating_sub(leg(before, after))
+            }
+            None => leg(before, node),
         }
     }
 
@@ -1172,7 +1251,7 @@ impl Solver for FleetCandidate {
         }
         let later: Vec<u32> =
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
-        let world = World::new(state, ctx.day_steps, &later);
+        let world = World::new(state, ctx.day_steps, &later, self.lns);
         let window = (self.budget_ms > 0).then(|| {
             // Balls stop improving once the search has converged, and from
             // there a longer answer only costs the fourth ranking axis. The
@@ -1237,7 +1316,7 @@ impl Solver for FleetCandidate {
             let (plan, check) = Self::finish(ctx, &world, sol, eval);
             let tomorrow = match later.split_first() {
                 Some((&steps, rest)) if check.clean => {
-                    let next = World::new(&check.state, steps, rest);
+                    let next = World::new(&check.state, steps, rest, self.lns);
                     next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
                 }
                 _ => (0, 0),
@@ -1329,6 +1408,7 @@ pub fn choose_kinds(
                 seed: 42,
                 chains: 1,
                 adapt: true,
+                lns: 0,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
