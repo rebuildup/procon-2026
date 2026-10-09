@@ -108,20 +108,39 @@ pub fn generate_large_case(params: &LargeCaseParams) -> Result<CaseSpec, String>
         }
     }
 
-    // Spot placement
-    let n_spots = params.n_series; // 1 spot per series for simplicity
-    let mut spots: Vec<(u32, i32, u32)> = Vec::with_capacity(n_spots); // (series, pos, stocks)
+    // Spot placement with series distribution pattern (Issue #333).
+    let n_spots = params.n_series;
+    let mut spots: Vec<(u32, i32, u32)> = Vec::with_capacity(n_spots);
     let mut used_positions = std::collections::HashSet::new();
     for series in 0..params.n_series as u32 {
+        // Choose target region based on pattern.
         let pos = loop {
             let r = rng.below(n_cells as u64) as i32;
-            if cells[r as usize] == 0 && !used_positions.contains(&r) {
-                // Plain and not already a spot
+            let row = r / edge;
+            let col = r % edge;
+            if cells[r as usize] != 0 || used_positions.contains(&r) {
+                continue;
+            }
+            // Pattern filter: bias placement toward the target region.
+            let in_region = match params.pattern {
+                SeriesPattern::Uniform => true,
+                SeriesPattern::Central => {
+                    let dr = (row - edge / 2).abs();
+                    let dc = (col - edge / 2).abs();
+                    dr + dc < edge / 3
+                }
+                SeriesPattern::Peripheral => {
+                    let dr = (row - edge / 2).abs();
+                    let dc = (col - edge / 2).abs();
+                    dr + dc >= edge / 3
+                }
+            };
+            if in_region {
                 break r;
             }
         };
         used_positions.insert(pos);
-        let stocks = 1 + rng.below(4) as u32; // 1..4
+        let stocks = 1 + rng.below(4) as u32;
         spots.push((series + 1, pos, stocks));
     }
 
