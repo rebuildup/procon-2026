@@ -29,12 +29,26 @@ pub const fn fuel_cost(terrain: Terrain) -> u32 {
     }
 }
 
-/// Shared conservative move contract: afford both cells, charge the origin.
-/// The destination guard retains the acceptance intersection documented in #245.
+/// Official move fuel contract (Issue #342 P0-C): afford the departure
+/// cell's cost, charge the departure cell's cost.
+///
+/// Spec: Q&A Q11 (表1「燃量」= 燃料の消費量 for moving *from* each terrain
+/// type) and 募集要項「移動と燃料」 (a patrol consumes the terrain's fuel
+/// at the time the move command is issued — the cell it stands on).
+///
+/// Pinned against the official simple answer server
+/// (`docs/evidence/campaign-311/official-server-parity/`): a patrol with
+/// `fuel = 1` on 平地 may move into 山地 (consumes 1) and the day is
+/// accepted; the same patrol on 山地 may not step onto 平地 (needs 2).
+/// The pre-#342 conservative `max(origin, destination)` guard was an
+/// offline hedge that the official acceptance data contradicts.
+///
+/// `destination` is retained for call-site stability and documentation
+/// only — it takes no part in the executability check or the deduction.
 #[must_use]
-pub fn move_fuel(agent: &Agent, origin: Terrain, destination: Terrain) -> Option<u32> {
+pub fn move_fuel(agent: &Agent, origin: Terrain, _destination: Terrain) -> Option<u32> {
     let cost = fuel_cost(origin);
-    agent.can_afford(cost.max(fuel_cost(destination))).then_some(cost)
+    agent.can_afford(cost).then_some(cost)
 }
 
 // ---------------------------------------------------------------------------
