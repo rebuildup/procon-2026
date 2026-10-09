@@ -14,7 +14,8 @@ use crate::adapters::walk::BudgetMode;
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 use engine::MatchSim;
 use engine::model::{
-    Action, ActionKind, AgentActions, AgentKind, Direction, HexCoord, MapGrid, Solver, SolverContext,
+    Action, ActionKind, AgentActions, AgentKind, Direction, HexCoord, MapGrid, Solver,
+    SolverContext,
 };
 
 pub struct StructuralFactory;
@@ -100,7 +101,10 @@ impl Rng {
             usize::try_from(self.next() % bound).expect("random index is smaller than len")
         }
     }
-    #[allow(clippy::cast_precision_loss, reason = "shifting away 11 bits leaves exactly 53 random bits")]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "shifting away 11 bits leaves exactly 53 random bits"
+    )]
     fn probability(&mut self) -> f64 {
         (self.next() >> 11) as f64 / ((1u64 << 53) as f64)
     }
@@ -146,8 +150,7 @@ fn shortest_path(
         let Some(dt) = engine::wire_plan::terrain_step_cost(origin.terrain) else {
             continue;
         };
-        let weight =
-            dt.saturating_mul(8) + engine::rules::fuel_cost(origin.terrain) * fuel_weight;
+        let weight = dt.saturating_mul(8) + engine::rules::fuel_cost(origin.terrain) * fuel_weight;
         for dir in Direction::ALL {
             let next = dir.step(origin.coord);
             if !map.get(next).is_some_and(|c| c.terrain.traversable()) {
@@ -323,18 +326,13 @@ fn build_plan(
     let n = ctx.agent_ids.len();
     let mut result = baseline.actions.clone();
     for (i, id) in ctx.agent_ids.iter().copied().enumerate() {
-        let is_patrol = ctx
-            .state
-            .agents
-            .iter()
-            .any(|a| a.id == id && a.kind == AgentKind::Patrol);
+        let is_patrol = ctx.state.agents.iter().any(|a| a.id == id && a.kind == AgentKind::Patrol);
         if !is_patrol {
             continue;
         }
         let moves = patrol_actions(ctx, i, &order[i], spots, fuel_weight, cache);
         for tick in 0..ctx.day_steps as usize {
-            result[tick * n + i] =
-                moves.get(tick).copied().unwrap_or_else(|| Action::wait(id));
+            result[tick * n + i] = moves.get(tick).copied().unwrap_or_else(|| Action::wait(id));
         }
     }
     BudgetMode::Official.apply(ctx, AgentActions::new(result))
@@ -353,22 +351,19 @@ fn replay_score(ctx: &SolverContext<'_>, candidate: &AgentActions) -> Option<Sco
     {
         return None;
     }
-    let variety = state.series_taken.len() as u32;
-    let today = state.series_acquired_by_day.get(&ctx.day).map_or(0, |s| s.len() as u32);
+    let variety = u32::try_from(state.series_taken.len()).expect("bounded contest series count");
+    let today = state.series_acquired_by_day.get(&ctx.day).map_or(0, |s| {
+        u32::try_from(s.len()).expect("bounded contest series count")
+    });
     let balls: u32 = state.agents.iter().map(engine::model::Agent::total_inventory).sum();
-    let fuel: u32 = state
-        .agents
-        .iter()
-        .filter(|a| a.kind == AgentKind::Patrol)
-        .map(|a| a.fuel.min(100))
-        .sum();
+    let fuel: u32 =
+        state.agents.iter().filter(|a| a.kind == AgentKind::Patrol).map(|a| a.fuel.min(100)).sum();
     Some((variety, today, balls, fuel))
 }
 
 fn energy(s: Score) -> f64 {
     // Soft search objective ONLY; final retention always uses official V/D/B.
-    f64::from(s.0) * 3_000.0 + f64::from(s.1) * 150.0 + f64::from(s.2)
-        + f64::from(s.3) / 250.0
+    f64::from(s.0) * 3_000.0 + f64::from(s.1) * 150.0 + f64::from(s.2) + f64::from(s.3) / 250.0
 }
 
 struct StructuralCandidate {
@@ -381,8 +376,8 @@ impl Solver for StructuralCandidate {
         "structural"
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
-        let baseline = CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }
-            .decide(ctx);
+        let baseline =
+            CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }.decide(ctx);
         if ctx.agent_ids.is_empty() || ctx.day_steps == 0 {
             return baseline;
         }
@@ -390,17 +385,20 @@ impl Solver for StructuralCandidate {
             return baseline;
         };
         let map = &ctx.state.setting.map;
-        let spots: Vec<_> = map
-            .cells()
-            .iter()
-            .filter_map(|c| c.spot.as_ref().map(|s| s.pos))
-            .collect();
+        let spots: Vec<_> =
+            map.cells().iter().filter_map(|c| c.spot.as_ref().map(|s| s.pos)).collect();
         let patrols: Vec<usize> = ctx
             .agent_ids
             .iter()
             .enumerate()
-            .filter_map(|(i, id)| ctx.state.agents.iter().find(|a| a.id == *id)
-                .filter(|a| a.kind == AgentKind::Patrol).map(|_| i))
+            .filter_map(|(i, id)| {
+                ctx.state
+                    .agents
+                    .iter()
+                    .find(|a| a.id == *id)
+                    .filter(|a| a.kind == AgentKind::Patrol)
+                    .map(|_| i)
+            })
             .collect();
         if spots.is_empty() || patrols.is_empty() {
             return baseline;
@@ -420,7 +418,9 @@ impl Solver for StructuralCandidate {
         let mut trial = 0u32;
         loop {
             if self.trials > 0 {
-                if trial >= self.trials { break; }
+                if trial >= self.trials {
+                    break;
+                }
             } else if deadline.is_some_and(|limit| Instant::now() >= limit) {
                 break;
             }
@@ -428,7 +428,11 @@ impl Solver for StructuralCandidate {
             let mut proposal = current.clone();
             mutate(&mut proposal, &patrols, spots.len(), &mut rng);
             // Alternate shortest-time and fuel-aware route choices.
-            let fuel_weight = match rng.index(3) { 0 => 0, 1 => 4, _ => 12 };
+            let fuel_weight = match rng.index(3) {
+                0 => 0,
+                1 => 4,
+                _ => 12,
+            };
             let plan = build_plan(ctx, &baseline, &proposal, &spots, fuel_weight, &mut cache);
             let Some(score) = replay_score(ctx, &plan) else {
                 continue;
@@ -472,8 +476,8 @@ mod tests {
         let setting = case.to_engine_setting_with_kinds(&team, Some(&kinds)).unwrap();
         let state = engine::model::MatchState::new(setting).unwrap();
         let ctx = engine::model::SolverContext::from_state(&state);
-        let baseline = CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }
-            .decide(&ctx);
+        let baseline =
+            CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }.decide(&ctx);
         let solver = CandidateRegistry::builtin()
             .build("structural:trials=16:seed=42:budget=official")
             .unwrap()
