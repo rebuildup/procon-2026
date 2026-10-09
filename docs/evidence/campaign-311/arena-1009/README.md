@@ -269,6 +269,21 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 - 回答 4.3s ≈ 0.6s/日（coverage = 探索なしの高速回答。期限には十分安全だが、予算活用の議論は anytime 系の課題として継続）。
 - **読み取り（1 試合・盤面差あり・因果断定せず）**: 時系列再チューン単体では本盤（24×24/7日/短日 daySteps [65..48]）で D −13 — 旧実装系の 24×24（1811: 108/120 −12, park=far）と相対差は同程度。**D 掘削には 350-parity 統合版（B 改善受理 + 目標保持修正）との統合が次の観測点**。701 offline は 20/188/429 を専任環境で再現済み（PR #360 値と一致）。
 
+## 公式スコア + 実測（match 1894 = **6P1S 構成実験**・UI `#1894 第1卓`）
+
+**同実装（`5f700e5` retune coverage）で kinds のみ変更**: `--kinds P,P,P,P,P,P,S`。
+16×16 / 4日 / 4台。UI `#1894 第1卓`（卓ID一致）。
+
+| 項目 | 値 |
+|---|---|
+| 結果 | **rank 8/10: V=14, D=35/56（−21）, B=60, 回答 1.5s・rate 188→211 (+23)** |
+| kinds 実組成 | **4台マッチ × 6P1S pattern 循環 → P,P,P,P = Supply 0 台**（予約時に明記したリスクの実現） |
+| 燃料（cap 73） | **#2P は day2 に 0 到達**（73→33→0→0）、#0/#1 は 9→6、#3 は 0 — **補給車なしで全車燃料枯渇**。day2–3 の moves は [2,2,0,0] 系に崩落 |
+| 受理 | revisions [1,13,27,41] — 4/4 全日 accepted・1日1 POST・error なし（枯渇しても計画は合法） |
+
+- **観測価値**: ①6P1S kinds は**台数が 7 未満のマッチでは Supply 欠落の縮退構成になる**（kinds 循環の構造的性質 — 7台マッチ限定の実験オプション）。②**Supply 欠落時の D/B 崩落の定量化**（D −21・B 60）＝**補給の価値の実測**として #339/#311 の燃料議論の裏付け。③それでも rank 8・rate +23 — フィールド構成（無回答チーム等）次第でスコア悪化でも順位は保ちうる。
+- 盤面・構成が異なるため 1891 との因果比較はしない。
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -477,7 +492,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **8 行**（1810 / 1811 / 1857 / 1869 / 1883 / 1885 / 1888 / 1891、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **9 行**（1810 / 1811 / 1857 / 1869 / 1883 / 1885 / 1888 / 1891 / 1894、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -485,6 +500,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1883-b15.log` | match 1883 の同上（legacy experimental・budget 15s ablation。除去済み） |
 | `run-1885-b30.log` | match 1885 の同上（budget 30s ablation・早期打ち切り実測。除去済み） |
 | `run-1888-s7.log` / `run-1891-retune.log` | match 1888（seed ablation）/ 1891（Stage 2 系初投入）の同上（除去済み） |
+| `run-1894-6p1s.log` | match 1894（6P1S 構成・Supply 欠落の縮退観測。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
