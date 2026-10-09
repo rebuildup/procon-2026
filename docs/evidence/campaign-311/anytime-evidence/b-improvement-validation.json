@@ -1,0 +1,60 @@
+{
+  "candidate": "anytime:budget_ms=5000:seed=42:budget=official",
+  "implementation_sha": "HEAD after B-improvement commit",
+  "date": "2026-10-09",
+  "parity_status": "PROVISIONAL - MatchSim #342 pending",
+  "acceptance_criteria": {
+    "d_gain": "series_today > best (today's D contribution increases)",
+    "d_same_b_gain": "series_today == best && balls_today > best (B improves, D maintained)",
+    "tie_better_pos": "V/D/B all equal && next_day_value > best (better positioning)",
+    "reject": "series_today < best (D degradation)",
+    "note": "Local criterion only - does NOT guarantee full-period non-degradation"
+  },
+  "results": {
+    "701": {
+      "park": [
+        20,
+        198,
+        358
+      ],
+      "anytime": [
+        20,
+        199,
+        361
+      ],
+      "verdict": "B_WIN",
+      "dD": 1,
+      "dB": 3
+    },
+    "many-series:seed=42": {
+      "park": [
+        7,
+        20,
+        37
+      ],
+      "anytime": [
+        7,
+        21,
+        37
+      ],
+      "verdict": "D_WIN",
+      "dD": 1,
+      "dB": 0
+    },
+    "all_other_cases": "TIE (no degradation)"
+  },
+  "summary": {
+    "TIE": 46,
+    "B_WIN": 1,
+    "D_WIN": 1,
+    "V_LOSS": 0,
+    "D_LOSS": 0,
+    "B_LOSS": 0
+  },
+  "note_on_duplicates": "Each --cases all run includes 9 bundled fixtures + opt-in generated cases. Multiple invocations duplicate fixtures by design. Unique case IDs: 12 (9 fixtures + 3 generated).",
+  "b_improvement_explanation": {
+    "previous_B_363": "Old multi-thread version, non-deterministic, different seed sequence",
+    "current_B_361": "Current deterministic single-thread with dictionary-order acceptance",
+    "difference_cause": "Different exploration trajectory due to determinism fix"
+  }
+}

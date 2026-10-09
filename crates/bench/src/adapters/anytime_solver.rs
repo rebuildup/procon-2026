@@ -178,13 +178,29 @@ impl Solver for AnytimeCandidate {
             let plan = generate_variant(ctx, self.seed.wrapping_add(trial));
             let score = score_plan(ctx, &plan);
 
-            // Series-only acceptance (Issue #342 Phase 3):
-            // replace the plan only when series_today strictly increases.
-            // Ball-only gains are rejected: today's ending position decides
-            // tomorrow's reachable series, so trading positioning for B can
-            // lower full-match D (Σ per-day varieties). A series gain is the
-            // only local signal that maps 1:1 onto a D increase today.
-            if score.0 > best_score.0 {
+            // Dictionary-order acceptance (Issue #342).
+            // Official score is lexicographic: V → D → B → -response_time.
+            // Locally: series_today proxies today's D contribution,
+            // balls_today proxies today's B contribution.
+            //
+            // Accept when:
+            //   1. series_today INCREASES (today's D contribution grows), or
+            //   2. series_today is EQUAL and balls_today INCREASES
+            //      (today's B improves without D loss), or
+            //   3. series_today and balls_today are EQUAL and next_day_value
+            //      INCREASES (better positioning for tomorrow, same score).
+            //
+            // Never accept when series_today DECREASES (today's D drops).
+            //
+            // NOTE: this is a *local* criterion. It does NOT guarantee
+            // full-period non-degradation — today's ending position affects
+            // tomorrow's reachable series. Full-match validation requires
+            // canonical evaluator replay across all days (Issue #342).
+            let d_gain = score.0 > best_score.0;
+            let d_same_b_gain = score.0 == best_score.0 && score.1 > best_score.1;
+            let tie_better_pos =
+                score.0 == best_score.0 && score.1 == best_score.1 && score.2 > best_score.2;
+            if d_gain || d_same_b_gain || tie_better_pos {
                 best = plan;
                 best_score = score;
                 no_improve_count = 0;
