@@ -1,14 +1,18 @@
 //! Anytime solver: use the full answer window to improve the plan (Issue #340).
 //!
 //! Starts from the current best candidate (park=far) and generates variants.
-//! Scores by current-day series (the only axis that can replace the initial
-//! plan) plus diagnostic ball / next-day positioning values.
+//! Scores by the official lexicographic axes mapped onto one local day:
+//! full-period V (axis 1), current-day series (axis 2, D), current-day
+//! balls (axis 3, B), plus a diagnostic next-day positioning value.
 //!
 //! Unlike `search`, this is a true anytime algorithm:
 //! - Initial solution is the strongest candidate (park=far)
 //! - Variants explore assignment/ordering changes, not just cost jitter
-//! - Acceptance is series-only so full-match D cannot be traded for B
-//! - Returns immediately when no series improvement is found
+//! - Acceptance is dictionary-order (V never drops; then D, then B) so a
+//!   B gain can be kept only when D is maintained
+//! - The final return re-checks `best` against the initial plan in the
+//!   same order, so an accepted improvement always reaches the returned
+//!   `AgentActions` (Issue #354 guard fix)
 //!
 //! # Offline vs live stopping rules
 //!
@@ -98,22 +102,28 @@ struct AnytimeCandidate {
     seed: u64,
 }
 
-/// Score a plan for anytime search (Issue #342).
-/// Returns (`series_today`, `balls_today`, `next_day_value`).
+/// Score a plan for anytime search (Issue #342, acceptance #354).
+/// Returns (`full_variety`, `series_today`, `balls_today`, `next_day_value`).
 ///
-/// CRITICAL: `series_today` maps to official D (`daily_variety_sum`).
-/// This MUST NOT decrease. `balls_today` maps to official B.
-/// `next_day_value` is a heuristic for future positioning.
+/// The official ranking is lexicographic V → D → B → -response time. The
+/// tuple maps onto it locally:
 ///
-/// Only `series_today` is allowed to replace the initial park=far plan.
+/// - `full_variety` (official axis 1, V): `series_taken` after simulating
+///   this plan. Included so acceptance can never trade a previously
+///   acquired series away for a today-only gain.
+/// - `series_today` (official axis 2, D): today's contribution to
+///   `daily_variety_sum`. This MUST NOT decrease.
+/// - `balls_today` (official axis 3, B): total inventory after today.
+/// - `next_day_value`: heuristic for future positioning, tie-breaker only.
+///
 /// Today's ending position decides tomorrow's reachable series, so a
-/// ball-only gain (or a series gain bought with a collapsed tomorrow)
-/// can lower full-match D — the sum of per-day varieties.
+/// positioning-driven acceptance is safe only as the last tie-break after
+/// V, D and B are all preserved.
 #[allow(
     clippy::cast_possible_truncation,
     reason = "acquired-series count fits in u32 on any supported board"
 )]
-fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32) {
+fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32, u32) {
     let mut state = ctx.state.clone();
     let sim = MatchSim::default();
     for step in plan.actions.chunks(ctx.agent_ids.len()) {
@@ -141,7 +151,13 @@ fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32) {
         }
     }
 
-    (series_today, balls_today, fuel_value + proximity)
+    // Official axis 1 (V): full-period variety including this plan's effect.
+    // Re-acquiring a series cannot remove it from `series_taken`, so this
+    // only drops if a plan could somehow lose an earlier acquisition — the
+    // engine cannot do that, but the guard keeps axis-1 safety local.
+    let full_variety = state.series_taken.len() as u32;
+
+    (full_variety, series_today, balls_today, fuel_value + proximity)
 }
 
 /// Generate a variant of park=far with a different exploration seed.
@@ -209,13 +225,26 @@ impl Solver for AnytimeCandidate {
             let plan = generate_variant(ctx, self.seed.wrapping_add(trial));
             let score = score_plan(ctx, &plan);
 
-            // Series-only acceptance (Issue #342 Phase 3):
-            // replace the plan only when series_today strictly increases.
-            // Ball-only gains are rejected: today's ending position decides
-            // tomorrow's reachable series, so trading positioning for B can
-            // lower full-match D (Σ per-day varieties). A series gain is the
-            // only local signal that maps 1:1 onto a D increase today.
-            if score.0 > best_score.0 {
+            // Dictionary-order acceptance (Issue #342, guard fix #354).
+            // Official ranking is lexicographic V → D → B. Locally:
+            // full_variety guards axis 1, series_today is today's D
+            // contribution, balls_today is today's B contribution.
+            //
+            // Accept only when V (axis 1) does not decrease AND the plan is
+            // strictly better in the local dictionary order:
+            //   1. series_today increases (today's D contribution grows), or
+            //   2. series_today is equal and balls_today increases
+            //      (today's B improves with D maintained), or
+            //   3. V/D/B are all equal and next-day positioning improves.
+            // Never accept when series_today decreases: today's ending
+            // position decides tomorrow's reachable series, and a B gain
+            // bought with a D drop lowers full-match D (Σ per-day varieties).
+            let v_safe = score.0 >= best_score.0;
+            let d_gain = score.1 > best_score.1;
+            let d_same_b_gain = score.1 == best_score.1 && score.2 > best_score.2;
+            let tie_better_pos =
+                score.1 == best_score.1 && score.2 == best_score.2 && score.3 > best_score.3;
+            if v_safe && (d_gain || d_same_b_gain || tie_better_pos) {
                 best = plan;
                 best_score = score;
                 no_improve_count = 0;
@@ -232,11 +261,20 @@ impl Solver for AnytimeCandidate {
             }
         }
 
-        // If no variant beat the initial series count, return the initial
-        // park=far plan untouched. Full-match D then matches the baseline.
-        if best_score.0 <= initial_score.0 {
-            return initial;
+        // Final return guard (Issue #354). Acceptance above is *internal*:
+        // without this check a B-only improvement (series same, balls
+        // higher) sat in `best` while the returned value stayed `initial`,
+        // so the improvement never reached the answer. Compare `best`
+        // against the initial plan in the same local dictionary order and
+        // return `best` only when it is strictly better; the acceptance
+        // loop guarantees `best_score == initial_score` implies
+        // `best == initial`, so no plan can regress here.
+        if best_score > initial_score {
+            best
+        } else {
+            // No improvement (or regression): return the untouched baseline.
+            // Full-match D then matches the park=far baseline.
+            initial
         }
-        best
     }
 }
