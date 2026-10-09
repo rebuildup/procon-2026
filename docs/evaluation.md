@@ -283,7 +283,9 @@ search:trials=8:seed=42:budget=official:park=far:lookahead=next
 候補と同じ挙動・IDを保ちます。`park=far` は初期計画と各再構築 trial に #331 の翌日向け
 series spreading を適用し、`coverage:budget=official:park=far` の停車方針を探索中も維持します。
 この追加キーは ID の末尾に付くため既存 candidate ID は変わりません。
-`lookahead=none`（既定）は従来の当日採点です。`lookahead=next` は各 trial の当日 plan を
+`lookahead=none`（既定）は従来の当日採点です。`lookahead=next` は `time_budget_ms=0` の決定的な試行でのみ利用できます。
+翌日再生の追加時間を wall-clock search budget に混ぜないため、`time_budget_ms>0` との併用は拒否します。
+`next` は各 trial の当日 plan を
 case 固有の `SimConfig` で `MatchSim` に通し、終了位置・燃料・道路状態から翌日を baseline coverage 方針で
 もう1日だけ再生して、(match variety, daily variety sum, total balls) の公式辞書順で候補を保持します。
 最終日は当日のみを採点します。探索 trial 数は増えず、各 trial の再生量だけが増えます。

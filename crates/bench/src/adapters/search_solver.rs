@@ -36,7 +36,7 @@ const PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "lookahead",
         required: false,
-        doc: "none (default) | next (score one official day ahead)",
+        doc: "none (default) | next (one official day ahead; requires time_budget_ms=0)",
     },
 ];
 struct SearchCandidate {
@@ -217,6 +217,11 @@ impl CandidateFactory for SearchFactory {
             return Err(CandidateError::Build(
                 "search requires trials=1..1048576, time_budget_ms<=59000 and budget=official"
                     .into(),
+            ));
+        }
+        if lookahead_next && time_budget_ms > 0 {
+            return Err(CandidateError::Build(
+                "search lookahead=next requires time_budget_ms=0".into(),
             ));
         }
         Ok(Box::new(SearchCandidate {

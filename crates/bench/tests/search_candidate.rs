@@ -18,6 +18,12 @@ fn search_is_registered_and_bounded() {
             .build_solver()
             .is_err()
     );
+    assert!(
+        r.build("search:trials=8:seed=42:budget=official:time_budget_ms=10:lookahead=next")
+            .unwrap()
+            .build_solver()
+            .is_err()
+    );
     assert!(r.build("search:trials=0:seed=42:budget=official").unwrap().build_solver().is_err());
     // The 64-trial cap was Issue #315's exploration bound; the answer-time
     // gap (Issue #311) needs hundreds+ trials or a wall clock, so the cap
