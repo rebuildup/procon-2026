@@ -23,9 +23,11 @@ def run_eval(jobs, outdir, extra_args=None):
         cmd.extend(extra_args)
     env = os.environ.copy()
     env['PROCON_SOURCE_COMMIT_SHA'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-    start = time.time()
-    subprocess.run(cmd, capture_output=True, env=env)
-    return time.time() - start
+    # Monotonic clock: wall-clock can jump (NTP, suspend) and corrupt elapsed.
+    start = time.perf_counter()
+    # check=True: a failed run must raise, never be recorded as a fast success.
+    subprocess.run(cmd, capture_output=True, env=env, check=True)
+    return time.perf_counter() - start
 
 def main():
     rounds = 3
