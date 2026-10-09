@@ -65,6 +65,10 @@ fn fleet_requires_official_budget_and_rejects_bad_values() {
     assert!(build("fleet:budget=official:chains=4").is_ok());
     assert!(build("fleet:budget=official:chains=0").is_err());
     assert!(build("fleet:budget=official:chains=9").is_err());
+    assert!(build("fleet:budget=official:legs=pareto:cover=on:chains=2").is_ok());
+    assert!(build("fleet:budget=official:legs=wide").is_ok());
+    assert!(build("fleet:budget=official:legs=fastest").is_err());
+    assert!(build("fleet:budget=official:cover=maybe").is_err());
     assert!(build("fleet:budget=official:budget_ms=500:adapt=off").is_ok());
     assert!(build("fleet:budget=official:adapt=sometimes").is_err());
 }
@@ -147,4 +151,24 @@ fn fleet_chains_stay_legal_when_tomorrow_decides() {
     play_701("fleet:budget=official:iters=300:seed=3:chains=3", "P,P,P,P,P");
     let (daily, _) = play_701("fleet:budget=official:iters=600:seed=3:chains=2", "S,P,P,P,P");
     assert!(daily >= 196, "daily variety sum {daily}");
+}
+
+/// The experimental routing and seeding modes (Issue #382) must stay legal
+/// and reproducible; whether they score better is recorded in the evidence,
+/// not asserted here.
+#[test]
+fn fleet_leg_and_cover_modes_stay_legal() {
+    for id in [
+        "fleet:budget=official:iters=400:seed=42:legs=pareto",
+        "fleet:budget=official:iters=400:seed=42:legs=wide",
+        "fleet:budget=official:iters=300:seed=42:chains=2:cover=on",
+        "fleet:budget=official:iters=300:seed=42:chains=2:legs=pareto:cover=on",
+    ] {
+        let (daily, _) = play_701(id, "S,P,P,P,P");
+        assert!(daily >= 190, "{id}: daily variety sum {daily}");
+    }
+    let (_, state) = state_701("S,P,P,P,P");
+    let ctx = SolverContext::from_state(&state);
+    let id = "fleet:budget=official:iters=200:seed=42:chains=2:legs=pareto:cover=on";
+    assert_eq!(solver(id).decide(&ctx), solver(id).decide(&ctx));
 }

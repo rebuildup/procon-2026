@@ -64,6 +64,12 @@ const PARAMS: &[ParamSpec] = &[
               its own time/fuel trade-off so the route fits the tank)",
     },
     ParamSpec {
+        key: "cover",
+        required: false,
+        doc: "off (default) | on: with 2+ chains, every other chain starts from routes \
+              enumerated to reach the most series today",
+    },
+    ParamSpec {
         key: "chains",
         required: false,
         doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
@@ -120,11 +126,18 @@ impl CandidateFactory for FleetFactory {
                 return Err(CandidateError::Build(format!("unknown legs mode {other:?}")));
             }
         };
+        let cover = match spec.param("cover") {
+            None | Some("off") => false,
+            Some("on") => true,
+            Some(other) => {
+                return Err(CandidateError::Build(format!("unknown cover mode {other:?}")));
+            }
+        };
         let chains = parse(spec, "chains", 1u32)?;
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, legs }))
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, legs, cover }))
     }
 }
 
@@ -138,6 +151,8 @@ pub struct FleetCandidate {
     pub adapt: bool,
     /// Per-leg time/fuel trade-offs (Issue #382).
     pub legs: u8,
+    /// Seed every other chain with enumerated full-coverage routes (Issue #382).
+    pub cover: bool,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -338,7 +353,9 @@ impl World {
                 .map(|uv| {
                     let mut all: Vec<(u32, u32, u8)> = (0..NM_ALL)
                         .filter(|&m| world.time[m][uv] != NONE)
-                        .map(|m| (world.time[m][uv], world.fuel[m][uv], m as u8))
+                        .map(|m| {
+                            (world.time[m][uv], world.fuel[m][uv], u8::try_from(m).unwrap_or(0))
+                        })
                         .collect();
                     all.sort_unstable();
                     // Keep the time/fuel Pareto set: slower only if leaner.
@@ -490,6 +507,8 @@ struct Evaluation {
     today: (i64, i64),
     /// Series the greedy estimate reaches tomorrow (0 on the last day).
     tomorrow_series: i64,
+    /// Series among today's that the match had not taken before.
+    fresh: i64,
     lines: Vec<Timeline>,
     supplies: Vec<SupplyLine>,
 }
@@ -527,8 +546,9 @@ impl World {
         let mut picks: Vec<Option<(usize, usize)>> = Vec::new();
         // Slowing legs down shortens how far the day reaches, which in turn
         // frees fuel: repeat on the shorter horizon until it stops moving.
-        let rounds = if std::env::var_os("FLEET_FIX").is_some() { 4 } else { 1 };
-        for _ in 0..rounds {
+        // One pass: re-fitting on the shortened horizon measured worse.
+        #[allow(clippy::never_loop, reason = "kept as a loop for the horizon bookkeeping below")]
+        for _ in 0..1 {
             picks.clear();
             let (mut prev, mut need) = (last.node, 0u32);
             for &to in &upcoming[..horizon] {
@@ -731,7 +751,8 @@ impl World {
                 events.push((1, p, self.spot_at[start_cell] as usize));
             }
             for w in line.visits.windows(2) {
-                for &(node, off) in &self.via[usize::from(w[1].m)][w[0].node * self.nn + w[1].node] {
+                for &(node, off) in &self.via[usize::from(w[1].m)][w[0].node * self.nn + w[1].node]
+                {
                     events.push((w[0].dep + off, p, usize::from(node)));
                 }
                 if w[1].node < self.spots {
@@ -740,8 +761,7 @@ impl World {
             }
             if let Some((to, _)) = line.pending {
                 let last = line.visits.last().expect("non-empty timeline");
-                for &(node, off) in
-                    &self.via[usize::from(line.pending_m)][last.node * self.nn + to]
+                for &(node, off) in &self.via[usize::from(line.pending_m)][last.node * self.nn + to]
                 {
                     if last.dep + off <= self.steps {
                         events.push((last.dep + off, p, usize::from(node)));
@@ -811,7 +831,7 @@ impl World {
                 score += 150 * have / full.max(1);
             }
         }
-        Evaluation { score, today: (series, balls), tomorrow_series, lines, supplies }
+        Evaluation { score, today: (series, balls), tomorrow_series, fresh, lines, supplies }
     }
 
     /// Nearest-useful-spot greedy from `starts` over a `steps`-tick day:
@@ -898,6 +918,125 @@ impl World {
             }
         }
         (series, balls)
+    }
+
+    /// Routes that reach as many series as time allows today, by exact
+    /// enumeration (Issue #382): per patrol, the earliest arrival for every
+    /// (last spot, series set) along fastest paths, then the best union over
+    /// patrols. Fuel is not modelled here — the evaluation that follows
+    /// decides whether the tanks can pay. `None` when the board is too large
+    /// to enumerate within the state limit.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::type_complexity,
+        reason = "one enumeration: per-patrol states, witnesses, then the union"
+    )]
+    fn cover_routes(&self) -> Option<Vec<Vec<u16>>> {
+        const STATE_LIMIT: usize = 400_000;
+        const UNION_LIMIT: usize = 20_000;
+        if self.series_slots > 64 {
+            return None;
+        }
+        let bit = |node: usize| 1u64 << self.series[node];
+        // Keep only sets no other set contains.
+        let maximal = |mut sets: Vec<u64>| -> Vec<u64> {
+            sets.sort_unstable_by_key(|m| Reverse(m.count_ones()));
+            sets.dedup();
+            let mut keep: Vec<u64> = Vec::new();
+            for m in sets {
+                if !keep.iter().any(|k| m | k == *k) {
+                    keep.push(m);
+                }
+            }
+            keep
+        };
+        let mut budget = STATE_LIMIT;
+        let mut per_patrol: Vec<(Vec<u64>, std::collections::HashMap<u64, Vec<u16>>)> = Vec::new();
+        for patrol in &self.patrols {
+            // (last spot, series set) -> (earliest arrival, previous state)
+            let mut best: std::collections::HashMap<(u16, u64), (u32, Option<(u16, u64)>)> =
+                std::collections::HashMap::new();
+            let mut frontier: Vec<(u16, u64)> = Vec::new();
+            for node in 0..self.spots {
+                let t = self.t(FAST, patrol.start, node);
+                if t != NONE && t <= self.steps {
+                    let state = (u16::try_from(node).expect("node"), bit(node));
+                    best.insert(state, (t, None));
+                    frontier.push(state);
+                }
+            }
+            while !frontier.is_empty() {
+                let mut next = Vec::new();
+                for state in frontier {
+                    let (at, mask) = state;
+                    let t0 = best[&state].0;
+                    for node in 0..self.spots {
+                        if mask & bit(node) != 0 {
+                            continue;
+                        }
+                        let t = self.t(FAST, usize::from(at), node);
+                        if t == NONE || t0 + t > self.steps {
+                            continue;
+                        }
+                        let to = (u16::try_from(node).expect("node"), mask | bit(node));
+                        if best.get(&to).is_none_or(|b| t0 + t < b.0) {
+                            if best.insert(to, (t0 + t, Some(state))).is_none() {
+                                budget = budget.checked_sub(1)?;
+                            }
+                            next.push(to);
+                        }
+                    }
+                }
+                frontier = next;
+            }
+            let mut witness: std::collections::HashMap<u64, Vec<u16>> =
+                std::collections::HashMap::new();
+            witness.insert(0, Vec::new());
+            let mut states: Vec<&(u16, u64)> = best.keys().collect();
+            states.sort_unstable();
+            for &state in states {
+                witness.entry(state.1).or_insert_with(|| {
+                    let mut route = Vec::new();
+                    let mut cursor = Some(state);
+                    while let Some(c) = cursor {
+                        route.push(c.0);
+                        cursor = best[&c].1;
+                    }
+                    route.reverse();
+                    route
+                });
+            }
+            let sets = maximal(witness.keys().copied().collect());
+            per_patrol.push((sets, witness));
+        }
+        // Best union, patrol by patrol.
+        let mut unions: Vec<(u64, Vec<u64>)> = vec![(0, Vec::new())];
+        for (sets, _) in &per_patrol {
+            let mut next: std::collections::BTreeMap<u64, Vec<u64>> =
+                std::collections::BTreeMap::new();
+            for (union, parts) in &unions {
+                for &m in sets {
+                    next.entry(union | m).or_insert_with(|| {
+                        let mut parts = parts.clone();
+                        parts.push(m);
+                        parts
+                    });
+                }
+            }
+            if next.len() > UNION_LIMIT {
+                return None;
+            }
+            let keep = maximal(next.keys().copied().collect());
+            unions = keep.into_iter().map(|u| (u, next[&u].clone())).collect();
+        }
+        let (_, parts) = unions.into_iter().max_by_key(|(u, _)| (u.count_ones(), Reverse(*u)))?;
+        Some(
+            parts
+                .iter()
+                .zip(&per_patrol)
+                .map(|(m, (_, witness))| witness.get(m).cloned().unwrap_or_default())
+                .collect(),
+        )
     }
 
     fn initial(&self) -> Solution {
@@ -1251,15 +1390,25 @@ struct Candidate {
     model: (i64, i64),
     /// Tomorrow's `(series, balls)` from the plan's end state.
     tomorrow: (i64, i64),
+    /// Series tomorrow's plan takes for the first time in the match.
+    tomorrow_fresh: i64,
 }
 
 impl Candidate {
     /// Clean first; then variety, series and balls over today and tomorrow.
-    fn key(&self) -> (bool, usize, i64, i64) {
+    /// Variety counts what tomorrow adds too: a series taken a day early is
+    /// not a gain if the other plan takes it tomorrow.
+    ///
+    /// `two_day` is the `cover=on` rule; without it the key is the parent
+    /// fleet's (variety as of today, no preference among equal sums).
+    fn key(&self, two_day: bool) -> (bool, i64, i64, i64, i64) {
+        let today = i64::try_from(self.check.series_today).unwrap_or(i64::MAX);
+        let variety = i64::try_from(self.check.variety).unwrap_or(i64::MAX);
         (
             self.check.clean,
-            self.check.variety,
-            i64::try_from(self.check.series_today).unwrap_or(i64::MAX) + self.tomorrow.0,
+            if two_day { variety + self.tomorrow_fresh } else { variety },
+            today + self.tomorrow.0,
+            0,
             i64::from(self.check.balls_today) + self.tomorrow.1,
         )
     }
@@ -1268,6 +1417,48 @@ impl Candidate {
 impl FleetCandidate {
     fn seed(&self, ctx: &SolverContext<'_>, k: usize) -> u64 {
         self.seed ^ (u64::from(ctx.day) << 32) ^ ((k as u64) << 48)
+    }
+
+    /// Plan the next `depth` days from `state` with the same planner and
+    /// return what they collect: `((series, balls), first-time series)`.
+    /// With `cover=on` each day is also planned from its own full-coverage
+    /// routes and the better plan is the one played on.
+    fn look_ahead(
+        &self,
+        state: &MatchState,
+        later: &[u32],
+        depth: u32,
+        until: Option<Instant>,
+        seed: u64,
+    ) -> ((i64, i64), i64) {
+        let Some((&steps, rest)) = later.split_first() else { return ((0, 0), 0) };
+        if depth == 0 {
+            return ((0, 0), 0);
+        }
+        let world = World::new(state, steps, rest, self.legs);
+        let iters = self.iters / 3;
+        let mut best = world.search(iters, until, seed, CHAIN_T0[0], None);
+        if self.cover {
+            if let Some(routes) = world.cover_routes() {
+                let start = Solution { routes, ..world.initial() };
+                let seeded = world.search(iters, until, seed ^ 1, CHAIN_T0[0], Some(start));
+                if seeded.1.today > best.1.today {
+                    best = seeded;
+                }
+            }
+        }
+        let (sol, eval) = best;
+        let mut total = (eval.today, eval.fresh);
+        if depth > 1 && !rest.is_empty() {
+            let ctx = SolverContext::from_state(state);
+            let (_, check) = Self::finish(&ctx, &world, &sol, &eval);
+            if check.clean {
+                let ((series, balls), fresh) =
+                    self.look_ahead(&check.state, rest, depth - 1, until, seed ^ 0x9e37);
+                total = ((total.0.0 + series, total.0.1 + balls), total.1 + fresh);
+            }
+        }
+        total
     }
 
     /// Turn an evaluated solution into the day's answer and replay it.
@@ -1361,8 +1552,16 @@ impl Solver for FleetCandidate {
         let second = chains > 1;
         let plan_until = window.map(|w| started + if second { w * 7 / 10 } else { w });
         let until = window.map(|w| started + w);
+        // `cover=on`: odd chains start from routes enumerated to reach as
+        // many series as today's time allows. Whether spending the fuel on
+        // them pays off over tomorrow is left to the comparison below.
+        let cover = (self.cover && chains > 1)
+            .then(|| world.cover_routes())
+            .flatten()
+            .map(|routes| Solution { routes, ..world.initial() });
         let first = per_chain(chains, live, |k| {
-            world.search(self.iters, plan_until, self.seed(ctx, k), CHAIN_T0[k % 4], None)
+            let start = if k % 2 == 1 { cover.clone() } else { None };
+            world.search(self.iters, plan_until, self.seed(ctx, k), CHAIN_T0[k % 4], start)
         });
         // Is tomorrow's variety at stake? If every chain covers every series
         // today and the mere greedy estimate covers them all tomorrow, the
@@ -1379,26 +1578,37 @@ impl Solver for FleetCandidate {
             let (sol, eval) = &first[k];
             if !second {
                 let (plan, check) = Self::finish(ctx, &world, sol, eval);
-                return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
+                return Candidate {
+                    plan,
+                    check,
+                    model: eval.today,
+                    tomorrow: (0, 0),
+                    tomorrow_fresh: 0,
+                };
             }
             let seed = self.seed(ctx, k) ^ 0x5bd1_e995;
             if settled {
                 let (sol, eval) = world.search(self.iters / 3, until, seed, 5.0, Some(sol.clone()));
                 let (plan, check) = Self::finish(ctx, &world, &sol, &eval);
-                return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
+                return Candidate {
+                    plan,
+                    check,
+                    model: eval.today,
+                    tomorrow: (0, 0),
+                    tomorrow_fresh: 0,
+                };
             }
             let (plan, check) = Self::finish(ctx, &world, sol, eval);
-            let tomorrow = match later.split_first() {
-                Some((&steps, rest)) if check.clean => {
-                    let next = World::new(&check.state, steps, rest, self.legs);
-                    next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
-                }
-                _ => (0, 0),
+            let depth = if self.cover { 2 } else { 1 };
+            let (tomorrow, tomorrow_fresh) = if check.clean {
+                self.look_ahead(&check.state, &later, depth, until, seed)
+            } else {
+                ((0, 0), 0)
             };
-            Candidate { plan, check, model: eval.today, tomorrow }
+            Candidate { plan, check, model: eval.today, tomorrow, tomorrow_fresh }
         });
         // Ties keep the first chain (`max_by_key` returns the last maximum).
-        let Some(best) = candidates.into_iter().rev().max_by_key(Candidate::key) else {
+        let Some(best) = candidates.into_iter().rev().max_by_key(|c| c.key(self.cover)) else {
             return fallback();
         };
         // Evidence line for live runs: what the model promised, what the
@@ -1483,6 +1693,7 @@ pub fn choose_kinds(
                 chains: 1,
                 adapt: true,
                 legs: 0,
+                cover: false,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
