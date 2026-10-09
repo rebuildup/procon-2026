@@ -1,0 +1,941 @@
+//! Fleet planning: patrol routes as a team orienteering problem, supplies as
+//! interceptors of the finished patrol routes (Issue #371).
+//!
+//! `coverage` decides one move at a time (nearest unclaimed series) and lets
+//! each Supply chase one paired Patrol. That caps the useful Patrol count at
+//! the Supply count: an unpaired Patrol starves, so patrol-heavy kinds lose
+//! daily variety. This candidate plans the whole day instead:
+//!
+//! 1. Shortest-path matrices between every spot and every agent start, under
+//!    today's terrain, for three leg metrics (fastest / balanced / fuel-lean).
+//! 2. Each Patrol owns an ordered spot list. A simulated-annealing search
+//!    inserts, removes, relocates, swaps and reverses spots across patrols,
+//!    scored by new series, today's series, today's balls and a greedy
+//!    estimate of tomorrow from the day's end positions and fuel.
+//! 3. Each Supply owns an ordered list of patrols to refuel. It intercepts
+//!    the first one on that patrol's timed route (or meets it where it
+//!    stalls), tops it up, moves on, and escorts the last one.
+//!
+//! The day model mirrors the official tick clock (a move from terrain `x`
+//! lands `step_cost(x)` ticks later; every reflection picks and refuels), but
+//! the returned plan is never trusted from the model alone: it is replayed
+//! through [`engine::MatchSim`], and a plan with an illegal or fuel-short
+//! action is discarded for the `coverage` plan.
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+use std::time::{Duration, Instant};
+
+use crate::adapters::coverage_solver::{CoverageCandidate, mix};
+use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
+use engine::MatchSim;
+use engine::model::{
+    Action, AgentActions, AgentKind, Direction, MatchState, Solver, SolverContext, Terrain,
+};
+use engine::rules::fuel_cost;
+
+pub struct FleetFactory;
+const PARAMS: &[ParamSpec] = &[
+    ParamSpec { key: "budget", required: true, doc: "official (required)" },
+    ParamSpec {
+        key: "iters",
+        required: false,
+        doc: "OFFLINE deterministic search length per day (default 20000)",
+    },
+    ParamSpec {
+        key: "budget_ms",
+        required: false,
+        doc: "LIVE wall-clock cap per day plan, 1..59000; overrides iters",
+    },
+    ParamSpec { key: "seed", required: false, doc: "search seed (default 42)" },
+];
+
+fn parse<T: std::str::FromStr>(
+    spec: &CandidateSpec,
+    key: &str,
+    default: T,
+) -> Result<T, CandidateError> {
+    match spec.param(key) {
+        None => Ok(default),
+        Some(s) => s.parse().map_err(|_| CandidateError::Build(format!("invalid {key}: {s:?}"))),
+    }
+}
+
+impl CandidateFactory for FleetFactory {
+    fn algorithm(&self) -> &'static str {
+        "fleet"
+    }
+    fn params(&self) -> &'static [ParamSpec] {
+        PARAMS
+    }
+    fn describe(&self) -> &'static str {
+        "Team-orienteering patrol routes with supply interception"
+    }
+    fn build(&self, spec: &CandidateSpec) -> Result<Box<dyn Solver>, CandidateError> {
+        super::reject_unknown_params(spec, PARAMS)?;
+        if spec.param("budget") != Some("official") {
+            return Err(CandidateError::Build("fleet requires budget=official".into()));
+        }
+        let iters = parse(spec, "iters", 20_000u32)?;
+        let budget_ms = parse(spec, "budget_ms", 0u32)?;
+        if budget_ms > 59_000 {
+            return Err(CandidateError::Build(format!(
+                "budget_ms must be 0..=59000, got {budget_ms}"
+            )));
+        }
+        let seed = parse(spec, "seed", 42u64)?;
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed }))
+    }
+}
+
+pub struct FleetCandidate {
+    pub iters: u32,
+    pub budget_ms: u32,
+    pub seed: u64,
+}
+
+const NM: usize = 3;
+const FAST: usize = 0;
+const BAL: usize = 1;
+const NONE: u32 = u32::MAX;
+
+const W_NEW: i64 = 1_000_000;
+const W_SERIES: i64 = 10_000;
+const W_BALL: i64 = 100;
+/// Tomorrow is an estimate, so it is worth a little less than today.
+const TOMORROW_NUM: i64 = 8;
+const TOMORROW_DEN: i64 = 10;
+
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        mix(self.0)
+    }
+    fn below(&mut self, n: usize) -> usize {
+        usize::try_from(self.next() % n.max(1) as u64).expect("bounded")
+    }
+    fn unit(&mut self) -> f64 {
+        #[allow(clippy::cast_precision_loss, reason = "53-bit mantissa sample")]
+        let x = (self.next() >> 11) as f64 / (1u64 << 53) as f64;
+        x
+    }
+}
+
+struct PatrolInfo {
+    agent: usize,
+    start: usize,
+    fuel: u32,
+    cap: u32,
+}
+
+struct SupplyInfo {
+    agent: usize,
+    start: usize,
+}
+
+/// One day's static world: nodes are the spots (first) then the agent starts.
+struct World {
+    time_cost: Vec<u32>,
+    fuel_cost: Vec<u32>,
+    neighbors: Vec<[u32; 6]>,
+    nodes: Vec<usize>,
+    spots: usize,
+    series: Vec<u32>,
+    stock: Vec<u32>,
+    /// `spot_at[cell]` = spot node on that cell.
+    spot_at: Vec<u32>,
+    nn: usize,
+    time: [Vec<u32>; NM],
+    fuel: [Vec<u32>; NM],
+    /// `prev[m][u][cell]` = (previous cell, direction index) on u's tree.
+    prev: [Vec<Vec<(u32, u8)>>; NM],
+    /// Spots strictly inside the `u -> v` path, with their time offset.
+    via: [Vec<Vec<(u16, u32)>>; NM],
+    steps: u32,
+    tomorrow: Option<u32>,
+    patrols: Vec<PatrolInfo>,
+    supplies: Vec<SupplyInfo>,
+    new_series: Vec<bool>,
+    series_slots: usize,
+}
+
+fn cell_index(width: usize, col: i32, row: i32) -> usize {
+    usize::try_from(row).expect("in-bounds row") * width
+        + usize::try_from(col).expect("in-bounds col")
+}
+
+impl World {
+    #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
+    fn new(state: &MatchState, steps: u32, tomorrow: Option<u32>) -> Self {
+        let map = &state.setting.map;
+        let width = usize::from(map.size.width);
+        let cells = map.cells();
+        let time_cost: Vec<u32> = cells
+            .iter()
+            .map(|c| engine::wire_plan::terrain_step_cost(c.terrain).unwrap_or(NONE))
+            .collect();
+        let fuel: Vec<u32> = cells.iter().map(|c| fuel_cost(c.terrain)).collect();
+        let neighbors: Vec<[u32; 6]> = cells
+            .iter()
+            .map(|c| {
+                let mut out = [NONE; 6];
+                for (d, dir) in Direction::ALL.iter().enumerate() {
+                    let to = dir.step(c.coord);
+                    if map.get(to).is_some_and(|t| t.terrain != Terrain::Pond) {
+                        out[d] = u32::try_from(cell_index(width, to.col, to.row)).expect("cell");
+                    }
+                }
+                out
+            })
+            .collect();
+        let mut nodes = Vec::new();
+        let mut series = Vec::new();
+        let mut stock = Vec::new();
+        let mut spot_at = vec![NONE; cells.len()];
+        for (i, c) in cells.iter().enumerate() {
+            if let Some(spot) = &c.spot {
+                spot_at[i] = u32::try_from(nodes.len()).expect("node");
+                nodes.push(i);
+                series.push(spot.series);
+                stock.push(spot.max_stock);
+            }
+        }
+        let spots = nodes.len();
+        let mut patrols = Vec::new();
+        let mut supplies = Vec::new();
+        for (a, agent) in state.agents.iter().enumerate() {
+            let start = nodes.len();
+            nodes.push(cell_index(width, agent.pos.col, agent.pos.row));
+            if agent.kind == AgentKind::Patrol {
+                patrols.push(PatrolInfo { agent: a, start, fuel: agent.fuel, cap: agent.fuel_cap });
+            } else {
+                supplies.push(SupplyInfo { agent: a, start });
+            }
+        }
+        let nn = nodes.len();
+        let series_slots = series.iter().copied().max().map_or(0, |m| m as usize + 1);
+        let mut new_series = vec![true; series_slots];
+        for &s in &state.series_taken {
+            if let Some(slot) = new_series.get_mut(s as usize) {
+                *slot = false;
+            }
+        }
+        let mut world = Self {
+            time_cost,
+            fuel_cost: fuel,
+            neighbors,
+            nodes,
+            spots,
+            series,
+            stock,
+            spot_at,
+            nn,
+            time: std::array::from_fn(|_| vec![NONE; nn * nn]),
+            fuel: std::array::from_fn(|_| vec![NONE; nn * nn]),
+            prev: std::array::from_fn(|_| Vec::with_capacity(nn)),
+            via: std::array::from_fn(|_| vec![Vec::new(); nn * nn]),
+            steps,
+            tomorrow,
+            patrols,
+            supplies,
+            new_series,
+            series_slots,
+        };
+        for m in 0..NM {
+            for u in 0..nn {
+                world.tree(m, u);
+            }
+        }
+        world
+    }
+
+    /// Dijkstra from node `u` under metric `m`; fills the matrices and vias.
+    fn tree(&mut self, m: usize, u: usize) {
+        let n = self.time_cost.len();
+        let mut key = vec![u64::MAX; n];
+        let mut time = vec![NONE; n];
+        let mut fuel = vec![NONE; n];
+        let mut prev = vec![(NONE, 0u8); n];
+        let source = self.nodes[u];
+        key[source] = 0;
+        time[source] = 0;
+        fuel[source] = 0;
+        let mut heap = BinaryHeap::from([Reverse((0u64, source))]);
+        while let Some(Reverse((k, i))) = heap.pop() {
+            if k != key[i] {
+                continue;
+            }
+            let (t, f) = (u64::from(self.time_cost[i]), u64::from(self.fuel_cost[i]));
+            let edge = match m {
+                FAST => t * 1024 + f,
+                BAL => (t + f) * 1024 + t,
+                _ => (f * 3 + t) * 1024 + t,
+            };
+            for d in 0..6 {
+                let j = self.neighbors[i][d];
+                if j == NONE {
+                    continue;
+                }
+                let j = j as usize;
+                if k + edge < key[j] {
+                    key[j] = k + edge;
+                    time[j] = time[i] + self.time_cost[i];
+                    fuel[j] = fuel[i] + self.fuel_cost[i];
+                    prev[j] = (u32::try_from(i).expect("cell"), u8::try_from(d).expect("dir"));
+                    heap.push(Reverse((key[j], j)));
+                }
+            }
+        }
+        for v in 0..self.nn {
+            let target = self.nodes[v];
+            self.time[m][u * self.nn + v] = time[target];
+            self.fuel[m][u * self.nn + v] = fuel[target];
+            if time[target] == NONE || target == source {
+                continue;
+            }
+            let mut via = Vec::new();
+            let mut cell = prev[target].0 as usize;
+            while cell != source {
+                if self.spot_at[cell] != NONE {
+                    via.push((u16::try_from(self.spot_at[cell]).expect("node"), time[cell]));
+                }
+                cell = prev[cell].0 as usize;
+            }
+            via.reverse();
+            self.via[m][u * self.nn + v] = via;
+        }
+        self.prev[m].push(prev);
+    }
+
+    fn t(&self, m: usize, u: usize, v: usize) -> u32 {
+        self.time[m][u * self.nn + v]
+    }
+    fn f(&self, m: usize, u: usize, v: usize) -> u32 {
+        self.fuel[m][u * self.nn + v]
+    }
+
+    /// Directions of the `u -> v` path under metric `m`, with origin cells.
+    fn path(&self, m: usize, u: usize, v: usize) -> Vec<(usize, Direction)> {
+        let prev = &self.prev[m][u];
+        let source = self.nodes[u];
+        let mut cell = self.nodes[v];
+        let mut out = Vec::new();
+        while cell != source {
+            let (p, d) = prev[cell];
+            if p == NONE {
+                return Vec::new();
+            }
+            out.push((p as usize, Direction::ALL[usize::from(d)]));
+            cell = p as usize;
+        }
+        out.reverse();
+        out
+    }
+}
+
+#[derive(Clone)]
+struct Solution {
+    routes: Vec<Vec<u16>>,
+    metric: Vec<u8>,
+    /// Per supply: patrols to refuel in order; the last one is escorted.
+    serve: Vec<Vec<u8>>,
+}
+
+#[derive(Clone, Copy)]
+struct Visit {
+    node: usize,
+    arr: u32,
+    dep: u32,
+    /// Route index the patrol travels to after this visit.
+    next: usize,
+}
+
+#[derive(Clone, Default)]
+struct Timeline {
+    visits: Vec<Visit>,
+    /// Leg cut by the end of the day: `(target node, arrival tick)`.
+    pending: Option<(usize, u32)>,
+    fuel: u32,
+    escorted: bool,
+    stalled: bool,
+    /// Index of the next route entry to travel to.
+    next: usize,
+}
+
+#[derive(Clone, Default)]
+struct SupplyLine {
+    /// `(node, depart tick)`: go there on the fastest path, leave at `dep`.
+    stops: Vec<(usize, u32)>,
+    /// Escort this patrol from the last stop's departure tick.
+    escort: Option<usize>,
+}
+
+struct Evaluation {
+    score: i64,
+    lines: Vec<Timeline>,
+    supplies: Vec<SupplyLine>,
+}
+
+/// A patrol's day-end state, as tomorrow's greedy estimate needs it.
+#[derive(Clone, Copy)]
+struct Start {
+    node: usize,
+    offset: u32,
+    fuel: u32,
+    escorted: bool,
+}
+
+impl World {
+    /// Advance patrol `p` along its route from the timeline's last visit.
+    fn advance(&self, sol: &Solution, p: usize, line: &mut Timeline) {
+        let m = usize::from(sol.metric[p]);
+        let route = &sol.routes[p];
+        line.stalled = false;
+        line.pending = None;
+        while line.next < route.len() {
+            let last = *line.visits.last().expect("timeline starts with the start visit");
+            let to = usize::from(route[line.next]);
+            let (t, f) = (self.t(m, last.node, to), self.f(m, last.node, to));
+            if t == NONE {
+                line.next += 1;
+                continue;
+            }
+            if !line.escorted && line.fuel < f {
+                line.stalled = true;
+                return;
+            }
+            if !line.escorted {
+                line.fuel -= f;
+            }
+            if last.dep + t > self.steps {
+                line.pending = Some((to, last.dep + t));
+                return;
+            }
+            line.next += 1;
+            line.visits.push(Visit { node: to, arr: last.dep + t, dep: last.dep + t, next: line.next });
+        }
+    }
+
+    /// Where and when a supply at `(node, tick)` can first share a cell with
+    /// patrol timeline `line`: `(visit index, meeting tick)`.
+    fn intercept(&self, line: &Timeline, node: usize, tick: u32, escort: bool) -> Option<(usize, u32)> {
+        for (k, visit) in line.visits.iter().enumerate() {
+            let reach = self.t(FAST, node, visit.node);
+            if reach == NONE {
+                continue;
+            }
+            let arrive = tick + reach;
+            if k == 0 {
+                // No reflection at tick 0: a touch needs the patrol to still
+                // be standing there at tick 1.
+                let lingers = self.time_cost[self.nodes[visit.node]] >= 2 || visit.dep >= 1;
+                if arrive == 0 && (escort || lingers) {
+                    return Some((0, 0));
+                }
+                continue;
+            }
+            if arrive <= visit.arr {
+                return Some((k, visit.arr));
+            }
+        }
+        // No moving intercept: meet where the patrol ends up standing.
+        if line.pending.is_some() {
+            return None;
+        }
+        let k = line.visits.len() - 1;
+        let last = line.visits[k];
+        let reach = self.t(FAST, node, last.node);
+        if reach == NONE {
+            return None;
+        }
+        let meet = (tick + reach).max(last.arr).max(1);
+        (meet <= self.steps).then_some((k, meet))
+    }
+
+    #[allow(clippy::too_many_lines, reason = "one pass: timelines, supply meets, picks, score")]
+    fn evaluate(&self, sol: &Solution) -> Evaluation {
+        let np = self.patrols.len();
+        let mut lines: Vec<Timeline> = (0..np)
+            .map(|p| Timeline {
+                visits: vec![Visit { node: self.patrols[p].start, arr: 0, dep: 0, next: 0 }],
+                fuel: self.patrols[p].fuel,
+                ..Timeline::default()
+            })
+            .collect();
+        for p in 0..np {
+            self.advance(sol, p, &mut lines[p]);
+        }
+        let mut supplies = Vec::with_capacity(self.supplies.len());
+        for (s, info) in self.supplies.iter().enumerate() {
+            let (mut node, mut tick) = (info.start, 0u32);
+            let mut out = SupplyLine::default();
+            let list = &sol.serve[s];
+            for (i, &q) in list.iter().enumerate() {
+                let q = usize::from(q);
+                let escort = i + 1 == list.len();
+                let Some((k, meet)) = self.intercept(&lines[q], node, tick, escort) else {
+                    continue;
+                };
+                let line = &mut lines[q];
+                // Undo what the patrol did after the meeting; replay it with
+                // the refuelled tank.
+                line.visits.truncate(k + 1);
+                line.visits[k].dep = meet;
+                line.next = line.visits[k].next;
+                line.fuel = self.patrols[q].cap;
+                line.escorted = escort;
+                self.advance(sol, q, line);
+                node = line.visits[k].node;
+                tick = meet;
+                out.stops.push((node, meet));
+                if escort {
+                    out.escort = Some(q);
+                }
+            }
+            supplies.push(out);
+        }
+
+        // Picks: every reflection a patrol stands on a stocked spot.
+        let mut events: Vec<(u32, usize, usize)> = Vec::new();
+        for (p, line) in lines.iter().enumerate() {
+            let m = usize::from(sol.metric[p]);
+            let start_cell = self.nodes[line.visits[0].node];
+            if self.spot_at[start_cell] != NONE
+                && (self.time_cost[start_cell] >= 2 || line.visits[0].dep >= 1 || line.visits.len() == 1)
+            {
+                events.push((1, p, self.spot_at[start_cell] as usize));
+            }
+            for w in line.visits.windows(2) {
+                for &(node, off) in &self.via[m][w[0].node * self.nn + w[1].node] {
+                    events.push((w[0].dep + off, p, usize::from(node)));
+                }
+                if w[1].node < self.spots {
+                    events.push((w[1].arr.max(1), p, w[1].node));
+                }
+            }
+            if let Some((to, _)) = line.pending {
+                let last = line.visits.last().expect("non-empty timeline");
+                for &(node, off) in &self.via[m][last.node * self.nn + to] {
+                    if last.dep + off <= self.steps {
+                        events.push((last.dep + off, p, usize::from(node)));
+                    }
+                }
+            }
+        }
+        events.sort_unstable();
+        let mut stock = self.stock.clone();
+        let mut picked = vec![false; np * self.spots];
+        let mut covered = vec![false; self.series_slots];
+        let (mut series, mut fresh, mut balls) = (0i64, 0i64, 0i64);
+        for &(_, p, node) in &events {
+            if stock[node] == 0 || picked[p * self.spots + node] {
+                continue;
+            }
+            stock[node] -= 1;
+            picked[p * self.spots + node] = true;
+            balls += 1;
+            let s = self.series[node] as usize;
+            if !covered[s] {
+                covered[s] = true;
+                series += 1;
+                if self.new_series[s] {
+                    fresh += 1;
+                }
+            }
+        }
+        let mut score = fresh * W_NEW + series * W_SERIES + balls * W_BALL;
+        // Idle time is worth a little: prefer the shorter of two equal days.
+        for line in &lines {
+            let end = line.pending.map_or(line.visits.last().expect("non-empty").arr, |_| self.steps);
+            score -= i64::from(end) * 20 / i64::from(self.steps.max(1));
+        }
+        if let Some(tomorrow) = self.tomorrow {
+            let starts: Vec<Start> = lines
+                .iter()
+                .map(|line| {
+                    let (node, offset) = line.pending.map_or_else(
+                        || (line.visits.last().expect("non-empty").node, 0),
+                        |(to, at)| (to, at - self.steps),
+                    );
+                    Start { node, offset, fuel: line.fuel, escorted: line.escorted }
+                })
+                .collect();
+            let (d, b) = self.greedy(&starts, tomorrow, None);
+            score += (d * W_SERIES + b * W_BALL) * TOMORROW_NUM / TOMORROW_DEN;
+            for (p, start) in starts.iter().enumerate() {
+                let full = i64::from(self.patrols[p].cap.min(tomorrow));
+                let have = if start.escorted { full } else { i64::from(start.fuel).min(full) };
+                score += 150 * have / full.max(1);
+            }
+        }
+        Evaluation { score, lines, supplies }
+    }
+
+    /// Nearest-useful-spot greedy from `starts` over a `steps`-tick day:
+    /// `(series, balls)`. With `routes`, also records each patrol's order.
+    fn greedy(&self, starts: &[Start], steps: u32, mut routes: Option<&mut Vec<Vec<u16>>>) -> (i64, i64) {
+        let np = starts.len();
+        let mut at: Vec<usize> = starts.iter().map(|s| s.node).collect();
+        let mut tick: Vec<u32> = starts.iter().map(|s| s.offset).collect();
+        let mut fuel: Vec<u32> = starts.iter().map(|s| s.fuel).collect();
+        let mut done = vec![false; np];
+        let mut stock = self.stock.clone();
+        let mut picked = vec![false; np * self.spots];
+        let mut covered = vec![false; self.series_slots];
+        let (mut series, mut balls) = (0i64, 0i64);
+        let pick = |p: usize,
+                        node: usize,
+                        stock: &mut Vec<u32>,
+                        picked: &mut Vec<bool>,
+                        covered: &mut Vec<bool>,
+                        series: &mut i64,
+                        balls: &mut i64| {
+            if stock[node] == 0 || picked[p * self.spots + node] {
+                return;
+            }
+            stock[node] -= 1;
+            picked[p * self.spots + node] = true;
+            *balls += 1;
+            let s = self.series[node] as usize;
+            if !covered[s] {
+                covered[s] = true;
+                *series += 1;
+            }
+        };
+        for p in 0..np {
+            let cell = self.nodes[at[p]];
+            if tick[p] == 0 && self.spot_at[cell] != NONE {
+                pick(p, self.spot_at[cell] as usize, &mut stock, &mut picked, &mut covered, &mut series, &mut balls);
+            }
+        }
+        while let Some(p) = (0..np).filter(|&p| !done[p]).min_by_key(|&p| (tick[p], p)) {
+            let m = if starts[p].escorted { FAST } else { BAL };
+            let mut best: Option<(bool, u32, usize)> = None;
+            for node in 0..self.spots {
+                if stock[node] == 0 || picked[p * self.spots + node] {
+                    continue;
+                }
+                let t = self.t(m, at[p], node);
+                if t == NONE || tick[p] + t > steps {
+                    continue;
+                }
+                if !starts[p].escorted && self.f(m, at[p], node) > fuel[p] {
+                    continue;
+                }
+                let key = (covered[self.series[node] as usize], t, node);
+                if best.is_none_or(|b| key < b) {
+                    best = Some(key);
+                }
+            }
+            let Some((_, t, node)) = best else {
+                done[p] = true;
+                continue;
+            };
+            if !starts[p].escorted {
+                fuel[p] -= self.f(m, at[p], node);
+            }
+            tick[p] += t;
+            at[p] = node;
+            pick(p, node, &mut stock, &mut picked, &mut covered, &mut series, &mut balls);
+            if let Some(routes) = routes.as_deref_mut() {
+                routes[p].push(u16::try_from(node).expect("node"));
+            }
+        }
+        (series, balls)
+    }
+
+    fn initial(&self) -> Solution {
+        let np = self.patrols.len();
+        // Supplies: neediest patrol first, each supply takes the patrols
+        // nearest to it; the last of its list is escorted.
+        let mut serve = vec![Vec::new(); self.supplies.len()];
+        if !self.supplies.is_empty() {
+            let mut order: Vec<usize> = (0..np).collect();
+            order.sort_by_key(|&p| (self.patrols[p].fuel, p));
+            let per = np.div_ceil(self.supplies.len());
+            for p in order {
+                let best = (0..self.supplies.len())
+                    .filter(|&s| serve[s].len() < per)
+                    .min_by_key(|&s| (self.t(FAST, self.supplies[s].start, self.patrols[p].start), s));
+                if let Some(s) = best {
+                    serve[s].push(u8::try_from(p).expect("patrol"));
+                }
+            }
+        }
+        let escorted: Vec<bool> =
+            (0..np).map(|p| serve.iter().any(|l| l.last().is_some_and(|&q| usize::from(q) == p))).collect();
+        let starts: Vec<Start> = (0..np)
+            .map(|p| Start {
+                node: self.patrols[p].start,
+                offset: 0,
+                fuel: self.patrols[p].fuel,
+                escorted: escorted[p],
+            })
+            .collect();
+        let mut routes = vec![Vec::new(); np];
+        self.greedy(&starts, self.steps, Some(&mut routes));
+        let metric = escorted.iter().map(|&e| if e { FAST } else { BAL } as u8).collect();
+        Solution { routes, metric, serve }
+    }
+
+    fn mutate(&self, sol: &mut Solution, rng: &mut Rng) {
+        let np = sol.routes.len();
+        let spot = |rng: &mut Rng| u16::try_from(rng.below(self.spots)).expect("node");
+        match rng.below(10) {
+            0 | 1 => {
+                let p = rng.below(np);
+                let at = rng.below(sol.routes[p].len() + 1);
+                sol.routes[p].insert(at, spot(rng));
+            }
+            2 => {
+                let p = rng.below(np);
+                if !sol.routes[p].is_empty() {
+                    let at = rng.below(sol.routes[p].len());
+                    sol.routes[p].remove(at);
+                }
+            }
+            3 | 4 => {
+                let (p, q) = (rng.below(np), rng.below(np));
+                if !sol.routes[p].is_empty() {
+                    let from = rng.below(sol.routes[p].len());
+                    let node = sol.routes[p].remove(from);
+                    let at = rng.below(sol.routes[q].len() + 1);
+                    sol.routes[q].insert(at, node);
+                }
+            }
+            5 => {
+                let (p, q) = (rng.below(np), rng.below(np));
+                if !sol.routes[p].is_empty() && !sol.routes[q].is_empty() {
+                    let (i, j) = (rng.below(sol.routes[p].len()), rng.below(sol.routes[q].len()));
+                    let (a, b) = (sol.routes[p][i], sol.routes[q][j]);
+                    sol.routes[p][i] = b;
+                    sol.routes[q][j] = a;
+                }
+            }
+            6 => {
+                let p = rng.below(np);
+                let len = sol.routes[p].len();
+                if len >= 2 {
+                    let (i, j) = (rng.below(len), rng.below(len));
+                    sol.routes[p][i.min(j)..=i.max(j)].reverse();
+                }
+            }
+            7 => {
+                let p = rng.below(np);
+                if !sol.routes[p].is_empty() {
+                    let at = rng.below(sol.routes[p].len());
+                    sol.routes[p][at] = spot(rng);
+                }
+            }
+            8 => {
+                let p = rng.below(np);
+                sol.metric[p] = u8::try_from(rng.below(NM)).expect("metric");
+            }
+            _ => {
+                if sol.serve.is_empty() {
+                    return;
+                }
+                let s = rng.below(sol.serve.len());
+                match rng.below(3) {
+                    0 if sol.serve[s].len() >= 2 => {
+                        let len = sol.serve[s].len();
+                        sol.serve[s].swap(rng.below(len), rng.below(len));
+                    }
+                    1 if !sol.serve[s].is_empty() => {
+                        let from = rng.below(sol.serve[s].len());
+                        let q = sol.serve[s].remove(from);
+                        let to = rng.below(sol.serve.len());
+                        let at = rng.below(sol.serve[to].len() + 1);
+                        sol.serve[to].insert(at, q);
+                    }
+                    _ => {
+                        let q = u8::try_from(rng.below(np)).expect("patrol");
+                        for list in &mut sol.serve {
+                            list.retain(|&x| x != q);
+                        }
+                        if rng.below(4) > 0 {
+                            let at = rng.below(sol.serve[s].len() + 1);
+                            sol.serve[s].insert(at, q);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Drop the route tail the day never reaches (keeps mutations useful).
+    fn trim(sol: &mut Solution, eval: &Evaluation) {
+        for (p, line) in eval.lines.iter().enumerate() {
+            let keep = line.next + usize::from(line.pending.is_some() || line.stalled);
+            sol.routes[p].truncate(keep);
+        }
+    }
+
+    fn search(&self, iters: u32, deadline: Option<Instant>, seed: u64) -> (Solution, Evaluation) {
+        let mut rng = Rng(seed);
+        let mut current = self.initial();
+        let mut current_eval = self.evaluate(&current);
+        let mut best = current.clone();
+        let mut best_score = current_eval.score;
+        if self.spots == 0 {
+            return (best, current_eval);
+        }
+        let (t0, t1) = (400.0f64, 5.0f64);
+        let mut i = 0u32;
+        loop {
+            let progress = match deadline {
+                None => {
+                    if i >= iters {
+                        break;
+                    }
+                    f64::from(i) / f64::from(iters.max(1))
+                }
+                Some(end) => {
+                    if i % 256 == 0 && Instant::now() >= end {
+                        break;
+                    }
+                    // Live: cool on a fixed schedule, then keep polishing.
+                    (f64::from(i) / 200_000.0).min(1.0)
+                }
+            };
+            i += 1;
+            let temperature = t0 * (t1 / t0).powf(progress);
+            let mut next = current.clone();
+            self.mutate(&mut next, &mut rng);
+            let eval = self.evaluate(&next);
+            #[allow(clippy::cast_precision_loss, reason = "score deltas are small")]
+            let delta = (eval.score - current_eval.score) as f64;
+            if delta >= 0.0 || rng.unit() < (delta / temperature).exp() {
+                Self::trim(&mut next, &eval);
+                current = next;
+                current_eval = eval;
+                if current_eval.score > best_score {
+                    best_score = current_eval.score;
+                    best = current.clone();
+                }
+            }
+        }
+        let eval = self.evaluate(&best);
+        (best, eval)
+    }
+
+    /// Per-agent sequential answer lists for an evaluated solution.
+    fn emit(&self, sol: &Solution, eval: &Evaluation, agents: usize) -> Vec<Vec<Action>> {
+        let mut lists: Vec<Vec<Action>> = vec![Vec::new(); agents];
+        // Patrol action lists with the tick each action starts at.
+        let mut timed: Vec<Vec<(u32, Option<Direction>)>> = Vec::new();
+        for (p, line) in eval.lines.iter().enumerate() {
+            let m = usize::from(sol.metric[p]);
+            let mut out = Vec::new();
+            let mut tick = 0u32;
+            let mut legs: Vec<(usize, usize)> =
+                line.visits.windows(2).map(|w| (w[0].node, w[1].node)).collect();
+            if let Some((to, _)) = line.pending {
+                legs.push((line.visits.last().expect("non-empty").node, to));
+            }
+            for (k, &(from, to)) in legs.iter().enumerate() {
+                while tick < line.visits[k].dep {
+                    out.push((tick, None));
+                    tick += 1;
+                }
+                for (cell, dir) in self.path(m, from, to) {
+                    if tick + self.time_cost[cell] > self.steps {
+                        break;
+                    }
+                    out.push((tick, Some(dir)));
+                    tick += self.time_cost[cell];
+                }
+            }
+            timed.push(out);
+        }
+        for (p, actions) in timed.iter().enumerate() {
+            let agent = self.patrols[p].agent;
+            lists[agent] = actions.iter().map(|&(_, dir)| action(agent, dir)).collect();
+        }
+        for (s, line) in eval.supplies.iter().enumerate() {
+            let agent = self.supplies[s].agent;
+            let mut node = self.supplies[s].start;
+            let mut tick = 0u32;
+            let mut out = Vec::new();
+            for &(stop, dep) in &line.stops {
+                for (cell, dir) in self.path(FAST, node, stop) {
+                    out.push(action(agent, Some(dir)));
+                    tick += self.time_cost[cell];
+                }
+                while tick < dep {
+                    out.push(action(agent, None));
+                    tick += 1;
+                }
+                node = stop;
+            }
+            if let Some(q) = line.escort {
+                out.extend(timed[q].iter().filter(|&&(at, _)| at >= tick).map(|&(_, dir)| action(agent, dir)));
+            }
+            lists[agent] = out;
+        }
+        lists
+    }
+}
+
+fn action(agent: usize, dir: Option<Direction>) -> Action {
+    let id = u8::try_from(agent).expect("agent id");
+    dir.map_or_else(|| Action::wait(id), |d| Action::step(id, d))
+}
+
+/// Replay one day through the official simulator:
+/// `(clean, variety, series today, balls)`.
+fn replay(ctx: &SolverContext<'_>, plan: &AgentActions) -> (bool, usize, usize, u32) {
+    let mut state = ctx.state.clone();
+    let before = (state.illegal_action_count, state.rejected_response_count);
+    let sim = MatchSim::default();
+    for step in plan.actions.chunks(ctx.agent_ids.len().max(1)) {
+        sim.step(&mut state, &AgentActions::new(step.to_vec()));
+    }
+    let clean = (state.illegal_action_count, state.rejected_response_count) == before;
+    let today = state.series_acquired_by_day.get(&ctx.day).map_or(0, std::collections::BTreeSet::len);
+    let balls = state.agents.iter().map(engine::Agent::total_inventory).sum();
+    (clean, state.series_taken.len(), today, balls)
+}
+
+impl Solver for FleetCandidate {
+    fn name(&self) -> &'static str {
+        "fleet"
+    }
+    fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+        let started = Instant::now();
+        let fallback = || CoverageCandidate { park_risk: false, variant: 0, fuel_aware: false }.decide(ctx);
+        let state = ctx.state;
+        let n = state.agents.len();
+        // Agent ids index the answer lists; anything else is not this
+        // candidate's contract.
+        if state.agents.iter().enumerate().any(|(i, a)| usize::from(a.id) != i)
+            || !state.agents.iter().any(|a| a.kind == AgentKind::Patrol)
+        {
+            return fallback();
+        }
+        let tomorrow = (ctx.day + 1 < state.setting.num_days)
+            .then(|| state.setting.day_steps_for(ctx.day + 1));
+        let world = World::new(state, ctx.day_steps, tomorrow);
+        let deadline = (self.budget_ms > 0).then(|| {
+            let budget = Duration::from_millis(u64::from(self.budget_ms));
+            let window = if ctx.remaining_ms == u32::MAX {
+                budget
+            } else {
+                Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(5_000)))
+            };
+            started + budget.min(window)
+        });
+        let seed = self.seed ^ (u64::from(ctx.day) << 32);
+        let (sol, eval) = world.search(self.iters, deadline, seed);
+        let lists = world.emit(&sol, &eval, n);
+        let steps = ctx.day_steps as usize;
+        let mut output = Vec::with_capacity(n * steps);
+        for step in 0..steps {
+            for (i, list) in lists.iter().enumerate() {
+                output.push(list.get(step).copied().unwrap_or_else(|| action(i, None)));
+            }
+        }
+        let plan = crate::adapters::walk::BudgetMode::Official.apply(ctx, AgentActions::new(output));
+        if replay(ctx, &plan).0 { plan } else { fallback() }
+    }
+}
