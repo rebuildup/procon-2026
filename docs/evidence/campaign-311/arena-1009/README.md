@@ -394,6 +394,34 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 - **1917（1.5s）との差分**: B 比 89% → 95%（盤面差あり・因果断定せず）。rank 9 → **3**。予算引上げ + 長日盤の組合せが効いた最初の観測
 - **rate 累計: 188 → 335（本セッション深夜帯で +147）**
 
+## 公式スコア + 実測（match 1925 = fleet × budget 15s・UI `#1926 第2卓`）
+
+**`fleet:budget=official:budget_ms=15000`** @ `7de05df`（1 因子変更 5s→15s）。
+16×16 / 4日 / 4台（S,P,P,P）・daySteps [83,77,58,32]。UI `#1926 第2卓`（卓id ずれ）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | 🤖 phở | 14 | 56 | 107 | 1.3s |
+| 2–3 | うどん / Where is my kosen? | 14 | 56 | 107 | 5.0s* / 20.3s* |
+| 4–5 | Kuronica Nerfed / 🤖 ramen | 14 | 56 | 105 / 104 | 70.9s / 63.4s |
+| **6** | **ユ（当方）** | **14** | **56** | **104** | **63.4s*** |
+| 7–10 | おいせの / admin / 超10G / 多分うどん(パスタ) | 14 | 56 / 55 | 103–106 | 3.3–184.1s |
+
+- **D=56/56 MAX**・**B=104/107 = 97%（1位差 −3 球）**・**rank 6** — 5位 ramen とは B 同点（104）で**回答時間決着**（63.4s*、第 4 軸が初めて順位に効いた試合）
+- **回答 63.4s ÷ 4 ≈ 15.9s/日 = 15s 予算のフル活用**（全日受理・1日1 POST）
+- 燃料 cap112: 給油サイクル作動（#2P 84→101 回復、#3P 93→109 回復）・座礁 0 台・4/4 全日稼働
+- **rate 335→381 (+46・累計 188→381)**
+
+### fleet 予算ラダー総括（同一 SHA・**盤面は各回異なる — 因果断定なし**）
+
+| 予算 | 試合 | B vs 1位 | 順位 |
+|---|---|---|---|
+| 1.5s | 1917 | 89% | 9 |
+| 5s | 1919 | **95%** | **3** |
+| 15s | 1925 | **97%** | 6（B 同点で回答時間決着） |
+
+**B は 15s でほぼ飽和（1位差 −3 球）**。順位は B の僅差と回答時間のタイブレークに依存する局面へ移行。
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -602,7 +630,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **15 行**（1810 … 1917 / 1919、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **16 行**（1810 … 1919 / 1925、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -617,6 +645,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1912-s7.log` | match 1912（bf17fd6 × seed7。除去済み） |
 | `run-1917-fleet.log` | match 1917（fleet 初投入・`7de05df`/`58d1a644`。除去済み） |
 | `run-1919-fleet-b5.log` | match 1919（fleet × 5s・rank 3。除去済み） |
+| `run-1925-fleet-b15.log` | match 1925（fleet × 15s・B 97%。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
