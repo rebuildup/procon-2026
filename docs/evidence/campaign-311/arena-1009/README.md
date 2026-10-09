@@ -23,7 +23,7 @@ SHA で起きていた**——を支持する結果。加えて match 1810 の**
 | daySteps | [72, 75, 95, 78, 93]（daySeconds 全日 60） | [66, 133, 64, 102, 64, 167] |
 | 盤 / 日数（UI） | 32×32 / 5 日 / 7 台（`#1810`、卓タグなし） | 24×24 / 6 日 / 5 台（UI は **`#1812 第2卓`** — lobby の match id は `1811`） |
 | 公式順位・4軸 | **10 位/10**: V=27, D累積=116, B=138, 回答累積 **3.6s** | **10 位/10**: V=20, D累積=108, B=145, 回答累積 **3.9s** |
-| 燃料 | 初期 145。**agent#6（Patrol）のみ 145→90→13→0** で day3 枯渇（day3-4 全待機）。他 6 台は全日 145 | evidence 参照 |
+| 燃料 | 初期 145。**agent#6（Patrol）のみ 145→90→13→0** で day3 枯渇（day3-4 全待機）。他 6 台は全日 145 | 初期 108。**agent#4（Patrol）が day1 に 108→1 へ消減、day2–6 は moves 0 で全待機**。他 4 台は全日 108 |
 | error / 不正行動 | null / ログに reject・invalid シグナルなし | 同一 |
 | evidence | `runs.jsonl`（2 行）/ `run-1030.log` / `run-1045.log`（RUST_LOG=debug、token 検出 0 件） | 同一 |
 
@@ -198,15 +198,55 @@ PR #324 merge（`3549886`）は 09:48 JST。`git merge-base --is-ancestor` で `
 
 ## 試合内の観察（開発へのフィードバック）
 
-- **燃料枯渇（独立課題として起票）**: match 1810 の agent#6（Patrol）のみ
-  145→90→13→0（day3 枯渇、day3-4 全日待機）。day2 に moves 8 / waits 84 へ低下。
-  3 Supply でも 7 台中 1 台が給油圏外にいる構造。4 Patrol 構成の玉数天井
-  （#311 checkpoint）とは別軸の損失。
+- **燃料枯渇（独立課題 #339、2/2 試合で再発パターンを確認）**:
+  - **1810**（7台・燃料 cap145）: agent#6（Patrol）が 145→90→13→0（day3 枯渇、day3-4
+    全日待機）。day2 に moves 8 / waits 84 へ低下。他 6 台は全日 145。
+  - **1811**（5台・燃料 cap108）: agent#4（Patrol）が day1 に **108→1** へ消減し
+    day2–6 の **moves 0**（4日連続完全待機）。他 4 台は全日 108。
+  - **共通パターン**: 2/2 試合で「 Patrol 1 台だけが day2–3 に給油圏外へ出て燃料を使い
+    切り、以降は（ほぼ）永久待機」。Supply が健全なのに当該台だけ拾われない。
+    改善 candidate での再発有無を確認すること（#339 が追跡、比較計測への引き継ぎ項も参照）。
+  - 影響規模: 1810 は 5 日中 2 日を 5/7 Patrol で、1811 は 6 日中 4 日を 2/3 Patrol で戦った
+    構造 — D（日別種類）と B の欠落に直結する寄与候補。
 - **day cadence**: 2 日目以降は `endsAt` sleep で 60 秒ぴったり（上記時系列）。
 - **登録**: lobby open 直後 1 発目 `no match is scheduled right now`、2 発目（+10s）で
   `lobby: you are registered …` — arena.md の成功パターンどおり。登録後 poll 停止を確認。
 - **`starts_at` flip まで ~2 分**: departure（01:30:01）→ positive（01:32:00 頃）。
   day0 の公式計測のほぼ全量がこの区間の後半 + day 状態 poll に使われる。
+
+## 実戦証跡の取得可能範囲（§4 — 推測値を公式値として書かない）
+
+| 項目 | 取得 | 出所 / 不可理由 |
+|---|---|---|
+| 公式順位・V/D/B/回答時間 | ✅ | arena results UI（累積のみ。上記 2 表） |
+| 日別の取得系列数 | ❌ | UI は D の**累積のみ**公開。日別内訳は OpenAPI / evidence に無い → **推測しない** |
+| 各 Patrol の燃料推移・停止状況 | ✅ | evidence `days[].agents[].fuel` + `movement[].moves`（上表・燃料節） |
+| Supply との接触状況 | ❌ | evidence は**日始位置のみ**（日内の接触イベントは記録しない）。replay JSON が要る |
+| 未取得系列 | ❌ | 日次 state にスポット取得履歴は無い。replay JSON → `arena import-case` で再現可能（取得後） |
+| 提出拒否・revision・期限超過 | ✅ | 2 試合とも全日 accepted（revisions 上記）、拒否・超過なし |
+| offline 予測との相違 | ❌（未実施） | 当該 arena 盤の offline 実行は未実施。replay JSON 取得後 `procon-eval --case-files` で初めて比較可 |
+
+## 他セッションへの引き継ぎ（§5）
+
+**比較計測担当（#312 系）へ:**
+
+- 実戦条件: 1810 = 32×32 / 5日 / 7台（P,S×3+P）/ daySteps [72,75,95,78,93] /
+  daySeconds 全 60 / 燃料 cap145。1811 = 24×24 / 6日 / 5台（P,S,P,S,P）/
+  daySteps [66,133,64,102,64,167] / 全 60 / cap108。
+- 失点分析: 両試合とも第 2 軸で順位確定（D 116/135・108/120）。第 4 軸（3.6s/3.9s）は
+  不使用 = 未使用計算予算。回答は 40ms/日（期限 60s）。
+- 燃料・移動ログ: 本文燃料節 + `runs.jsonl`（`days[]` の fuel/pos/moves 完備）+
+  debug log×2（提出 body 全文、token 除去済み）。#339 に 2/2 再発パターン。
+- 未取得系列・日別系列数: **未取得**（replay JSON なし。推測値は渡さない）。
+
+**Issue/PR 回収担当へ:**
+
+- 受理結果: 1810 / 1811 とも completed・全日 accepted・拒否なし（revision 列は上記）。
+- 公式スコア: 上記 2 表のまま（UI 原値、加工なし）。
+- 使用 SHA: `60ed527db5cdfbd706cc3d816e88ff43c3295a44`（origin/333 tip、
+  `8728ed5`+`2c5800d`+`6ff04c1`+`e37c5b0` 統合）。
+- 投入条件: candidate `coverage:budget=official:park=far`、kinds 既定 P,S 交替、
+  `RUST_LOG=debug`、`--arena --next`、Infisical token 注入。再現手順は下節。
 
 ## 再現手順
 
