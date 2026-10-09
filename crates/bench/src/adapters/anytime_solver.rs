@@ -9,6 +9,19 @@
 //! - Variants explore assignment/ordering changes, not just cost jitter
 //! - Acceptance is series-only so full-match D cannot be traded for B
 //! - Returns immediately when no series improvement is found
+//!
+//! # Offline vs live stopping rules
+//!
+//! - **Live** (`budget_ms`): wall-clock cap per day plan. The stop is
+//!   time-based, so the *number* of explored variants (and therefore the
+//!   returned plan) varies with CPU load. Use this in a real match, where
+//!   the answer window is wall-clock. Prefer `budget_ms=50000` to leave
+//!   margin inside the 60s day window.
+//! - **Offline** (`trials`): exact trial-count budget. Same candidate id +
+//!   seed always explores the same variant sequence and returns the same
+//!   plan, independent of load / `--jobs`. Use this for every recorded
+//!   measurement so evidence is reproducible.
+//! - If both are set, `trials` wins and the wall clock is ignored.
 use crate::adapters::coverage_solver::CoverageCandidate;
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
 use engine::MatchSim;
@@ -20,8 +33,14 @@ const PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "budget_ms",
         required: false,
-        doc: "wall-clock cap per day plan: 0 = off (deterministic park=far) | \
-              1..59000 explores with best-improvement (live: 50000 leaves margin)",
+        doc: "LIVE wall-clock cap per day plan (nondeterministic under CPU load): \
+              0 = off | 1..59000 (live: 50000 leaves margin)",
+    },
+    ParamSpec {
+        key: "trials",
+        required: false,
+        doc: "OFFLINE deterministic trial-count budget: exact N variants explored, \
+              same id+seed always reproduces. Overrides budget_ms when set.",
     },
     ParamSpec { key: "seed", required: false, doc: "exploration seed (default 42)" },
     ParamSpec { key: "budget", required: true, doc: "official (required)" },
@@ -55,18 +74,27 @@ impl CandidateFactory for AnytimeFactory {
                 "budget_ms must be 0..=59000, got {budget_ms}"
             )));
         }
+        let trials = match spec.param("trials") {
+            None => 0u32,
+            Some(s) => s
+                .parse::<u32>()
+                .map_err(|_| CandidateError::Build(format!("invalid trials: {s:?}")))?,
+        };
         let seed = match spec.param("seed") {
             None => 42u64,
             Some(s) => s
                 .parse::<u64>()
                 .map_err(|_| CandidateError::Build(format!("invalid seed: {s:?}")))?,
         };
-        Ok(Box::new(AnytimeCandidate { budget_ms, seed }))
+        Ok(Box::new(AnytimeCandidate { budget_ms, trials, seed }))
     }
 }
 
 struct AnytimeCandidate {
+    /// Live wall-clock budget in ms. Ignored when `trials > 0`.
     budget_ms: u32,
+    /// Offline deterministic trial-count budget. `0` = use `budget_ms`.
+    trials: u32,
     seed: u64,
 }
 
@@ -139,18 +167,28 @@ impl Solver for AnytimeCandidate {
         let mut best = initial.clone();
         let mut best_score = initial_score;
 
-        // If no budget, return the initial solution.
-        if self.budget_ms == 0 {
+        // If no budget at all, return the initial solution.
+        if self.budget_ms == 0 && self.trials == 0 {
             return best;
         }
 
-        // Calculate deadline: respect both explicit budget and live window.
-        let live_window = (ctx.remaining_ms != u32::MAX)
-            .then(|| Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(5_000))));
-        let search_budget = Duration::from_millis(u64::from(self.budget_ms));
-        let deadline = match live_window {
-            Some(live) => started + live.min(search_budget),
-            None => started + search_budget,
+        // Offline mode (`trials > 0`): exact trial count, no wall clock, so
+        // the same id+seed always returns the same plan (reproducible
+        // measurements). Live mode (`budget_ms`): wall-clock stop — the
+        // explored variant count varies with CPU load, which is fine in a
+        // match and wrong for recorded evidence.
+        let offline = self.trials > 0;
+        let deadline = if offline {
+            // Unused in offline mode; kept so the live branch stays uniform.
+            started
+        } else {
+            let live_window = (ctx.remaining_ms != u32::MAX)
+                .then(|| Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(5_000))));
+            let search_budget = Duration::from_millis(u64::from(self.budget_ms));
+            match live_window {
+                Some(live) => started + live.min(search_budget),
+                None => started + search_budget,
+            }
         };
 
         // Deterministic anytime exploration (Issue #342).
@@ -159,7 +197,14 @@ impl Solver for AnytimeCandidate {
         let mut trial = 1u64;
         let mut no_improve_count = 0u64;
 
-        while Instant::now() < deadline {
+        loop {
+            if offline {
+                if trial > u64::from(self.trials) {
+                    break;
+                }
+            } else if Instant::now() >= deadline {
+                break;
+            }
             // Generate variant with deterministic seed.
             let plan = generate_variant(ctx, self.seed.wrapping_add(trial));
             let score = score_plan(ctx, &plan);
@@ -180,7 +225,8 @@ impl Solver for AnytimeCandidate {
 
             trial += 1;
 
-            // Early stop: no improvement for many iterations.
+            // Early stop: no improvement for many iterations. Count-based,
+            // so it stays deterministic in offline mode too.
             if no_improve_count > 500 {
                 break;
             }
