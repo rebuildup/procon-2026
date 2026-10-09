@@ -963,20 +963,37 @@ fn action(agent: usize, dir: Option<Direction>) -> Action {
     dir.map_or_else(|| Action::wait(id), |d| Action::step(id, d))
 }
 
-/// Replay one day through the official simulator:
-/// `(clean, variety, series today, balls)`.
-fn replay(ctx: &SolverContext<'_>, plan: &AgentActions) -> (bool, usize, usize, u32) {
+/// One day replayed through the official simulator.
+struct Replay {
+    /// No illegal, fuel-short or step-mismatched action.
+    clean: bool,
+    series_today: usize,
+    balls_total: u32,
+    /// Predicted next day-start `(wire cell index, fuel)` per agent.
+    ends: Vec<(usize, u32)>,
+}
+
+fn replay(ctx: &SolverContext<'_>, plan: &AgentActions) -> Replay {
     let mut state = ctx.state.clone();
     let before = (state.illegal_action_count, state.rejected_response_count);
     let sim = MatchSim::default();
     for step in plan.actions.chunks(ctx.agent_ids.len().max(1)) {
         sim.step(&mut state, &AgentActions::new(step.to_vec()));
     }
-    let clean = (state.illegal_action_count, state.rejected_response_count) == before;
-    let today =
-        state.series_acquired_by_day.get(&ctx.day).map_or(0, std::collections::BTreeSet::len);
-    let balls = state.agents.iter().map(engine::Agent::total_inventory).sum();
-    (clean, state.series_taken.len(), today, balls)
+    let width = usize::from(state.setting.map.size.width);
+    Replay {
+        clean: (state.illegal_action_count, state.rejected_response_count) == before,
+        series_today: state
+            .series_acquired_by_day
+            .get(&ctx.day)
+            .map_or(0, std::collections::BTreeSet::len),
+        balls_total: state.agents.iter().map(engine::Agent::total_inventory).sum(),
+        ends: state
+            .agents
+            .iter()
+            .map(|a| (cell_index(width, a.pos.col, a.pos.row), a.fuel))
+            .collect(),
+    }
 }
 
 impl Solver for FleetCandidate {
@@ -1024,13 +1041,20 @@ impl Solver for FleetCandidate {
         let plan =
             crate::adapters::walk::BudgetMode::Official.apply(ctx, AgentActions::new(output));
         let check = replay(ctx, &plan);
-        if std::env::var_os("FLEET_DEBUG").is_some() {
-            eprintln!(
-                "fleet day={} clean={} model={:?} replay=({},{},{})",
-                ctx.day, check.0, eval.today, check.1, check.2, check.3
-            );
-        }
-        if check.0 { plan } else { fallback() }
+        // Evidence line for live runs: what the model promised, what the
+        // official replay delivers, and where the server should report the
+        // agents tomorrow. Game state only.
+        tracing::info!(
+            day = ctx.day,
+            clean = check.clean,
+            model_series = eval.today.0,
+            model_balls = eval.today.1,
+            replay_series = check.series_today,
+            replay_balls_total = check.balls_total,
+            predicted_ends = ?check.ends,
+            "fleet day plan"
+        );
+        if check.clean { plan } else { fallback() }
     }
 }
 
