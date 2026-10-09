@@ -337,6 +337,16 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 - revisions [4,23,41,60,79] 全日受理・1日1 POST・燃料 cap72 恒常（座礁 0）
 - **短日盤の構造**: D は誰でも MAX → **B 効率が唯一の差別化軸**（当方 60% — 収穫効率改善が本命）
 
+## 公式スコア + 実測（match 1912 = `bf17fd6` × seed 7・UI `#1914 第3卓`）
+
+`anytime:budget_ms=5000:seed=7:budget=official` @ `bf17fd6`（PR #364 版・1 因子変更 seed 42→7）。
+16×16 / 5日 / 4台（P,S,P,S）・全日短日（daySteps [46,46,33,40,41]）。UI `#1914 第3卓`（2卓ずれ）。
+
+- **rank 9/10: V=10, D=49/50（−1）, B=60, 回答 6.9s ≈ 1.4s/日, rate 233→235 (+2)**
+- revisions [7,20,35,52,68] 全日受理・1日1 POST・燃料 cap86 恒常（座礁 0）・4/4 全日稼働
+- **seed 変更の観測**: 1909（seed42×15s: D50 MAX・B74）と同系統の結果 — **短日盤では seed/予算によらず D≈MAX・B が 50–60% に張り付く**構造が再確認された
+- B=60 は直近最低水準 — 収穫効率の改善（dev 側 `31f2062`/統合 Anytime 系）が唯一の突破口
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -545,7 +555,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **12 行**（1810 … 1906 / 1909、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **13 行**（1810 … 1909 / 1912、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -557,6 +567,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1903-rel-anytime.log` | match 1903（release 統合 anytime・`426321ae`/`d9e067f2`。除去済み） |
 | `run-1906-364.log` | match 1906（PR #364 振動修正版・`bf17fd6`/`ab60bc4f`。除去済み） |
 | `run-1909-b15.log` | match 1909（bf17fd6 × 15s・全日短日 = 完全 B 競争。除去済み） |
+| `run-1912-s7.log` | match 1912（bf17fd6 × seed7。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
