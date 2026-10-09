@@ -95,3 +95,6 @@ pub(crate) fn reject_unknown_params(
     }
     Ok(())
 }
+
+pub mod search_solver;
+pub use search_solver::SearchFactory;

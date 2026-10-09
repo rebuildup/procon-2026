@@ -1,0 +1,49 @@
+{
+  "source_commit_sha": "bcfa0be46816178ba4d1d0b97f4b6a662b81e4bd",
+  "profile": "debug",
+  "kinds": "P,S,S,P,S",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "processor": "arm",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "oracle_refill": false,
+  "response_time_policy": "Measured daily solver time; debug profile is exploratory, not competition timing evidence.",
+  "diagnose_build": [
+    "cargo",
+    "+stable",
+    "build",
+    "--offline",
+    "--locked",
+    "-p",
+    "bench",
+    "--example",
+    "campaign_diagnose"
+  ],
+  "diagnose_command": [
+    "/Users/rebui/work/procon-campaign-312/target/debug/examples/campaign_diagnose",
+    "<CASE_SOURCE>",
+    "<CANDIDATE>",
+    "P,S,S,P,S"
+  ],
+  "sources": [
+    "fixture:openapi-sample",
+    "fixture:small-8x8",
+    "fixture:medium-16x16",
+    "fixture:large-32x32",
+    "fixture:road-heavy",
+    "fixture:road-heavy-v2",
+    "fixture:mountain-heavy",
+    "fixture:series-many",
+    "fixture:series-few",
+    "crates/bench/tests/fixtures/arena-701.json",
+    "docs/evidence/campaign-311/baseline-312/import-live-match.json",
+    "generated:open:seed=1:days=3:fuel=tight",
+    "generated:road-heavy:seed=1:days=3:fuel=tight",
+    "generated:many-series:seed=3:days=3"
+  ],
+  "candidates": [
+    "multiloop:grid=2x2:walk=astar:assign=all:budget=official",
+    "multiloop:kmeans=5:seed=42:walk=astar:assign=all:budget=official",
+    "multiloop:kmeans=8:seed=42:walk=astar:assign=all:budget=official",
+    "loop:iterations=128:initial=greedy:walk=astar:assign=all:budget=official"
+  ]
+}
