@@ -2,7 +2,7 @@
 //!
 //! This is an independent Rust candidate inspired by the *idea* of route-level
 //! optimization in the team's yakin amashi research, not a source-code port.
-//! The official MatchSim is the only acceptance and scoring authority.
+//! The official `MatchSim` is the only acceptance and scoring authority.
 //! Supplies initially retain the safe baseline schedule; rendezvous mutation
 //! and multi-day rollouts are separate, unimplemented hypotheses.
 use std::cmp::Reverse;
