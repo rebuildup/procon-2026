@@ -7,7 +7,7 @@
 //! This test checks that every agent count from 4 to 8 produces a plan that:
 //! 1. has exactly `n * day_steps` actions (step count matches),
 //! 2. has valid action codes (0..6 for moves, Wait otherwise),
-//! 3. has total terrain-weighted cost <= day_steps per agent (budget),
+//! 3. has total terrain-weighted cost <= `day_steps` per agent (budget),
 //! 4. has no fuel-short or pond moves.
 use bench::CandidateRegistry;
 use domain::MatchId;
@@ -52,10 +52,13 @@ fn test_setting(n_agents: usize) -> MatchSetting {
         })
         .collect();
     MatchSetting {
-        match_id: MatchId::new(&format!("agent-count-{n_agents}")).unwrap(),
+        match_id: MatchId::new(format!("agent-count-{n_agents}")).unwrap(),
         team: domain::PlayerId::new("player-a").unwrap(),
-        map: MapGrid::new(MapSize::new(edge.try_into().unwrap(), edge.try_into().unwrap()).unwrap(), cells)
-            .unwrap(),
+        map: MapGrid::new(
+            MapSize::new(edge.try_into().unwrap(), edge.try_into().unwrap()).unwrap(),
+            cells,
+        )
+        .unwrap(),
         agents,
         day_steps: 16,
         num_days: 1,
@@ -123,7 +126,10 @@ fn plans_are_valid_for_4_through_8_agents() {
         }
         println!(
             "n={n}: actions={}, costs={:?}, moves={:?}, waits={:?}",
-            plan.actions.len(), cost, moves, waits
+            plan.actions.len(),
+            cost,
+            moves,
+            waits
         );
         // Check budget: cost must be <= day_steps
         for (i, &c) in cost.iter().enumerate() {

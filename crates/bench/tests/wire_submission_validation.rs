@@ -8,8 +8,7 @@
 use bench::CandidateRegistry;
 use domain::MatchId;
 use engine::model::{
-    AgentKind, Cell, HexCoord, MapGrid, MapSize, MatchSetting, MatchState, SolverContext, Spot,
-    Terrain,
+    Cell, HexCoord, MapGrid, MapSize, MatchSetting, MatchState, SolverContext, Spot, Terrain,
 };
 
 fn test_setting(n_agents: usize) -> MatchSetting {
@@ -54,10 +53,13 @@ fn test_setting(n_agents: usize) -> MatchSetting {
         })
         .collect();
     MatchSetting {
-        match_id: MatchId::new(&format!("wire-{n_agents}")).unwrap(),
+        match_id: MatchId::new(format!("wire-{n_agents}")).unwrap(),
         team: domain::PlayerId::new("player-a").unwrap(),
-        map: MapGrid::new(MapSize::new(edge.try_into().unwrap(), edge.try_into().unwrap()).unwrap(), cells)
-            .unwrap(),
+        map: MapGrid::new(
+            MapSize::new(edge.try_into().unwrap(), edge.try_into().unwrap()).unwrap(),
+            cells,
+        )
+        .unwrap(),
         agents,
         day_steps: 32,
         num_days: 1,
@@ -66,29 +68,24 @@ fn test_setting(n_agents: usize) -> MatchSetting {
 }
 
 /// Replicate `decision_to_actions` encoding and validate like the server.
+#[allow(clippy::too_many_lines, reason = "one linear server-validation replay")]
 fn validate_wire_body(
     plan: &engine::model::AgentActions,
-    ctx: &SolverContext,
+    ctx: &SolverContext<'_>,
     n: usize,
 ) -> Result<(), String> {
     let day_steps = ctx.day_steps as usize;
 
     // 1. Action count
     if plan.actions.len() != n * day_steps {
-        return Err(format!(
-            "action count {} != {}",
-            plan.actions.len(),
-            n * day_steps
-        ));
+        return Err(format!("action count {} != {}", plan.actions.len(), n * day_steps));
     }
 
     // 2. Agent ID order at every step
     for step in 0..day_steps {
         for (i, &id) in ctx.agent_ids.iter().enumerate() {
             if plan.actions[step * n + i].agent_id != id {
-                return Err(format!(
-                    "step {step} slot {i}: agent id mismatch"
-                ));
+                return Err(format!("step {step} slot {i}: agent id mismatch"));
             }
         }
     }
@@ -121,8 +118,7 @@ fn validate_wire_body(
         if computed != i64::from(ctx.day_steps) {
             return Err(format!(
                 "agent {agent_index}: computed steps {} != {}",
-                computed,
-                ctx.day_steps
+                computed, ctx.day_steps
             ));
         }
         body.push(inner);
@@ -148,7 +144,8 @@ fn validate_wire_body(
         }
     }
 
-    // Replay step by step
+    // Replay step by step (per-agent buffers, step-major order)
+    #[allow(clippy::needless_range_loop, reason = "step-major replay over per-agent buffers")]
     for step in 0..day_steps {
         for i in 0..n {
             let code = expanded[i][step];
@@ -170,7 +167,10 @@ fn validate_wire_body(
                 let to = dir.step(from);
                 // Check off-map
                 if map.get(to).is_none() {
-                    return Err(format!("agent {i} step {step}: off-map move to ({},{})", to.col, to.row));
+                    return Err(format!(
+                        "agent {i} step {step}: off-map move to ({},{})",
+                        to.col, to.row
+                    ));
                 }
                 // Check pond
                 let target = map.get(to).unwrap();
@@ -178,9 +178,8 @@ fn validate_wire_body(
                     return Err(format!("agent {i} step {step}: pond move"));
                 }
                 // Check fuel
-                let fuel_cost = engine::rules::fuel_cost(
-                    map.get(from).unwrap().terrain,
-                ).max(engine::rules::fuel_cost(target.terrain));
+                let fuel_cost = engine::rules::fuel_cost(map.get(from).unwrap().terrain)
+                    .max(engine::rules::fuel_cost(target.terrain));
                 if i % 2 == 0 && fuels[i] < fuel_cost {
                     // Patrol: fuel check
                     return Err(format!(
@@ -192,7 +191,9 @@ fn validate_wire_body(
                 let step_cost = match map.get(from).unwrap().terrain {
                     Terrain::Plain => 2,
                     Terrain::Mountain => 3,
-                    Terrain::Pond => return Err(format!("agent {i} step {step}: standing on pond")),
+                    Terrain::Pond => {
+                        return Err(format!("agent {i} step {step}: standing on pond"));
+                    }
                     Terrain::Road(s) => s.step_cost(),
                 };
                 if budget[i] + step_cost > ctx.day_steps {
@@ -214,8 +215,8 @@ fn validate_wire_body(
     // The server checks "insufficient steps" per-move (Q6).
     // Also check: total action count == daySteps (already checked above).
     // Report budget info for diagnosis.
-    for i in 0..n {
-        println!("  agent {i}: budget used={}/{}", budget[i], ctx.day_steps);
+    for (i, &used) in budget.iter().enumerate() {
+        println!("  agent {i}: budget used={used}/{}", ctx.day_steps);
     }
 
     Ok(())
@@ -245,7 +246,7 @@ fn wire_body_is_valid_for_4_through_8_agents() {
                 }
             }
         }
-        println!("n={n}: moves={:?} waits={:?}", moves, waits);
+        println!("n={n}: moves={moves:?} waits={waits:?}");
 
         // Dump wire body
         {
@@ -272,7 +273,7 @@ fn wire_body_is_valid_for_4_through_8_agents() {
                 }
                 body.push(inner);
             }
-            println!("n={n} body: {:?}", body);
+            println!("n={n} body: {body:?}");
         }
 
         match validate_wire_body(&plan, &ctx, n) {

@@ -147,19 +147,28 @@ fn supply_pairs(
     (pairs, assigned)
 }
 
+/// Coverage-target key policy for one day: the park spreading window plus the
+/// search-trial jitter seed (Issue #331 + release-side #312/#313).
+#[derive(Clone, Copy)]
+struct TargetKey {
+    /// Park-mode spreading across unclaimed series is active this day.
+    spread_window: bool,
+    /// Search-solver trial seed; 0 for every registered `coverage` candidate.
+    variant: u64,
+}
+
 /// One patrol step: harvest in place, walk to a coverage target, or walk to
-/// the nearest harvest target. `spread_window` enables park-mode spreading
+/// the nearest harvest target. `key.spread_window` enables park-mode spreading
 /// across unclaimed series (Issue #331); the caller decides when that window
-/// is open. `variant` jitters the coverage cost key for search-solver trials
-/// (#312/#313); it is 0 for every registered `coverage` candidate. Updates
-/// `reserved` / `day_claimed` with the chosen series.
+/// is open. `key.variant` jitters the coverage cost key for search-solver
+/// trials (#312/#313). Updates `reserved` / `day_claimed` with the chosen
+/// series.
 fn patrol_step(
     state: &engine::model::MatchState,
     agent: &Agent,
     paths: &[Route],
     remaining: u32,
-    spread_window: bool,
-    variant: u64,
+    key: TargetKey,
     day_claimed: &mut BTreeSet<u32>,
     reserved: &mut BTreeSet<u32>,
 ) -> Action {
@@ -188,7 +197,7 @@ fn patrol_step(
                 // whose tomorrow is also medium+. Short days scatter patrols;
                 // spreading the day before a short day can strand the next
                 // start (Issue #331).
-                spread_window && day_claimed.contains(&s.series),
+                key.spread_window && day_claimed.contains(&s.series),
                 route.cost,
                 s.series,
                 index(map, s.pos),
@@ -196,7 +205,7 @@ fn patrol_step(
             ))
         })
         .min_by_key(|x| {
-            let jitter = if variant == 0 { 0 } else { mix(variant ^ x.4 as u64) % 8 };
+            let jitter = if key.variant == 0 { 0 } else { mix(key.variant ^ x.4 as u64) % 8 };
             (x.0, x.1, u64::from(x.2) * (8 + jitter), x.3, x.4)
         });
     if let Some((_, _, _, series, _, first)) = target {
@@ -259,8 +268,7 @@ impl Solver for CoverageCandidate {
                     &state.agents[i],
                     paths,
                     ctx.day_steps - used[i],
-                    spread_window,
-                    self.variant,
+                    TargetKey { spread_window, variant: self.variant },
                     &mut day_claimed,
                     &mut reserved,
                 );
