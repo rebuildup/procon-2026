@@ -13,10 +13,12 @@
 //! algorithms; one algorithm may expose many parameter sets. Neither needs a
 //! new crate.
 
+pub mod anytime_solver;
 pub mod astar_solver;
 pub mod astar_walk;
 pub mod context;
 pub mod coverage_solver;
+pub use anytime_solver::AnytimeFactory;
 pub use coverage_solver::CoverageFactory;
 pub mod greedy_solver;
 pub mod loop_solver;
