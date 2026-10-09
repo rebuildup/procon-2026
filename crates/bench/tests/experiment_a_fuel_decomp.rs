@@ -3,9 +3,17 @@
 //! Decompose the effect of fuel-aware pairing across:
 //! - vehicle count (5, 7, 9)
 //! - Patrol/Supply ratio (P,S,P,S,P / P,P,P,S,P / P,P,P,P,S)
-//! - fuel cap (60, 100, 145, 200)
-//! - map size (16x16, 24x24, 32x32)
+//! - fuel cap (official-range tight, 100, 145, 200)
+//! - series count (15, 20, 27)
 //! - days (3, 5, 7)
+//!
+//! All cases are 32x32 (`generate_large_case` has no size knob) — the earlier
+//! "map size" axis was really a series-count axis.
+//!
+//! Official constraint: `fuelLimits >= daySteps[0]`. The earlier cap=60 point
+//! violated that floor at seed 42 (`daySteps[0]=75`) and its numbers are not
+//! admissible evidence; the sweep now starts at the tightest official-valid
+//! cap (= `daySteps[0]`).
 //!
 //! Records V/D/B for each condition with/without fuelaware.
 //! NO case ID branching - use board features for safety conditions.
@@ -15,6 +23,12 @@ use engine::MatchSim;
 
 fn evaluate(params: &LargeCaseParams, kinds_str: &str, fuel_aware: bool) -> (u32, u32, u32, u32) {
     let case = generate_large_case(params).expect("generate");
+    let day0 = case.setting.day_steps[0];
+    assert!(
+        i64::from(case.setting.fuel_limits) >= i64::from(day0),
+        "official constraint fuelLimits >= daySteps[0] violated: fuel={} day0={day0}",
+        case.setting.fuel_limits
+    );
     let pattern = bench::kinds::parse_kinds(kinds_str).unwrap();
     let kinds = bench::kinds::resolve_kinds(Some(&pattern), case.setting.agents.len());
     let team = domain::PlayerId::new("player-a").unwrap();
@@ -80,10 +94,13 @@ fn experiment_a_decomposition() {
         println!("{kinds:>20} {v1:>5}/{d1:>5}/{b1:>5} {v2:>5}/{d2:>5}/{b2:>5} {dd:>+8}");
     }
 
-    // 3. Fuel cap variation
-    println!("\n--- Fuel Cap (32x32, 7 agents, 5 days) ---");
+    // 3. Fuel cap variation (official range only: fuel_cap >= daySteps[0]).
+    // The old cap=60 point was below daySteps[0]=75 at seed 42 and is gone.
+    let day0 = generate_large_case(&base).expect("generate").setting.day_steps[0];
+    let tight_cap = u32::try_from(day0).expect("day0 fits u32");
+    println!("\n--- Fuel Cap (32x32, 7 agents, 5 days; daySteps[0]={day0}) ---");
     println!("{:>8} {:>20} {:>20} {:>8}", "cap", "base V/D/B", "fuelaware V/D/B", "dD");
-    for fuel_cap in [60, 100, 145, 200] {
+    for fuel_cap in [tight_cap, 100, 145, 200] {
         let params = LargeCaseParams { fuel_cap, ..base };
         let (v1, d1, b1, _) = evaluate(&params, kinds_7, false);
         let (v2, d2, b2, _) = evaluate(&params, kinds_7, true);

@@ -49,7 +49,13 @@ impl CandidateFactory for CoverageFactory {
                 return Err(CandidateError::Build(format!("unknown park mode {other:?}")));
             }
         };
-        let fuel_aware = spec.param("fuelaware") == Some("true");
+        let fuel_aware = match spec.param("fuelaware") {
+            None | Some("false") => false,
+            Some("true") => true,
+            Some(other) => {
+                return Err(CandidateError::Build(format!("unknown fuelaware mode {other:?}")));
+            }
+        };
         Ok(Box::new(CoverageCandidate { park_risk, variant: 0, fuel_aware }))
     }
 }
