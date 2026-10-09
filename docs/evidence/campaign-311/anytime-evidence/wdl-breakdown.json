@@ -1,0 +1,671 @@
+{
+  "implementation_sha": "3b3e5e3",
+  "measurement_sha": "d5a33aa",
+  "loss_breakdown": {
+    "TIE": 64,
+    "WIN": 2
+  },
+  "total_cases": 66,
+  "results": [
+    {
+      "case": "fixture:openapi-sample",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:small-8x8",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 7,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 7,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:medium-16x16",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 14,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 14,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park_V": 3,
+      "park_D": 9,
+      "park_B": 25,
+      "anytime_V": 3,
+      "anytime_D": 9,
+      "anytime_B": 25,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 9,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-many",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-few",
+      "park_V": 1,
+      "park_D": 1,
+      "park_B": 9,
+      "anytime_V": 1,
+      "anytime_D": 1,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:701",
+      "park_V": 20,
+      "park_D": 198,
+      "park_B": 358,
+      "anytime_V": 20,
+      "anytime_D": 199,
+      "anytime_B": 363,
+      "loss_type": "WIN"
+    },
+    {
+      "case": "fixture:openapi-sample",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:small-8x8",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 7,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 7,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:medium-16x16",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 14,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 14,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park_V": 3,
+      "park_D": 9,
+      "park_B": 25,
+      "anytime_V": 3,
+      "anytime_D": 9,
+      "anytime_B": 25,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 9,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-many",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-few",
+      "park_V": 1,
+      "park_D": 1,
+      "park_B": 9,
+      "anytime_V": 1,
+      "anytime_D": 1,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:openapi-sample",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:small-8x8",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 7,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 7,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:medium-16x16",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 14,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 14,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park_V": 3,
+      "park_D": 9,
+      "park_B": 25,
+      "anytime_V": 3,
+      "anytime_D": 9,
+      "anytime_B": 25,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 9,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-many",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-few",
+      "park_V": 1,
+      "park_D": 1,
+      "park_B": 9,
+      "anytime_V": 1,
+      "anytime_D": 1,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:openapi-sample",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:small-8x8",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 7,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 7,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:medium-16x16",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 14,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 14,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park_V": 3,
+      "park_D": 9,
+      "park_B": 25,
+      "anytime_V": 3,
+      "anytime_D": 9,
+      "anytime_B": 25,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 9,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-many",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-few",
+      "park_V": 1,
+      "park_D": 1,
+      "park_B": 9,
+      "anytime_V": 1,
+      "anytime_D": 1,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:openapi-sample",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:small-8x8",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 7,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 7,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:medium-16x16",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 14,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 14,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park_V": 3,
+      "park_D": 9,
+      "park_B": 25,
+      "anytime_V": 3,
+      "anytime_D": 9,
+      "anytime_B": 25,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 9,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-many",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-few",
+      "park_V": 1,
+      "park_D": 1,
+      "park_B": 9,
+      "anytime_V": 1,
+      "anytime_D": 1,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:openapi-sample",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:small-8x8",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 7,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 7,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:medium-16x16",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 14,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 14,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park_V": 3,
+      "park_D": 9,
+      "park_B": 25,
+      "anytime_V": 3,
+      "anytime_D": 9,
+      "anytime_B": 25,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 9,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-many",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-few",
+      "park_V": 1,
+      "park_D": 1,
+      "park_B": 9,
+      "anytime_V": 1,
+      "anytime_D": 1,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "generated:v2:open:seed=42:days=3:fuel=tight",
+      "park_V": 3,
+      "park_D": 9,
+      "park_B": 51,
+      "anytime_V": 3,
+      "anytime_D": 9,
+      "anytime_B": 51,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:openapi-sample",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:small-8x8",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 7,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 7,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:medium-16x16",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 14,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 14,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 4,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 4,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park_V": 3,
+      "park_D": 9,
+      "park_B": 25,
+      "anytime_V": 3,
+      "anytime_D": 9,
+      "anytime_B": 25,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park_V": 2,
+      "park_D": 2,
+      "park_B": 9,
+      "anytime_V": 2,
+      "anytime_D": 2,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-many",
+      "park_V": 4,
+      "park_D": 4,
+      "park_B": 9,
+      "anytime_V": 4,
+      "anytime_D": 4,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "fixture:series-few",
+      "park_V": 1,
+      "park_D": 1,
+      "park_B": 9,
+      "anytime_V": 1,
+      "anytime_D": 1,
+      "anytime_B": 9,
+      "loss_type": "TIE"
+    },
+    {
+      "case": "generated:v2:many-series:seed=42",
+      "park_V": 7,
+      "park_D": 20,
+      "park_B": 37,
+      "anytime_V": 7,
+      "anytime_D": 21,
+      "anytime_B": 37,
+      "loss_type": "WIN"
+    }
+  ]
+}
