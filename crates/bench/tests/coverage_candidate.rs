@@ -328,3 +328,26 @@ fn series_claims_spread_patrols_across_unclaimed_series() {
         "the claim policy must spread the patrols across both series, got {acquired:?}"
     );
 }
+
+/// `fuelaware` must reject unknown values loudly (Issue #348 review):
+/// `treu` / `1` / `yes` used to silently build as plain coverage.
+#[test]
+fn fuelaware_rejects_unknown_modes_and_accepts_only_true_false() {
+    let reg = CandidateRegistry::builtin();
+    assert!(
+        reg.build("coverage:budget=official:fuelaware=true").and_then(|c| c.build_solver()).is_ok()
+    );
+    assert!(
+        reg.build("coverage:budget=official:fuelaware=false")
+            .and_then(|c| c.build_solver())
+            .is_ok()
+    );
+    assert!(reg.build("coverage:budget=official").and_then(|c| c.build_solver()).is_ok());
+    for bad in ["treu", "1", "yes", "on"] {
+        let id = format!("coverage:budget=official:fuelaware={bad}");
+        assert!(
+            reg.build(&id).and_then(|c| c.build_solver()).is_err(),
+            "fuelaware={bad:?} must be rejected, not silently default to false"
+        );
+    }
+}

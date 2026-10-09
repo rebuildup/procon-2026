@@ -55,7 +55,8 @@ impl Solver for SearchCandidate {
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let started = Instant::now();
-        let mut best = CoverageCandidate { park_risk: false, variant: 0 }.decide(ctx);
+        let mut best =
+            CoverageCandidate { park_risk: false, variant: 0, fuel_aware: false }.decide(ctx);
         let mut score = replay_score(ctx, &best);
         // The wall clock is bounded from both sides (Issue #311, live
         // match 1762's revision=-1): the explicit `time_budget_ms` and the
@@ -80,6 +81,7 @@ impl Solver for SearchCandidate {
                 let plan = CoverageCandidate {
                     park_risk: false,
                     variant: mix(self.seed.wrapping_add(u64::from(trial))),
+                    fuel_aware: false,
                 }
                 .decide(ctx);
                 let candidate_score = replay_score(ctx, &plan);
@@ -112,6 +114,7 @@ impl Solver for SearchCandidate {
                         let plan = CoverageCandidate {
                             park_risk: false,
                             variant: mix(self.seed.wrapping_add(trial)),
+                            fuel_aware: false,
                         }
                         .decide(ctx);
                         let candidate_score = replay_score(ctx, &plan);
@@ -180,7 +183,8 @@ mod tests {
         let state = engine::model::MatchState::new(setting).unwrap();
         let ctx = SolverContext::from_state(&state);
         let wait = AgentActions::wait_all(&ctx.agent_ids, ctx.day_steps);
-        let routed = CoverageCandidate { park_risk: false, variant: 0 }.decide(&ctx);
+        let routed =
+            CoverageCandidate { park_risk: false, variant: 0, fuel_aware: false }.decide(&ctx);
         assert!(replay_score(&ctx, &routed) > replay_score(&ctx, &wait));
     }
 
@@ -195,8 +199,10 @@ mod tests {
         let setting = case.to_engine_setting(&domain::PlayerId::new("player-a").unwrap()).unwrap();
         let state = engine::model::MatchState::new(setting).unwrap();
         let ctx = SolverContext::from_state(&state);
-        let coverage_score =
-            replay_score(&ctx, &CoverageCandidate { park_risk: false, variant: 0 }.decide(&ctx));
+        let coverage_score = replay_score(
+            &ctx,
+            &CoverageCandidate { park_risk: false, variant: 0, fuel_aware: false }.decide(&ctx),
+        );
         let searched =
             SearchCandidate { trials: 1_048_576, seed: 42, time_budget_ms: 150 }.decide(&ctx);
         assert!(searched.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
