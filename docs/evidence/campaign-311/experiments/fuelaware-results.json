@@ -1,0 +1,143 @@
+{
+  "source_commit_sha": "d5a33aa7b57849e723adb82ee80e444b1ffe65c3",
+  "note": "MatchSim-based, provisional until #342 parity fix",
+  "experiment_a_fuel_decomposition": {
+    "vehicle_count": {
+      "5_agents": {
+        "base": [
+          26,
+          100,
+          101
+        ],
+        "fuelaware": [
+          27,
+          108,
+          110
+        ],
+        "dD": 8
+      },
+      "7_agents": {
+        "base": [
+          27,
+          126,
+          139
+        ],
+        "fuelaware": [
+          27,
+          127,
+          145
+        ],
+        "dD": 1
+      },
+      "8_agents": {
+        "base": [
+          27,
+          122,
+          156
+        ],
+        "fuelaware": [
+          27,
+          122,
+          151
+        ],
+        "dD": 0
+      }
+    },
+    "patrol_supply_ratio": {
+      "P,S,P,S,P,S,P": {
+        "base": [
+          27,
+          126,
+          139
+        ],
+        "fuelaware": [
+          27,
+          127,
+          145
+        ],
+        "dD": 1
+      },
+      "P,P,P,S,P,S,P": {
+        "base": [
+          27,
+          127,
+          159
+        ],
+        "fuelaware": [
+          27,
+          127,
+          168
+        ],
+        "dD": 0
+      },
+      "P,P,P,P,S,S,S": {
+        "base": [
+          27,
+          123,
+          132
+        ],
+        "fuelaware": [
+          27,
+          121,
+          137
+        ],
+        "dD": -2
+      }
+    },
+    "fuel_cap": {
+      "60": {
+        "base": [
+          27,
+          120,
+          133
+        ],
+        "fuelaware": [
+          27,
+          109,
+          119
+        ],
+        "dD": -11
+      },
+      "100": {
+        "base": [
+          27,
+          121,
+          134
+        ],
+        "fuelaware": [
+          27,
+          126,
+          144
+        ],
+        "dD": 5
+      },
+      "145": {
+        "base": [
+          27,
+          126,
+          139
+        ],
+        "fuelaware": [
+          27,
+          127,
+          145
+        ],
+        "dD": 1
+      },
+      "200": {
+        "base": [
+          27,
+          124,
+          143
+        ],
+        "fuelaware": [
+          27,
+          126,
+          145
+        ],
+        "dD": 2
+      }
+    },
+    "conclusion": "fuelaware helps at moderate fuel (100-200), regresses at tight fuel (60). Fewer agents benefit more."
+  }
+}
