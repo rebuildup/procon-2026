@@ -58,3 +58,40 @@ fn vehicle_composition_comparison() {
         }
     }
 }
+
+#[test]
+fn composition_across_fuel_levels() {
+    let compositions = [
+        ("P,S,P,S,P,S,P", "4P3S"),
+        ("P,P,P,P,S,P,S", "5P2S"),
+        ("P,P,P,P,P,P,S", "6P1S"),
+    ];
+    let cid = "anytime:budget_ms=5000:seed=42:budget=official";
+
+    println!("\n=== Composition × Fuel (32x32, 7 agents, anytime:5s) ===");
+    println!("{:>20} {:>6} {:>4} {:>4} {:>4}", "fuel_cap", "comp", "V", "D", "B");
+
+    for fuel_cap in [100, 200, 300, 395] {
+        for (kinds, label) in &compositions {
+            let params = LargeCaseParams {
+                seed: 42,
+                n_series: 27,
+                n_agents: 7,
+                n_days: 5,
+                day_steps_base: 83,
+                fuel_cap,
+                terrain: TerrainMix::BALANCED,
+                pattern: SeriesPattern::Uniform,
+            };
+            let case = generate_large_case(&params).expect("generate");
+            let pattern = bench::kinds::parse_kinds(kinds).unwrap();
+            let kinds_resolved = bench::kinds::resolve_kinds(Some(&pattern), case.setting.agents.len());
+            let team = domain::PlayerId::new("player-a").unwrap();
+            let setting = case.to_engine_setting_with_kinds(&team, Some(&kinds_resolved)).unwrap();
+            let state = engine::model::MatchState::new(setting).unwrap();
+            let solver = CandidateRegistry::builtin().build(cid).unwrap().build_solver().unwrap();
+            let r = MatchSim::default().run(state.setting.clone(), solver.as_ref()).unwrap();
+            println!("{fuel_cap:>20} {:>6} {:>4} {:>4} {:>4}", label, r.variety, r.daily_variety_sum, r.total_balls);
+        }
+    }
+}
