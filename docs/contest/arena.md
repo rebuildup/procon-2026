@@ -35,6 +35,33 @@ online（本 Issue）
   （`protocol::MatchClient` + `run_coordinator_loop`）を使います。
   arena 専用の protocol client / duplicate coordinator は存在しません。
 
+## 投入候補の選抜基準（2026-10-09 追記、投入ゲート）
+
+arena へ投入する candidate は、**比較計測セッションの offline 検証を経て Issue/PR 回収
+セッションが正式に引き渡したもの**を優先する。引き渡し（SHA + 設定）が無い場合は**投入しない**。
+
+投入前に満たすべき確認項目（引き渡しに含まれること）:
+
+| 項目 | 内容 |
+|---|---|
+| Candidate ID とパラメータ | verbatim（`budget=official` 必須） |
+| source SHA | 明示・push 済み・clean worktree |
+| build 成功 | `cargo build --release --locked --bin procon` が通ること |
+| 正規化・ live 互換性 | wire 正規化経路（`normalize_day_plan`）経由、当該 fix を含む SHA であること |
+| agent kinds | 既定 P,S 交替、または引き渡しで明示 |
+| daySeconds / 回答期限 | 当該試合の `daySeconds`（arena は全日 60 を観測）と solver 残時間予算の整合 |
+| 対照 candidate | 比較の baseline（引き渡しに含める） |
+| 期待改善軸 | **第 1〜第 3 軸のどれを改善するか**（辞書順 V→D→B→回答時間。第 4 軸の速さは上位 3 軸で負けていれば**無効な優位**であり、未使用計算予算は改善機会として扱う） |
+
+規律:
+
+- **ローカル（offline）の高得点と外部 arena の高得点は区別して記録する。**
+- 同一 Candidate・SHA・設定での連続投入は、**検証目的を明示した場合のみ**。
+- 台帳（Issue #326）と投入記録（Issue #317）を正本とする。受理確認だけを目的に
+  投入枠を消費しない（5+ 台完走の受理性は確認済み）。
+- 新規投入は比較計測・PR 回収担当の検証後のみ。この手順は external アリーナ専任
+  セッションが一元実行する（衝突防止: 投入前に coordinator プロセス確認 + #317 予約記録）。
+
 ## 仕様の出典（公式ガイド）
 
 操作仕様の正本は arena の公式ガイド
