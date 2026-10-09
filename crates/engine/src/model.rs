@@ -21,6 +21,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use domain::{MatchId, PlayerId};
 use serde::{Deserialize, Serialize};
 
+use crate::sim::SimConfig;
+
 // ---------------------------------------------------------------------------
 // Hex coordinate system (Q&A Q1 — even-row right-offset layout).
 // ---------------------------------------------------------------------------
@@ -838,11 +840,20 @@ pub struct SolverContext<'a> {
     /// [`Self::from_state`] has no clock, so it reports `u32::MAX` and a
     /// time-capped search degenerates to its explicit `time_budget_ms`.
     pub remaining_ms: u32,
+    /// Rules used by the simulator that is driving this solver. This lets
+    /// offline planners replay future state with the same case-specific
+    /// traffic thresholds as the evaluator.
+    pub sim_config: SimConfig,
 }
 
 impl<'a> SolverContext<'a> {
     #[must_use]
     pub fn from_state(state: &'a MatchState) -> Self {
+        Self::from_state_with_config(state, SimConfig::default())
+    }
+
+    #[must_use]
+    pub fn from_state_with_config(state: &'a MatchState, sim_config: SimConfig) -> Self {
         let agent_ids = state.setting.agent_ids();
         Self {
             team: state.team(),
@@ -851,6 +862,7 @@ impl<'a> SolverContext<'a> {
             day_steps: state.day_steps(),
             agent_ids,
             remaining_ms: u32::MAX,
+            sim_config,
         }
     }
 }

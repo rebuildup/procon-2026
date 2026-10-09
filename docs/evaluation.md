@@ -249,7 +249,7 @@ just eval-list
 loop                                  iterations / initial / seed / operators / lookahead / walk / assign
 multiloop                             grid / kmeans / seed / refine / walk / assign
 coverage                              budget / park
-search                                trials / seed / time_budget_ms / budget / park
+search                                trials / seed / time_budget_ms / budget / park / lookahead
 greedy
 nearest
 astar                                 policy
@@ -274,6 +274,7 @@ greedy
 nearest
 astar:policy=step
 search:trials=32:seed=42:budget=official:park=far
+search:trials=8:seed=42:budget=official:park=far:lookahead=next
 ```
 
 `search`（Issue #315）は seeded reconstruction を各日の `MatchSim` 実行で比較します。
@@ -282,6 +283,11 @@ search:trials=32:seed=42:budget=official:park=far
 候補と同じ挙動・IDを保ちます。`park=far` は初期計画と各再構築 trial に #331 の翌日向け
 series spreading を適用し、`coverage:budget=official:park=far` の停車方針を探索中も維持します。
 この追加キーは ID の末尾に付くため既存 candidate ID は変わりません。
+`lookahead=none`（既定）は従来の当日採点です。`lookahead=next` は各 trial の当日 plan を
+case 固有の `SimConfig` で `MatchSim` に通し、終了位置・燃料・道路状態から翌日を baseline coverage 方針で
+もう1日だけ再生して、(match variety, daily variety sum, total balls) の公式辞書順で候補を保持します。
+最終日は当日のみを採点します。探索 trial 数は増えず、各 trial の再生量だけが増えます。
+HTML戦略ラボの終端位置rolloutに着想を得ていますが、同ラボの重み付き評価値や固定交通予測は使用しません。
 
 `initial` の候補: `greedy`（既定）/ `identity` / `reverse` / `sweep-row` / `sweep-col` / `random`。
 `reverse` は入力順の完全な反転（`identity` の逆）で、座標にも seed にも依存しない決定的ツアーです。

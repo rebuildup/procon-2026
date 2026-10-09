@@ -243,7 +243,7 @@ impl Solver for CoverageCandidate {
             && tomorrow_budget >= 70;
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
-        let sim = MatchSim::default();
+        let sim = MatchSim::new(ctx.sim_config);
         // Day-scoped claim set: once a patrol targets a series, no other patrol
         // (or later step) re-targets it. Park mode keeps this across steps so
         // agents spread across series instead of converging (Issue #331).
