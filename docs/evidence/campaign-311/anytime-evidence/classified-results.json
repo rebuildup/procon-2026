@@ -1,0 +1,191 @@
+{
+  "ENGINE_timeline_sha": "abe2454",
+  "anytime_implementation_sha": "f921816",
+  "date": "2026-10-09",
+  "classification": "OFFICIAL TIMELINE COMPLIANT",
+  "unique_cases": 10,
+  "total_evaluations": 20,
+  "note": "Each --cases all run includes 9 bundled fixtures + 701 case-file. Two runs = 20 records, 10 unique.",
+  "classification_counts": {
+    "V_WIN": 1,
+    "D_WIN": 2,
+    "B_WIN": 2,
+    "TIE": 5,
+    "V_LOSS": 0,
+    "D_LOSS": 0,
+    "B_LOSS": 0,
+    "INVALID": 0
+  },
+  "B_WIN_cases": [
+    {
+      "case": "fixture:large-32x32",
+      "park": [
+        4,
+        4,
+        14
+      ],
+      "anytime": [
+        4,
+        4,
+        21
+      ],
+      "dB": 7
+    },
+    {
+      "case": "fixture:series-few",
+      "park": [
+        1,
+        1,
+        9
+      ],
+      "anytime": [
+        1,
+        1,
+        11
+      ],
+      "dB": 2
+    }
+  ],
+  "all_results": [
+    {
+      "case": "fixture:openapi-sample",
+      "park": [
+        1,
+        1,
+        3
+      ],
+      "anytime": [
+        2,
+        2,
+        4
+      ],
+      "class": "V_WIN"
+    },
+    {
+      "case": "fixture:small-8x8",
+      "park": [
+        2,
+        2,
+        7
+      ],
+      "anytime": [
+        2,
+        2,
+        7
+      ],
+      "class": "TIE"
+    },
+    {
+      "case": "fixture:medium-16x16",
+      "park": [
+        4,
+        4,
+        11
+      ],
+      "anytime": [
+        4,
+        4,
+        11
+      ],
+      "class": "TIE"
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park": [
+        4,
+        4,
+        14
+      ],
+      "anytime": [
+        4,
+        4,
+        21
+      ],
+      "class": "B_WIN"
+    },
+    {
+      "case": "fixture:road-heavy",
+      "park": [
+        2,
+        2,
+        4
+      ],
+      "anytime": [
+        2,
+        2,
+        4
+      ],
+      "class": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park": [
+        3,
+        7,
+        22
+      ],
+      "anytime": [
+        3,
+        9,
+        27
+      ],
+      "class": "D_WIN"
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park": [
+        2,
+        2,
+        9
+      ],
+      "anytime": [
+        2,
+        2,
+        9
+      ],
+      "class": "TIE"
+    },
+    {
+      "case": "fixture:series-many",
+      "park": [
+        4,
+        4,
+        10
+      ],
+      "anytime": [
+        4,
+        4,
+        10
+      ],
+      "class": "TIE"
+    },
+    {
+      "case": "fixture:series-few",
+      "park": [
+        1,
+        1,
+        9
+      ],
+      "anytime": [
+        1,
+        1,
+        11
+      ],
+      "class": "B_WIN"
+    },
+    {
+      "case": "fixture:701",
+      "park": [
+        20,
+        185,
+        427
+      ],
+      "anytime": [
+        20,
+        199,
+        459
+      ],
+      "class": "D_WIN"
+    }
+  ]
+}
