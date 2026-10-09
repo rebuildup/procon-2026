@@ -89,7 +89,7 @@ struct AnytimeCandidate {
 /// Today's ending position decides tomorrow's reachable series, so a
 /// ball-only gain (or a series gain bought with a collapsed tomorrow)
 /// can lower full-match D — the sum of per-day varieties.
-fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32) {
+fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32, u32) {
     let mut state = ctx.state.clone();
     let sim = MatchSim::default();
     for step in plan.actions.chunks(ctx.agent_ids.len()) {
@@ -124,7 +124,16 @@ fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32) {
         }
     }
 
-    (series_today, balls_today, fuel_value + proximity)
+    // Official axis 1 (V): full-period variety including this plan's effect.
+    // Use series_taken (cumulative) after simulation to catch cases where
+    // today's plan would LOSE a previously-acquired series (which is
+    // impossible in the engine, but guards against local scoring errors).
+    let full_variety = state.series_taken.len() as u32;
+
+    // Tuple: (full_V, series_today→D contribution, balls_today→B contribution,
+    //         next_day positioning). The comparison in the acceptance loop
+    // only uses the first three; positioning is a tiebreaker.
+    (full_variety, series_today, balls_today, fuel_value + proximity)
 }
 
 /// Generate a variant of park=far with a different exploration seed.
@@ -196,11 +205,17 @@ impl Solver for AnytimeCandidate {
             // full-period non-degradation — today's ending position affects
             // tomorrow's reachable series. Full-match validation requires
             // canonical evaluator replay across all days (Issue #342).
-            let d_gain = score.0 > best_score.0;
-            let d_same_b_gain = score.0 == best_score.0 && score.1 > best_score.1;
-            let tie_better_pos =
-                score.0 == best_score.0 && score.1 == best_score.1 && score.2 > best_score.2;
-            if d_gain || d_same_b_gain || tie_better_pos {
+            // Official priority: V (axis 1) must never decrease.
+            // Then D (axis 2): series_today must not decrease.
+            // Then B (axis 3): balls_today may increase.
+            let v_safe = score.0 >= best_score.0;
+            let d_gain = score.1 > best_score.1;
+            let d_same_b_gain = score.1 == best_score.1 && score.2 > best_score.2;
+            let tie_better_pos = score.1 == best_score.1
+                && score.2 == best_score.2
+                && score.3 > best_score.3;
+            let accept = v_safe && (d_gain || d_same_b_gain || tie_better_pos);
+            if accept {
                 best = plan;
                 best_score = score;
                 no_improve_count = 0;
@@ -216,11 +231,16 @@ impl Solver for AnytimeCandidate {
             }
         }
 
-        // If no variant beat the initial series count, return the initial
-        // park=far plan untouched. Full-match D then matches the baseline.
-        if best_score.0 <= initial_score.0 {
-            return initial;
+        // Final return: compare best vs initial in the local dictionary order
+        // (series_today, balls_today, next_day_value). Return `best` only when
+        // it is STRICTLY better than the initial plan. This preserves B-only
+        // improvements (series same, balls higher) that the acceptance loop
+        // already vetted.
+        if best_score > initial_score {
+            best
+        } else {
+            // No improvement (or regression): return the untouched baseline.
+            initial
         }
-        best
     }
 }
