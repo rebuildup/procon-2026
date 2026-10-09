@@ -1,0 +1,333 @@
+{
+  "case": "V6_road_cadence",
+  "note": "start on 道路(smooth): 8 moves (1 + 7x2) + wait 1 = 16; tests road step cost 1.",
+  "fuelLimits": 20,
+  "daySteps": [
+    16,
+    16
+  ],
+  "kinds": [
+    0
+  ],
+  "day0_plan": [
+    [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      -1
+    ]
+  ],
+  "timeline": [
+    {
+      "when": "day0-start",
+      "state": [
+        {
+          "pos": 0,
+          "fuel": 20,
+          "kind": 0
+        }
+      ]
+    },
+    {
+      "when": "day0-answer",
+      "plan": [
+        [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          -1
+        ]
+      ],
+      "answer": {
+        "revision": 1
+      }
+    },
+    {
+      "when": "day1-start",
+      "state": [
+        {
+          "pos": 8,
+          "fuel": 11,
+          "kind": 0
+        }
+      ]
+    },
+    {
+      "when": "day1-answer",
+      "plan": [
+        [
+          -16
+        ]
+      ],
+      "answer": {
+        "revision": 2
+      }
+    }
+  ],
+  "requests": [
+    {
+      "path": "/setting",
+      "body": null,
+      "status": 200,
+      "response": {
+        "startsAt": 0,
+        "daySeconds": [
+          6,
+          6
+        ],
+        "daySteps": [
+          16,
+          16
+        ],
+        "map": {
+          "height": 8,
+          "width": 12,
+          "cells": [
+            [
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          ]
+        },
+        "spots": [
+          {
+            "brand": 0,
+            "pos": 14,
+            "stocks": 1
+          }
+        ],
+        "agents": [
+          0
+        ],
+        "fuelLimits": 20,
+        "players": 1,
+        "busyThreshold": 2,
+        "jammedThreshold": 5
+      }
+    },
+    {
+      "path": "/agent",
+      "body": [
+        0
+      ],
+      "status": 200,
+      "response": null
+    },
+    {
+      "path": "/",
+      "body": null,
+      "status": 200,
+      "response": {
+        "endsAt": 1791550002,
+        "day": 0,
+        "agents": [
+          {
+            "kind": 0,
+            "pos": 0,
+            "fuel": 20
+          }
+        ],
+        "others": [],
+        "traffics": [
+          {
+            "pos": 0,
+            "status": 0
+          }
+        ]
+      }
+    },
+    {
+      "path": "/",
+      "body": [
+        [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          -1
+        ]
+      ],
+      "status": 200,
+      "response": {
+        "revision": 1
+      }
+    },
+    {
+      "path": "/",
+      "body": null,
+      "status": 200,
+      "response": {
+        "endsAt": 1791550008,
+        "day": 1,
+        "agents": [
+          {
+            "kind": 0,
+            "pos": 8,
+            "fuel": 11
+          }
+        ],
+        "others": [],
+        "traffics": [
+          {
+            "pos": 0,
+            "status": 0
+          }
+        ]
+      }
+    },
+    {
+      "path": "/",
+      "body": [
+        [
+          -16
+        ]
+      ],
+      "status": 200,
+      "response": {
+        "revision": 2
+      }
+    }
+  ],
+  "sim_prediction_day1": {
+    "agents": [
+      {
+        "pos": 8,
+        "fuel": 11,
+        "kind": 0
+      },
+      {
+        "pos": 95,
+        "fuel": 4294967295,
+        "kind": 1
+      },
+      {
+        "pos": 95,
+        "fuel": 4294967295,
+        "kind": 1
+      }
+    ]
+  },
+  "sim_returncode": 0
+}

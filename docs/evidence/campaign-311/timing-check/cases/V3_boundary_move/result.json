@@ -1,0 +1,302 @@
+{
+  "case": "V3_boundary_move",
+  "note": "wait 14 then one plain move: issued t14, due t16 == day limit.",
+  "fuelLimits": 20,
+  "daySteps": [
+    16,
+    16
+  ],
+  "kinds": [
+    0
+  ],
+  "day0_plan": [
+    [
+      -14,
+      2
+    ]
+  ],
+  "timeline": [
+    {
+      "when": "day0-start",
+      "state": [
+        {
+          "pos": 0,
+          "fuel": 20,
+          "kind": 0
+        }
+      ]
+    },
+    {
+      "when": "day0-answer",
+      "plan": [
+        [
+          -14,
+          2
+        ]
+      ],
+      "answer": {
+        "revision": 1
+      }
+    },
+    {
+      "when": "day1-start",
+      "state": [
+        {
+          "pos": 1,
+          "fuel": 19,
+          "kind": 0
+        }
+      ]
+    },
+    {
+      "when": "day1-answer",
+      "plan": [
+        [
+          -16
+        ]
+      ],
+      "answer": {
+        "revision": 2
+      }
+    }
+  ],
+  "requests": [
+    {
+      "path": "/setting",
+      "body": null,
+      "status": 200,
+      "response": {
+        "startsAt": 0,
+        "daySeconds": [
+          6,
+          6
+        ],
+        "daySteps": [
+          16,
+          16
+        ],
+        "map": {
+          "height": 8,
+          "width": 12,
+          "cells": [
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          ]
+        },
+        "spots": [
+          {
+            "brand": 0,
+            "pos": 14,
+            "stocks": 1
+          }
+        ],
+        "agents": [
+          0
+        ],
+        "fuelLimits": 20,
+        "players": 1,
+        "busyThreshold": 2,
+        "jammedThreshold": 5
+      }
+    },
+    {
+      "path": "/agent",
+      "body": [
+        0
+      ],
+      "status": 200,
+      "response": null
+    },
+    {
+      "path": "/",
+      "body": null,
+      "status": 200,
+      "response": {
+        "endsAt": 1791549970,
+        "day": 0,
+        "agents": [
+          {
+            "kind": 0,
+            "pos": 0,
+            "fuel": 20
+          }
+        ],
+        "others": [],
+        "traffics": []
+      }
+    },
+    {
+      "path": "/",
+      "body": [
+        [
+          -14,
+          2
+        ]
+      ],
+      "status": 200,
+      "response": {
+        "revision": 1
+      }
+    },
+    {
+      "path": "/",
+      "body": null,
+      "status": 200,
+      "response": {
+        "endsAt": 1791549976,
+        "day": 1,
+        "agents": [
+          {
+            "kind": 0,
+            "pos": 1,
+            "fuel": 19
+          }
+        ],
+        "others": [],
+        "traffics": []
+      }
+    },
+    {
+      "path": "/",
+      "body": [
+        [
+          -16
+        ]
+      ],
+      "status": 200,
+      "response": {
+        "revision": 2
+      }
+    }
+  ],
+  "sim_prediction_day1": {
+    "agents": [
+      {
+        "pos": 1,
+        "fuel": 19,
+        "kind": 0
+      },
+      {
+        "pos": 95,
+        "fuel": 4294967295,
+        "kind": 1
+      },
+      {
+        "pos": 95,
+        "fuel": 4294967295,
+        "kind": 1
+      }
+    ]
+  },
+  "sim_returncode": 0
+}

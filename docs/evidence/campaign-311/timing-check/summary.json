@@ -1,0 +1,362 @@
+{
+  "binary_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "sim_binary": "timing_parity",
+  "cases": [
+    {
+      "case": "V1_single_move",
+      "note": "control: one plain move then waits. Move issued t0 lands t2.",
+      "day0_plan": [
+        [
+          2,
+          -14
+        ]
+      ],
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 20,
+          "kind": 0
+        }
+      ],
+      "day0_answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 1,
+          "fuel": 19,
+          "kind": 0
+        }
+      ],
+      "sim_prediction_day1": {
+        "agents": [
+          {
+            "pos": 1,
+            "fuel": 19,
+            "kind": 0
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          }
+        ]
+      },
+      "sim_returncode": 0
+    },
+    {
+      "case": "V2_seven_moves",
+      "note": "7 consecutive plain moves (weights 7x2) + wait 2 = 16.",
+      "day0_plan": [
+        [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          -2
+        ]
+      ],
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 20,
+          "kind": 0
+        }
+      ],
+      "day0_answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 7,
+          "fuel": 13,
+          "kind": 0
+        }
+      ],
+      "sim_prediction_day1": {
+        "agents": [
+          {
+            "pos": 7,
+            "fuel": 13,
+            "kind": 0
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          }
+        ]
+      },
+      "sim_returncode": 0
+    },
+    {
+      "case": "V3_boundary_move",
+      "note": "wait 14 then one plain move: issued t14, due t16 == day limit.",
+      "day0_plan": [
+        [
+          -14,
+          2
+        ]
+      ],
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 20,
+          "kind": 0
+        }
+      ],
+      "day0_answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 1,
+          "fuel": 19,
+          "kind": 0
+        }
+      ],
+      "sim_prediction_day1": {
+        "agents": [
+          {
+            "pos": 1,
+            "fuel": 19,
+            "kind": 0
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          }
+        ]
+      },
+      "sim_returncode": 0
+    },
+    {
+      "case": "V4_mountain_control",
+      "note": "start on 山地; move to 平地 issued t0, due t3 (weight 3, fuel 2).",
+      "day0_plan": [
+        [
+          2,
+          -13
+        ]
+      ],
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 20,
+          "kind": 0
+        }
+      ],
+      "day0_answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 1,
+          "fuel": 18,
+          "kind": 0
+        }
+      ],
+      "sim_prediction_day1": {
+        "agents": [
+          {
+            "pos": 1,
+            "fuel": 18,
+            "kind": 0
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          }
+        ]
+      },
+      "sim_returncode": 0
+    },
+    {
+      "case": "V5_mountain_boundary",
+      "note": "start on 山地; wait 13 then move: issued t13, due t16.",
+      "day0_plan": [
+        [
+          -13,
+          2
+        ]
+      ],
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 20,
+          "kind": 0
+        }
+      ],
+      "day0_answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 1,
+          "fuel": 18,
+          "kind": 0
+        }
+      ],
+      "sim_prediction_day1": {
+        "agents": [
+          {
+            "pos": 1,
+            "fuel": 18,
+            "kind": 0
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          }
+        ]
+      },
+      "sim_returncode": 0
+    },
+    {
+      "case": "V6_road_cadence",
+      "note": "start on 道路(smooth): 8 moves (1 + 7x2) + wait 1 = 16; tests road step cost 1.",
+      "day0_plan": [
+        [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          -1
+        ]
+      ],
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 20,
+          "kind": 0
+        }
+      ],
+      "day0_answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 8,
+          "fuel": 11,
+          "kind": 0
+        }
+      ],
+      "sim_prediction_day1": {
+        "agents": [
+          {
+            "pos": 8,
+            "fuel": 11,
+            "kind": 0
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          }
+        ]
+      },
+      "sim_returncode": 0
+    },
+    {
+      "case": "V7_supply_refuel",
+      "note": "patrol (fuel 4) drives 2 cells to a supply agent; Q22 same-cell refill.",
+      "day0_plan": [
+        [
+          2,
+          2,
+          -12
+        ],
+        [
+          -16
+        ]
+      ],
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 4,
+          "kind": 0
+        },
+        {
+          "pos": 2,
+          "fuel": 4,
+          "kind": 1
+        }
+      ],
+      "day0_answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 2,
+          "fuel": 4,
+          "kind": 0
+        },
+        {
+          "pos": 2,
+          "fuel": 4,
+          "kind": 1
+        }
+      ],
+      "sim_prediction_day1": {
+        "agents": [
+          {
+            "pos": 2,
+            "fuel": 4,
+            "kind": 0
+          },
+          {
+            "pos": 2,
+            "fuel": 4294967295,
+            "kind": 1
+          },
+          {
+            "pos": 95,
+            "fuel": 4294967295,
+            "kind": 1
+          }
+        ]
+      },
+      "sim_returncode": 0
+    }
+  ]
+}
