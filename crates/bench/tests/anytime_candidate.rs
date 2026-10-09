@@ -310,9 +310,12 @@ fn anytime_no_improvement_returns_initial_plan_unchanged() {
 
 /// Regression test: B-only improvement must be returned (Issue #364).
 ///
-/// Uses `fixture:large-32x32` where anytime produces V=4/D=4/B=21 vs
-/// coverage's V=4/D=4/B=14. V and D are identical; B strictly increases.
-/// The final returned plan must reflect this B gain.
+/// Uses `fixture:large-32x32` where the anytime search strictly lifts the
+/// third axis at equal V/D (measured at `6263ada`: returned (4, 4, 20) vs
+/// coverage park=far (4, 4, 19); the pre-`6263ada` evidence recorded
+/// 17 vs 16 on an older base — the assertion stays relational, only the
+/// commentary numbers move with the base). The final returned plan must
+/// reflect this B gain; an always-return-initial implementation fails.
 #[test]
 fn anytime_b_only_improvement_returned_on_large32() {
     let case = bench::CaseSpec::from_bundled_fixture("large-32x32").unwrap();

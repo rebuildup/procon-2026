@@ -1,9 +1,19 @@
 {
-  "ENGINE_base": "87595f2",
-  "implementation_sha": "5e9771203e8b47cdfb873fae4c1be5ea9a60195e",
-  "date": "2026-10-09",
+  "ENGINE_base": "release-0-4-0 @ 426321a (integrated in merge 5e97712)",
+  "ENGINE_base_note": "label corrected 2026-10-10: the earlier '87595f2' label predates the release-0-4-0 merge the measurements actually contain",
+  "implementation_sha": "6263ada8eb892757f09aa0cfbb3b6f4ae1816b37",
+  "implementation_note": "ownership-safe self-target (14db116) + reservation release / exemption-expiry fix (6263ada); the test-only comment follow-up on top does not affect measurements",
+  "date": "2026-10-10",
   "classification": "OFFICIAL TIMELINE COMPLIANT",
-  "fix": "Ownership-safe self-target: patrol_step gains self_target parameter; target selection exempts self_target from reserved deprioritization; reserved is NEVER mutated to free own target",
+  "fix": "Three-concept target bookkeeping: acquired (day_claimed, persistent) / per-owner in-flight reservations (released by their owner on acquire or re-target) / active_target (self-target exemption that expires at the pick)",
+  "conditions": {
+    "harness": "procon-eval (canonical MatchSim)",
+    "profile": "release",
+    "kinds": "P,S,P,S,P",
+    "corpus": "bundled fixtures + fixture:701 (arena-701.json case file)",
+    "anytime_mode": "trials=64:seed=42 (deterministic; no wall clock)",
+    "source_sha": "6263ada8eb892757f09aa0cfbb3b6f4ae1816b37"
+  },
   "unique_cases": 10,
   "classification_counts": {
     "V_WIN": 0,
@@ -15,32 +25,63 @@
     "B_LOSS": 0,
     "INVALID": 0
   },
+  "D_WIN_cases": [
+    {
+      "case": "fixture:701",
+      "park": [
+        20,
+        198,
+        440
+      ],
+      "anytime": [
+        20,
+        200,
+        452
+      ],
+      "dD": 2,
+      "dB": 12
+    }
+  ],
   "B_WIN_cases": [
     {
       "case": "fixture:medium-16x16",
       "park": [
         4,
         4,
-        9
+        10
       ],
       "anytime": [
         4,
         4,
         11
       ],
-      "dB": 2
+      "dB": 1
     },
     {
       "case": "fixture:large-32x32",
       "park": [
         4,
         4,
-        16
+        19
       ],
       "anytime": [
         4,
         4,
-        17
+        20
+      ],
+      "dB": 1
+    },
+    {
+      "case": "fixture:openapi-sample",
+      "park": [
+        2,
+        2,
+        3
+      ],
+      "anytime": [
+        2,
+        2,
+        4
       ],
       "dB": 1
     },
@@ -54,37 +95,9 @@
       "anytime": [
         3,
         9,
-        28
+        27
       ],
-      "dB": 4
-    },
-    {
-      "case": "fixture:mountain-heavy",
-      "park": [
-        2,
-        2,
-        8
-      ],
-      "anytime": [
-        2,
-        2,
-        9
-      ],
-      "dB": 1
-    },
-    {
-      "case": "fixture:series-many",
-      "park": [
-        4,
-        4,
-        9
-      ],
-      "anytime": [
-        4,
-        4,
-        10
-      ],
-      "dB": 1
+      "dB": 3
     },
     {
       "case": "fixture:series-few",
@@ -99,94 +112,35 @@
         11
       ],
       "dB": 2
-    }
-  ],
-  "D_WIN_cases": [
-    {
-      "case": "fixture:701",
-      "park": [
-        20,
-        196,
-        426
-      ],
-      "anytime": [
-        20,
-        200,
-        446
-      ],
-      "dD": 4,
-      "dB": 20
-    }
-  ],
-  "701_detail": {
-    "coverage_park_far": {
-      "V": 20,
-      "D": 196,
-      "B": 426
-    },
-    "anytime_5000ms": {
-      "V": 20,
-      "D": 200,
-      "B": 446
-    },
-    "note": "anytime achieves D=200 (MAX for 20 series \u00d7 10 days). Coverage also improved from 185 to 196."
-  },
-  "all_results": [
-    {
-      "case": "fixture:openapi-sample",
-      "park": [
-        2,
-        2,
-        3
-      ],
-      "anytime": [
-        2,
-        2,
-        3
-      ],
-      "class": "TIE"
     },
     {
-      "case": "fixture:small-8x8",
-      "park": [
-        2,
-        2,
-        7
-      ],
-      "anytime": [
-        2,
-        2,
-        7
-      ],
-      "class": "TIE"
-    },
-    {
-      "case": "fixture:medium-16x16",
+      "case": "fixture:series-many",
       "park": [
         4,
         4,
+        8
+      ],
+      "anytime": [
+        4,
+        4,
+        10
+      ],
+      "dB": 2
+    }
+  ],
+  "TIE_cases": [
+    {
+      "case": "fixture:mountain-heavy",
+      "park": [
+        2,
+        2,
         9
       ],
       "anytime": [
-        4,
-        4,
-        11
-      ],
-      "class": "B_WIN"
-    },
-    {
-      "case": "fixture:large-32x32",
-      "park": [
-        4,
-        4,
-        16
-      ],
-      "anytime": [
-        4,
-        4,
-        17
-      ],
-      "class": "B_WIN"
+        2,
+        2,
+        9
+      ]
     },
     {
       "case": "fixture:road-heavy",
@@ -199,80 +153,75 @@
         2,
         2,
         4
-      ],
-      "class": "TIE"
+      ]
     },
     {
-      "case": "fixture:road-heavy-v2",
-      "park": [
-        3,
-        9,
-        24
-      ],
-      "anytime": [
-        3,
-        9,
-        28
-      ],
-      "class": "B_WIN"
-    },
-    {
-      "case": "fixture:mountain-heavy",
+      "case": "fixture:small-8x8",
       "park": [
         2,
         2,
-        8
+        7
       ],
       "anytime": [
         2,
         2,
-        9
-      ],
-      "class": "B_WIN"
-    },
-    {
-      "case": "fixture:series-many",
-      "park": [
-        4,
-        4,
-        9
-      ],
-      "anytime": [
-        4,
-        4,
-        10
-      ],
-      "class": "B_WIN"
-    },
-    {
-      "case": "fixture:series-few",
-      "park": [
-        1,
-        1,
-        9
-      ],
-      "anytime": [
-        1,
-        1,
-        11
-      ],
-      "class": "B_WIN"
-    },
-    {
-      "case": "fixture:701",
-      "park": [
-        20,
-        196,
-        426
-      ],
-      "anytime": [
-        20,
-        200,
-        446
-      ],
-      "class": "D_WIN"
+        7
+      ]
     }
   ],
-  "note_on_sha": "Measured at merge commit with release-0-4-0 @ 426321a integrated",
-  "trials_note": "B_WIN test uses fixed trials=64 for reproducibility; wall-clock budget_ms=5000 results may vary between machines"
+  "701_detail": {
+    "case": "fixture:701",
+    "conditions": "release profile, kinds P,S,P,S,P, procon-eval at 6263ada",
+    "before_fix_bf17fd6": {
+      "coverage_park_none": {
+        "V": 20,
+        "D": 199,
+        "B": 413
+      },
+      "coverage_park_far": {
+        "V": 20,
+        "D": 196,
+        "B": 426
+      },
+      "coverage_fuelaware_true": {
+        "V": 20,
+        "D": 199,
+        "B": 413
+      },
+      "anytime_trials64_seed42": {
+        "V": 20,
+        "D": 200,
+        "B": 443
+      }
+    },
+    "after_fix_6263ada": {
+      "coverage_park_none": {
+        "V": 20,
+        "D": 200,
+        "B": 429
+      },
+      "coverage_park_far": {
+        "V": 20,
+        "D": 198,
+        "B": 440
+      },
+      "coverage_fuelaware_true": {
+        "V": 20,
+        "D": 200,
+        "B": 434
+      },
+      "anytime_trials64_seed42": {
+        "V": 20,
+        "D": 200,
+        "B": 452
+      }
+    },
+    "note": "no V/D/B regression on any candidate; park=none and fuelaware reach D=200 (max), park=far 196 -> 198"
+  },
+  "number_reconciliation": {
+    "issue": "the PR body cited anytime 701 B=453 while this evidence recorded B=446",
+    "resolution": "446 = wall-clock budget_ms=5000 run at 5e97712 (load-dependent); 453 = unstamped PR-body claim with no reproducible condition set; the SHA-stamped deterministic measurement at 6263ada is B=452 (trials=64:seed=42). Only the stamped 452 is citable going forward.",
+    "canonical_numbers": "see 701_detail.after_fix_6263ada"
+  },
+  "trials_note": "B_WIN test uses fixed trials=64 for reproducibility; wall-clock budget_ms results may vary between machines"
 }
