@@ -336,7 +336,7 @@ impl MatchSim {
             if state.is_finished() {
                 break;
             }
-            let ctx = SolverContext::from_state(state);
+            let ctx = SolverContext::from_state_with_config(state, self.config);
             let day_plan = solver.decide(&ctx);
             // Slice the per-day plan into per-step blocks and feed each to
             // [`Self::step`]. An under-/over-sized plan is treated as
@@ -399,6 +399,7 @@ mod tests {
     use crate::model::{
         Action, Agent, Direction, HexCoord, MapGrid, MapSize, Spot, Terrain, TrafficState,
     };
+    use crate::rules::TrafficThresholds;
     use domain::{MatchId, PlayerId};
 
     /// Tiny 8x8 plain map with one spot at (0, 0) of series 1.
@@ -494,6 +495,30 @@ mod tests {
         fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
             AgentActions::wait_all(&ctx.agent_ids, ctx.day_steps)
         }
+    }
+
+    #[test]
+    fn run_passes_its_case_sim_config_to_the_solver_context() {
+        struct ConfigCheckingSolver(SimConfig);
+
+        impl Solver for ConfigCheckingSolver {
+            fn name(&self) -> &'static str {
+                "config-check"
+            }
+
+            fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+                assert_eq!(ctx.sim_config, self.0);
+                AgentActions::wait_all(&ctx.agent_ids, ctx.day_steps)
+            }
+        }
+
+        let config = SimConfig {
+            traffic_thresholds: TrafficThresholds { busy_threshold: 1, jammed_threshold: 3 },
+            oracle_refill: true,
+        };
+        let setting =
+            setting_with(one_spot_map(), vec![Agent::patrol(0, HexCoord::new(7, 7), 1, 3)], 1, 1);
+        MatchSim::new(config).run(setting, &ConfigCheckingSolver(config)).unwrap();
     }
 
     #[test]
