@@ -1,0 +1,114 @@
+{
+  "source_commit_sha": "b6228769779595913b0c60c7e618411ceb7b3b9b",
+  "issue": "#335",
+  "environment": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "processor": "arm",
+    "python": "3.14.8",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "reproduction_commands": {
+    "build": "cargo build --release -p bench --bin procon-eval --offline",
+    "warmup": "./target/release/procon-eval --cases all --case-files crates/bench/tests/fixtures/arena-701.json --kinds 'P,S,P,S,P' --candidates 'coverage:budget=official:park=none,coverage:budget=official:park=far' --baseline 'coverage:budget=official:park=none' --jobs 1 --output-dir /tmp/warmup",
+    "benchmark": "python3 benchmark.py (see below)",
+    "consistency_check": "python3 consistency.py (see below)"
+  },
+  "benchmark_results": {
+    "small_workload": {
+      "description": "20 records (701 fixture + 9 bundled)",
+      "warmup_shuffled_3_rounds": {
+        "jobs=1": {
+          "mean_s": 0.457,
+          "min_s": 0.453,
+          "max_s": 0.462,
+          "std_s": 0.004,
+          "rec_per_s": 43.8,
+          "speedup": 1.0
+        },
+        "jobs=2": {
+          "mean_s": 0.226,
+          "min_s": 0.222,
+          "max_s": 0.229,
+          "std_s": 0.003,
+          "rec_per_s": 88.4,
+          "speedup": 2.02
+        },
+        "jobs=4": {
+          "mean_s": 0.162,
+          "min_s": 0.156,
+          "max_s": 0.165,
+          "std_s": 0.004,
+          "rec_per_s": 123.7,
+          "speedup": 2.82
+        },
+        "jobs=6": {
+          "mean_s": 0.159,
+          "min_s": 0.157,
+          "max_s": 0.16,
+          "std_s": 0.002,
+          "rec_per_s": 125.5,
+          "speedup": 2.87
+        },
+        "jobs=8": {
+          "mean_s": 0.157,
+          "min_s": 0.151,
+          "max_s": 0.162,
+          "std_s": 0.004,
+          "rec_per_s": 127.2,
+          "speedup": 2.9
+        }
+      }
+    },
+    "heavy_workload": {
+      "description": "34 records (701 + 9 bundled + 7 generated)",
+      "single_run": {
+        "jobs=1": {
+          "elapsed_ms": 861,
+          "speedup": 1.0
+        },
+        "jobs=2": {
+          "elapsed_ms": 322,
+          "speedup": 2.67
+        },
+        "jobs=4": {
+          "elapsed_ms": 197,
+          "speedup": 4.37
+        },
+        "jobs=6": {
+          "elapsed_ms": 186,
+          "speedup": 4.63
+        },
+        "jobs=8": {
+          "elapsed_ms": 185,
+          "speedup": 4.66
+        }
+      }
+    }
+  },
+  "superlinear_speedup_analysis": {
+    "initial_measurement": "jobs=2 showed 3.7x speedup (648ms -> 175ms)",
+    "cause": "measurement order bias: jobs=1 ran first (cold cache), jobs=2 ran second (warm cache)",
+    "after_warmup_shuffled": "jobs=2 shows 2.02x speedup (linear)",
+    "conclusion": "No true superlinear speedup. Initial 3.7x was a cold-cache artifact."
+  },
+  "axis_1_3_consistency": {
+    "small_workload": "PASS - 20/20 records identical across all parallelism levels",
+    "heavy_workload": "PASS - 34/34 records identical across all parallelism levels"
+  },
+  "axis_4_response_time": {
+    "small_workload": "jobs=2/4: 0.81-0.86x (faster due to cache), jobs=6/8: 1.05-1.14x (CPU contention)",
+    "heavy_workload_701": "120-133ms across all levels (stable)",
+    "recommendation": "Re-measure sequentially (--jobs 1) for final axis-4 ranking"
+  },
+  "official_deadline_check": {
+    "day_budget_exceeded": "0 at all parallelism levels",
+    "conclusion": "No false deadline triggering under parallelism"
+  },
+  "status_distribution": {
+    "all_levels": "34/34 success, 0 timeout, 0 panic, 0 illegal/fuel"
+  },
+  "recommended_parallelism": {
+    "value": 4,
+    "rationale": "4 jobs gives 4.37x speedup on heavy workload; 6-8 jobs provide marginal improvement (4.63-4.66x) with increased CPU contention risk"
+  }
+}
