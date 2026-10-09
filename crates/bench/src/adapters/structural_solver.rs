@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 
 use crate::adapters::coverage_solver::CoverageCandidate;
 use crate::adapters::walk::{BudgetMode, hex_distance};
-use crate::candidate::{CandidateError, CandidateFactory, CandidateRegistry, CandidateSpec, ParamSpec};
+use crate::candidate::{
+    CandidateError, CandidateFactory, CandidateRegistry, CandidateSpec, ParamSpec,
+};
 use engine::MatchSim;
 use engine::model::{
     Action, ActionKind, AgentActions, AgentKind, Direction, HexCoord, MapGrid, Solver,
@@ -442,8 +444,8 @@ impl Solver for StructuralCandidate {
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let started = Instant::now();
-        let coverage = CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }
-            .decide(ctx);
+        let coverage =
+            CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }.decide(ctx);
         if ctx.agent_ids.is_empty() || ctx.day_steps == 0 {
             return coverage;
         }
