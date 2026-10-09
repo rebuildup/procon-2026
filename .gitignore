@@ -77,3 +77,4 @@ __pycache__/
 
 # natural-japanese skill: calibration corpus + generated reports
 corpus/
+.infisical.json
