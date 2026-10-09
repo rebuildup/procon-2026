@@ -1066,10 +1066,12 @@ impl Solver for FleetCandidate {
             let window = if ctx.remaining_ms == u32::MAX {
                 budget
             } else {
-                // Keep a third of the answer window (0.5 s..5 s) for the
-                // replay check, encoding and the round trip.
-                let margin = (ctx.remaining_ms / 3).clamp(500, 5_000);
-                Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(margin)))
+                // The coordinator already holds back its submission margin
+                // (`solver_budget_ms`), so only the replay check and encoding
+                // are left to cover. A quarter second of search is kept even
+                // when it reports no time: the greedy start alone measured
+                // far weaker than a short search.
+                Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(300).max(250)))
             };
             started + budget.min(window)
         });
