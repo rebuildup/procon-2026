@@ -101,17 +101,24 @@ Existing evidence at this source SHA includes five completed local Arena matches
 
 ## Start, stop, failure, and rollback
 
-After the explicit handoff and all checks above:
+After the explicit handoff and all checks above, reload systemd. Start the oneshot service manually during a valid three-minute lobby to make the required single live match. The service blocks until the match completes:
 
 ```sh
 systemctl daemon-reload
-systemctl start procon-arena-runner.timer
+systemctl start procon-arena-runner.service
+journalctl -u procon-arena-runner.service --since '15 minutes ago' --no-pager
+```
+
+Confirm exactly one `completed` entry in the persistent state and matching `runs.jsonl` evidence before enabling continuous operation. If the command returns `outside-window`, wait for the next lobby and start the oneshot inside its three-minute window; do not force a late registration. If the attempt fails or is ambiguous, leave the timer stopped and reconcile before any retry. After the first successful match:
+
+```sh
+systemctl enable --now procon-arena-runner.timer
 systemctl status procon-arena-runner.timer
 ```
 
-The first live execution should be observed as one match. Confirm its `completed` entry and `runs.jsonl` record before allowing later slots. The service has no automatic timeout or restart that could interrupt a long match; an unresolved process holds the single-run lock and blocks later slots. Do not run `systemctl enable` until the owner has approved persistent boot activation. The timer itself is not installed or started by this repository.
+The timer then submits at each next slot, including after host reboot. The service has no automatic timeout or restart that could interrupt a long match; an unresolved attempt in persistent state blocks later slots. The timer itself is not installed, enabled, or started by this repository.
 
-To stop future registrations, run `systemctl stop procon-arena-runner.timer`. Do not kill an active match during handoff. The oneshot service has no restart policy, and stopping the timer does not restart the current coordinator. Keep the state directory and evidence intact.
+To stop future registrations, run `systemctl disable --now procon-arena-runner.timer`. Do not kill an active match during handoff. The oneshot service has no restart policy, and stopping the timer does not restart the current coordinator. Keep the state directory and evidence intact.
 
 If a run exits nonzero, the evidence is missing or ambiguous, the host restarts during a match, the token disappears, or the binary/manifest mismatches, keep the timer stopped. Inspect the coordinator log and Arena UI without calling token-bearing `GET /setting`. A slot marked `started` or `halted` may already have registered. Once the operator has evidence of the actual outcome, record a manual resolution while the timer is stopped:
 
