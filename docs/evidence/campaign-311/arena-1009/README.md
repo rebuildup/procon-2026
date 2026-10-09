@@ -468,6 +468,30 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 - revisions [12,30,53,70,92,112,135,153,172,192] — 10/10 全日受理・1日1 POST・error なし
 - 燃料 cap311: 給油サイクル全日作動（184→311 回復など）・**座礁 0 台・5/5 全日稼働**
 
+## 公式スコア + 実測（match 1934 = fleet 標準 config・UI `#1935 第2卓` + 投入事故メモ）
+
+**`fleet:budget=official:budget_ms=5000`** @ `7de05df`（標準 config）。
+16×16 / 4日 / 4台（S,P,P,P）・daySteps [39,120,35,120]（短長交互）。UI `#1935 第2卓`（卓id ずれ）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | Where is my kosen? | 10 | 40 | 108 | 44.8s |
+| 2–5 | うどん / 0f0 / 堀大輔 / admin is GOD | 10 | 40 | 106–107 | 3.6–116.7s |
+| **6** | **ユ（当方）** | **10** | **40** | **100** | **22.0s** |
+| 7–10 | ネオユニヴァース / admin / 🤖ramen / 🤖牛めし | 10 | 40 | 88–97 | 9.9–177.0s |
+
+- **D=40/40 MAX**（全チーム）・**B=100/108 = 93%**・rank 6・**rate 394→451 (+57)**
+- 回答 22.0s ÷ 4 ≈ 5.5s/日（budget 5000 設定どおり）・revisions [6,25,39,55] 全日受理・1日1 POST
+- 燃料 cap56: 給油サイクル作動（#1P 35→56・#3P 49→56 回復）・座礁 0 台
+
+### 投入事故メモ（fail-closed の実例）
+
+02:30 窓の投入試行は **cargo が `arena-docs-326`（fleet 未搭載の docs ブランチ）の sources で
+コンパイルしたため** candidate 解決が失敗（`unknown algorithm "fleet"`、ARENA_EXIT=1）。
+**登録前の fail-closed で枠消費ゼロ** — 予定どおりの安全側挙動。worktree を正規位置へ移動し
+sha256 再検証（`58d1a644`）のうえ再投入（本試合）。**cargo の cwd/manifest path をログで
+確認する運用を追加**。
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -676,7 +700,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **18 行**（1810 … 1928 / 1930、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **19 行**（1810 … 1930 / 1934、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -694,6 +718,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1925-fleet-b15.log` | match 1925（fleet × 15s・B 97%。除去済み） |
 | `run-1928-fleet-b30.log` | match 1928（fleet × 30s・5台初投入・ラダー完成。除去済み） |
 | `run-1930-fleet-b5.log` | match 1930（fleet 標準 config・24×24/10日 大盤長日。除去済み） |
+| `run-1934-fleet.log` | match 1934（fleet 標準・rate +57。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
