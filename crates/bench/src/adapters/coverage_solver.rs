@@ -241,7 +241,7 @@ fn patrol_step(
     key: TargetKey,
     day_claimed: &mut BTreeSet<u32>,
     reserved: &mut BTreeSet<u32>,
-) -> Action {
+) -> (Action, Option<u32>) {
     let map = &state.setting.map;
     let can_pick_here = map.get(agent.pos).and_then(|c| c.spot.as_ref()).is_some_and(|s| {
         s.current_stock > 0 && !agent_at_daily_pick_cap(agent, agent.pos, &state.spot_picks_today)
@@ -250,7 +250,7 @@ fn patrol_step(
         if let Some(spot) = map.get(agent.pos).and_then(|c| c.spot.as_ref()) {
             reserved.insert(spot.series);
         }
-        return Action::wait(agent.id);
+        return (Action::wait(agent.id), None);
     }
     let target = map
         .cells()
@@ -286,9 +286,9 @@ fn patrol_step(
         // making the patrol switch targets and waste travel (Issue #342/#363).
         // day_claimed is only updated on actual pickup (claim_on_pick).
         reserved.insert(series);
-        return legal_step(agent, first, map, remaining);
+        return (legal_step(agent, first, map, remaining), Some(series));
     }
-    Action::wait(agent.id)
+    (Action::wait(agent.id), None)
 }
 
 impl Solver for CoverageCandidate {
@@ -348,6 +348,12 @@ impl Solver for CoverageCandidate {
         let mut day_claimed: BTreeSet<u32> =
             state.series_acquired_by_day.get(&ctx.day).cloned().unwrap_or_default();
         let mut reserved = day_claimed.clone();
+        // Per-patrol currently-targeted series: the patrol's OWN in-flight
+        // target must not be deprioritized by `reserved.contains` on
+        // subsequent ticks, or the patrol abandons it mid-travel and
+        // oscillates between destinations (Issue #364).
+        let mut self_targeted: std::collections::HashMap<usize, u32> =
+            std::collections::HashMap::new();
         // Per-agent sequential answer lists (the wire's per-agent bodies).
         let mut lists: Vec<Vec<Action>> = vec![Vec::new(); n];
         // Decision priority: patrols in the rotated `patrols` order, then
@@ -386,6 +392,13 @@ impl Solver for CoverageCandidate {
             }
 
             let remaining = day_steps - clock[i];
+            // Free this patrol's own in-flight target from `reserved` so the
+            // target selector does not deprioritize it as "claimed by someone
+            // else". Without this, the patrol abandons its target mid-travel
+            // and oscillates between destinations (Issue #364).
+            if let Some(&prev) = self_targeted.get(&i) {
+                reserved.remove(&prev);
+            }
             let action = if agents[i].kind == AgentKind::Patrol {
                 // Fuel-return override (Issue #339): a patrol with critically
                 // low fuel heads for its paired Supply's **landing cell**
@@ -401,15 +414,18 @@ impl Solver for CoverageCandidate {
                 if let Some(s) = fuel_return_supply {
                     let goal = landings[s].unwrap_or(agents[s].pos);
                     let paths = routes(&state.setting.map, &agents[i], true);
-                    legal_step(
-                        &agents[i],
-                        paths[index(&state.setting.map, goal)].first,
-                        &state.setting.map,
-                        remaining,
+                    (
+                        legal_step(
+                            &agents[i],
+                            paths[index(&state.setting.map, goal)].first,
+                            &state.setting.map,
+                            remaining,
+                        ),
+                        None, // fuel-return override: no coverage target
                     )
                 } else {
                     let paths = routes(&state.setting.map, &agents[i], assigned.contains(&i));
-                    patrol_step(
+                    let (step, target_series) = patrol_step(
                         &state,
                         &agents[i],
                         &paths,
@@ -417,24 +433,40 @@ impl Solver for CoverageCandidate {
                         TargetKey { spread_window, variant: self.variant },
                         &mut day_claimed,
                         &mut reserved,
-                    )
+                    );
+                    // Record this patrol's target so we can free it from
+                    // `reserved` on the next tick (Issue #364 oscillation fix).
+                    match target_series {
+                        Some(series) => {
+                            self_targeted.insert(i, series);
+                        }
+                        None => {
+                            self_targeted.remove(&i);
+                        }
+                    }
+                    (step, target_series)
                 }
             } else if let Some(p) = pairs[i] {
                 // Follow the paired patrol's landing cell: where the patrol
                 // will stand when its in-flight move completes, or where it
-                // stands when it is free.
+                // stands when it is free. Returns (Action, None) since
+                // Supplies have no coverage target.
                 let goal = landings[p].unwrap_or(agents[p].pos);
                 let paths = routes(&state.setting.map, &agents[i], false);
-                legal_step(
-                    &agents[i],
-                    paths[index(&state.setting.map, goal)].first,
-                    &state.setting.map,
-                    remaining,
+                (
+                    legal_step(
+                        &agents[i],
+                        paths[index(&state.setting.map, goal)].first,
+                        &state.setting.map,
+                        remaining,
+                    ),
+                    None,
                 )
             } else {
-                Action::wait(agents[i].id)
+                (Action::wait(agents[i].id), None)
             };
 
+            let (action, _) = action;
             match action.kind {
                 ActionKind::Move(dir) => {
                     let origin = state.setting.map.get(agents[i].pos).expect("agent on map");
