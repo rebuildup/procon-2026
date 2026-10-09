@@ -55,7 +55,7 @@ impl Solver for SearchCandidate {
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let started = Instant::now();
-        let mut best = CoverageCandidate { variant: 0 }.decide(ctx);
+        let mut best = CoverageCandidate { park_risk: false, variant: 0 }.decide(ctx);
         let mut score = replay_score(ctx, &best);
         // The wall clock is bounded from both sides (Issue #311, live
         // match 1762's revision=-1): the explicit `time_budget_ms` and the
@@ -77,9 +77,11 @@ impl Solver for SearchCandidate {
                 if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                     break;
                 }
-                let plan =
-                    CoverageCandidate { variant: mix(self.seed.wrapping_add(u64::from(trial))) }
-                        .decide(ctx);
+                let plan = CoverageCandidate {
+                    park_risk: false,
+                    variant: mix(self.seed.wrapping_add(u64::from(trial))),
+                }
+                .decide(ctx);
                 let candidate_score = replay_score(ctx, &plan);
                 if candidate_score > score {
                     best = plan;
@@ -107,9 +109,11 @@ impl Solver for SearchCandidate {
                             stop.store(true, Ordering::Relaxed);
                             break;
                         }
-                        let plan =
-                            CoverageCandidate { variant: mix(self.seed.wrapping_add(trial)) }
-                                .decide(ctx);
+                        let plan = CoverageCandidate {
+                            park_risk: false,
+                            variant: mix(self.seed.wrapping_add(trial)),
+                        }
+                        .decide(ctx);
                         let candidate_score = replay_score(ctx, &plan);
                         if local.as_ref().is_none_or(|(_, s, _)| candidate_score > *s) {
                             local = Some((trial, candidate_score, plan));
@@ -176,7 +180,7 @@ mod tests {
         let state = engine::model::MatchState::new(setting).unwrap();
         let ctx = SolverContext::from_state(&state);
         let wait = AgentActions::wait_all(&ctx.agent_ids, ctx.day_steps);
-        let routed = CoverageCandidate { variant: 0 }.decide(&ctx);
+        let routed = CoverageCandidate { park_risk: false, variant: 0 }.decide(&ctx);
         assert!(replay_score(&ctx, &routed) > replay_score(&ctx, &wait));
     }
 
@@ -191,7 +195,8 @@ mod tests {
         let setting = case.to_engine_setting(&domain::PlayerId::new("player-a").unwrap()).unwrap();
         let state = engine::model::MatchState::new(setting).unwrap();
         let ctx = SolverContext::from_state(&state);
-        let coverage_score = replay_score(&ctx, &CoverageCandidate { variant: 0 }.decide(&ctx));
+        let coverage_score =
+            replay_score(&ctx, &CoverageCandidate { park_risk: false, variant: 0 }.decide(&ctx));
         let searched =
             SearchCandidate { trials: 1_048_576, seed: 42, time_budget_ms: 150 }.decide(&ctx);
         assert!(searched.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");

@@ -1,5 +1,12 @@
 //! Daily coverage first, followed by marginal harvest, with joint fuel replay.
 //! Planning uses the same engine rules as evaluation and live `CandidateBridge`.
+//!
+//! `park=none` (default) harvests the nearest reserved spot after coverage and
+//! is byte-identical to the pre-#331 candidate. `park=far` keeps a day-scoped
+//! claim set across steps and deprioritizes already-claimed series, so patrols
+//! spread across unclaimed series instead of converging (Issue #331). The
+//! spreading window opens only on medium+ days (today and tomorrow both >= 70
+//! steps) whose map edge reaches 24.
 use std::cmp::Reverse;
 use std::collections::{BTreeSet, BinaryHeap};
 
@@ -15,8 +22,10 @@ fn step_cost(terrain: Terrain) -> u32 {
 }
 
 pub struct CoverageFactory;
-const PARAMS: &[ParamSpec] =
-    &[ParamSpec { key: "budget", required: true, doc: "official (required)" }];
+const PARAMS: &[ParamSpec] = &[
+    ParamSpec { key: "budget", required: true, doc: "official (required)" },
+    ParamSpec { key: "park", required: false, doc: "none (default) | far" },
+];
 impl CandidateFactory for CoverageFactory {
     fn algorithm(&self) -> &'static str {
         "coverage"
@@ -32,10 +41,22 @@ impl CandidateFactory for CoverageFactory {
         if spec.param("budget") != Some("official") {
             return Err(CandidateError::Build("coverage requires budget=official".into()));
         }
-        Ok(Box::new(CoverageCandidate { variant: 0 }))
+        let park_risk = match spec.param("park") {
+            None | Some("none") => false,
+            Some("far" | "risk") => true,
+            Some(other) => {
+                return Err(CandidateError::Build(format!("unknown park mode {other:?}")));
+            }
+        };
+        Ok(Box::new(CoverageCandidate { park_risk, variant: 0 }))
     }
 }
 pub struct CoverageCandidate {
+    /// `park=far` / `park=risk` spreading mode (Issue #331); `park=none`
+    /// keeps the pre-#331 target order byte-identical.
+    pub(crate) park_risk: bool,
+    /// Search-solver trial seed: rotates patrol order and jitters the
+    /// coverage cost key when non-zero (release-side #312/#313 tooling).
     pub(crate) variant: u64,
 }
 
@@ -125,6 +146,76 @@ fn supply_pairs(
     }
     (pairs, assigned)
 }
+
+/// Coverage-target key policy for one day: the park spreading window plus the
+/// search-trial jitter seed (Issue #331 + release-side #312/#313).
+#[derive(Clone, Copy)]
+struct TargetKey {
+    /// Park-mode spreading across unclaimed series is active this day.
+    spread_window: bool,
+    /// Search-solver trial seed; 0 for every registered `coverage` candidate.
+    variant: u64,
+}
+
+/// One patrol step: harvest in place, walk to a coverage target, or walk to
+/// the nearest harvest target. `key.spread_window` enables park-mode spreading
+/// across unclaimed series (Issue #331); the caller decides when that window
+/// is open. `key.variant` jitters the coverage cost key for search-solver
+/// trials (#312/#313). Updates `reserved` / `day_claimed` with the chosen
+/// series.
+fn patrol_step(
+    state: &engine::model::MatchState,
+    agent: &Agent,
+    paths: &[Route],
+    remaining: u32,
+    key: TargetKey,
+    day_claimed: &mut BTreeSet<u32>,
+    reserved: &mut BTreeSet<u32>,
+) -> Action {
+    let map = &state.setting.map;
+    let can_pick_here = map.get(agent.pos).and_then(|c| c.spot.as_ref()).is_some_and(|s| {
+        s.current_stock > 0 && !agent_at_daily_pick_cap(agent, agent.pos, &state.spot_picks_today)
+    });
+    if can_pick_here {
+        if let Some(spot) = map.get(agent.pos).and_then(|c| c.spot.as_ref()) {
+            reserved.insert(spot.series);
+        }
+        return Action::wait(agent.id);
+    }
+    let target = map
+        .cells()
+        .iter()
+        .filter_map(|c| c.spot.as_ref())
+        .filter(|s| {
+            s.current_stock > 0 && !agent_at_daily_pick_cap(agent, s.pos, &state.spot_picks_today)
+        })
+        .filter_map(|s| {
+            let route = paths[index(map, s.pos)];
+            (route.cost <= remaining && route.first.is_some()).then_some((
+                reserved.contains(&s.series),
+                // Park: spread across unclaimed series only on medium+ days
+                // whose tomorrow is also medium+. Short days scatter patrols;
+                // spreading the day before a short day can strand the next
+                // start (Issue #331).
+                key.spread_window && day_claimed.contains(&s.series),
+                route.cost,
+                s.series,
+                index(map, s.pos),
+                route.first,
+            ))
+        })
+        .min_by_key(|x| {
+            let jitter = if key.variant == 0 { 0 } else { mix(key.variant ^ x.4 as u64) % 8 };
+            (x.0, x.1, u64::from(x.2) * (8 + jitter), x.3, x.4)
+        });
+    if let Some((_, _, _, series, _, first)) = target {
+        reserved.insert(series);
+        day_claimed.insert(series);
+        return legal_step(agent, first, map, remaining);
+    }
+    Action::wait(agent.id)
+}
+
 impl Solver for CoverageCandidate {
     fn name(&self) -> &'static str {
         "coverage"
@@ -134,60 +225,53 @@ impl Solver for CoverageCandidate {
         let n = state.agents.len();
         let patrols = patrol_order(&state, self.variant);
         let (pairs, assigned) = supply_pairs(&state, &patrols);
+        let tomorrow_budget = {
+            let tomorrow = ctx.day.saturating_add(1);
+            if tomorrow < state.setting.num_days {
+                state.setting.day_steps_for(tomorrow)
+            } else {
+                0
+            }
+        };
+        // Park spreading opens only on medium+ days whose tomorrow is also
+        // medium+, and only on maps where nearest-first cannot cover all
+        // series (Issue #331). Small boards are covered by greedy proximity.
+        let size = &state.setting.map.size;
+        let spread_window = self.park_risk
+            && (usize::from(size.width) >= 24 || usize::from(size.height) >= 24)
+            && ctx.day_steps >= 70
+            && tomorrow_budget >= 70;
         let mut used = vec![0u32; n];
         let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
         let sim = MatchSim::default();
+        // Day-scoped claim set: once a patrol targets a series, no other patrol
+        // (or later step) re-targets it. Park mode keeps this across steps so
+        // agents spread across series instead of converging (Issue #331).
+        let mut day_claimed: BTreeSet<u32> =
+            state.series_acquired_by_day.get(&ctx.day).cloned().unwrap_or_default();
         for _ in 0..ctx.day_steps {
             let mut actions: Vec<_> = state.agents.iter().map(|a| Action::wait(a.id)).collect();
             let mut reserved =
                 state.series_acquired_by_day.get(&ctx.day).cloned().unwrap_or_default();
+            let patrol_paths: Vec<(usize, Vec<Route>)> = patrols
+                .iter()
+                .map(|&i| (i, routes(&state.setting.map, &state.agents[i], assigned.contains(&i))))
+                .collect();
             for &i in &patrols {
                 if used[i] >= ctx.day_steps {
                     continue;
                 }
-                let agent = &state.agents[i];
-                let map = &state.setting.map;
-                let can_pick_here =
-                    map.get(agent.pos).and_then(|c| c.spot.as_ref()).is_some_and(|s| {
-                        s.current_stock > 0
-                            && !agent_at_daily_pick_cap(agent, agent.pos, &state.spot_picks_today)
-                    });
-                if can_pick_here {
-                    if let Some(spot) = map.get(agent.pos).and_then(|c| c.spot.as_ref()) {
-                        reserved.insert(spot.series);
-                    }
-                    continue;
-                }
-                let paths = routes(map, agent, assigned.contains(&i));
-                let target = map
-                    .cells()
-                    .iter()
-                    .filter_map(|c| c.spot.as_ref())
-                    .filter(|s| {
-                        s.current_stock > 0
-                            && !agent_at_daily_pick_cap(agent, s.pos, &state.spot_picks_today)
-                    })
-                    .filter_map(|s| {
-                        let route = paths[index(map, s.pos)];
-                        (route.cost <= ctx.day_steps - used[i] && route.first.is_some()).then_some(
-                            (
-                                reserved.contains(&s.series),
-                                route.cost,
-                                s.series,
-                                index(map, s.pos),
-                                route.first,
-                            ),
-                        )
-                    })
-                    .min_by_key(|x| {
-                        let jitter =
-                            if self.variant == 0 { 0 } else { mix(self.variant ^ x.3 as u64) % 8 };
-                        (x.0, u64::from(x.1) * (8 + jitter), x.2, x.3)
-                    });
-                if let Some((_, _, series, _, first)) = target {
-                    reserved.insert(series);
-                    actions[i] = legal_step(agent, first, map, ctx.day_steps - used[i]);
-                }
+                let paths =
+                    &patrol_paths.iter().find(|(j, _)| *j == i).expect("patrol route computed").1;
+                actions[i] = patrol_step(
+                    &state,
+                    &state.agents[i],
+                    paths,
+                    ctx.day_steps - used[i],
+                    TargetKey { spread_window, variant: self.variant },
+                    &mut day_claimed,
+                    &mut reserved,
+                );
             }
             for i in 0..n {
                 if used[i] >= ctx.day_steps {
@@ -225,7 +309,14 @@ impl Solver for CoverageCandidate {
             output.extend(actions.iter().copied());
             sim.step(&mut state, &AgentActions::new(actions));
         }
-        super::walk::BudgetMode::Official.apply(ctx, AgentActions::new(output))
+        // Apply official budget truncation so the plan is always within the
+        // terrain-weighted day budget. Without this the server rejects the
+        // plan with `revision = -1` (Issue #331 live match 1796). This is the
+        // single normalization path: `BudgetMode::Official` re-runs
+        // `engine::wire_plan::normalize_day_plan`, the same rule the wire
+        // applies (#255 / #324), so decide() output is a fixed point of it.
+        let plan = AgentActions::new(output);
+        crate::adapters::walk::BudgetMode::Official.apply(ctx, plan)
     }
 }
 
