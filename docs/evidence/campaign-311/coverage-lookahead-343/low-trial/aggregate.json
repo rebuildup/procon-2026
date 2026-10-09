@@ -1,0 +1,728 @@
+{
+  "source_commit_shas": [
+    "081aa070364489011328dbade65e94bb2d27c0e7"
+  ],
+  "baseline_candidate_id": "coverage:budget=official:park=far",
+  "candidates": [
+    "coverage:budget=official:park=far",
+    "search:trials=2:seed=42:budget=official:park=far:lookahead=next",
+    "search:trials=4:seed=42:budget=official:park=far:lookahead=next",
+    "search:trials=8:seed=42:budget=official:park=far:lookahead=next"
+  ],
+  "cases": [
+    "fixture:small-8x8",
+    "fixture:701"
+  ],
+  "per_case": [
+    {
+      "case_id": "fixture:small-8x8",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "coverage:budget=official:park=far",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 0
+          },
+          "response_time_us": 505,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "search:trials=2:seed=42:budget=official:park=far:lookahead=next",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 0
+          },
+          "response_time_us": 519,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 3,
+          "candidate_id": "search:trials=4:seed=42:budget=official:park=far:lookahead=next",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 1
+          },
+          "response_time_us": 1133,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 4,
+          "candidate_id": "search:trials=8:seed=42:budget=official:park=far:lookahead=next",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 2
+          },
+          "response_time_us": 2060,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:701",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "search:trials=8:seed=42:budget=official:park=far:lookahead=next",
+          "score": {
+            "variety": 20,
+            "daily_variety_sum": 198,
+            "total_noodles": 370,
+            "total_response_time_ms": 6043
+          },
+          "response_time_us": 6043294,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 2,
+          "candidate_id": "search:trials=4:seed=42:budget=official:park=far:lookahead=next",
+          "score": {
+            "variety": 20,
+            "daily_variety_sum": 198,
+            "total_noodles": 367,
+            "total_response_time_ms": 2999
+          },
+          "response_time_us": 2999867,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 3,
+          "candidate_id": "coverage:budget=official:park=far",
+          "score": {
+            "variety": 20,
+            "daily_variety_sum": 198,
+            "total_noodles": 358,
+            "total_response_time_ms": 414
+          },
+          "response_time_us": 414666,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 4,
+          "candidate_id": "search:trials=2:seed=42:budget=official:park=far:lookahead=next",
+          "score": {
+            "variety": 20,
+            "daily_variety_sum": 188,
+            "total_noodles": 356,
+            "total_response_time_ms": 1375
+          },
+          "response_time_us": 1375660,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    }
+  ],
+  "per_candidate": [
+    {
+      "candidate_id": "coverage:budget=official:park=far",
+      "runs": 2,
+      "scored": 2,
+      "wins": 0,
+      "draws": 2,
+      "losses": 0,
+      "not_compared": 0,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 2,
+          "max": 20,
+          "mean": 11.0,
+          "n": 2
+        },
+        "daily_variety_sum": {
+          "min": 2,
+          "max": 198,
+          "mean": 100.0,
+          "n": 2
+        },
+        "total_balls": {
+          "min": 7,
+          "max": 358,
+          "mean": 182.5,
+          "n": 2
+        },
+        "response_time_us": {
+          "min": 505,
+          "max": 414666,
+          "mean": 207585.5,
+          "n": 2
+        },
+        "elapsed_us": {
+          "min": 3233,
+          "max": 420653,
+          "mean": 211943.0,
+          "n": 2
+        }
+      }
+    },
+    {
+      "candidate_id": "search:trials=2:seed=42:budget=official:park=far:lookahead=next",
+      "runs": 2,
+      "scored": 2,
+      "wins": 0,
+      "draws": 1,
+      "losses": 1,
+      "not_compared": 0,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 2,
+          "max": 20,
+          "mean": 11.0,
+          "n": 2
+        },
+        "daily_variety_sum": {
+          "min": 2,
+          "max": 188,
+          "mean": 95.0,
+          "n": 2
+        },
+        "total_balls": {
+          "min": 7,
+          "max": 356,
+          "mean": 181.5,
+          "n": 2
+        },
+        "response_time_us": {
+          "min": 519,
+          "max": 1375660,
+          "mean": 688089.5,
+          "n": 2
+        },
+        "elapsed_us": {
+          "min": 2612,
+          "max": 1380832,
+          "mean": 691722.0,
+          "n": 2
+        }
+      }
+    },
+    {
+      "candidate_id": "search:trials=4:seed=42:budget=official:park=far:lookahead=next",
+      "runs": 2,
+      "scored": 2,
+      "wins": 1,
+      "draws": 0,
+      "losses": 1,
+      "not_compared": 0,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 2,
+          "max": 20,
+          "mean": 11.0,
+          "n": 2
+        },
+        "daily_variety_sum": {
+          "min": 2,
+          "max": 198,
+          "mean": 100.0,
+          "n": 2
+        },
+        "total_balls": {
+          "min": 7,
+          "max": 367,
+          "mean": 187.0,
+          "n": 2
+        },
+        "response_time_us": {
+          "min": 1133,
+          "max": 2999867,
+          "mean": 1500500.0,
+          "n": 2
+        },
+        "elapsed_us": {
+          "min": 4200,
+          "max": 3005138,
+          "mean": 1504669.0,
+          "n": 2
+        }
+      }
+    },
+    {
+      "candidate_id": "search:trials=8:seed=42:budget=official:park=far:lookahead=next",
+      "runs": 2,
+      "scored": 2,
+      "wins": 1,
+      "draws": 0,
+      "losses": 1,
+      "not_compared": 0,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 2,
+          "max": 20,
+          "mean": 11.0,
+          "n": 2
+        },
+        "daily_variety_sum": {
+          "min": 2,
+          "max": 198,
+          "mean": 100.0,
+          "n": 2
+        },
+        "total_balls": {
+          "min": 7,
+          "max": 370,
+          "mean": 188.5,
+          "n": 2
+        },
+        "response_time_us": {
+          "min": 2060,
+          "max": 6043294,
+          "mean": 3022677.0,
+          "n": 2
+        },
+        "elapsed_us": {
+          "min": 5127,
+          "max": 6049133,
+          "mean": 3027130.0,
+          "n": 2
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "candidate_id": "coverage:budget=official:park=far",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "081aa070364489011328dbade65e94bb2d27c0e7",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 505,
+      "elapsed_us": 3233,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        505
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Patrol",
+        "Supply",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        4,
+        0,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "search:trials=2:seed=42:budget=official:park=far:lookahead=next",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "081aa070364489011328dbade65e94bb2d27c0e7",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 519,
+      "elapsed_us": 2612,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        519
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Patrol",
+        "Supply",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        4,
+        0,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "search:trials=4:seed=42:budget=official:park=far:lookahead=next",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "081aa070364489011328dbade65e94bb2d27c0e7",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 1133,
+      "elapsed_us": 4200,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        1133
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Patrol",
+        "Supply",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        4,
+        0,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "search:trials=8:seed=42:budget=official:park=far:lookahead=next",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "081aa070364489011328dbade65e94bb2d27c0e7",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 2060,
+      "elapsed_us": 5127,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        2060
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Patrol",
+        "Supply",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        4,
+        0,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "coverage:budget=official:park=far",
+      "case_id": "fixture:701",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "081aa070364489011328dbade65e94bb2d27c0e7",
+      "team": "player-a",
+      "variety": 20,
+      "daily_variety_sum": 198,
+      "total_balls": 358,
+      "response_time_us": 414666,
+      "elapsed_us": 420653,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        57
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        54537,
+        64973,
+        19308,
+        51618,
+        46536,
+        59619,
+        24462,
+        46626,
+        16147,
+        30840
+      ],
+      "daily_varieties": [
+        20,
+        20,
+        19,
+        20,
+        20,
+        20,
+        19,
+        20,
+        20,
+        20
+      ],
+      "agent_kinds": [
+        "Patrol",
+        "Supply",
+        "Patrol",
+        "Supply",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        127,
+        0,
+        115,
+        0,
+        116
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "search:trials=2:seed=42:budget=official:park=far:lookahead=next",
+      "case_id": "fixture:701",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "081aa070364489011328dbade65e94bb2d27c0e7",
+      "team": "player-a",
+      "variety": 20,
+      "daily_variety_sum": 188,
+      "total_balls": 356,
+      "response_time_us": 1375660,
+      "elapsed_us": 1380832,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        57
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        220140,
+        152968,
+        152793,
+        196831,
+        155907,
+        101345,
+        120964,
+        97106,
+        101214,
+        76392
+      ],
+      "daily_varieties": [
+        20,
+        20,
+        19,
+        20,
+        20,
+        20,
+        18,
+        20,
+        11,
+        20
+      ],
+      "agent_kinds": [
+        "Patrol",
+        "Supply",
+        "Patrol",
+        "Supply",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        129,
+        0,
+        112,
+        0,
+        115
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "search:trials=4:seed=42:budget=official:park=far:lookahead=next",
+      "case_id": "fixture:701",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "081aa070364489011328dbade65e94bb2d27c0e7",
+      "team": "player-a",
+      "variety": 20,
+      "daily_variety_sum": 198,
+      "total_balls": 367,
+      "response_time_us": 2999867,
+      "elapsed_us": 3005138,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        57
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        446004,
+        336139,
+        334980,
+        425466,
+        342410,
+        235044,
+        253307,
+        249250,
+        227924,
+        149343
+      ],
+      "daily_varieties": [
+        20,
+        20,
+        19,
+        20,
+        20,
+        20,
+        20,
+        20,
+        19,
+        20
+      ],
+      "agent_kinds": [
+        "Patrol",
+        "Supply",
+        "Patrol",
+        "Supply",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        127,
+        0,
+        122,
+        0,
+        118
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "search:trials=8:seed=42:budget=official:park=far:lookahead=next",
+      "case_id": "fixture:701",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "081aa070364489011328dbade65e94bb2d27c0e7",
+      "team": "player-a",
+      "variety": 20,
+      "daily_variety_sum": 198,
+      "total_balls": 370,
+      "response_time_us": 6043294,
+      "elapsed_us": 6049133,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        60
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        882471,
+        622851,
+        641118,
+        804561,
+        595274,
+        616182,
+        626938,
+        502408,
+        454169,
+        297322
+      ],
+      "daily_varieties": [
+        20,
+        20,
+        19,
+        20,
+        20,
+        20,
+        20,
+        20,
+        19,
+        20
+      ],
+      "agent_kinds": [
+        "Patrol",
+        "Supply",
+        "Patrol",
+        "Supply",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        127,
+        0,
+        119,
+        0,
+        124
+      ],
+      "oracle_refill": false
+    }
+  ]
+}
