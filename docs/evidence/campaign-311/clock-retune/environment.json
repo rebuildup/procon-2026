@@ -1,0 +1,29 @@
+{
+  "source_sha": "f11eee3d6110d899e8e22d6745f8bfc81a1eae29",
+  "source_note": "342-retune @ f11eee3 (fix(bench): plan coverage on the official tick clock landing timeline), base 6431b25 = origin/release-0-4-0 tip",
+  "harness": "procon-eval (crates/bench/src/bin/procon-eval.rs), invoked directly",
+  "profile": "release (cargo +stable build --offline --locked -p bench --bin procon-eval --release, CARGO_INCREMENTAL=0)",
+  "response_time_policy": "Measured daily solver time under the release profile; this is the competition-representative response_time axis. jobs=1 (sequential).",
+  "response_time_units": "runs.jsonl response_time_us / daily_response_us / elapsed_us are MICROSECONDS (us). aggregate.json score tuple field total_response_time_ms is MILLISECONDS = floor(response_time_us / 1000) and is the axis-4 ranking value. Cross-checked per record: 135310 us -> 135 ms, 11676 -> 11, 12517 -> 12, 722 -> 0, 130 -> 0.",
+  "kinds": "P,S,P,S,P",
+  "candidates": [
+    "coverage:budget=official:park=none",
+    "coverage:budget=official:park=far"
+  ],
+  "baseline": "coverage:budget=official:park=none",
+  "cases": [
+    "fixture:701 (crates/bench/tests/fixtures/arena-701.json, map 24x24, 10 days, daySteps [146,183,76,180,135,144,59,136,53,120], 24 spots, 5 agents)",
+    "fixture:medium-16x16 (map 16x16, 1 day, 4 agents)",
+    "fixture:large-32x32 (map 32x32, 1 day, 8 agents)",
+    "fixture:small-8x8 (map 8x8, 1 day, 3 agents)"
+  ],
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "oracle_refill": false,
+  "load_gate": "uptime checked before the run: load average 3.39 (threshold ~8) — within budget.",
+  "decomposition_note": "Stage A/B probes ran as temporary uncommitted examples on d666079 (pre-parity), 6431b25 (base: old planner + new clock) and this tree; the probe files were deleted before commit. Numbers and per-agent stats are transcribed in README.md.",
+  "before_evidence_citations": {
+    "post-parity": "docs/evidence/campaign-311/parity-remeasure/ @ origin/342-remeasure 873ffd3 (source 59a5502)",
+    "pre-parity": "docs/evidence/campaign-311/coverage-park-remeasure/ (source 18253a4, tree-equivalent 8f4cc89)"
+  }
+}

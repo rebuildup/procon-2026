@@ -1,21 +1,42 @@
 //! `MatchSim` — local, deterministic, day-step match simulator.
 //!
-//! Mirrors Q&A Q6's six-phase processing order per step:
+//! Mirrors Q&A Q6's tick timeline. A day of `day_steps = N` runs the ticks
+//! `0..=N`:
 //!
-//! 1. **Wait** — missing or invalid actions are downgraded to `Wait`.
-//! 2. **Move** — apply every agent's `Move` action (bounds/terrain/fuel).
-//! 3. **Spawn** — at day boundaries, refill every spot to `max_stock`.
-//! 4. **Acquire** — **Patrol** agents on stocked spots pick up one ball
+//! * tick 0 — action phase only (no reflection, no うどん acquisition: Q7);
+//! * ticks `1..=N-1` — reflection phase, then action phase;
+//! * tick `N` (the day's final step) — reflection phase only.
+//!
+//! The reflection phase is (Q6):
+//!
+//! 1. **Fuel** — charge every in-flight move its departure terrain's fuel.
+//! 2. **Move** — land the in-flight moves due at this tick (a Move reserved
+//!    at tick `t` lands at `t + terrain_step_cost(origin)` — Q10).
+//! 3. **Acquire** — **Patrol** agents on stocked spots pick up one ball
 //!    (capped at 1 per agent per spot per day). `AgentKind::Supply` cannot
 //!    collect 玉 and is skipped entirely (issue #234).
-//! 5. **Fuel** — deduct move costs from patrols. Supply agents are
-//!    unaffected.
-//! 6. **Traffic update** — at end of day, recompute every road cell's
-//!    [`TrafficState`] from today's + yesterday's counts (Q&A Q13).
+//! 4. **Refuel** — supply agents sharing a cell refill patrols.
+//! 5. **Stay-count** — one stay-step per agent at its post-move position,
+//!    for the road-traffic average (Q27).
+//!
+//! The action phase reserves each agent's next action into a per-agent queue
+//! (the daily answer is a *sequential* action list — Q23/Q24: the next order
+//! is reserved only when the previous one completes). At the day boundary the
+//! road states are recomputed from the all-team stay-step average over the
+//! past 2 days (Q&A Q13) and spot stock refills ([`crate::transitions::
+//! phase_spawn`]).
 //!
 //! The phases are exposed both as one combined [`MatchSim::step`] (a single
-//! time unit) and as the underlying primitives in [`crate::transitions`] so
+//! tick) and as the underlying primitives in [`crate::transitions`] so
 //! tests can exercise each in isolation.
+//!
+//! # Answer validity (Q6)
+//!
+//! One illegal / fuel-short / step-mismatched action rejects the WHOLE daily
+//! response. The simulator demotes the offending actions to `Wait` so the
+//! match still completes deterministically, but records the official verdict
+//! in [`MatchState::rejected_response_count`] — an evaluator must not rank a
+//! run the live server would have refused.
 //!
 //! # Determinism
 //!
@@ -24,13 +45,14 @@
 //! [`RunResult`] are byte-identical across runs. There is no RNG, no clock,
 //! and no I/O in the simulator.
 
-use std::collections::HashMap;
-
-use crate::model::{AgentActions, MatchSetting, MatchState, RunResult, Solver, SolverContext};
+use crate::model::{
+    AgentActions, MatchSetting, MatchState, PendingAction, RunResult, Solver, SolverContext,
+};
 use crate::rules::TrafficThresholds;
 use crate::transitions::{
-    MoveOutcome, StepEvent, apply_moves, begin_day, phase_acquire, phase_fuel, phase_oracle_refill,
-    phase_spawn, phase_traffic_update, phase_wait, record_traversal, refill_fuel_if_supply_present,
+    ReserveReject, StepEvent, apply_due_moves, begin_day, phase_acquire, phase_oracle_refill,
+    phase_spawn, phase_traffic_update, phase_wait, record_stay_steps,
+    refill_fuel_if_supply_present, try_reserve,
 };
 
 /// Configuration for [`MatchSim`].
@@ -47,11 +69,24 @@ pub struct SimConfig {
     /// counterfactual used to measure how much of a result fuel exhaustion
     /// explains, never a default evidence path.
     pub oracle_refill: bool,
+    /// Number of teams in the match (the wire's `players`).
+    ///
+    /// The official road-traffic value divides the 2-day stay-step sum by
+    /// the team count (募集要項「道路セルと交通量」). Offline evaluation
+    /// observes only its own team's stay-steps — other teams' contributions
+    /// are counted as 0 rather than fabricated from guessed trajectories —
+    /// so live callers must set this from the match's `players` to classify
+    /// roads the way the server does. `0` is treated as `1`.
+    pub team_count: u32,
 }
 
 impl Default for SimConfig {
     fn default() -> Self {
-        Self { traffic_thresholds: TrafficThresholds::default(), oracle_refill: false }
+        Self {
+            traffic_thresholds: TrafficThresholds::default(),
+            oracle_refill: false,
+            team_count: 1,
+        }
     }
 }
 
@@ -78,26 +113,35 @@ impl MatchSim {
         Self { config }
     }
 
-    /// Step the simulator by one time unit.
+    /// Advance the simulator by one tick of the official timeline.
     ///
-    /// `decisions` is one step's worth of actions for the calling team
-    /// (one action per controlled agent, in agent-id ascending order). Any
-    /// deviation from that shape degrades to "every agent waits" for that
-    /// step (Q&A Q6 — invalid answers are rejected as a whole).
+    /// `decisions` is one tick's worth of actions for the calling team
+    /// (one action per controlled agent, in agent-id ascending order) —
+    /// the actions *accepted* at this tick's action phase. They join each
+    /// agent's queue and start when the agent is free (Q6: the daily answer
+    /// is a sequential action list).
+    ///
+    /// Any shape deviation is a step-mismatched answer: the block is
+    /// replaced with all-wait and the whole response is flagged as rejected
+    /// (Q&A Q6 — invalid answers are rejected as a whole).
     pub fn step(&self, state: &mut MatchState, decisions: &AgentActions) -> Vec<StepEvent> {
         let mut events = Vec::new();
         let agent_ids = state.setting.agent_ids();
-        let well_shaped = decisions.is_well_shaped(&agent_ids, 1);
-        if !well_shaped {
-            // Replace with all-wait for this step.
+        if !decisions.is_well_shaped(&agent_ids, 1) {
+            // Step-mismatched answer: flag the whole response and continue
+            // with all-wait so the match still completes.
+            state.day_response_invalid = true;
             let waits = AgentActions::wait_all(&agent_ids, 1);
             return self.step(state, &waits);
         }
 
-        // 3. Spawn — at the *start* of each new day, refill spot stock.
-        //    Day 0 step 0 has already been initialised by [`MatchState::new`],
-        //    so this only fires from day 1 onwards.
-        if state.day_step == 0 && state.day > 0 && state.day < state.num_days() {
+        let now = state.day_step;
+        let day_limit = state.day_steps();
+
+        // Spawn — at the *start* of each new day, refill spot stock.
+        // Day 0 step 0 has already been initialised by [`MatchState::new`],
+        // so this only fires from day 1 onwards.
+        if now == 0 && state.day > 0 && state.day < state.num_days() {
             phase_spawn(&mut state.setting.map, &mut events);
             // Counterfactual (Issue #243): only under `oracle_refill`, also
             // top every Patrol tank up to its cap at the same boundary. Gated
@@ -107,74 +151,28 @@ impl MatchSim {
             }
         }
 
-        // 1. Wait — filter unknown / duplicate ids.
-        let resolved = phase_wait(&decisions.actions, &agent_ids);
-
-        // 2. Move — apply each agent's Move; downgrade illegal moves to Wait.
-        let mut move_outcomes: HashMap<u8, MoveOutcome> = HashMap::new();
-        let agents_snapshot = state.agents.clone();
-        for (id, action) in &resolved {
-            let Some(agent) = agents_snapshot.iter().find(|a| a.id == *id) else {
-                continue;
-            };
-            let mut per_step = Vec::new();
-            let outcome = crate::transitions::try_move(
-                agent,
-                *action,
-                &state.setting.map,
-                &mut per_step,
-                &mut events,
-            );
-            move_outcomes.insert(*id, outcome);
-        }
-        let costs = apply_moves(&mut state.agents, &move_outcomes);
-
-        // Record traffic for each successful traversal.
-        for (id, outcome) in &move_outcomes {
-            if let MoveOutcome::Moved { to, .. } = outcome {
-                record_traversal(state, *to);
-            }
-            let _ = id; // suppress unused
+        // Reflection phase (Q6) — tick 0 is action-phase-only (Q7), so the
+        // first reflection of a day runs at tick 1.
+        if now > 0 {
+            self.reflect(state, now, &mut events);
         }
 
-        // Record semantic validation failures. `MoveOutcome::Wait` downgraded
-        // these to a no-op so the match completes, but the official answer
-        // rules reject the whole answer on an invalid action (Q&A Q6) — so
-        // the evaluator must still see them.
-        for event in &events {
-            match event {
-                StepEvent::IllegalMove { .. } => {
-                    state.illegal_action_count = state.illegal_action_count.saturating_add(1);
-                }
-                StepEvent::FuelShort { .. } => {
-                    state.fuel_short_count = state.fuel_short_count.saturating_add(1);
-                }
-                _ => {}
-            }
-        }
+        // Action phase (Q6): accept this tick's actions into the queues and
+        // start whatever the agents are free for.
+        self.accept(state, decisions, now, day_limit, &mut events);
 
-        // 4. Acquire — Patrol agents on stocked spots pick up. `phase_acquire`
-        //    itself skips Supply (issue #234), so looping every agent here
-        //    keeps the call site simple and kind-agnostic.
-        let agents_for_acquire = state.agents.clone();
-        for agent in &agents_for_acquire {
-            phase_acquire(agent, state, &mut events);
-        }
-
-        // 5. Fuel — deduct move costs from patrols.
-        phase_fuel(&mut state.agents, &costs, &mut events);
-
-        // Supply refuel — share-cell rescue.
-        let agent_positions: Vec<_> = state.agents.iter().map(|a| a.pos).collect();
-        for pos in agent_positions {
-            refill_fuel_if_supply_present(&mut state.agents, pos, &mut events);
-        }
-
-        // Advance clock.
+        // Advance clock. When the day's last action phase (tick N-1) is done,
+        // tick N's reflection closes the day.
         state.day_step += 1;
-        if state.day_step >= state.day_steps() {
+        if state.day_step >= day_limit {
+            self.reflect(state, state.day_step, &mut events);
+            // Whole-response verdict (Q6): flush the day's flag.
+            if state.day_response_invalid {
+                state.rejected_response_count = state.rejected_response_count.saturating_add(1);
+            }
             // 6. Traffic update — at the end of the current day.
-            let updates = phase_traffic_update(state, self.config.traffic_thresholds);
+            let updates =
+                phase_traffic_update(state, self.config.traffic_thresholds, self.config.team_count);
             if !updates.is_empty() {
                 events.push(StepEvent::TrafficUpdated { updates });
             }
@@ -184,6 +182,85 @@ impl MatchSim {
         }
 
         events
+    }
+
+    /// Q6 reflection: fuel → move-apply → acquire → refuel, then the
+    /// stay-step count (Q27). `now` is the tick being reflected.
+    fn reflect(&self, state: &mut MatchState, now: u32, events: &mut Vec<StepEvent>) {
+        // 1+2. Fuel is charged and the position updates at the move's due
+        // reflection (Q6: 燃料の消費 → 移動の反映).
+        apply_due_moves(state, now, events);
+
+        // 3. Acquire — Patrol agents on stocked spots pick up. `phase_acquire`
+        //    itself skips Supply (issue #234), so looping every agent here
+        //    keeps the call site simple and kind-agnostic.
+        let agents_for_acquire = state.agents.clone();
+        for agent in &agents_for_acquire {
+            phase_acquire(agent, state, events);
+        }
+
+        // 4. Refuel — same-cell supply contact (after the acquire: Q6).
+        let agent_positions: Vec<_> = state.agents.iter().map(|a| a.pos).collect();
+        for pos in agent_positions {
+            refill_fuel_if_supply_present(&mut state.agents, pos, events);
+        }
+
+        // 5. Stay-steps for the road-traffic average (Q27: post-move
+        //    positions; every reflection counts, step 0 does not).
+        record_stay_steps(state);
+    }
+
+    /// Q6 action phase at tick `now`: enqueue each agent's next action and
+    /// start it if the agent is free (the previous action has completed).
+    fn accept(
+        &self,
+        state: &mut MatchState,
+        decisions: &AgentActions,
+        now: u32,
+        day_limit: u32,
+        events: &mut Vec<StepEvent>,
+    ) {
+        let agent_ids = state.setting.agent_ids();
+        let resolved = phase_wait(&decisions.actions, &agent_ids);
+        for (id, action) in resolved {
+            state.action_queues.entry(id).or_default().push_back(action);
+        }
+        // Start free agents' next actions, in agent-id order.
+        for id in agent_ids {
+            let free = state.in_flight.get(&id).is_none_or(|pending| pending.due_step() <= now);
+            if !free {
+                continue;
+            }
+            // Retire a completed in-flight record before starting the next.
+            state.in_flight.remove(&id);
+            let Some(action) = state.action_queues.get_mut(&id).and_then(|q| q.pop_front()) else {
+                continue;
+            };
+            let Some(agent) = state.agents.iter().find(|a| a.id == id) else {
+                continue;
+            };
+            match try_reserve(agent, action, &state.setting.map, now, day_limit) {
+                Ok(pending) => {
+                    state.in_flight.insert(id, pending);
+                }
+                Err(ReserveReject::Truncated) => {
+                    // The move could not land inside the day: drop the
+                    // rest of this agent's answer (the same truncate the
+                    // wire normalizer applies before submission).
+                    state.action_queues.remove(&id);
+                }
+                Err(ReserveReject::Illegal) => {
+                    events.push(StepEvent::IllegalMove {
+                        agent_id: id,
+                        reason: "illegal move order (Q6: whole response rejected)".to_owned(),
+                    });
+                    state.illegal_action_count = state.illegal_action_count.saturating_add(1);
+                    state.day_response_invalid = true;
+                    // Demote to a 1-tick wait so the timeline advances.
+                    state.in_flight.insert(id, PendingAction::Wait { until_step: now + 1 });
+                }
+            }
+        }
     }
 
     /// Drive a full match from `setting` using `solver` for every day.
@@ -209,16 +286,17 @@ impl MatchSim {
         let mut state = MatchState::new(setting)?;
         let last_acq = self.run_inner(&mut state, solver)?;
         let (variety, daily_variety_sum, total_balls) = score_state(&state);
-        let illegal_action_count = state.illegal_action_count;
-        let fuel_short_count = state.fuel_short_count;
+        let (illegal, fuel_short, rejected) =
+            (state.illegal_action_count, state.fuel_short_count, state.rejected_response_count);
         Ok(RunResult {
             final_state: state,
             variety,
             daily_variety_sum,
             total_balls,
             last_acquisition_at: last_acq,
-            illegal_action_count,
-            fuel_short_count,
+            illegal_action_count: illegal,
+            fuel_short_count: fuel_short,
+            rejected_response_count: rejected,
         })
     }
 
@@ -231,16 +309,17 @@ impl MatchSim {
     ) -> Result<RunResult, String> {
         let last_acq = self.run_inner(state, solver)?;
         let (variety, daily_variety_sum, total_balls) = score_state(state);
-        let illegal_action_count = state.illegal_action_count;
-        let fuel_short_count = state.fuel_short_count;
+        let (illegal, fuel_short, rejected) =
+            (state.illegal_action_count, state.fuel_short_count, state.rejected_response_count);
         Ok(RunResult {
             final_state: state.clone(),
             variety,
             daily_variety_sum,
             total_balls,
             last_acquisition_at: last_acq,
-            illegal_action_count,
-            fuel_short_count,
+            illegal_action_count: illegal,
+            fuel_short_count: fuel_short,
+            rejected_response_count: rejected,
         })
     }
 
@@ -270,6 +349,13 @@ impl MatchSim {
             let agent_count = ctx.agent_ids.len();
             let agent_ids_owned = ctx.agent_ids.clone();
             let per_step = ctx.day_steps as usize;
+            // A day plan whose length is not exactly one block per step is
+            // step-mismatched (Q6: 「規定ステップ数を超過や不足する」) — the
+            // official server rejects the whole answer. Flag it, then pad /
+            // truncate so the match still completes.
+            if day_plan.actions.len() != agent_count.saturating_mul(per_step) {
+                state.day_response_invalid = true;
+            }
             for s in 0..per_step {
                 if state.is_finished() {
                     break;
@@ -279,6 +365,7 @@ impl MatchSim {
                 let block = if day_plan.actions.len() >= end {
                     day_plan.actions[start..end].to_vec()
                 } else {
+                    state.day_response_invalid = true;
                     AgentActions::wait_all(&agent_ids_owned, 1).actions
                 };
                 self.step(state, &AgentActions::new(block));
@@ -415,17 +502,25 @@ mod tests {
         let setting = setting_with(map, vec![Agent::patrol(0, HexCoord::new(7, 7), 5, 3)], 5, 1);
         let mut state = MatchState::new(setting).unwrap();
         let sim = MatchSim::default();
-        // One step Right from (7,7) -> (8 doesn't exist; wrap fails). Use Left instead.
-        // Direction::Left from (7,7) -> (6,7) on a plain (cost 1).
+        // Direction::Left from (7,7) -> (6,7), departing 平地 (2 steps).
+        // Q6: the move is reserved at the tick-0 action phase and lands (and
+        // pays its fuel) at the reflection of step 2.
         let step_actions = AgentActions::new(vec![
             Action::step(0, Direction::Left),
             Action::wait(1),
             Action::wait(2),
         ]);
         sim.step(&mut state, &step_actions);
+        assert_eq!(state.agents[0].pos, HexCoord::new(7, 7), "reserved, not yet landed");
+        assert_eq!(state.agents[0].fuel, 5 * 3, "fuel is charged at the landing reflection");
+        assert_eq!(state.day_step, 1);
+        // Tick 1: nothing due.
+        sim.step(&mut state, &AgentActions::wait_all(&[0, 1, 2], 1));
+        assert_eq!(state.agents[0].pos, HexCoord::new(7, 7));
+        // Tick 2's reflection lands the move and charges the fuel.
+        sim.step(&mut state, &AgentActions::wait_all(&[0, 1, 2], 1));
         assert_eq!(state.agents[0].pos, HexCoord::new(6, 7));
         assert_eq!(state.agents[0].fuel, 5 * 3 - 1);
-        assert_eq!(state.day_step, 1);
     }
 
     /// Issue #243 — the `oracle_refill` counterfactual, both halves:
@@ -480,28 +575,39 @@ mod tests {
     #[test]
     fn six_phase_ordering_at_day_boundary() {
         // Use a 1-day map with day_steps=2; the second step rolls over the day.
-        // Agent starts at (1,0) — one cell to the right of the spot at (0,0),
-        // then waits step 0 (no pickup), then waits step 1 (end of day).
-        // The pickup happens via a separate step from (0,0) first.
+        // Agent starts at (1,0) — one cell to the right of the spot at (0,0).
+        // Q6: the 平地 move is reserved at step 0 and lands at the final
+        // reflection (step 2), which acquires from the spot before the day
+        // boundary runs the traffic update.
         let map = one_spot_map();
         let setting = setting_with(map, vec![Agent::patrol(0, HexCoord::new(1, 0), 5, 3)], 2, 1);
         let mut state = MatchState::new(setting).unwrap();
         let sim = MatchSim::default();
-        // Step 0: move Left from (1,0) -> (0,0) (cost 1, plain).
+        // Step 0 (action phase only): reserve Left (1,0) -> (0,0).
         let step_a = AgentActions::new(vec![
             Action::step(0, Direction::Left),
             Action::wait(1),
             Action::wait(2),
         ]);
         let events = sim.step(&mut state, &step_a);
-        assert!(events.iter().any(|e| matches!(e, StepEvent::Picked { series: 1, .. })));
-        assert_eq!(state.agents[0].inventory.get(&1).copied().unwrap_or(0), 1);
+        assert!(
+            !events.iter().any(|e| matches!(e, StepEvent::Picked { .. })),
+            "no acquisition before the move lands (step 0 is action-phase-only)"
+        );
+        assert_eq!(state.agents[0].inventory.get(&1).copied().unwrap_or(0), 0);
         assert_eq!(state.day_step, 1);
         assert_eq!(state.day, 0);
 
-        // Step 1: end of day -> traffic update + day advance.
+        // Step 1: reflection at 1 (nothing due) + action; then the final
+        // reflection at step 2 lands the move, acquires, and the day rolls
+        // over (traffic update + day advance).
         let wait = AgentActions::wait_all(&[0, 1, 2], 1);
-        sim.step(&mut state, &wait);
+        let events = sim.step(&mut state, &wait);
+        assert!(
+            events.iter().any(|e| matches!(e, StepEvent::Picked { series: 1, .. })),
+            "the arrival step acquires from the spot"
+        );
+        assert_eq!(state.agents[0].inventory.get(&1).copied().unwrap_or(0), 1);
         assert_eq!(state.day, 1);
         assert_eq!(state.day_step, 0);
         assert!(state.is_finished());
@@ -646,9 +752,11 @@ mod tests {
             "day 0 plans 16 steps, day 1 plans 24"
         );
 
-        // Day 1 ran all 24 steps: six Right moves were scheduled at indices
-        // 16..=21 and all of them happened. Had day 1 been cut to 16 steps,
-        // the agent would never have moved off its start cell.
+        // Day 1 ran all 24 steps: twelve Right moves were scheduled at
+        // indices 12..=23 and six of them (every other tick — a 平地 move
+        // takes 2 steps, so the next order starts when the previous lands)
+        // completed. Had day 1 been cut to 16 steps, only two moves would
+        // have landed and the agent would sit at (2, 0).
         let agent = run.final_state.agents.iter().find(|a| a.id == 0).unwrap();
         assert_eq!(agent.pos, HexCoord::new(6, 0), "day 1 must run its full 24 steps");
         assert_eq!(agent.fuel, 100 - 6, "exactly six moves were applied");
@@ -678,10 +786,12 @@ mod tests {
                 Vec::with_capacity(ctx.agent_ids.len().saturating_mul(ctx.day_steps as usize));
             for step in 0..ctx.day_steps {
                 for id in &ctx.agent_ids {
-                    // Day 1 only: wait for the first 16 steps, then walk
-                    // agent 0 right for steps 16..=21. The other two agents
-                    // wait throughout so they never walk off the map.
-                    let walk = ctx.day == 1 && *id == 0 && (16..=21).contains(&step);
+                    // Day 1 only: wait for the first 12 steps, then walk
+                    // agent 0 right for steps 12..=23. A 平地 move takes 2
+                    // ticks, so every other order actually starts — six
+                    // moves land within the 24-step day. The other two
+                    // agents wait throughout so they never walk off the map.
+                    let walk = ctx.day == 1 && *id == 0 && (12..=23).contains(&step);
                     actions.push(if walk {
                         Action::step(*id, Direction::Right)
                     } else {
@@ -736,7 +846,8 @@ mod tests {
         let setting = setting_with(map, vec![Agent::patrol(0, HexCoord::new(1, 0), 100, 3)], 3, 2);
         let mut state = MatchState::new(setting).unwrap();
         let sim = MatchSim::default();
-        // Day 0 step 0: move onto the spot and pick up.
+        let wait = AgentActions::wait_all(&[0, 1, 2], 1);
+        // Day 0 tick 0: reserve the move onto the spot (平地, lands step 2).
         sim.step(
             &mut state,
             &AgentActions::new(vec![
@@ -755,28 +866,30 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .current_stock,
-            0
+            1,
+            "the stock is untouched until the move lands"
         );
-        // Day 0 step 1: step back off the spot so the day rolls over without
-        // a second pickup (the cap would allow it, but we want to observe
-        // the refilled stock).
-        sim.step(
-            &mut state,
-            &AgentActions::new(vec![
-                Action::step(0, Direction::Right),
-                Action::wait(1),
-                Action::wait(2),
-            ]),
+        // Day 0 tick 1: still in flight.
+        sim.step(&mut state, &wait);
+        // Day 0 tick 2: the move lands and acquires — stock drops.
+        sim.step(&mut state, &wait);
+        assert_eq!(
+            state
+                .setting
+                .map
+                .get(HexCoord::new(0, 0))
+                .unwrap()
+                .spot
+                .as_ref()
+                .unwrap()
+                .current_stock,
+            0,
+            "the landing step acquires the only ball"
         );
-        // Day 0 step 2 (wait) — ends the day. spawn fires at the start of
-        // day 1, refilling stock — so we need one more step call to enter
-        // day 1 step 0.
-        sim.step(&mut state, &AgentActions::wait_all(&[0, 1, 2], 1));
-        // Day 1 step 0: spawn fires, refilling stock to max=1. Agent is
-        // off the spot (it moved Right on step 1) so no re-pickup happens.
-        sim.step(&mut state, &AgentActions::wait_all(&[0, 1, 2], 1));
-        // After day rollover + day 1 step 0, spawn should have refilled
-        // stock to max=1.
+        // Day 1 tick 0: spawn fires at the day boundary's next entry and
+        // refills stock to max=1. The agent is still on the spot but tick 0
+        // is action-phase-only (Q7) — no re-pickup there.
+        sim.step(&mut state, &wait);
         assert_eq!(state.day, 1);
         assert_eq!(
             state
@@ -788,7 +901,8 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .current_stock,
-            1
+            1,
+            "spawn refilled the spot at the start of day 1"
         );
     }
 

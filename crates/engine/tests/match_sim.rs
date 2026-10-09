@@ -201,8 +201,9 @@ fn scenario_run_is_deterministic_across_repeated_invocation() {
 //   2. move phase advances positions and consumes fuel,
 //   3. acquire phase picks up a ball,
 //   4. fuel carry-over (Q&A Q19) keeps fuel across days,
-//   5. traffic update phase (Q&A Q13) promotes Smooth -> Busy when yesterday
-//      counts are high.
+//   5. traffic update phase (Q&A Q13 + 募集要項「道路セルと交通量」)
+//      promotes Smooth when the 2-day stay-step average crosses the
+//      thresholds.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -250,9 +251,10 @@ fn scenario_phase_order_observable_through_final_state() {
     };
 
     let sim = MatchSim::new(SimConfig::default());
-    // Pretend yesterday's road at (0,0) was busy (3 traversals) — should
-    // promote to Busy even if today has 0 traversals (Q&A Q13: max over
-    // 2 days).
+    // Pretend yesterday's road at (0,0) had 3 stay-steps. The official
+    // traffic value is the 2-day stay-step sum over the team average
+    // (Q&A Q13 / Q27 + 募集要項「道路セルと交通量」), so today's stay-steps
+    // (agent 0 stands on the road from its arrival on) stack on top.
     let mut state = engine::model::MatchState::new(setting.clone()).unwrap();
     state.traffic_yesterday.insert(HexCoord::new(0, 0), 3);
 
@@ -276,12 +278,17 @@ fn scenario_phase_order_observable_through_final_state() {
     );
     assert!(agent_0.fuel > 0, "fuel should not be fully drained");
 
-    // Phase 6 (traffic update) — the road at (0,0) was promoted to Busy
-    // because yesterday had 3 traversals (>= busy threshold 2).
+    // Phase 6 (traffic update) — the road at (0,0) is reclassified from the
+    // 2-day stay-step average: agent 0 arrives at (0,0) early in the day and
+    // contributes a stay-step per reflection (7 of them), stacked on the 3
+    // seeded for yesterday. With one team that is (7 + 3) / 1 = 10 ≥ the
+    // jammed threshold 5, so the road is Jammed. (Before Issue #342's
+    // stay-step fix the counter recorded one *entry* event and the sum 4
+    // classified as Busy.)
     let road_cell = result.final_state.setting.map.get(HexCoord::new(0, 0)).unwrap();
     assert!(
-        matches!(road_cell.terrain, Terrain::Road(TrafficState::Busy)),
-        "expected road to be Busy, got {:?}",
+        matches!(road_cell.terrain, Terrain::Road(TrafficState::Jammed)),
+        "expected road to be Jammed, got {:?}",
         road_cell.terrain
     );
 }

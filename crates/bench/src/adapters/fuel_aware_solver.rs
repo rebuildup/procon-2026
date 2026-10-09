@@ -61,6 +61,7 @@ impl Solver for FuelAwareCandidate {
         let candidate = CoverageCandidate {
             park_risk: self.park_risk,
             variant: 0,
+            fuel_aware: true,
         };
         candidate.decide(ctx)
     }

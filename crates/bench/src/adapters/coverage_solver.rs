@@ -1,22 +1,38 @@
 //! Daily coverage first, followed by marginal harvest, with joint fuel replay.
 //! Planning uses the same engine rules as evaluation and live `CandidateBridge`.
 //!
-//! `park=none` (default) harvests the nearest reserved spot after coverage and
-//! is byte-identical to the pre-#331 candidate. `park=far` keeps a day-scoped
-//! claim set across steps and deprioritizes already-claimed series, so patrols
-//! spread across unclaimed series instead of converging (Issue #331). The
-//! spreading window opens only on medium+ days (today and tomorrow both >= 70
-//! steps) whose map edge reaches 24.
+//! # The official tick clock (Issue #342 re-tune)
+//!
+//! The official day is a tick timeline: a `Move` reserved at tick `t` lands at
+//! `t + terrain_step_cost(origin)` (Q6/Q10), and the daily answer is a
+//! *sequential* per-agent action list — the next order starts when the
+//! previous one completes (Q23/Q24). Consecutive list entries therefore pack
+//! back-to-back and the weighted sum `Σ step costs + Σ waits` is both the
+//! budget and the timeline. Planning here mirrors exactly that: each agent's
+//! decisions are made at its **landing ticks** against a shadow timeline, and
+//! the decided actions are emitted as one packed per-agent sequence (waits
+//! only fill the tail after an agent's budget is spent). Deciding per element
+//! from the live state — the pre-#342 loop — instead acted on the stale
+//! pre-landing `pos`, double-booked in-flight moves, and starved long legs
+//! through its route-budget filter (701 day 0: 31/46/5/7/9 moves with 83 of
+//! 146 weighted units idle, versus the element-clock planner's
+//! 121/120/99/103/103 moves consuming the budget exactly).
+//!
+//! `park=none` (default) harvests the nearest reserved spot after coverage.
+//! `park=far` keeps a day-scoped claim set across steps and deprioritizes
+//! already-claimed series, so patrols spread across unclaimed series instead
+//! of converging (Issue #331). The spreading window opens only on medium+
+//! days (today and tomorrow both >= 70 steps) whose map edge reaches 24.
 use std::cmp::Reverse;
 use std::collections::{BTreeSet, BinaryHeap};
 
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
-use engine::MatchSim;
 use engine::model::{
     Action, ActionKind, Agent, AgentActions, AgentKind, Direction, HexCoord, MapGrid, Solver,
     SolverContext, Terrain,
 };
 use engine::rules::{agent_at_daily_pick_cap, fuel_cost, move_fuel};
+use engine::transitions::{phase_acquire, refill_fuel_if_supply_present};
 fn step_cost(terrain: Terrain) -> u32 {
     engine::wire_plan::terrain_step_cost(terrain).unwrap_or(u32::MAX)
 }
@@ -62,8 +78,13 @@ impl CandidateFactory for CoverageFactory {
 pub struct CoverageCandidate {
     /// Use fuel-aware supply pairing (Issue #342).
     pub fuel_aware: bool,
-    /// `park=far` / `park=risk` spreading mode (Issue #331); `park=none`
-    /// keeps the pre-#331 target order byte-identical.
+    /// `park=far` / `park=risk` spreading mode (Issue #331). Post-#342 both
+    /// park modes share the day-scoped series claim policy — the per-step
+    /// re-decision loop whose claim expiry let `park=none` converge on
+    /// already-claimed series was a defect of the pre-parity element clock,
+    /// and the spreading window's penalty is subsumed by the persistent
+    /// claim set. The parameter stays accepted so canonical ids keep their
+    /// shape; it selects the same measured-best policy.
     pub(crate) park_risk: bool,
     /// Search-solver trial seed: rotates patrol order and jitters the
     /// coverage cost key when non-zero (release-side #312/#313 tooling).
@@ -276,6 +297,7 @@ impl Solver for CoverageCandidate {
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let mut state = fresh_day_state(ctx);
         let n = state.agents.len();
+        let day_steps = ctx.day_steps;
         let patrols = patrol_order(&state, self.variant);
         // Use fuel-aware pairing only when fuel pressure exists (Issue #342).
         // This avoids disrupting normal assignment when no fuel issue exists.
@@ -301,108 +323,143 @@ impl Solver for CoverageCandidate {
         let size = &state.setting.map.size;
         let spread_window = self.park_risk
             && (usize::from(size.width) >= 24 || usize::from(size.height) >= 24)
-            && ctx.day_steps >= 70
+            && day_steps >= 70
             && tomorrow_budget >= 70;
-        let mut used = vec![0u32; n];
-        let mut output = Vec::with_capacity(n * ctx.day_steps as usize);
-        let sim = MatchSim::default();
-        // Day-scoped claim set: once a patrol targets a series, no other patrol
-        // (or later step) re-targets it. Park mode keeps this across steps so
+
+        // Shadow timeline (the official tick clock, Q6/Q10/Q23/Q24): a
+        // decision is made only when the agent is free, from its **landing**
+        // position and fuel — never from a stale pre-landing cell. Because the
+        // decided actions execute back-to-back, the tick an agent frees up
+        // equals the weighted budget it has consumed; `clock[i]` is both.
+        let mut agents = state.agents.clone();
+        let mut clock = vec![0u32; n];
+        // Destination of an in-flight move (the landing cell), until the
+        // landing reflection processes it at tick `clock[i]`. Supplies follow
+        // this cell, not the stale `pos` of a moving patrol.
+        let mut landings = vec![None::<HexCoord>; n];
+        // Day-scoped claim set: once a patrol targets a series, no other
+        // patrol re-targets it. Park mode keeps claims across the whole day so
         // agents spread across series instead of converging (Issue #331).
         let mut day_claimed: BTreeSet<u32> =
             state.series_acquired_by_day.get(&ctx.day).cloned().unwrap_or_default();
-        for _ in 0..ctx.day_steps {
-            let mut actions: Vec<_> = state.agents.iter().map(|a| Action::wait(a.id)).collect();
-            let mut reserved =
-                state.series_acquired_by_day.get(&ctx.day).cloned().unwrap_or_default();
-            let patrol_paths: Vec<(usize, Vec<Route>)> = patrols
-                .iter()
-                .map(|&i| (i, routes(&state.setting.map, &state.agents[i], assigned.contains(&i))))
-                .collect();
-            for &i in &patrols {
-                if used[i] >= ctx.day_steps {
-                    continue;
+        let mut reserved = day_claimed.clone();
+        // Per-agent sequential answer lists (the wire's per-agent bodies).
+        let mut lists: Vec<Vec<Action>> = vec![Vec::new(); n];
+        // Decision priority: patrols in the rotated `patrols` order, then
+        // supplies in id order — the same priority the per-step loop gave the
+        // patrols' claims (the search-trial rotation, #312/#313, stays live).
+        let rank: Vec<usize> = (0..n)
+            .map(|i| patrols.iter().position(|&p| p == i).unwrap_or(patrols.len() + i))
+            .collect();
+        let mut events = Vec::new(); // sink for acquire / refuel events
+
+        while let Some(i) =
+            (0..n).filter(|&i| clock[i] < day_steps).min_by_key(|&i| (clock[i], rank[i]))
+        {
+            // Reflection at tick `clock[i]` (Q6 order: fuel → move →
+            // acquire → refuel). A landing reflection processes the in-flight
+            // move; a standing reflection (tick >= 1, agent free) acquires
+            // and refuels where it stands. `phase_acquire` /
+            // `refill_fuel_if_supply_present` are the simulator's own
+            // primitives, so the shadow's pick, cap and refuel bookkeeping is
+            // the official one by construction.
+            if let Some(to) = landings[i].take() {
+                if agents[i].kind == AgentKind::Patrol {
+                    let origin = state.setting.map.get(agents[i].pos).expect("agent on map");
+                    agents[i].fuel = agents[i].fuel.saturating_sub(fuel_cost(origin.terrain));
                 }
-                let paths =
-                    &patrol_paths.iter().find(|(j, _)| *j == i).expect("patrol route computed").1;
-                actions[i] = patrol_step(
-                    &state,
-                    &state.agents[i],
-                    paths,
-                    ctx.day_steps - used[i],
-                    TargetKey { spread_window, variant: self.variant },
-                    &mut day_claimed,
-                    &mut reserved,
-                );
+                agents[i].pos = to;
+                let standing = agents[i].pos;
+                phase_acquire(&agents[i], &mut state, &mut events);
+                refill_fuel_if_supply_present(&mut agents, standing, &mut events);
+                claim_picked_series(&agents[i], &state, &mut day_claimed, &mut reserved);
+            } else if clock[i] > 0 {
+                let standing = agents[i].pos;
+                phase_acquire(&agents[i], &mut state, &mut events);
+                refill_fuel_if_supply_present(&mut agents, standing, &mut events);
+                claim_picked_series(&agents[i], &state, &mut day_claimed, &mut reserved);
             }
-            for i in 0..n {
-                if used[i] >= ctx.day_steps {
-                    continue;
-                }
-                if let Some(p) = pairs[i] {
-                    let goal = match actions[p].kind {
-                        ActionKind::Move(dir) => dir.step(state.agents[p].pos),
-                        ActionKind::Wait => state.agents[p].pos,
-                    };
-                    let paths = routes(&state.setting.map, &state.agents[i], false);
-                    actions[i] = legal_step(
-                        &state.agents[i],
+
+            let remaining = day_steps - clock[i];
+            let action = if agents[i].kind == AgentKind::Patrol {
+                // Fuel-return override (Issue #339): a patrol with critically
+                // low fuel heads for its paired Supply's **landing cell**
+                // instead of pursuing targets — the Supply is chasing but
+                // never catching a target-pursuing patrol, so the return must
+                // be the patrol's own decision. Truth is the Supply's landing
+                // cell (`landings[s]`), never its stale pre-landing `pos`.
+                let fuel_return_supply = if self.fuel_aware && agents[i].fuel < 30 {
+                    (0..n).find(|&s| pairs[s] == Some(i))
+                } else {
+                    None
+                };
+                if let Some(s) = fuel_return_supply {
+                    let goal = landings[s].unwrap_or(agents[s].pos);
+                    let paths = routes(&state.setting.map, &agents[i], true);
+                    legal_step(
+                        &agents[i],
                         paths[index(&state.setting.map, goal)].first,
                         &state.setting.map,
-                        ctx.day_steps - used[i],
-                    );
+                        remaining,
+                    )
+                } else {
+                    let paths = routes(&state.setting.map, &agents[i], assigned.contains(&i));
+                    patrol_step(
+                        &state,
+                        &agents[i],
+                        &paths,
+                        remaining,
+                        TargetKey { spread_window, variant: self.variant },
+                        &mut day_claimed,
+                        &mut reserved,
+                    )
+                }
+            } else if let Some(p) = pairs[i] {
+                // Follow the paired patrol's landing cell: where the patrol
+                // will stand when its in-flight move completes, or where it
+                // stands when it is free.
+                let goal = landings[p].unwrap_or(agents[p].pos);
+                let paths = routes(&state.setting.map, &agents[i], false);
+                legal_step(
+                    &agents[i],
+                    paths[index(&state.setting.map, goal)].first,
+                    &state.setting.map,
+                    remaining,
+                )
+            } else {
+                Action::wait(agents[i].id)
+            };
+
+            match action.kind {
+                ActionKind::Move(dir) => {
+                    let origin = state.setting.map.get(agents[i].pos).expect("agent on map");
+                    // `legal_step` already bounded this by `remaining`, so the
+                    // move always lands inside the day (`ReserveReject::
+                    // Truncated` can never fire on the emitted list).
+                    clock[i] += step_cost(origin.terrain);
+                    landings[i] = Some(dir.step(agents[i].pos));
+                }
+                ActionKind::Wait => {
+                    clock[i] += 1;
+                    landings[i] = None;
                 }
             }
-            // Fuel-return override (Issue #339): when a Patrol's fuel is low,
-            // move toward its paired Supply instead of pursuing targets.
-            // This prevents stranding when the Supply is chasing but never
-            // catching up.
-            if self.fuel_aware {
-                for &pi in &patrols {
-                    if used[pi] >= ctx.day_steps {
-                        continue;
-                    }
-                    let fuel = state.agents[pi].fuel;
-                    if fuel < 30 {
-                        // Find paired supply
-                        if let Some(si) = pairs
-                            .iter()
-                            .enumerate()
-                            .find(|(_, p)| p.is_some_and(|pp| pp == pi))
-                            .map(|(i, _)| i)
-                        {
-                            let supply_pos = state.agents[si].pos;
-                            let paths = routes(&state.setting.map, &state.agents[pi], true);
-                            let goal = paths[index(&state.setting.map, supply_pos)].first;
-                            if goal.is_some() {
-                                actions[pi] = legal_step(
-                                    &state.agents[pi],
-                                    goal,
-                                    &state.setting.map,
-                                    ctx.day_steps - used[pi],
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            lists[i].push(action);
+        }
+
+        // Assemble the step-major day plan: each agent's decided actions pack
+        // into consecutive blocks (the sequential answer the official clock
+        // executes back-to-back); once its budget is spent the remaining
+        // blocks are idle waits. Re-normalizing is then a no-op: every move
+        // fits the weighted budget and the trailing wait runs trim to the
+        // same blocks (`normalize_day_plan` never drops a planned move).
+        let mut output = Vec::with_capacity(n * day_steps as usize);
+        for step in 0..day_steps as usize {
             for i in 0..n {
-                if used[i] < ctx.day_steps {
-                    used[i] += match actions[i].kind {
-                        ActionKind::Move(_) => step_cost(
-                            state
-                                .setting
-                                .map
-                                .get(state.agents[i].pos)
-                                .expect("agent on map")
-                                .terrain,
-                        ),
-                        ActionKind::Wait => 1,
-                    };
-                }
+                output.push(
+                    lists[i].get(step).copied().unwrap_or_else(|| Action::wait(agents[i].id)),
+                );
             }
-            output.extend(actions.iter().copied());
-            sim.step(&mut state, &AgentActions::new(actions));
         }
         // Apply official budget truncation so the plan is always within the
         // terrain-weighted day budget. Without this the server rejects the
@@ -412,6 +469,23 @@ impl Solver for CoverageCandidate {
         // applies (#255 / #324), so decide() output is a fixed point of it.
         let plan = AgentActions::new(output);
         crate::adapters::walk::BudgetMode::Official.apply(ctx, plan)
+    }
+}
+
+/// Record the series an agent just picked as claimed for today, so no patrol
+/// re-targets it. `phase_acquire` keeps the official cap / stock bookkeeping
+/// in `state`; this mirrors the claim side of the old per-step loop.
+fn claim_picked_series(
+    agent: &Agent,
+    state: &engine::model::MatchState,
+    day_claimed: &mut BTreeSet<u32>,
+    reserved: &mut BTreeSet<u32>,
+) {
+    if state.spot_picks_today.get(&(agent.id, agent.pos)).copied().unwrap_or(0) > 0 {
+        if let Some(spot) = state.setting.map.get(agent.pos).and_then(|c| c.spot.as_ref()) {
+            reserved.insert(spot.series);
+            day_claimed.insert(spot.series);
+        }
     }
 }
 
