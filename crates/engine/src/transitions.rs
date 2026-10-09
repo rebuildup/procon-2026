@@ -182,7 +182,9 @@ fn classify_move(agent: &Agent, target: HexCoord, map: &MapGrid) -> MoveOk {
     }
     let Some(origin) = map.get(agent.pos) else { return MoveOk::OutOfBounds };
     let Some(cost) = crate::rules::move_fuel(agent, origin.terrain, cell.terrain) else {
-        return MoveOk::FuelShort { cost: fuel_cost(origin.terrain).max(fuel_cost(cell.terrain)) };
+        // Settled boundary (Issue #342 P0-C): the need is the *departure*
+        // cost only — the destination's fuel is never billed.
+        return MoveOk::FuelShort { cost: fuel_cost(origin.terrain) };
     };
     MoveOk::Traversable { cost }
 }
@@ -1019,7 +1021,9 @@ mod tests {
         state.traffic_yesterday.insert(HexCoord::new(0, 0), 3); // yesterday was Busy
         state.traffic_today.insert(HexCoord::new(0, 0), 0); // today is quiet
         let updates = phase_traffic_update(&mut state, TrafficThresholds::default(), 1);
-        // Max(0, 3) = 3, classified as Busy.
+        // Outdated wording below kept from the pre-#342 comment: the rule is
+        // not a max — it is the 2-day stay-step sum averaged over the team
+        // count. Here (0 + 3) / 1 team = 3 → Busy.
         let r = updates.iter().find(|(c, _)| *c == HexCoord::new(0, 0)).unwrap();
         assert_eq!(r.1, TrafficState::Busy);
     }

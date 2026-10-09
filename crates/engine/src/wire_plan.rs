@@ -21,11 +21,21 @@
 //! **one illegal action invalidates the whole day's plan**
 //! (`revision = -1`).
 //!
-//! # Fuel is billed on the departed cell too (Issue #245)
+//! # Fuel is billed on the departed cell only (Issue #245, settled by #342)
 //!
 //! The official server charges a move's **fuel** from the cell the agent
 //! leaves — the same cell that bills the step cost — not from the cell it
-//! enters. [`crate::transitions::try_move`] shares the same fuel transition. Probed against the official binary on
+//! enters, and executability is **`fuel >= fuel_cost(origin)` alone**: a
+//! move that merely cannot afford the *destination*'s fuel is legal. That
+//! departure-only boundary is settled against the official simple answer
+//! server (Q&A Q11/Q25 — `docs/evidence/campaign-311/official-server-parity/`:
+//! 平地 fuel=1 → 山地 is *accepted* at `revision = 1` and ends at fuel=0,
+//! 山地 fuel=1 → 平地 is rejected, and the threshold sits on `>=`); it is
+//! exactly what [`crate::rules::move_fuel`] pins and
+//! [`crate::transitions::try_move`] shares.
+//!
+//! The departure cell (as opposed to the entered cell) was first located by
+//! probing the official binary on
 //! localhost with match550's board (`busyThreshold 1`,
 //! `jammedThreshold 3`, 9 days, 7 agents, `--kinds P`,
 //! `loop:iterations=32:initial=greedy:lookahead=crossday:walk=astar`):
@@ -47,12 +57,14 @@
 //! | must afford `max(origin, entered)`, billed on that | wrong (days 6/7 predicted rejected) | correct |
 //! | strict `fuel > cost` | wrong (day 7 predicted rejected) | correct |
 //!
-//! The two surviving readings are indistinguishable from acceptance data
-//! alone, so this boundary enforces their **intersection**: a move must
-//! afford the fuel of both the departed and the entered cell, and the
-//! replay deducts the departed cell's cost. That is never weaker than the
-//! pre-#245 rule (it only adds the departed-cell check) and it rejects
-//! exactly the two observed cases. The step budget was never the problem:
+//! Those probes left two readings alive ("billed on the departed cell" and
+//! the stricter "must afford both cells, billed on the departed one") —
+//! acceptance data alone could not separate them. The #342 official-server
+//! probes above do: the destination-affordance reading is **wrong** (a
+//! patrol with less fuel than the destination costs still gets `revision:
+//! 1`), so this boundary charges and checks the **departed cell only**,
+//! never weaker than the pre-#245 entered-cell rule for the cases those
+//! probes observed. The step budget was never the problem:
 //! every day of both runs summed to `daySteps` exactly under the traffic
 //! `GET /` reported — the payload carries **all** road cells (246 entries
 //! for a 246-road map, every day of both runs), so the overlay has no
@@ -107,11 +119,11 @@ use crate::transitions::phase_fuel;
 /// fuel cost)`.
 ///
 /// The cell the agent **departs** bills both the step budget (module table)
-/// and the fuel deduction; the move also has to afford the fuel of the cell
-/// it **enters**, which keeps this boundary at least as strict as it was
-/// before Issue #245 while adding the departed-cell check that the two
-/// localhost rejections needed. `Err` carries the reason the official
-/// server reports when it rejects the whole day for one illegal action.
+/// and the fuel deduction; executability is `fuel >= fuel_cost(origin)`
+/// alone (Q&A Q11/Q25, settled against the official server — Issue #342
+/// P0-C and `crate::rules::move_fuel`). `Err` carries the reason the
+/// official server reports when it rejects the whole day for one illegal
+/// action.
 ///
 /// An agent standing off the board is the caller's error path (a corrupted
 /// live state, not a bad action); an agent standing on a pond falls out of

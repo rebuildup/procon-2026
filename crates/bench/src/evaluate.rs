@@ -191,6 +191,9 @@ pub struct RunRecord {
     /// the server accepted the answer, which it would not have. This is the
     /// authoritative whole-response flag — `illegal_action_count` only counts
     /// the individual bad actions.
+    // `#[serde(default)]` so JSONL written before this axis existed still
+    // deserializes under the new binary (pre-#342 evidence re-aggregates).
+    #[serde(default)]
     pub rejected_response_count: u32,
     /// Days (zero-based) whose measured answer time exceeded that day's
     /// official budget — the per-day `daySeconds` window (Q&A Q3).
