@@ -179,6 +179,11 @@ fn patrol_step(
     if can_pick_here {
         if let Some(spot) = map.get(agent.pos).and_then(|c| c.spot.as_ref()) {
             reserved.insert(spot.series);
+            // Update day_claimed on ACTUAL PICK (not target selection).
+            // This tells the spread window that this series has been covered
+            // today, without the oscillation caused by claiming at movement
+            // start (Issue #342).
+            day_claimed.insert(spot.series);
         }
         return Action::wait(agent.id);
     }
