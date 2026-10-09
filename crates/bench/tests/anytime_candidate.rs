@@ -260,11 +260,14 @@ fn anytime_final_return_reflects_b_improvement_trial() {
     let improved = solver.decide(&ctx);
     let improved_axes = replay_axes(&state, &improved);
 
-    assert_ne!(improved, initial, "trial #2 must replace the returned plan");
+    // STRICT final-return guard (Issue #354 / #364): the returned plan must
+    // BE the B-improved trial — not the initial plan. The pre-fix guard
+    // compared only the axis-2 series count and returned the initial plan on
+    // a B-only improvement, so both assertions below fail against it (and an
+    // implementation that always returns the initial plan would pass the
+    // weaker "not worse" form — the `>=` relaxation is therefore reverted).
+    assert_ne!(improved, initial, "trial #2 (variant 5) must replace the returned plan");
     assert_eq!(improved_axes, (3, 3, 7), "same V, same D, one extra ball");
-    assert_eq!(improved_axes.0, initial_axes.0, "axis 1 (V) must not regress");
-    assert_eq!(improved_axes.1, initial_axes.1, "axis 2 (D) must not regress");
-    assert!(improved_axes.2 > initial_axes.2, "axis 3 (B) must improve");
 }
 
 /// With no improving trial, the initial park=far plan must still come back
@@ -281,12 +284,73 @@ fn anytime_no_improvement_returns_initial_plan_unchanged() {
         .expect("park=far builds");
     let initial = baseline.decide(&ctx);
 
-    // seed=9, trials=1: variant 10 scores (3, 3, 6, 189) — strictly worse
-    // positioning on an equal V/D/B, so no axis improves and the initial
-    // plan must be returned byte-identically.
+    // seed=1, trials=1: the single trial (variant) replays the same tour and
+    // scores exactly the initial axes (3, 3, 6) — NO trial improves (equal
+    // V/D/B, equal-or-worse positioning). The guarantee is byte-identity:
+    // the initial park=far plan is returned untouched. A final guard that
+    // returned a trial on an all-axes tie ("improved-when-equal") or that
+    // discarded the initial plan would produce a different `AgentActions`
+    // and fail this assertion (the `>=` non-regression form accepted both).
     let solver = registry
-        .build("anytime:trials=1:seed=9:budget=official")
+        .build("anytime:trials=1:seed=1:budget=official")
         .and_then(|c| c.build_solver())
         .expect("anytime trials id builds");
-    assert_eq!(solver.decide(&ctx), initial, "no-improvement run returns initial");
+    let returned = solver.decide(&ctx);
+    let returned_axes = replay_axes(&state, &returned);
+    assert_eq!(
+        returned_axes,
+        replay_axes(&state, &initial),
+        "no improving trial: the axes must stay exactly the initial (3, 3, 6)"
+    );
+    assert_eq!(
+        returned, initial,
+        "no improving trial: the initial plan must be returned byte-identically"
+    );
+}
+
+/// Regression test: B-only improvement must be returned (Issue #364).
+///
+/// Uses `fixture:large-32x32` where the anytime search strictly lifts the
+/// third axis at equal V/D (measured at `6263ada`: returned (4, 4, 20) vs
+/// coverage park=far (4, 4, 19); the pre-`6263ada` evidence recorded
+/// 17 vs 16 on an older base — the assertion stays relational, only the
+/// commentary numbers move with the base). The final returned plan must
+/// reflect this B gain; an always-return-initial implementation fails.
+#[test]
+fn anytime_b_only_improvement_returned_on_large32() {
+    let case = bench::CaseSpec::from_bundled_fixture("large-32x32").unwrap();
+    let pattern = bench::kinds::parse_kinds("P,S,P,S,P").unwrap();
+    let kinds = bench::kinds::resolve_kinds(Some(&pattern), case.setting.agents.len());
+    let team = domain::PlayerId::new("player-a").unwrap();
+    let setting = case.to_engine_setting_with_kinds(&team, Some(&kinds)).unwrap();
+    let state = MatchState::new(setting).unwrap();
+    let ctx = engine::model::SolverContext::from_state(&state);
+    let registry = CandidateRegistry::builtin();
+
+    let baseline = registry
+        .build("coverage:budget=official:park=far")
+        .and_then(|c| c.build_solver())
+        .expect("park=far builds");
+    let initial = baseline.decide(&ctx);
+    let initial_axes = replay_axes(&state, &initial);
+
+    // Fixed trials mode: deterministic, no wall clock.
+    let anytime = registry
+        .build("anytime:trials=64:seed=42:budget=official")
+        .and_then(|c| c.build_solver())
+        .expect("anytime builds");
+    let returned = anytime.decide(&ctx);
+    let returned_axes = replay_axes(&state, &returned);
+
+    // V must be identical
+    assert_eq!(returned_axes.0, initial_axes.0, "V must be the same for B_WIN classification");
+    // D must be identical
+    assert_eq!(returned_axes.1, initial_axes.1, "D must be the same for B_WIN classification");
+    // B must be strictly greater
+    assert!(
+        returned_axes.2 > initial_axes.2,
+        "B must strictly increase for B_WIN: got {} vs initial {}",
+        returned_axes.2,
+        initial_axes.2
+    );
 }
