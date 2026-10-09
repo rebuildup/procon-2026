@@ -21,6 +21,10 @@
 //! the returned plan is never trusted from the model alone: it is replayed
 //! through [`engine::MatchSim`], and a plan with an illegal or fuel-short
 //! action is discarded for the `coverage` plan.
+#![allow(
+    clippy::many_single_char_names,
+    reason = "graph code: m = metric, u/v = nodes, p/q = patrols, t/f = time/fuel"
+)]
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::time::{Duration, Instant};
@@ -372,6 +376,8 @@ struct SupplyLine {
 
 struct Evaluation {
     score: i64,
+    /// Today's modelled `(series, balls)`.
+    today: (i64, i64),
     lines: Vec<Timeline>,
     supplies: Vec<SupplyLine>,
 }
@@ -412,13 +418,24 @@ impl World {
                 return;
             }
             line.next += 1;
-            line.visits.push(Visit { node: to, arr: last.dep + t, dep: last.dep + t, next: line.next });
+            line.visits.push(Visit {
+                node: to,
+                arr: last.dep + t,
+                dep: last.dep + t,
+                next: line.next,
+            });
         }
     }
 
     /// Where and when a supply at `(node, tick)` can first share a cell with
     /// patrol timeline `line`: `(visit index, meeting tick)`.
-    fn intercept(&self, line: &Timeline, node: usize, tick: u32, escort: bool) -> Option<(usize, u32)> {
+    fn intercept(
+        &self,
+        line: &Timeline,
+        node: usize,
+        tick: u32,
+        escort: bool,
+    ) -> Option<(usize, u32)> {
         for (k, visit) in line.visits.iter().enumerate() {
             let reach = self.t(FAST, node, visit.node);
             if reach == NONE {
@@ -462,8 +479,8 @@ impl World {
                 ..Timeline::default()
             })
             .collect();
-        for p in 0..np {
-            self.advance(sol, p, &mut lines[p]);
+        for (p, line) in lines.iter_mut().enumerate() {
+            self.advance(sol, p, line);
         }
         let mut supplies = Vec::with_capacity(self.supplies.len());
         for (s, info) in self.supplies.iter().enumerate() {
@@ -501,7 +518,9 @@ impl World {
             let m = usize::from(sol.metric[p]);
             let start_cell = self.nodes[line.visits[0].node];
             if self.spot_at[start_cell] != NONE
-                && (self.time_cost[start_cell] >= 2 || line.visits[0].dep >= 1 || line.visits.len() == 1)
+                && (self.time_cost[start_cell] >= 2
+                    || line.visits[0].dep >= 1
+                    || line.visits.len() == 1)
             {
                 events.push((1, p, self.spot_at[start_cell] as usize));
             }
@@ -546,7 +565,8 @@ impl World {
         let mut score = fresh * W_NEW + series * W_SERIES + balls * W_BALL;
         // Idle time is worth a little: prefer the shorter of two equal days.
         for line in &lines {
-            let end = line.pending.map_or(line.visits.last().expect("non-empty").arr, |_| self.steps);
+            let end =
+                line.pending.map_or(line.visits.last().expect("non-empty").arr, |_| self.steps);
             score -= i64::from(end) * 20 / i64::from(self.steps.max(1));
         }
         if let Some(tomorrow) = self.tomorrow {
@@ -568,12 +588,17 @@ impl World {
                 score += 150 * have / full.max(1);
             }
         }
-        Evaluation { score, lines, supplies }
+        Evaluation { score, today: (series, balls), lines, supplies }
     }
 
     /// Nearest-useful-spot greedy from `starts` over a `steps`-tick day:
     /// `(series, balls)`. With `routes`, also records each patrol's order.
-    fn greedy(&self, starts: &[Start], steps: u32, mut routes: Option<&mut Vec<Vec<u16>>>) -> (i64, i64) {
+    fn greedy(
+        &self,
+        starts: &[Start],
+        steps: u32,
+        mut routes: Option<&mut Vec<Vec<u16>>>,
+    ) -> (i64, i64) {
         let np = starts.len();
         let mut at: Vec<usize> = starts.iter().map(|s| s.node).collect();
         let mut tick: Vec<u32> = starts.iter().map(|s| s.offset).collect();
@@ -584,12 +609,12 @@ impl World {
         let mut covered = vec![false; self.series_slots];
         let (mut series, mut balls) = (0i64, 0i64);
         let pick = |p: usize,
-                        node: usize,
-                        stock: &mut Vec<u32>,
-                        picked: &mut Vec<bool>,
-                        covered: &mut Vec<bool>,
-                        series: &mut i64,
-                        balls: &mut i64| {
+                    node: usize,
+                    stock: &mut Vec<u32>,
+                    picked: &mut Vec<bool>,
+                    covered: &mut Vec<bool>,
+                    series: &mut i64,
+                    balls: &mut i64| {
             if stock[node] == 0 || picked[p * self.spots + node] {
                 return;
             }
@@ -605,7 +630,15 @@ impl World {
         for p in 0..np {
             let cell = self.nodes[at[p]];
             if tick[p] == 0 && self.spot_at[cell] != NONE {
-                pick(p, self.spot_at[cell] as usize, &mut stock, &mut picked, &mut covered, &mut series, &mut balls);
+                pick(
+                    p,
+                    self.spot_at[cell] as usize,
+                    &mut stock,
+                    &mut picked,
+                    &mut covered,
+                    &mut series,
+                    &mut balls,
+                );
             }
         }
         while let Some(p) = (0..np).filter(|&p| !done[p]).min_by_key(|&p| (tick[p], p)) {
@@ -654,16 +687,18 @@ impl World {
             order.sort_by_key(|&p| (self.patrols[p].fuel, p));
             let per = np.div_ceil(self.supplies.len());
             for p in order {
-                let best = (0..self.supplies.len())
-                    .filter(|&s| serve[s].len() < per)
-                    .min_by_key(|&s| (self.t(FAST, self.supplies[s].start, self.patrols[p].start), s));
+                let best =
+                    (0..self.supplies.len()).filter(|&s| serve[s].len() < per).min_by_key(|&s| {
+                        (self.t(FAST, self.supplies[s].start, self.patrols[p].start), s)
+                    });
                 if let Some(s) = best {
                     serve[s].push(u8::try_from(p).expect("patrol"));
                 }
             }
         }
-        let escorted: Vec<bool> =
-            (0..np).map(|p| serve.iter().any(|l| l.last().is_some_and(|&q| usize::from(q) == p))).collect();
+        let escorted: Vec<bool> = (0..np)
+            .map(|p| serve.iter().any(|l| l.last().is_some_and(|&q| usize::from(q) == p)))
+            .collect();
         let starts: Vec<Start> = (0..np)
             .map(|p| Start {
                 node: self.patrols[p].start,
@@ -674,7 +709,7 @@ impl World {
             .collect();
         let mut routes = vec![Vec::new(); np];
         self.greedy(&starts, self.steps, Some(&mut routes));
-        let metric = escorted.iter().map(|&e| if e { FAST } else { BAL } as u8).collect();
+        let metric = escorted.iter().map(|&e| u8::from(!e)).collect();
         Solution { routes, metric, serve }
     }
 
@@ -869,7 +904,12 @@ impl World {
                 node = stop;
             }
             if let Some(q) = line.escort {
-                out.extend(timed[q].iter().filter(|&&(at, _)| at >= tick).map(|&(_, dir)| action(agent, dir)));
+                out.extend(
+                    timed[q]
+                        .iter()
+                        .filter(|&&(at, _)| at >= tick)
+                        .map(|&(_, dir)| action(agent, dir)),
+                );
             }
             lists[agent] = out;
         }
@@ -892,7 +932,8 @@ fn replay(ctx: &SolverContext<'_>, plan: &AgentActions) -> (bool, usize, usize, 
         sim.step(&mut state, &AgentActions::new(step.to_vec()));
     }
     let clean = (state.illegal_action_count, state.rejected_response_count) == before;
-    let today = state.series_acquired_by_day.get(&ctx.day).map_or(0, std::collections::BTreeSet::len);
+    let today =
+        state.series_acquired_by_day.get(&ctx.day).map_or(0, std::collections::BTreeSet::len);
     let balls = state.agents.iter().map(engine::Agent::total_inventory).sum();
     (clean, state.series_taken.len(), today, balls)
 }
@@ -903,7 +944,8 @@ impl Solver for FleetCandidate {
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let started = Instant::now();
-        let fallback = || CoverageCandidate { park_risk: false, variant: 0, fuel_aware: false }.decide(ctx);
+        let fallback =
+            || CoverageCandidate { park_risk: false, variant: 0, fuel_aware: false }.decide(ctx);
         let state = ctx.state;
         let n = state.agents.len();
         // Agent ids index the answer lists; anything else is not this
@@ -935,7 +977,15 @@ impl Solver for FleetCandidate {
                 output.push(list.get(step).copied().unwrap_or_else(|| action(i, None)));
             }
         }
-        let plan = crate::adapters::walk::BudgetMode::Official.apply(ctx, AgentActions::new(output));
-        if replay(ctx, &plan).0 { plan } else { fallback() }
+        let plan =
+            crate::adapters::walk::BudgetMode::Official.apply(ctx, AgentActions::new(output));
+        let check = replay(ctx, &plan);
+        if std::env::var_os("FLEET_DEBUG").is_some() {
+            eprintln!(
+                "fleet day={} clean={} model={:?} replay=({},{},{})",
+                ctx.day, check.0, eval.today, check.1, check.2, check.3
+            );
+        }
+        if check.0 { plan } else { fallback() }
     }
 }
