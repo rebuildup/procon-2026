@@ -674,11 +674,20 @@ mod tests {
     /// remaining day, so it degrades to `step_towards` — and the emitted
     /// action is still in bounds, traversable and affordable, which the
     /// engine itself confirms.
+    ///
+    /// The engine check drives the day to the move's **due reflection**:
+    /// on the official tick clock a 平地 move is applied after the departure
+    /// terrain's step count elapses (Q10 — 2 steps), so it lands at step 2.
+    /// The pre-#342 simulator applied it immediately in the first `step()`
+    /// — the old immediate-landing assumption this test used to encode. The
+    /// day therefore needs `day_steps >= 2`: a 1-step day cannot land a 平地
+    /// move at all (its official weighted cost is 2).
     #[test]
     fn budget_failure_falls_back_to_a_legal_step_towards_step() {
         let start = HexCoord::new(5, 0);
-        // One step of budget for a target three cells away.
-        let setting = setting(&[HexCoord::new(2, 0)], start, 1);
+        // Two steps of budget for a target three cells away — the leg still
+        // does not fit, so the fallback fires every turn.
+        let setting = setting(&[HexCoord::new(2, 0)], start, 2);
         let state = MatchState::new(setting.clone()).expect("valid state");
         let ctx = SolverContext::from_state(&state);
         let targets = vec![vec![HexCoord::new(2, 0)]];
@@ -686,18 +695,25 @@ mod tests {
         let plan = plan_walk_astar(&ctx, &targets, BudgetMode::Element);
         assert_eq!(
             agent_kinds(&plan, 3, 0),
-            vec![ActionKind::Move(Direction::Left)],
-            "the fallback takes the single greedy step toward (2, 0)"
+            vec![ActionKind::Move(Direction::Left), ActionKind::Move(Direction::Left)],
+            "the fallback takes a greedy step each turn toward (2, 0)"
         );
         assert!(
-            plan.actions.iter().skip(1).all(|a| matches!(a.kind, ActionKind::Wait)),
+            agent_kinds(&plan, 3, 1).iter().all(|k| matches!(k, ActionKind::Wait))
+                && agent_kinds(&plan, 3, 2).iter().all(|k| matches!(k, ActionKind::Wait)),
             "the bystanders wait all day"
         );
 
-        // The engine agrees: the plan applies cleanly, with no downgrades.
+        // The engine agrees: the plan applies cleanly, with no downgrades,
+        // and the first step lands on its due reflection (step 2). The
+        // second order is still queued at the day boundary and is dropped
+        // the same way `wire_plan::normalize_day_plan` truncates a tail.
         let mut run_state = MatchState::new(setting).expect("valid state");
         let sim = MatchSim::default();
-        sim.step(&mut run_state, &plan);
+        let agent_count = ctx.agent_ids.len();
+        for block in plan.actions.chunks(agent_count) {
+            sim.step(&mut run_state, &AgentActions::new(block.to_vec()));
+        }
         assert_eq!(run_state.illegal_action_count, 0, "no illegal actions");
         assert_eq!(run_state.fuel_short_count, 0, "no fuel shortages");
         assert_eq!(run_state.agents[0].pos, HexCoord::new(4, 0), "the step landed");

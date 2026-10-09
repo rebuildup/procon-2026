@@ -309,16 +309,23 @@ mod tests {
                 cells.push(Cell { coord, terrain, spot });
             }
         }
+        // `day_steps` must fit both candidates' official landing times
+        // (Q10: a move lands after the *departure* terrain's step count —
+        // 平地 2, 山地 3). Greedy's straight crossing departs 平地 once and
+        // 山地 six times (2 + 6×3 = 20 ticks); A*'s plain detour is 8 × 2 =
+        // 16. The pre-#342 simulator applied every move in a single step, so
+        // the old `day_steps: 16` let greedy land its crossing in 7 ticks —
+        // exactly the immediate-landing assumption the tick clock removed.
         MatchSetting {
             match_id: MatchId::new("astar-strip").expect("match id"),
             team: PlayerId::new("player-a").expect("team id"),
             map: MapGrid::new(size, cells).expect("valid map"),
             agents: vec![
-                Agent::patrol(0, HexCoord::new(0, 3), 16, 3),
-                Agent::patrol(1, HexCoord::new(0, 6), 16, 3),
-                Agent::patrol(2, HexCoord::new(4, 6), 16, 3),
+                Agent::patrol(0, HexCoord::new(0, 3), 24, 3),
+                Agent::patrol(1, HexCoord::new(0, 6), 24, 3),
+                Agent::patrol(2, HexCoord::new(4, 6), 24, 3),
             ],
-            day_steps: 16,
+            day_steps: 24,
             num_days: 1,
             day_steps_by_day: Vec::new(),
         }
