@@ -114,6 +114,11 @@ pub struct CoordinatorLoopConfig {
     /// so the live flag and the offline `procon-eval --kinds` axis share
     /// one grammar and one rejection set.
     pub agent_kinds: Option<Vec<EngineAgentKind>>,
+    /// Choose the composition by simulating the match before `POST /agent`
+    /// (live `--kinds-auto`, Issue #371): one Supply in the best slot, or no
+    /// Supply when the simulation says the tanks last. Ignored when
+    /// [`agent_kinds`](Self::agent_kinds) is `Some`.
+    pub auto_kinds: bool,
     /// Maximum number of `POST /agent` attempts before giving up. Each
     /// attempt that returns `403 AccessTimeError` (kind window not yet
     /// open, or already closed) is retried up to this many times before
@@ -200,6 +205,7 @@ impl Default for CoordinatorLoopConfig {
             setting_poll_max_attempts: 300,
             solver_name: "loop".to_owned(),
             agent_kinds: None,
+            auto_kinds: false,
             kind_submit_max_attempts: 30,
             kind_submit_backoff: Duration::from_millis(500),
             match_state_max_attempts: 30,
@@ -245,6 +251,7 @@ impl CoordinatorLoopConfig {
             // No env override for the composition: `--kinds` is a CLI flag
             // so an invocation records exactly what it asked for.
             agent_kinds: None,
+            auto_kinds: false,
             // Use the documented defaults: 30 attempts × 500ms = 15s of
             // retry budget on `POST /agent`, which covers the official
             // 5s/60s `kind-deadline` plus poll jitter. Tweakable later via
@@ -714,7 +721,25 @@ where
     // window between "server became responsive" and "server flipped
     // starts_at", which is exactly the open kind window.
     let n_agents = wire_setting.agents.len();
-    let submitted_kinds = agent_kinds_for(n_agents, &cfg.solver_name, cfg.agent_kinds.as_deref());
+    let simulated_kinds = cfg.auto_kinds && cfg.agent_kinds.is_none();
+    let submitted_kinds = if simulated_kinds {
+        let team = PlayerId::new(&cfg.team_id)
+            .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
+        let (kinds, trials) =
+            bench::adapters::fleet_solver::choose_kinds(&wire_setting, &team, AUTO_KINDS_WINDOW);
+        for trial in &trials {
+            tracing::info!(
+                kinds = %bench::kinds::render_kinds(&trial.kinds),
+                variety = trial.score.0,
+                daily_variety = trial.score.1,
+                balls = trial.score.2,
+                "agent kinds trial"
+            );
+        }
+        kinds
+    } else {
+        agent_kinds_for(n_agents, &cfg.solver_name, cfg.agent_kinds.as_deref())
+    };
     // Evidence (Issue #243): log the composition being declared in the same
     // `P,S,…` spelling `--kinds` takes, so a run log and the flag that
     // produced it read the same words. Agent kinds are game state, never
@@ -751,7 +776,7 @@ where
     // alternation; `WaitSolver` never plans against that model.
     let team = PlayerId::new(&cfg.team_id)
         .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
-    let engine_setting = if cfg.agent_kinds.is_some() {
+    let engine_setting = if cfg.agent_kinds.is_some() || simulated_kinds {
         protocol_setting_to_engine_with_kinds(
             &wire_setting,
             team.clone(),
@@ -1103,6 +1128,11 @@ fn solver_budget_ms(ends_at: i64, now_ms: i64) -> u64 {
     let deadline_ms = ends_at.saturating_mul(1000);
     u64::try_from(deadline_ms.saturating_sub(now_ms).saturating_sub(5000)).unwrap_or(0)
 }
+
+/// How long `--kinds-auto` may simulate before `POST /agent`. The kind window
+/// is still open while it runs, so it stays well inside the shortest window
+/// the official server offers.
+const AUTO_KINDS_WINDOW: Duration = Duration::from_secs(8);
 
 /// Resolve the `POST /agent` composition for a team of `n_agents`.
 ///

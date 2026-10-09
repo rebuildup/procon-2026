@@ -1033,3 +1033,94 @@ impl Solver for FleetCandidate {
         if check.0 { plan } else { fallback() }
     }
 }
+
+/// Outcome of one pre-match composition trial.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KindsTrial {
+    pub kinds: Vec<AgentKind>,
+    /// `(variety, daily variety sum, balls)` of the simulated match.
+    pub score: (u32, u32, u32),
+}
+
+/// Search length of a composition trial: enough to rank compositions, short
+/// enough that every trial of an 8-agent, 10-day match ends within seconds.
+const KINDS_TRIAL_ITERS: u32 = 2_500;
+
+/// Choose the `POST /agent` composition by simulating the match (Issue #371).
+///
+/// Trials: one Supply in each agent slot, and no Supply at all. Each trial
+/// plays the whole match offline with a short `fleet` search. The best
+/// one-Supply slot wins by `(variety, daily variety, balls)`; the all-Patrol
+/// team replaces it only when it loses nothing on the first two axes and
+/// gains at least 8% balls, because without a Supply nothing can recover a
+/// day that drifts from the simulation.
+///
+/// Trials still running at `window` are ignored. With no finished trial the
+/// answer is one Supply in slot 0, the composition the offline evidence was
+/// measured with.
+#[must_use]
+pub fn choose_kinds(
+    wire: &protocol::match_config::MatchSetting,
+    team: &domain::PlayerId,
+    window: Duration,
+) -> (Vec<AgentKind>, Vec<KindsTrial>) {
+    let n = wire.agents.len();
+    let one_supply = |slot: usize| -> Vec<AgentKind> {
+        (0..n).map(|i| if i == slot { AgentKind::Supply } else { AgentKind::Patrol }).collect()
+    };
+    let fallback = if n >= 2 { one_supply(0) } else { vec![AgentKind::Patrol; n] };
+    let Ok(config) = engine::from_wire::sim_config_from_wire(wire) else {
+        return (fallback, Vec::new());
+    };
+    let mut compositions: Vec<Vec<AgentKind>> = vec![vec![AgentKind::Patrol; n]];
+    if n >= 2 {
+        compositions.extend((0..n).map(one_supply));
+    }
+    let (sender, receiver) = std::sync::mpsc::channel();
+    for kinds in compositions {
+        let Ok(setting) = engine::from_wire::protocol_setting_to_engine_with_kinds(
+            wire,
+            team.clone(),
+            Some(&kinds),
+        ) else {
+            continue;
+        };
+        let sender = sender.clone();
+        std::thread::spawn(move || {
+            let solver = FleetCandidate { iters: KINDS_TRIAL_ITERS, budget_ms: 0, seed: 42 };
+            if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
+                if result.rejected_response_count == 0 {
+                    let score = (result.variety, result.daily_variety_sum, result.total_balls);
+                    // A closed channel means the window is over.
+                    let _ = sender.send(KindsTrial { kinds, score });
+                }
+            }
+        });
+    }
+    drop(sender);
+    let deadline = Instant::now() + window;
+    let mut trials = Vec::new();
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        match receiver.recv_timeout(left) {
+            Ok(trial) => trials.push(trial),
+            Err(_) => break,
+        }
+    }
+    let slot = |t: &KindsTrial| t.kinds.iter().position(|&k| k == AgentKind::Supply);
+    trials.sort_by_key(|t| slot(t).unwrap_or(usize::MAX));
+    let supplied = |t: &&KindsTrial| t.kinds.contains(&AgentKind::Supply);
+    // Ties keep the lowest Supply slot: `max_by_key` returns the last
+    // maximum, so iterate the slots downwards.
+    let best_supplied = trials.iter().filter(supplied).rev().max_by_key(|t| t.score);
+    let all_patrol = trials.iter().find(|t| !supplied(t));
+    let chosen = match (best_supplied, all_patrol) {
+        (Some(one), Some(zero)) => {
+            let keeps_variety = (zero.score.0, zero.score.1) >= (one.score.0, one.score.1);
+            let gains = u64::from(zero.score.2) * 100 >= u64::from(one.score.2) * 108;
+            if keeps_variety && gains { zero.kinds.clone() } else { one.kinds.clone() }
+        }
+        (Some(one), None) => one.kinds.clone(),
+        _ => fallback,
+    };
+    (chosen, trials)
+}

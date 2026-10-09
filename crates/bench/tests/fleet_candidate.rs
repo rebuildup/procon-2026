@@ -99,3 +99,33 @@ fn fleet_all_supply_returns_a_well_shaped_day() {
     let plan = solver("fleet:budget=official:iters=50").decide(&ctx);
     assert!(plan.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
 }
+
+/// 701 cannot be played without a Supply (the tanks run dry mid-match), so
+/// the pre-match simulation must field exactly one, having tried every slot.
+#[test]
+fn choose_kinds_fields_one_supply_on_701() {
+    use bench::adapters::fleet_solver::choose_kinds;
+    use engine::model::AgentKind;
+    let case: CaseSpec = serde_json::from_str(include_str!("fixtures/arena-701.json")).unwrap();
+    let team = PlayerId::new("player-a").unwrap();
+    let (kinds, trials) = choose_kinds(&case.setting, &team, std::time::Duration::from_secs(120));
+    assert_eq!(trials.len(), 6, "five Supply slots plus the all-Patrol team");
+    assert_eq!(kinds.len(), 5);
+    assert_eq!(kinds.iter().filter(|&&k| k == AgentKind::Supply).count(), 1);
+    let chosen = trials.iter().find(|t| t.kinds == kinds).expect("chosen composition was tried");
+    let all_patrol = trials.iter().find(|t| !t.kinds.contains(&AgentKind::Supply)).unwrap();
+    assert!(chosen.score > all_patrol.score);
+}
+
+/// An expired window must still answer, with the measured default.
+#[test]
+fn choose_kinds_defaults_to_first_slot_supply_when_out_of_time() {
+    use bench::adapters::fleet_solver::choose_kinds;
+    use engine::model::AgentKind;
+    let case: CaseSpec = serde_json::from_str(include_str!("fixtures/arena-701.json")).unwrap();
+    let team = PlayerId::new("player-a").unwrap();
+    let (kinds, trials) = choose_kinds(&case.setting, &team, std::time::Duration::ZERO);
+    assert_eq!(trials.len(), 0);
+    assert_eq!(kinds[0], AgentKind::Supply);
+    assert!(kinds[1..].iter().all(|&k| k == AgentKind::Patrol));
+}
