@@ -1,0 +1,160 @@
+name: Sync research subtree to team PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      approve_full_copy:
+        type: boolean
+        required: true
+        default: false
+        description: "Confirm all tracked files (including PDF/ZIP/media) may be copied to the private team repository"
+      expected_source_sha:
+        type: string
+        required: false
+        default: ""
+        description: "Optional exact source main SHA (abort if it has changed)"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-research-subtree-to-team
+  cancel-in-progress: false
+
+jobs:
+  import:
+    if: ${{ inputs.approve_full_copy == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Require limited team write credential
+        env:
+          TEAM_TOKEN: ${{ secrets.PROCON_TEAM_WRITE_TOKEN }}
+        run: |
+          if [[ -z "${TEAM_TOKEN}" ]]; then
+            echo "::error::Missing secret PROCON_TEAM_WRITE_TOKEN (cslab-nituc/procon2026 Contents: read/write)."
+            exit 1
+          fi
+
+      - name: Checkout personal source main
+        uses: actions/checkout@v4
+        with:
+          path: source
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout existing team PR branch
+        uses: actions/checkout@v4
+        with:
+          repository: cslab-nituc/procon2026
+          ref: link-personal-research
+          path: team
+          fetch-depth: 0
+          token: ${{ secrets.PROCON_TEAM_WRITE_TOKEN }}
+          persist-credentials: true
+
+      - name: Validate source and destination before copying
+        id: preflight
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          set -euo pipefail
+          sha="$(git -C source rev-parse HEAD)"
+          tree="$(git -C source rev-parse 'HEAD^{tree}')"
+          head="$(git -C team rev-parse HEAD)"
+          if [[ -n "${EXPECTED_SOURCE_SHA}" && "${EXPECTED_SOURCE_SHA}" != "${sha}" ]]; then
+            echo "::error::Source main advanced; expected ${EXPECTED_SOURCE_SHA}, got ${sha}"
+            exit 1
+          fi
+          if git -C source ls-files | grep -Ei '(^|/)(\.env$|id_rsa$|id_ed25519$|[^/]+\.(pem|p12|pfx|key)$)'; then
+            echo "::error::Tracked credential-like filenames detected. Review source before copying."
+            exit 1
+          fi
+          [[ "$(git -C team branch --show-current)" == "link-personal-research" ]] || {
+            echo "::error::Unexpected target branch"; exit 1;
+          }
+          [[ -z "$(git -C team status --porcelain)" ]] || {
+            echo "::error::Target checkout is dirty"; exit 1;
+          }
+          remote="$(git -C team remote get-url origin)"
+          if [[ "${remote}" != "https://github.com/cslab-nituc/procon2026" && "${remote}" != "https://github.com/cslab-nituc/procon2026.git" ]]; then
+            echo "::error::Unexpected destination remote"; exit 1;
+          fi
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          echo "tree=${tree}" >> "${GITHUB_OUTPUT}"
+          echo "head=${head}" >> "${GITHUB_OUTPUT}"
+          echo "Source commit: ${sha}"
+          echo "Tracked files: $(git -C source ls-tree -r --name-only HEAD | wc -l)"
+
+      - name: Create or update squashed subtree
+        id: subtree
+        env:
+          SOURCE_SHA: ${{ steps.preflight.outputs.sha }}
+          SOURCE_TREE: ${{ steps.preflight.outputs.tree }}
+          START_HEAD: ${{ steps.preflight.outputs.head }}
+        run: |
+          set -euo pipefail
+          prefix="research/procon-2026"
+          git -C team config user.name 'github-actions[bot]'
+          git -C team config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git -C team subtree -h 2>&1 | grep -q 'usage: git subtree'; then
+            echo "::error::git subtree is unavailable"; exit 1;
+          fi
+          if git -C team cat-file -e "HEAD:${prefix}" 2>/dev/null; then
+            if ! git -C team log HEAD -1 --format=%B --grep="git-subtree-dir: ${prefix}" | grep -Fq "git-subtree-dir: ${prefix}"; then
+              echo "::error::Subtree directory exists without Subtree metadata"; exit 1;
+            fi
+            if [[ "$(git -C team rev-parse "HEAD:${prefix}")" == "${SOURCE_TREE}" ]]; then
+              echo "The subtree already matches the current source tree"
+              echo 'changed=false' >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+            git -C team subtree pull --prefix="${prefix}" --squash ../source "${SOURCE_SHA}"
+          else
+            git -C team fetch --no-tags ../source "${SOURCE_SHA}"
+            git -C team subtree add --prefix="${prefix}" --squash "${SOURCE_SHA}"
+          fi
+          [[ "$(git -C team rev-parse "HEAD:${prefix}")" == "${SOURCE_TREE}" ]] || {
+            echo "::error::Subtree tree does not exactly match source"; exit 1;
+          }
+          [[ "$(git -C team rev-parse HEAD:Cargo.toml)" == "$(git -C team rev-parse "${START_HEAD}:Cargo.toml")" ]] || {
+            echo "::error::Team root Cargo.toml was modified"; exit 1;
+          }
+          outside="$(git -C team diff --name-only "${START_HEAD}" HEAD | grep -v '^research/procon-2026/' || true)"
+          [[ -z "${outside}" ]] || {
+            echo "::error::Subtree modified paths outside research/procon-2026"; printf '%s\n' "${outside}"; exit 1;
+          }
+          if ! git -C team log HEAD -1 --format=%B --grep="git-subtree-dir: ${prefix}" | grep -Fq "git-subtree-dir: ${prefix}"; then
+            echo "::error::Subtree metadata missing"; exit 1;
+          fi
+          [[ -z "$(git -C team status --porcelain)" ]] || {
+            echo "::error::Subtree checkout is dirty"; exit 1;
+          }
+          echo 'changed=true' >> "${GITHUB_OUTPUT}"
+
+      - name: Push only to existing PR branch (no force)
+        if: steps.subtree.outputs.changed == 'true'
+        env:
+          EXPECTED_TARGET_HEAD: ${{ steps.preflight.outputs.head }}
+        run: |
+          set -euo pipefail
+          remote_head="$(git -C team ls-remote origin refs/heads/link-personal-research | cut -f1)"
+          [[ "${remote_head}" == "${EXPECTED_TARGET_HEAD}" ]] || {
+            echo "::error::PR branch changed during sync; retry after review"; exit 1;
+          }
+          git -C team push origin HEAD:refs/heads/link-personal-research
+
+      - name: Summarize
+        if: always()
+        env:
+          SOURCE_SHA: ${{ steps.preflight.outputs.sha }}
+          CHANGED: ${{ steps.subtree.outputs.changed }}
+        run: |
+          {
+            echo "## Research subtree sync"
+            echo "Source main SHA: ${SOURCE_SHA}"
+            echo "Subtree updated: ${CHANGED}"
+            echo "Target PR: https://github.com/cslab-nituc/procon2026/pull/26"
+            echo "No team branch was merged by this workflow."
+          } >> "${GITHUB_STEP_SUMMARY}"
