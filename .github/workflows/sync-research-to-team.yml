@@ -27,12 +27,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
+      - name: Mint team-scoped GitHub App token (preferred)
+        if: ${{ vars.PROCON_TEAM_APP_CLIENT_ID != '' }}
+        uses: actions/create-github-app-token@v3
+        id: team_app
+        with:
+          client-id: ${{ vars.PROCON_TEAM_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PROCON_TEAM_APP_PRIVATE_KEY }}
+          owner: cslab-nituc
+          repositories: procon2026
+          permission-contents: write
+
       - name: Require limited team write credential
         env:
-          TEAM_TOKEN: ${{ secrets.PROCON_TEAM_WRITE_TOKEN }}
+          TEAM_TOKEN: ${{ steps.team_app.outputs.token || secrets.PROCON_TEAM_WRITE_TOKEN }}
         run: |
           if [[ -z "${TEAM_TOKEN}" ]]; then
-            echo "::error::Missing secret PROCON_TEAM_WRITE_TOKEN (cslab-nituc/procon2026 Contents: read/write)."
+            echo "::error::Configure PROCON_TEAM_APP_CLIENT_ID and PROCON_TEAM_APP_PRIVATE_KEY for a team-installed GitHub App, or PROCON_TEAM_WRITE_TOKEN as a fallback."
             exit 1
           fi
 
@@ -51,7 +62,7 @@ jobs:
           ref: link-personal-research
           path: team
           fetch-depth: 0
-          token: ${{ secrets.PROCON_TEAM_WRITE_TOKEN }}
+          token: ${{ steps.team_app.outputs.token || secrets.PROCON_TEAM_WRITE_TOKEN }}
           persist-credentials: true
 
       - name: Validate source and destination before copying
