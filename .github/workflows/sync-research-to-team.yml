@@ -98,7 +98,9 @@ jobs:
           prefix="research/procon-2026"
           git -C team config user.name 'github-actions[bot]'
           git -C team config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          if ! git -C team subtree -h 2>&1 | grep -q 'usage: git subtree'; then
+          subtree_status=0
+          subtree_help="$(git -C team subtree -h 2>&1)" || subtree_status=$?
+          if [[ "$subtree_status" -ne 0 && "$subtree_status" -ne 129 ]] || [[ "$subtree_help" != usage:*git\ subtree* ]]; then
             echo "::error::git subtree is unavailable"; exit 1;
           fi
           if git -C team cat-file -e "HEAD:${prefix}" 2>/dev/null; then
