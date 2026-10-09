@@ -1,0 +1,84 @@
+{
+  "ENGINE_parity_sha": "6431b25",
+  "anytime_implementation_sha": "aa204bf",
+  "date": "2026-10-09",
+  "parity_status": "OFFICIAL PARITY COMPLIANT (ENGINE @ 6431b25)",
+  "note_on_old_results": "Old MatchSim (pre-6431b25) scores (20/198/358 etc.) are INVALID. The parity fix changed move timing, traffic, and response rules, producing completely different ground truth.",
+  "results": {
+    "701": {
+      "park_far": {
+        "V": 17,
+        "D": 40,
+        "B": 41
+      },
+      "anytime_5000ms": {
+        "V": 18,
+        "D": 54,
+        "B": 57
+      },
+      "verdict": "B_WIN",
+      "dD": 14,
+      "dB": 16
+    },
+    "small-8x8": {
+      "park_far": {
+        "V": 1,
+        "D": 1,
+        "B": 2
+      },
+      "anytime_5000ms": {
+        "V": 2,
+        "D": 2,
+        "B": 4
+      },
+      "verdict": "B_WIN",
+      "dV": 1,
+      "dD": 1,
+      "dB": 2
+    },
+    "open:seed=42": {
+      "park_far": {
+        "V": 3,
+        "D": 9,
+        "B": 12
+      },
+      "anytime_5000ms": {
+        "V": 3,
+        "D": 9,
+        "B": 30
+      },
+      "verdict": "B_WIN",
+      "dB": 18
+    },
+    "many-series:seed=42": {
+      "park_far": {
+        "V": 4,
+        "D": 5,
+        "B": 5
+      },
+      "anytime_5000ms": {
+        "V": 6,
+        "D": 15,
+        "B": 17
+      },
+      "verdict": "B_WIN",
+      "dV": 2,
+      "dD": 10,
+      "dB": 12
+    }
+  },
+  "summary": {
+    "B_WIN": 24,
+    "TIE": 16,
+    "V_LOSS": 0,
+    "D_LOSS": 0,
+    "B_LOSS": 0,
+    "invalid_responses": 0,
+    "conclusion": "anytime consistently improves B without V/D degradation under official parity engine"
+  },
+  "response_times": {
+    "note": "See wdl-breakdown.json for per-case times",
+    "park_far": "deterministic, <100ms/day",
+    "anytime_5000ms": "~5s/day (within 60s limit)"
+  }
+}
