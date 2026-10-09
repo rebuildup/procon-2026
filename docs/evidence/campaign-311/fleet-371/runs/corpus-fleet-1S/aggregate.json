@@ -1,6 +1,6 @@
 {
   "source_commit_shas": [
-    "76e768429323ff786d7e341476af3e84c1a7aa18"
+    "37a9af13b1a590e9c3e389480478ad6fd6e5419e"
   ],
   "baseline_candidate_id": null,
   "candidates": [
@@ -45,9 +45,9 @@
             "variety": 2,
             "daily_variety_sum": 2,
             "total_noodles": 5,
-            "total_response_time_ms": 75
+            "total_response_time_ms": 33
           },
-          "response_time_us": 75870,
+          "response_time_us": 33187,
           "status": "success",
           "scored": true
         }
@@ -62,10 +62,10 @@
           "score": {
             "variety": 13,
             "daily_variety_sum": 78,
-            "total_noodles": 151,
-            "total_response_time_ms": 1057
+            "total_noodles": 152,
+            "total_response_time_ms": 1316
           },
-          "response_time_us": 1057898,
+          "response_time_us": 1316325,
           "status": "success",
           "scored": true
         }
@@ -80,10 +80,10 @@
           "score": {
             "variety": 13,
             "daily_variety_sum": 116,
-            "total_noodles": 171,
-            "total_response_time_ms": 1569
+            "total_noodles": 172,
+            "total_response_time_ms": 1377
           },
-          "response_time_us": 1569885,
+          "response_time_us": 1377358,
           "status": "success",
           "scored": true
         }
@@ -99,9 +99,9 @@
             "variety": 13,
             "daily_variety_sum": 130,
             "total_noodles": 315,
-            "total_response_time_ms": 2443
+            "total_response_time_ms": 2220
           },
-          "response_time_us": 2443222,
+          "response_time_us": 2220302,
           "status": "success",
           "scored": true
         }
@@ -117,9 +117,9 @@
             "variety": 13,
             "daily_variety_sum": 130,
             "total_noodles": 310,
-            "total_response_time_ms": 2703
+            "total_response_time_ms": 2609
           },
-          "response_time_us": 2703185,
+          "response_time_us": 2609708,
           "status": "success",
           "scored": true
         }
@@ -134,10 +134,10 @@
           "score": {
             "variety": 13,
             "daily_variety_sum": 52,
-            "total_noodles": 94,
-            "total_response_time_ms": 598
+            "total_noodles": 96,
+            "total_response_time_ms": 665
           },
-          "response_time_us": 598012,
+          "response_time_us": 665641,
           "status": "success",
           "scored": true
         }
@@ -152,10 +152,10 @@
           "score": {
             "variety": 13,
             "daily_variety_sum": 52,
-            "total_noodles": 96,
-            "total_response_time_ms": 903
+            "total_noodles": 97,
+            "total_response_time_ms": 711
           },
-          "response_time_us": 903151,
+          "response_time_us": 711926,
           "status": "success",
           "scored": true
         }
@@ -170,10 +170,10 @@
           "score": {
             "variety": 13,
             "daily_variety_sum": 130,
-            "total_noodles": 241,
-            "total_response_time_ms": 2960
+            "total_noodles": 265,
+            "total_response_time_ms": 2140
           },
-          "response_time_us": 2960033,
+          "response_time_us": 2140246,
           "status": "success",
           "scored": true
         }
@@ -188,10 +188,10 @@
           "score": {
             "variety": 13,
             "daily_variety_sum": 117,
-            "total_noodles": 284,
-            "total_response_time_ms": 3567
+            "total_noodles": 294,
+            "total_response_time_ms": 2447
           },
-          "response_time_us": 3567704,
+          "response_time_us": 2447951,
           "status": "success",
           "scored": true
         }
@@ -206,10 +206,10 @@
           "score": {
             "variety": 20,
             "daily_variety_sum": 199,
-            "total_noodles": 437,
-            "total_response_time_ms": 5423
+            "total_noodles": 474,
+            "total_response_time_ms": 3648
           },
-          "response_time_us": 5423434,
+          "response_time_us": 3648116,
           "status": "success",
           "scored": true
         }
@@ -224,10 +224,10 @@
           "score": {
             "variety": 20,
             "daily_variety_sum": 80,
-            "total_noodles": 178,
-            "total_response_time_ms": 2709
+            "total_noodles": 181,
+            "total_response_time_ms": 1462
           },
-          "response_time_us": 2709608,
+          "response_time_us": 1462067,
           "status": "success",
           "scored": true
         }
@@ -242,10 +242,10 @@
           "score": {
             "variety": 20,
             "daily_variety_sum": 80,
-            "total_noodles": 220,
-            "total_response_time_ms": 3449
+            "total_noodles": 237,
+            "total_response_time_ms": 1896
           },
-          "response_time_us": 3449916,
+          "response_time_us": 1896452,
           "status": "success",
           "scored": true
         }
@@ -260,10 +260,10 @@
           "score": {
             "variety": 20,
             "daily_variety_sum": 80,
-            "total_noodles": 187,
-            "total_response_time_ms": 3151
+            "total_noodles": 194,
+            "total_response_time_ms": 1871
           },
-          "response_time_us": 3151639,
+          "response_time_us": 1871607,
           "status": "success",
           "scored": true
         }
@@ -278,10 +278,10 @@
           "score": {
             "variety": 20,
             "daily_variety_sum": 80,
-            "total_noodles": 169,
-            "total_response_time_ms": 2632
+            "total_noodles": 180,
+            "total_response_time_ms": 1175
           },
-          "response_time_us": 2632154,
+          "response_time_us": 1175267,
           "status": "success",
           "scored": true
         }
@@ -296,10 +296,10 @@
           "score": {
             "variety": 20,
             "daily_variety_sum": 140,
-            "total_noodles": 300,
-            "total_response_time_ms": 4999
+            "total_noodles": 312,
+            "total_response_time_ms": 3009
           },
-          "response_time_us": 4999127,
+          "response_time_us": 3009528,
           "status": "success",
           "scored": true
         }
@@ -314,10 +314,10 @@
           "score": {
             "variety": 20,
             "daily_variety_sum": 200,
-            "total_noodles": 408,
-            "total_response_time_ms": 8251
+            "total_noodles": 460,
+            "total_response_time_ms": 4292
           },
-          "response_time_us": 8251815,
+          "response_time_us": 4292054,
           "status": "success",
           "scored": true
         }
@@ -332,10 +332,10 @@
           "score": {
             "variety": 20,
             "daily_variety_sum": 180,
-            "total_noodles": 331,
-            "total_response_time_ms": 6717
+            "total_noodles": 362,
+            "total_response_time_ms": 3911
           },
-          "response_time_us": 6717675,
+          "response_time_us": 3911770,
           "status": "success",
           "scored": true
         }
@@ -350,10 +350,10 @@
           "score": {
             "variety": 27,
             "daily_variety_sum": 189,
-            "total_noodles": 450,
-            "total_response_time_ms": 9853
+            "total_noodles": 467,
+            "total_response_time_ms": 5520
           },
-          "response_time_us": 9853655,
+          "response_time_us": 5520808,
           "status": "success",
           "scored": true
         }
@@ -368,10 +368,10 @@
           "score": {
             "variety": 27,
             "daily_variety_sum": 243,
-            "total_noodles": 514,
-            "total_response_time_ms": 6256
+            "total_noodles": 555,
+            "total_response_time_ms": 4006
           },
-          "response_time_us": 6256264,
+          "response_time_us": 4006647,
           "status": "success",
           "scored": true
         }
@@ -386,10 +386,10 @@
           "score": {
             "variety": 27,
             "daily_variety_sum": 270,
-            "total_noodles": 858,
-            "total_response_time_ms": 17753
+            "total_noodles": 939,
+            "total_response_time_ms": 12545
           },
-          "response_time_us": 17753088,
+          "response_time_us": 12545329,
           "status": "success",
           "scored": true
         }
@@ -404,10 +404,10 @@
           "score": {
             "variety": 27,
             "daily_variety_sum": 189,
-            "total_noodles": 623,
-            "total_response_time_ms": 9813
+            "total_noodles": 706,
+            "total_response_time_ms": 6782
           },
-          "response_time_us": 9813307,
+          "response_time_us": 6782316,
           "status": "success",
           "scored": true
         }
@@ -422,10 +422,10 @@
           "score": {
             "variety": 27,
             "daily_variety_sum": 189,
-            "total_noodles": 427,
-            "total_response_time_ms": 6008
+            "total_noodles": 448,
+            "total_response_time_ms": 5215
           },
-          "response_time_us": 6008214,
+          "response_time_us": 5215120,
           "status": "success",
           "scored": true
         }
@@ -440,10 +440,10 @@
           "score": {
             "variety": 27,
             "daily_variety_sum": 243,
-            "total_noodles": 522,
-            "total_response_time_ms": 8142
+            "total_noodles": 589,
+            "total_response_time_ms": 6665
           },
-          "response_time_us": 8142322,
+          "response_time_us": 6665833,
           "status": "success",
           "scored": true
         }
@@ -458,10 +458,10 @@
           "score": {
             "variety": 27,
             "daily_variety_sum": 270,
-            "total_noodles": 620,
-            "total_response_time_ms": 10984
+            "total_noodles": 674,
+            "total_response_time_ms": 7336
           },
-          "response_time_us": 10984017,
+          "response_time_us": 7336070,
           "status": "success",
           "scored": true
         }
@@ -476,10 +476,10 @@
           "score": {
             "variety": 27,
             "daily_variety_sum": 243,
-            "total_noodles": 614,
-            "total_response_time_ms": 12392
+            "total_noodles": 649,
+            "total_response_time_ms": 8016
           },
-          "response_time_us": 12392582,
+          "response_time_us": 8016603,
           "status": "success",
           "scored": true
         }
@@ -495,9 +495,9 @@
             "variety": 20,
             "daily_variety_sum": 200,
             "total_noodles": 570,
-            "total_response_time_ms": 8232
+            "total_response_time_ms": 5813
           },
-          "response_time_us": 8232105,
+          "response_time_us": 5813110,
           "status": "success",
           "scored": true
         }
@@ -531,20 +531,20 @@
         },
         "total_balls": {
           "min": 5,
-          "max": 858,
-          "mean": 349.8076923076923,
+          "max": 939,
+          "mean": 373.1923076923077,
           "n": 26
         },
         "response_time_us": {
-          "min": 75870,
-          "max": 17753088,
-          "mean": 5486533.923076923,
+          "min": 33187,
+          "max": 12545329,
+          "mean": 3718897.730769231,
           "n": 26
         },
         "elapsed_us": {
-          "min": 79695,
-          "max": 17755783,
-          "mean": 5491399.115384615,
+          "min": 33734,
+          "max": 12549078,
+          "mean": 3721477.6153846155,
           "n": 26
         }
       }
@@ -556,13 +556,13 @@
       "case_id": "fixture:openapi-sample",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 2,
       "daily_variety_sum": 2,
       "total_balls": 5,
-      "response_time_us": 75870,
-      "elapsed_us": 79695,
+      "response_time_us": 33187,
+      "elapsed_us": 33734,
       "timeout": false,
       "status": "success",
       "scored": true,
@@ -576,7 +576,7 @@
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        75870
+        33187
       ],
       "daily_varieties": [
         2
@@ -600,32 +600,32 @@
       "case_id": "fixture:real-16-a3-d6-mixed-s1007",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 13,
       "daily_variety_sum": 78,
-      "total_balls": 151,
-      "response_time_us": 1057898,
-      "elapsed_us": 1058661,
+      "total_balls": 152,
+      "response_time_us": 1316325,
+      "elapsed_us": 1316989,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        77
+        79
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        199705,
-        196421,
-        209788,
-        181667,
-        158850,
-        111467
+        247423,
+        258734,
+        175419,
+        225407,
+        284932,
+        124410
       ],
       "daily_varieties": [
         13,
@@ -642,8 +642,8 @@
       ],
       "agent_ball_counts": [
         0,
-        76,
-        75
+        75,
+        77
       ],
       "oracle_refill": false
     },
@@ -652,35 +652,35 @@
       "case_id": "fixture:real-16-a3-d9-mixed-s1003",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 13,
       "daily_variety_sum": 116,
-      "total_balls": 171,
-      "response_time_us": 1569885,
-      "elapsed_us": 1573235,
+      "total_balls": 172,
+      "response_time_us": 1377358,
+      "elapsed_us": 1381714,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        58
+        66
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        265945,
-        168627,
-        196693,
-        225705,
-        237090,
-        206816,
-        101827,
-        116298,
-        50884
+        203651,
+        151766,
+        224189,
+        168651,
+        156383,
+        178207,
+        113169,
+        125223,
+        56119
       ],
       "daily_varieties": [
         13,
@@ -700,8 +700,8 @@
       ],
       "agent_ball_counts": [
         0,
-        92,
-        79
+        91,
+        81
       ],
       "oracle_refill": false
     },
@@ -710,36 +710,36 @@
       "case_id": "fixture:real-16-a4-d10-mixed-s1001",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 13,
       "daily_variety_sum": 130,
       "total_balls": 315,
-      "response_time_us": 2443222,
-      "elapsed_us": 2444466,
+      "response_time_us": 2220302,
+      "elapsed_us": 2223659,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        65
+        80
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        343033,
-        379518,
-        320011,
-        308833,
-        276361,
-        203525,
-        163082,
-        195779,
-        189102,
-        63978
+        259472,
+        272230,
+        353270,
+        229043,
+        207659,
+        261901,
+        162930,
+        205068,
+        190116,
+        78613
       ],
       "daily_varieties": [
         13,
@@ -761,9 +761,9 @@
       ],
       "agent_ball_counts": [
         0,
+        109,
         105,
-        102,
-        108
+        101
       ],
       "oracle_refill": false
     },
@@ -772,36 +772,36 @@
       "case_id": "fixture:real-16-a4-d10-mixed-s1005",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 13,
       "daily_variety_sum": 130,
       "total_balls": 310,
-      "response_time_us": 2703185,
-      "elapsed_us": 2704817,
+      "response_time_us": 2609708,
+      "elapsed_us": 2613191,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        38
+        43
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        511247,
-        348595,
-        266188,
-        286435,
-        263569,
-        273144,
-        234707,
-        226381,
-        210738,
-        82181
+        338607,
+        317082,
+        311490,
+        356780,
+        256176,
+        290594,
+        209315,
+        212824,
+        219063,
+        97777
       ],
       "daily_varieties": [
         13,
@@ -823,9 +823,9 @@
       ],
       "agent_ball_counts": [
         0,
-        100,
-        105,
-        105
+        104,
+        99,
+        107
       ],
       "oracle_refill": false
     },
@@ -834,30 +834,30 @@
       "case_id": "fixture:real-16-a4-d4-short-s1002",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 13,
       "daily_variety_sum": 52,
-      "total_balls": 94,
-      "response_time_us": 598012,
-      "elapsed_us": 599514,
+      "total_balls": 96,
+      "response_time_us": 665641,
+      "elapsed_us": 667275,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        42
+        39
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        183847,
-        173889,
-        149882,
-        90394
+        211485,
+        225905,
+        149498,
+        78753
       ],
       "daily_varieties": [
         13,
@@ -873,9 +873,9 @@
       ],
       "agent_ball_counts": [
         0,
-        32,
-        35,
-        27
+        30,
+        34,
+        32
       ],
       "oracle_refill": false
     },
@@ -884,30 +884,30 @@
       "case_id": "fixture:real-16-a4-d4-short-s1006",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 13,
       "daily_variety_sum": 52,
-      "total_balls": 96,
-      "response_time_us": 903151,
-      "elapsed_us": 905114,
+      "total_balls": 97,
+      "response_time_us": 711926,
+      "elapsed_us": 713612,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        47
+        45
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        433084,
-        149853,
-        202772,
-        117442
+        199483,
+        223028,
+        219926,
+        69489
       ],
       "daily_varieties": [
         13,
@@ -924,8 +924,8 @@
       "agent_ball_counts": [
         0,
         36,
-        31,
-        29
+        33,
+        28
       ],
       "oracle_refill": false
     },
@@ -934,36 +934,36 @@
       "case_id": "fixture:real-16-a5-d10-short-s1008",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 13,
       "daily_variety_sum": 130,
-      "total_balls": 241,
-      "response_time_us": 2960033,
-      "elapsed_us": 2961992,
+      "total_balls": 265,
+      "response_time_us": 2140246,
+      "elapsed_us": 2140882,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        34
+        33
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        373028,
-        470923,
-        488392,
-        368062,
-        256957,
-        212378,
-        275757,
-        165893,
-        259301,
-        89342
+        149994,
+        223269,
+        266367,
+        230104,
+        238540,
+        162951,
+        180553,
+        256416,
+        297626,
+        134426
       ],
       "daily_varieties": [
         13,
@@ -986,10 +986,10 @@
       ],
       "agent_ball_counts": [
         0,
-        61,
-        55,
-        64,
-        61
+        67,
+        66,
+        67,
+        65
       ],
       "oracle_refill": false
     },
@@ -998,35 +998,35 @@
       "case_id": "fixture:real-16-a5-d9-short-s1004",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 13,
       "daily_variety_sum": 117,
-      "total_balls": 284,
-      "response_time_us": 3567704,
-      "elapsed_us": 3572094,
+      "total_balls": 294,
+      "response_time_us": 2447951,
+      "elapsed_us": 2448647,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        36
+        28
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        632165,
-        557546,
-        240378,
-        416122,
-        434349,
-        273032,
-        364191,
-        397033,
-        252888
+        211133,
+        340542,
+        274381,
+        352814,
+        260707,
+        224688,
+        356457,
+        327755,
+        99474
       ],
       "daily_varieties": [
         13,
@@ -1048,10 +1048,10 @@
       ],
       "agent_ball_counts": [
         0,
-        66,
-        72,
-        71,
-        75
+        73,
+        74,
+        76,
+        71
       ],
       "oracle_refill": false
     },
@@ -1060,36 +1060,36 @@
       "case_id": "fixture:real-24-a4-d10-mixed-s1015",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 20,
       "daily_variety_sum": 199,
-      "total_balls": 437,
-      "response_time_us": 5423434,
-      "elapsed_us": 5426168,
+      "total_balls": 474,
+      "response_time_us": 3648116,
+      "elapsed_us": 3652764,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         1,
-        98
+        107
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        1012861,
-        1052641,
-        678898,
-        409856,
-        484387,
-        494978,
-        403052,
-        408683,
-        365854,
-        112224
+        372130,
+        354576,
+        496531,
+        411422,
+        333619,
+        496990,
+        336570,
+        337161,
+        353010,
+        156107
       ],
       "daily_varieties": [
         19,
@@ -1111,9 +1111,9 @@
       ],
       "agent_ball_counts": [
         0,
-        137,
-        152,
-        148
+        164,
+        154,
+        156
       ],
       "oracle_refill": false
     },
@@ -1122,30 +1122,30 @@
       "case_id": "fixture:real-24-a4-d4-mixed-s1011",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 20,
       "daily_variety_sum": 80,
-      "total_balls": 178,
-      "response_time_us": 2709608,
-      "elapsed_us": 2714222,
+      "total_balls": 181,
+      "response_time_us": 1462067,
+      "elapsed_us": 1466656,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        106
+        116
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        580218,
-        1201101,
-        666673,
-        261616
+        409362,
+        555693,
+        399016,
+        97996
       ],
       "daily_varieties": [
         20,
@@ -1161,9 +1161,9 @@
       ],
       "agent_ball_counts": [
         0,
-        60,
-        60,
-        58
+        61,
+        63,
+        57
       ],
       "oracle_refill": false
     },
@@ -1172,30 +1172,30 @@
       "case_id": "fixture:real-24-a5-d4-mixed-s1009",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 20,
       "daily_variety_sum": 80,
-      "total_balls": 220,
-      "response_time_us": 3449916,
-      "elapsed_us": 3454665,
+      "total_balls": 237,
+      "response_time_us": 1896452,
+      "elapsed_us": 1897401,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        119
+        110
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        864196,
-        1104840,
-        1205050,
-        275830
+        486758,
+        565749,
+        615712,
+        228233
       ],
       "daily_varieties": [
         20,
@@ -1212,10 +1212,10 @@
       ],
       "agent_ball_counts": [
         0,
-        56,
-        54,
-        62,
-        48
+        57,
+        63,
+        58,
+        59
       ],
       "oracle_refill": false
     },
@@ -1224,30 +1224,30 @@
       "case_id": "fixture:real-24-a5-d4-mixed-s1013",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 20,
       "daily_variety_sum": 80,
-      "total_balls": 187,
-      "response_time_us": 3151639,
-      "elapsed_us": 3156176,
+      "total_balls": 194,
+      "response_time_us": 1871607,
+      "elapsed_us": 1876873,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        105
+        101
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        1342176,
-        902448,
-        741313,
-        165702
+        875205,
+        595726,
+        306147,
+        94529
       ],
       "daily_varieties": [
         20,
@@ -1264,10 +1264,10 @@
       ],
       "agent_ball_counts": [
         0,
-        46,
-        49,
         47,
-        45
+        48,
+        49,
+        50
       ],
       "oracle_refill": false
     },
@@ -1276,30 +1276,30 @@
       "case_id": "fixture:real-24-a5-d4-short-s1014",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 20,
       "daily_variety_sum": 80,
-      "total_balls": 169,
-      "response_time_us": 2632154,
-      "elapsed_us": 2639963,
+      "total_balls": 180,
+      "response_time_us": 1175267,
+      "elapsed_us": 1175777,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        72
+        75
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        884007,
-        951457,
-        569122,
-        227568
+        345401,
+        345079,
+        362111,
+        122676
       ],
       "daily_varieties": [
         20,
@@ -1316,10 +1316,10 @@
       ],
       "agent_ball_counts": [
         0,
-        39,
-        47,
-        40,
-        43
+        36,
+        50,
+        45,
+        49
       ],
       "oracle_refill": false
     },
@@ -1328,13 +1328,13 @@
       "case_id": "fixture:real-24-a5-d7-short-s1010",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 20,
       "daily_variety_sum": 140,
-      "total_balls": 300,
-      "response_time_us": 4999127,
-      "elapsed_us": 5009562,
+      "total_balls": 312,
+      "response_time_us": 3009528,
+      "elapsed_us": 3010520,
       "timeout": false,
       "status": "success",
       "scored": true,
@@ -1348,13 +1348,13 @@
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        771602,
-        499426,
-        905473,
-        853428,
-        812519,
-        855902,
-        300777
+        508329,
+        445516,
+        413106,
+        476417,
+        445622,
+        571691,
+        148847
       ],
       "daily_varieties": [
         20,
@@ -1374,10 +1374,10 @@
       ],
       "agent_ball_counts": [
         0,
-        66,
+        79,
+        69,
         83,
-        72,
-        79
+        81
       ],
       "oracle_refill": false
     },
@@ -1386,13 +1386,13 @@
       "case_id": "fixture:real-24-a6-d10-short-s1016",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 20,
       "daily_variety_sum": 200,
-      "total_balls": 408,
-      "response_time_us": 8251815,
-      "elapsed_us": 8261290,
+      "total_balls": 460,
+      "response_time_us": 4292054,
+      "elapsed_us": 4293239,
       "timeout": false,
       "status": "success",
       "scored": true,
@@ -1406,16 +1406,16 @@
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        795073,
-        679869,
-        1024297,
-        651268,
-        1156742,
-        1317839,
-        1001899,
-        954118,
-        482649,
-        188061
+        652424,
+        444462,
+        466597,
+        442277,
+        380434,
+        458798,
+        491770,
+        297600,
+        444492,
+        213200
       ],
       "daily_varieties": [
         20,
@@ -1439,11 +1439,11 @@
       ],
       "agent_ball_counts": [
         0,
-        82,
-        86,
-        78,
-        86,
-        76
+        92,
+        91,
+        94,
+        94,
+        89
       ],
       "oracle_refill": false
     },
@@ -1452,13 +1452,13 @@
       "case_id": "fixture:real-24-a6-d9-short-s1012",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 20,
       "daily_variety_sum": 180,
-      "total_balls": 331,
-      "response_time_us": 6717675,
-      "elapsed_us": 6722568,
+      "total_balls": 362,
+      "response_time_us": 3911770,
+      "elapsed_us": 3913667,
       "timeout": false,
       "status": "success",
       "scored": true,
@@ -1472,15 +1472,15 @@
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        657953,
-        765161,
-        956582,
-        684540,
-        695559,
-        846549,
-        908116,
-        887199,
-        316016
+        569838,
+        671584,
+        358277,
+        370420,
+        509841,
+        495600,
+        425891,
+        387919,
+        122400
       ],
       "daily_varieties": [
         20,
@@ -1503,11 +1503,11 @@
       ],
       "agent_ball_counts": [
         0,
-        63,
-        65,
+        74,
+        74,
         71,
-        68,
-        64
+        71,
+        72
       ],
       "oracle_refill": false
     },
@@ -1516,33 +1516,33 @@
       "case_id": "fixture:real-32-a6-d7-mixed-s1019",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 27,
       "daily_variety_sum": 189,
-      "total_balls": 450,
-      "response_time_us": 9853655,
-      "elapsed_us": 9859232,
+      "total_balls": 467,
+      "response_time_us": 5520808,
+      "elapsed_us": 5522836,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        130
+        142
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        1099116,
-        1131362,
-        1654859,
-        2059263,
-        2002191,
-        1689154,
-        217710
+        763157,
+        693287,
+        1094931,
+        986348,
+        931740,
+        811275,
+        240070
       ],
       "daily_varieties": [
         27,
@@ -1563,11 +1563,11 @@
       ],
       "agent_ball_counts": [
         0,
-        78,
-        87,
-        102,
-        88,
-        95
+        104,
+        91,
+        96,
+        86,
+        90
       ],
       "oracle_refill": false
     },
@@ -1576,35 +1576,35 @@
       "case_id": "fixture:real-32-a6-d9-mixed-s1023",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 27,
       "daily_variety_sum": 243,
-      "total_balls": 514,
-      "response_time_us": 6256264,
-      "elapsed_us": 6266473,
+      "total_balls": 555,
+      "response_time_us": 4006647,
+      "elapsed_us": 4008819,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        82
+        79
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        498362,
-        532020,
-        798801,
-        819298,
-        741550,
-        954531,
-        647743,
-        1006885,
-        257074
+        421049,
+        441975,
+        356573,
+        571866,
+        529673,
+        488547,
+        462811,
+        559315,
+        174838
       ],
       "daily_varieties": [
         27,
@@ -1627,11 +1627,11 @@
       ],
       "agent_ball_counts": [
         0,
-        99,
-        111,
-        98,
-        96,
-        110
+        102,
+        115,
+        110,
+        113,
+        115
       ],
       "oracle_refill": false
     },
@@ -1640,36 +1640,36 @@
       "case_id": "fixture:real-32-a7-d10-mixed-s1021",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 27,
       "daily_variety_sum": 270,
-      "total_balls": 858,
-      "response_time_us": 17753088,
-      "elapsed_us": 17755783,
+      "total_balls": 939,
+      "response_time_us": 12545329,
+      "elapsed_us": 12549078,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        72
+        71
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        1346944,
-        1583303,
-        1672720,
-        2567148,
-        1644568,
-        2333075,
-        3139517,
-        2174887,
-        1109681,
-        181245
+        1387943,
+        1318690,
+        1595028,
+        2116156,
+        1002393,
+        1256626,
+        1261766,
+        1428601,
+        930092,
+        248034
       ],
       "daily_varieties": [
         27,
@@ -1694,12 +1694,12 @@
       ],
       "agent_ball_counts": [
         0,
-        147,
-        146,
-        149,
-        124,
-        149,
-        143
+        151,
+        160,
+        166,
+        145,
+        153,
+        164
       ],
       "oracle_refill": false
     },
@@ -1708,33 +1708,33 @@
       "case_id": "fixture:real-32-a7-d7-mixed-s1017",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 27,
       "daily_variety_sum": 189,
-      "total_balls": 623,
-      "response_time_us": 9813307,
-      "elapsed_us": 9822760,
+      "total_balls": 706,
+      "response_time_us": 6782316,
+      "elapsed_us": 6786558,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        117
+        124
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        1426298,
-        1056298,
-        1099662,
-        1297068,
-        2468120,
-        2005316,
-        460545
+        1026761,
+        920177,
+        1018407,
+        900045,
+        1146217,
+        1485490,
+        285219
       ],
       "daily_varieties": [
         27,
@@ -1756,12 +1756,12 @@
       ],
       "agent_ball_counts": [
         0,
-        106,
-        111,
-        105,
-        77,
-        112,
-        112
+        119,
+        120,
+        123,
+        113,
+        118,
+        113
       ],
       "oracle_refill": false
     },
@@ -1770,13 +1770,13 @@
       "case_id": "fixture:real-32-a7-d7-short-s1018",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 27,
       "daily_variety_sum": 189,
-      "total_balls": 427,
-      "response_time_us": 6008214,
-      "elapsed_us": 6011078,
+      "total_balls": 448,
+      "response_time_us": 5215120,
+      "elapsed_us": 5217616,
       "timeout": false,
       "status": "success",
       "scored": true,
@@ -1790,13 +1790,13 @@
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        779010,
-        879515,
-        1054211,
-        986795,
-        999790,
-        1022988,
-        285905
+        682154,
+        812915,
+        1015577,
+        794797,
+        577048,
+        882791,
+        449838
       ],
       "daily_varieties": [
         27,
@@ -1818,12 +1818,12 @@
       ],
       "agent_ball_counts": [
         0,
-        69,
-        65,
+        74,
+        76,
         80,
-        67,
-        72,
-        74
+        78,
+        70,
+        70
       ],
       "oracle_refill": false
     },
@@ -1832,35 +1832,35 @@
       "case_id": "fixture:real-32-a7-d9-short-s1022",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 27,
       "daily_variety_sum": 243,
-      "total_balls": 522,
-      "response_time_us": 8142322,
-      "elapsed_us": 8147403,
+      "total_balls": 589,
+      "response_time_us": 6665833,
+      "elapsed_us": 6670839,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        68
+        69
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        645697,
-        890348,
-        841074,
-        813966,
-        720121,
-        911400,
-        1462845,
-        1587379,
-        269492
+        732492,
+        719027,
+        743109,
+        839166,
+        811535,
+        791482,
+        748002,
+        947033,
+        333987
       ],
       "daily_varieties": [
         27,
@@ -1884,12 +1884,12 @@
       ],
       "agent_ball_counts": [
         0,
-        81,
+        109,
         95,
-        84,
-        83,
-        85,
-        94
+        96,
+        97,
+        91,
+        101
       ],
       "oracle_refill": false
     },
@@ -1898,13 +1898,13 @@
       "case_id": "fixture:real-32-a8-d10-short-s1024",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 27,
       "daily_variety_sum": 270,
-      "total_balls": 620,
-      "response_time_us": 10984017,
-      "elapsed_us": 10991422,
+      "total_balls": 674,
+      "response_time_us": 7336070,
+      "elapsed_us": 7338070,
       "timeout": false,
       "status": "success",
       "scored": true,
@@ -1918,16 +1918,16 @@
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        771467,
-        901677,
-        766897,
-        1006327,
-        796217,
-        799150,
-        1587322,
-        1918778,
-        1867505,
-        568677
+        590248,
+        659337,
+        592405,
+        827479,
+        847343,
+        458965,
+        998574,
+        1426535,
+        742344,
+        192840
       ],
       "daily_varieties": [
         27,
@@ -1953,13 +1953,13 @@
       ],
       "agent_ball_counts": [
         0,
-        99,
+        94,
+        110,
+        95,
         91,
-        89,
-        90,
-        89,
-        78,
-        84
+        96,
+        94,
+        94
       ],
       "oracle_refill": false
     },
@@ -1968,35 +1968,35 @@
       "case_id": "fixture:real-32-a8-d9-short-s1020",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 27,
       "daily_variety_sum": 243,
-      "total_balls": 614,
-      "response_time_us": 12392582,
-      "elapsed_us": 12403671,
+      "total_balls": 649,
+      "response_time_us": 8016603,
+      "elapsed_us": 8018934,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        92
+        91
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        1131759,
-        1340090,
-        1107503,
-        1019586,
-        1467527,
-        1854905,
-        2266527,
-        1752627,
-        452058
+        884947,
+        1031728,
+        833058,
+        637425,
+        1048351,
+        1297528,
+        1180157,
+        837103,
+        266306
       ],
       "daily_varieties": [
         27,
@@ -2021,12 +2021,12 @@
       ],
       "agent_ball_counts": [
         0,
-        85,
-        81,
-        82,
-        95,
-        90,
-        89,
+        88,
+        94,
+        88,
+        96,
+        91,
+        100,
         92
       ],
       "oracle_refill": false
@@ -2036,36 +2036,36 @@
       "case_id": "fixture:701",
       "seed": null,
       "generation_parameters": null,
-      "source_commit_sha": "76e768429323ff786d7e341476af3e84c1a7aa18",
+      "source_commit_sha": "37a9af13b1a590e9c3e389480478ad6fd6e5419e",
       "team": "player-a",
       "variety": 20,
       "daily_variety_sum": 200,
       "total_balls": 570,
-      "response_time_us": 8232105,
-      "elapsed_us": 8234353,
+      "response_time_us": 5813110,
+      "elapsed_us": 5819068,
       "timeout": false,
       "status": "success",
       "scored": true,
       "status_detail": null,
       "last_acquisition_at": [
         0,
-        132
+        137
       ],
       "illegal_action_count": 0,
       "fuel_short_count": 0,
       "rejected_response_count": 0,
       "day_budget_exceeded_days": [],
       "daily_response_us": [
-        739112,
-        836233,
-        707326,
-        797491,
-        589437,
-        856214,
-        809874,
-        1290656,
-        1317337,
-        288425
+        684394,
+        431024,
+        531317,
+        673047,
+        805024,
+        544769,
+        651388,
+        455032,
+        675633,
+        361482
       ],
       "daily_varieties": [
         20,
@@ -2088,10 +2088,10 @@
       ],
       "agent_ball_counts": [
         0,
-        136,
-        149,
-        147,
-        138
+        138,
+        150,
+        145,
+        137
       ],
       "oracle_refill": false
     }

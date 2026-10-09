@@ -1,53 +1,81 @@
 # fleet candidate — 評価証跡（Issue #371 / PR #372）
 
-`fleet` を、現行の live 候補（`anytime` / `coverage`、kinds `P,S`）と同じ盤面で比べた記録。計測バイナリの source は `76e7684`（`runs/*/runs.jsonl` の `source_commit_sha`）。
+`fleet` を、これまでの live 候補（`anytime` / `coverage`、kinds `P,S`）と同じ盤面で比べた記録。`fleet` の計測バイナリは `37a9af1`、比較相手は `a7bc3d3`（どちらも `runs/*/runs.jsonl` の `source_commit_sha`。`anytime` / `coverage` のコードはこの間で変わっていない）。
+
+投入手順は [`LIVE-RUNBOOK.md`](LIVE-RUNBOOK.md)。
 
 ## 盤面
 
 | セット | 盤面数 | 内容 |
 |---|---:|---|
 | `corpus/` ＋ 701 | 25 | 調整に使った 24 盤面（16/24/32、3〜8 台、4〜10 日、短日/混在、燃料 1.0〜3.0 倍）＋ 実戦盤面 701 |
-| `corpus-holdout/` | 24 | 同じ分布・別 seed。実装と調整が終わってから一度だけ流した |
+| `corpus-holdout/` | 24 | 同じ分布・別 seed。調整には使っていない |
 | `corpus-hard/` | 12 | 全日が下限付近（`W+H`〜`1.15×(W+H)`）、燃料 1.0 倍、7〜10 日 |
 
-盤面は `gen_corpus.py <出力先> tune|holdout|hard` で再生成できる（seed 固定。`tune` の出力は `corpus/` とバイト一致）。地形はランダム配置を多数決平滑化した合成盤面で、実戦盤面そのものではない。
+`gen_corpus.py <出力先> tune|holdout|hard` で再生成できる（seed 固定。`tune` の出力は `corpus/` とバイト一致）。地形はランダム配置を多数決で平滑化した合成盤面で、実戦盤面そのものではない。
 
-## 結果
+holdout と hard は、初版の完成後に初めて流し、その後の変更（翌日玉数の見積り除外、複数連鎖）の確認にも使った。温度と重みの調整は `corpus/` だけで行ったが、hard の D を見て「高温の連鎖を混ぜる」判断をしているので、hard は完全な未使用セットではない。
 
-`procon-eval --jobs 8`。比較は V → D → B の辞書順。並列実行なので応答時間はここでは比べない。
+## 結果（補給 1 台、kinds `S,P,P,P,P,P,P,P`）
 
-| セット | 相手（kinds `P,S`） | `fleet` 補給 1 台 の W/D/L | V | D | B |
-|---|---|---|---:|---:|---:|
-| corpus＋701 | `anytime:trials=64:seed=42` | 25/0/0 | 500 vs 500 | 3880 vs 3843 | 9090 vs 6078 |
-| corpus＋701 | `coverage:park=none` | 25/0/0 | 500 vs 500 | 3880 vs 3751 | 9090 vs 5716 |
-| holdout | `anytime:trials=64:seed=42` | 24/0/0 | 480 vs 480 | 3451 vs 3366 | 8253 vs 5397 |
-| holdout | `coverage:park=none` | 24/0/0 | 480 vs 480 | 3451 vs 3216 | 8253 vs 4913 |
-| hard | `anytime:trials=64:seed=42` | 12/0/0 | 240 vs 239 | 1833 vs 1696 | 2722 vs 1870 |
-| hard | `coverage:park=none` | 12/0/0 | 240 vs 237 | 1833 vs 1537 | 2722 vs 1721 |
+比較は V → D → B の辞書順。相手は kinds `P,S`。
 
-- `fleet` は `fleet:budget=official:iters=60000`、kinds `S,P,P,P,P,P,P,P`（補給 1 台）。
-- D の上限（系列数×日数）は corpus＋701 で 3882、holdout で 3452、hard で 1850。hard の取りこぼし 17 は 3〜4 台盤面（巡回車 2〜3 台）に集中している。
-- 全 61 盤面・全日で illegal / fuel_short / rejected は 0。`coverage` への fallback も 0。
-- 同じ kinds 同士（`P,S`）でも `fleet` が `coverage` に 24 勝 1 敗（D 3859 vs 3751、B 6281 vs 5716、初版 `03a8541`）。伸びの大半は巡回車を増やせることから来る。
+| セット | `fleet` の設定 | vs `anytime:trials=64:seed=42` W/D/L | vs `coverage:park=none` W/D/L | V | D（上限） | B（anytime / coverage） |
+|---|---|---|---|---:|---:|---:|
+| corpus＋701 | `iters=60000` | 25/0/0 | 25/0/0 | 500 | 3880（3882） | 9698（6078 / 5716） |
+| corpus＋701 | `iters=20000:chains=4` | 25/0/0 | 25/0/0 | 500 | 3880 | 9704 |
+| corpus＋701 | `budget_ms=2000`（live 設定） | 25/0/0 | — | 500 | 3880 | 9894 |
+| holdout | `iters=60000` | 24/0/0 | 24/0/0 | 480 | 3452（3452） | 8705（5397 / 4913） |
+| holdout | `iters=20000:chains=4` | 24/0/0 | 24/0/0 | 480 | 3452 | 8730 |
+| holdout | `budget_ms=2000` | 24/0/0 | — | 480 | 3452 | 8920 |
+| hard | `iters=60000` | 11/0/1 | 12/0/0 | 240 | 1812（1850） | 2792（1870 / 1721） |
+| hard | `iters=20000:chains=4` | 12/0/0 | 12/0/0 | 240 | 1836 | 2830 |
+| hard | `budget_ms=2000` | 12/0/0 | — | 240 | 1836 | 2947 |
 
-再集計: `python3 compare.py runs/<set>-baseline-PS/runs.jsonl anytime runs/<set>-fleet-1S/runs.jsonl fleet`
+- 相手の D は anytime が 3843 / 3366 / 1696、coverage が 3751 / 3216 / 1537（corpus＋701 / holdout / hard）。V は hard で anytime 239、coverage 237。
+- hard の 1 敗（1 連鎖・`iters=60000`）は `hard-24-a5-d7-short-s9005` で D 139 対 140。複数連鎖（live の既定）では出ない。
+- `iters` 指定の行は `--jobs 8`、`budget_ms` の行は `--jobs 2`（1 候補が 4 スレッド使う）。並列実行なので応答時間はこの表では比べない。`budget_ms` の値は CPU 負荷で数球ぶれる。
+- 全 61 盤面・全日で illegal / fuel_short / rejected は 0。`coverage` への fallback も 0。モデルの当日（系列, 玉）は公式リプレイと一致。
+- 同じ kinds 同士（`P,S`）でも `fleet` 初版（`03a8541`）が `coverage` に 24 勝 1 敗（D 3859 対 3751、B 6281 対 5716）。残りの伸びは巡回車を増やせることから来る。現行 `coverage` に `P,P,P,S` を与えると D は 3551 → 3272 に落ちる。
 
-## live 設定での逐次計測
+再集計: `python3 compare.py runs/<set>-baseline-PS/runs.jsonl anytime runs/<set>-fleet-1S/runs.jsonl fleet [ラベル] [-v]`
 
-`runs/sequential-live-2s/`: `fleet:budget=official:budget_ms=2000`、`--jobs 1`。1 日あたりの応答は 2.00〜2.01 秒で、予算どおりに止まる。
+## 応答時間
 
-## 公式簡易サーバーでの受理
+`runs/sequential-live-2s/`: `fleet:budget=official:budget_ms=2000`、`--jobs 1`。
 
-`procon-server-linux-amd64`（sha256 `769e101c…`）に実 CLI で提出。回答時間は 4 秒に短縮。
+| 盤面 | V / D / B | 1 日の最大応答 |
+|---|---|---:|
+| 701（24×24、5 台、10 日） | 20 / 200 / 575 | 2.002 秒 |
+| real-32-a8-d10-short-s1024 | 27 / 270 / 695 | 2.003 秒 |
+| real-16-a4-d4-short-s1002 | 13 / 52 / 98 | 2.000 秒 |
 
-| 盤面 | kinds | 結果 |
-|---|---|---|
-| 701（10 日） | `S,P,P,P,P,P,P,P` | 全日受理、revisions 1..10。サーバーが返す燃料で給油を確認 |
-| 701（10 日） | `--kinds-auto` → `P,P,P,S,P` | 全日受理 |
-| real-16-a4-d4-short-s1002（4 日） | `--kinds-auto` → `P,P,P,P` | 全日受理。最終日開始時の残燃料 4/34/40/7 |
+## 構成の自動選択（`--kinds-auto`）
+
+`kinds_auto_check.py <procon-eval> 'fleet:budget=official:iters=8000' 'fleet:budget=official:iters=20000' 1.05` で、選択規則（補給 1 台と全車巡回を `iters=8000` で試し、全車巡回が V・D を落とさず B +5% 以上なら採用）を 61 盤面に当て、選ばれた構成を `iters=20000` で採点した。
+
+- 補給 1 台固定に対して 5 勝 56 分 0 敗。合計 B 20794 → 20908。
+- 全車巡回が選ばれたのは 5 盤面（16×16 の 3〜4 台・4〜7 日が 4、24×24 の 5 台・4 日が 1）。B は 151→192、95→113、97→121、131→157、212→217。
+- 補給車スロットの探索はやめた。短い試行ではスロットの優劣を当てられず、hard で D を落とした（例: 180 → 174）。
+
+## 公式簡易サーバーでの受理と状態一致
+
+`procon-server-linux-amd64`（sha256 `769e101c…`）に実 CLI で提出（`scripts/campaign/official_cli_smoke.py`）。`server_parity_check.py <出力ディレクトリ>` は、`fleet day plan` ログの `predicted_ends`（提出前のリプレイが予測した翌日の位置・燃料）と、翌日サーバーが `GET /` で返した値を突き合わせる。
+
+| SHA | 盤面 | kinds | 回答時間 | 受理 | 翌日状態の一致 |
+|---|---|---|---:|---|---|
+| `37a9af1` | 701（10 日） | `S,P,P,P,P` | 8 秒 | 10/10 | 9/9 日 |
+| `37a9af1` | real-16-a4-d4-short-s1002 | `--kinds-auto` → `P,P,P,P` | 8 秒 | 4/4 | 3/3 日 |
+| この README と同じ commit | real-32-a8-d10-short-s1024 | `--kinds-auto` → `S,P,P,P,P,P,P,P` | 7 秒 | 10/10 | 9/9 日 |
+
+補給車のいる構成では給油後の燃料も一致している。回答時間 4 秒の smoke は coordinator が solver に渡す時間が 0 になるため、探索はほぼ貪欲初期解になる（`aae6be7` 以降は 0.25 秒だけ探索する）。探索込みの確認は 7〜8 秒の行。
+
+## fuzz
+
+`gen_fuzz.py <出力先> 0 240` の不規則 240 盤面（8〜32 の長方形、到達不能スポットあり、同一セル出発、1〜10 日、しきい値ランダム）＋ openapi-sample を、kinds `P` / `P,S` / `S,P,P,P,P,P,P,P` で実行（`iters=1500`、および `iters=1000:chains=3`）。全 241×3×2 run が `success`、illegal / rejected 0。release は `panic = "abort"` なので、panic が無いことの確認を兼ねる。
 
 ## 既知の限界
 
 - 盤面は合成。他チームの交通量（道路の混雑・渋滞）は offline では再現していない。live では毎日その日の道路状態で計画し直す。
-- 補給 0 台の構成は、燃料が試合全体に足りる盤面でだけ `--kinds-auto` が選ぶ（V・D を落とさず B が 8% 以上増える場合のみ）。73 盤面中 5 盤面で選ばれ、うち 3 盤面で B が 18〜25% 増、2 盤面で 3% 減だった（しきい値導入前の計測）。
-- 外部 Arena には未投入。
+- 全車巡回は途中で給油できない。`--kinds-auto` が選ぶのは offline シミュレーションで得をする盤面だけだが、渋滞で経路が変わると終盤の玉数が予測より落ちる余地がある。
+- 練習 Arena の実績は Arena 専任セッションの台帳（#326）にある。この証跡には含めていない。

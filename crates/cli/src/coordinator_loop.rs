@@ -1129,10 +1129,11 @@ fn solver_budget_ms(ends_at: i64, now_ms: i64) -> u64 {
     u64::try_from(deadline_ms.saturating_sub(now_ms).saturating_sub(5000)).unwrap_or(0)
 }
 
-/// How long `--kinds-auto` may simulate before `POST /agent`. The kind window
-/// is still open while it runs, so it stays well inside the shortest window
-/// the official server offers.
-const AUTO_KINDS_WINDOW: Duration = Duration::from_secs(8);
+/// How long `--kinds-auto` may simulate before `POST /agent`. A missed kind
+/// deadline ends the run (`POST /agent` only ever answers 403 afterwards), and
+/// the official server's default window is 5 s from its start, so this stays
+/// far inside it; trials that are not done by then fall back to one Supply.
+const AUTO_KINDS_WINDOW: Duration = Duration::from_millis(1500);
 
 /// Resolve the `POST /agent` composition for a team of `n_agents`.
 ///
