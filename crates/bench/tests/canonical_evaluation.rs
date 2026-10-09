@@ -729,6 +729,7 @@ fn record_fixture(candidate_id: &str) -> RunRecord {
         last_acquisition_at: None,
         illegal_action_count: 0,
         fuel_short_count: 0,
+        rejected_response_count: 0,
         day_budget_exceeded_days: Vec::new(),
         daily_response_us: vec![100],
         daily_varieties: vec![1],
