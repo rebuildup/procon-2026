@@ -230,9 +230,7 @@ fn main() -> ExitCode {
     let baseline_id = args.baseline.clone();
     let mut merged: Vec<RunRecord> = seen.into_values().collect();
     merged.sort_by(|a, b| {
-        a.case_id
-            .cmp(&b.case_id)
-            .then_with(|| a.candidate_id.cmp(&b.candidate_id))
+        a.case_id.cmp(&b.case_id).then_with(|| a.candidate_id.cmp(&b.candidate_id))
     });
 
     if !merged.iter().any(|r| r.candidate_id == baseline_id) {
@@ -300,7 +298,14 @@ fn main() -> ExitCode {
     for s in &report.per_candidate {
         println!(
             "  {:>4}/{:<4}/{}  runs={} scored={} invalid={} timeout={} panic={}  {}",
-            s.wins, s.draws, s.losses, s.runs, s.scored, s.invalids, s.timeouts, s.panics,
+            s.wins,
+            s.draws,
+            s.losses,
+            s.runs,
+            s.scored,
+            s.invalids,
+            s.timeouts,
+            s.panics,
             s.candidate_id
         );
     }
@@ -478,9 +483,8 @@ fn build_conditions(runs: &[RunRecord], baseline: &str, axes: u8) -> Vec<Conditi
             if *cid == baseline {
                 continue;
             }
-            let slot = acc
-                .entry((ck.clone(), cid.to_owned()))
-                .or_insert((0, 0, 0, 0, 0, 0.0, 0.0, 0.0));
+            let slot =
+                acc.entry((ck.clone(), cid.to_owned())).or_insert((0, 0, 0, 0, 0, 0.0, 0.0, 0.0));
             slot.0 += 1;
             if !rec.is_scored() || !base.is_scored() {
                 slot.4 += 1;
