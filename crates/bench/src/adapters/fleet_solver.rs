@@ -58,6 +58,12 @@ const PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "seed", required: false, doc: "search seed (default 42)" },
     ParamSpec {
+        key: "legs",
+        required: false,
+        doc: "single (default; one path metric per patrol) | pareto (each leg picks \
+              its own time/fuel trade-off so the route fits the tank)",
+    },
+    ParamSpec {
         key: "chains",
         required: false,
         doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
@@ -106,11 +112,19 @@ impl CandidateFactory for FleetFactory {
                 return Err(CandidateError::Build(format!("unknown adapt mode {other:?}")));
             }
         };
+        let legs = match spec.param("legs") {
+            None | Some("single") => 0u8,
+            Some("pareto") => 1,
+            Some("wide") => 2,
+            Some(other) => {
+                return Err(CandidateError::Build(format!("unknown legs mode {other:?}")));
+            }
+        };
         let chains = parse(spec, "chains", 1u32)?;
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, legs }))
     }
 }
 
@@ -122,6 +136,8 @@ pub struct FleetCandidate {
     pub chains: u32,
     /// Live: shrink the window on boards whose search converges sooner.
     pub adapt: bool,
+    /// Per-leg time/fuel trade-offs (Issue #382).
+    pub legs: u8,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -130,7 +146,10 @@ pub struct FleetCandidate {
 /// hard corpus), so the chains differ and tomorrow's replay picks.
 const CHAIN_T0: [f64; 4] = [40.0, 150.0, 400.0, 40.0];
 
+/// Leg metrics the classic per-patrol choice uses.
 const NM: usize = 3;
+/// All leg metrics, including the extra time/fuel trade-offs of `legs=pareto`.
+const NM_ALL: usize = 7;
 const FAST: usize = 0;
 const BAL: usize = 1;
 const NONE: u32 = u32::MAX;
@@ -185,12 +204,17 @@ struct World {
     /// `spot_at[cell]` = spot node on that cell.
     spot_at: Vec<u32>,
     nn: usize,
-    time: [Vec<u32>; NM],
-    fuel: [Vec<u32>; NM],
+    time: [Vec<u32>; NM_ALL],
+    fuel: [Vec<u32>; NM_ALL],
     /// `prev[m][u][cell]` = (previous cell, direction index) on u's tree.
-    prev: [Vec<Vec<(u32, u8)>>; NM],
+    prev: [Vec<Vec<(u32, u8)>>; NM_ALL],
     /// Spots strictly inside the `u -> v` path, with their time offset.
-    via: [Vec<Vec<(u16, u32)>>; NM],
+    via: [Vec<Vec<(u16, u32)>>; NM_ALL],
+    /// `legs=pareto`: per node pair, the `(time, fuel, metric)` trade-offs,
+    /// fastest first. Empty in the classic mode.
+    opts: Vec<Vec<(u32, u32, u8)>>,
+    /// Number of per-patrol metrics the search may pick (3, or 7 for `legs=wide`).
+    metrics: usize,
     steps: u32,
     tomorrow: Option<u32>,
     /// `(today's steps, later days' steps)` when tanks are paced.
@@ -208,7 +232,8 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
 
 impl World {
     #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
-    fn new(state: &MatchState, steps: u32, later: &[u32]) -> Self {
+    fn new(state: &MatchState, steps: u32, later: &[u32], mode: u8) -> Self {
+        let (legs, wide) = (mode == 1, mode == 2);
         let tomorrow = later.first().copied();
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
@@ -289,6 +314,8 @@ impl World {
             stock,
             spot_at,
             nn,
+            opts: Vec::new(),
+            metrics: if wide { NM_ALL } else { NM },
             time: std::array::from_fn(|_| vec![NONE; nn * nn]),
             fuel: std::array::from_fn(|_| vec![NONE; nn * nn]),
             prev: std::array::from_fn(|_| Vec::with_capacity(nn)),
@@ -301,10 +328,29 @@ impl World {
             new_series,
             series_slots,
         };
-        for m in 0..NM {
+        for m in 0..if legs || wide { NM_ALL } else { NM } {
             for u in 0..nn {
                 world.tree(m, u);
             }
+        }
+        if legs {
+            world.opts = (0..nn * nn)
+                .map(|uv| {
+                    let mut all: Vec<(u32, u32, u8)> = (0..NM_ALL)
+                        .filter(|&m| world.time[m][uv] != NONE)
+                        .map(|m| (world.time[m][uv], world.fuel[m][uv], m as u8))
+                        .collect();
+                    all.sort_unstable();
+                    // Keep the time/fuel Pareto set: slower only if leaner.
+                    let mut front: Vec<(u32, u32, u8)> = Vec::new();
+                    for o in all {
+                        if front.last().is_none_or(|l| o.1 < l.1) {
+                            front.push(o);
+                        }
+                    }
+                    front
+                })
+                .collect();
         }
         world
     }
@@ -329,7 +375,11 @@ impl World {
             let edge = match m {
                 FAST => t * 1024 + f,
                 BAL => (t + f) * 1024 + t,
-                _ => (f * 3 + t) * 1024 + t,
+                2 => (f * 3 + t) * 1024 + t,
+                3 => (t * 4 + f) * 1024 + t,
+                4 => (t * 2 + f) * 1024 + t,
+                5 => (t + f * 2) * 1024 + t,
+                _ => f * 1024 + t,
             };
             for d in 0..6 {
                 let j = self.neighbors[i][d];
@@ -408,6 +458,8 @@ struct Visit {
     dep: u32,
     /// Route index the patrol travels to after this visit.
     next: usize,
+    /// Metric of the leg that arrived here.
+    m: u8,
 }
 
 #[derive(Clone, Default)]
@@ -415,6 +467,8 @@ struct Timeline {
     visits: Vec<Visit>,
     /// Leg cut by the end of the day: `(target node, arrival tick)`.
     pending: Option<(usize, u32)>,
+    /// Metric of the pending leg.
+    pending_m: u8,
     fuel: u32,
     escorted: bool,
     stalled: bool,
@@ -450,16 +504,109 @@ struct Start {
 }
 
 impl World {
+    /// `legs=pareto`: pick one time/fuel trade-off per upcoming leg — all
+    /// fastest, then, while the tank cannot pay for them, slow down the leg
+    /// that buys fuel at the least time. Returns `(time, fuel, metric)` per
+    /// route entry from `line.next` (`None` = unreachable spot).
+    fn choose_legs(
+        &self,
+        route: &[u16],
+        line: &Timeline,
+        reserve: u8,
+    ) -> Vec<Option<(u32, u32, u8)>> {
+        let last = *line.visits.last().expect("timeline starts with the start visit");
+        let upcoming = &route[line.next..];
+        // The patrol's `metric` slot doubles as how much of the tank to keep
+        // for later days: none, a third or two thirds.
+        let budget = if line.escorted {
+            u32::MAX
+        } else {
+            line.fuel - line.fuel * u32::from(reserve.min(2)) / 3
+        };
+        let mut horizon = upcoming.len();
+        let mut picks: Vec<Option<(usize, usize)>> = Vec::new();
+        // Slowing legs down shortens how far the day reaches, which in turn
+        // frees fuel: repeat on the shorter horizon until it stops moving.
+        let rounds = if std::env::var_os("FLEET_FIX").is_some() { 4 } else { 1 };
+        for _ in 0..rounds {
+            picks.clear();
+            let (mut prev, mut need) = (last.node, 0u32);
+            for &to in &upcoming[..horizon] {
+                let pair = prev * self.nn + usize::from(to);
+                if self.opts[pair].is_empty() {
+                    picks.push(None);
+                    continue;
+                }
+                picks.push(Some((pair, 0)));
+                need += self.opts[pair][0].1;
+                prev = usize::from(to);
+            }
+            while need > budget {
+                // Cheapest slowdown: least extra time per unit of fuel saved.
+                let mut best: Option<(u32, u32, usize)> = None;
+                for (i, pick) in picks.iter().enumerate() {
+                    let Some((pair, o)) = *pick else { continue };
+                    let (Some(cur), Some(nxt)) =
+                        (self.opts[pair].get(o), self.opts[pair].get(o + 1))
+                    else {
+                        continue;
+                    };
+                    let (dt, df) = (nxt.0 - cur.0, cur.1 - nxt.1);
+                    if best.is_none_or(|(bt, bf, _)| {
+                        u64::from(dt) * u64::from(bf) < u64::from(bt) * u64::from(df)
+                    }) {
+                        best = Some((dt, df, i));
+                    }
+                }
+                let Some((_, df, i)) = best else { break };
+                if let Some((_, o)) = picks[i].as_mut() {
+                    *o += 1;
+                }
+                need -= df;
+            }
+            // Legs the chosen speeds still reach today (the one the day ends
+            // inside included).
+            let (mut tick, mut reach) = (last.dep, 0usize);
+            for pick in &picks {
+                reach += 1;
+                if let Some((pair, o)) = *pick {
+                    tick += self.opts[pair][o].0;
+                    if tick > self.steps {
+                        break;
+                    }
+                }
+            }
+            if reach >= horizon {
+                break;
+            }
+            horizon = reach;
+        }
+        picks.into_iter().map(|pick| pick.map(|(pair, o)| self.opts[pair][o])).collect()
+    }
+
     /// Advance patrol `p` along its route from the timeline's last visit.
     fn advance(&self, sol: &Solution, p: usize, line: &mut Timeline) {
-        let m = usize::from(sol.metric[p]);
+        let classic = sol.metric[p];
         let route = &sol.routes[p];
         line.stalled = false;
         line.pending = None;
+        let chosen =
+            if self.opts.is_empty() { Vec::new() } else { self.choose_legs(route, line, classic) };
+        let from = line.next;
         while line.next < route.len() {
             let last = *line.visits.last().expect("timeline starts with the start visit");
             let to = usize::from(route[line.next]);
-            let (t, f) = (self.t(m, last.node, to), self.f(m, last.node, to));
+            let (t, f, m) = if self.opts.is_empty() {
+                let m = usize::from(classic);
+                (self.t(m, last.node, to), self.f(m, last.node, to), classic)
+            } else {
+                // Legs past the planned horizon take the fastest option.
+                chosen
+                    .get(line.next - from)
+                    .copied()
+                    .unwrap_or_else(|| self.opts[last.node * self.nn + to].first().copied())
+                    .unwrap_or((NONE, NONE, 0))
+            };
             if t == NONE {
                 line.next += 1;
                 continue;
@@ -473,6 +620,7 @@ impl World {
             }
             if last.dep + t > self.steps {
                 line.pending = Some((to, last.dep + t));
+                line.pending_m = m;
                 return;
             }
             line.next += 1;
@@ -481,6 +629,7 @@ impl World {
                 arr: last.dep + t,
                 dep: last.dep + t,
                 next: line.next,
+                m,
             });
         }
     }
@@ -532,7 +681,7 @@ impl World {
         let np = self.patrols.len();
         let mut lines: Vec<Timeline> = (0..np)
             .map(|p| Timeline {
-                visits: vec![Visit { node: self.patrols[p].start, arr: 0, dep: 0, next: 0 }],
+                visits: vec![Visit { node: self.patrols[p].start, arr: 0, dep: 0, next: 0, m: 0 }],
                 fuel: self.patrols[p].budget,
                 ..Timeline::default()
             })
@@ -573,7 +722,6 @@ impl World {
         // Picks: every reflection a patrol stands on a stocked spot.
         let mut events: Vec<(u32, usize, usize)> = Vec::new();
         for (p, line) in lines.iter().enumerate() {
-            let m = usize::from(sol.metric[p]);
             let start_cell = self.nodes[line.visits[0].node];
             if self.spot_at[start_cell] != NONE
                 && (self.time_cost[start_cell] >= 2
@@ -583,7 +731,7 @@ impl World {
                 events.push((1, p, self.spot_at[start_cell] as usize));
             }
             for w in line.visits.windows(2) {
-                for &(node, off) in &self.via[m][w[0].node * self.nn + w[1].node] {
+                for &(node, off) in &self.via[usize::from(w[1].m)][w[0].node * self.nn + w[1].node] {
                     events.push((w[0].dep + off, p, usize::from(node)));
                 }
                 if w[1].node < self.spots {
@@ -592,7 +740,9 @@ impl World {
             }
             if let Some((to, _)) = line.pending {
                 let last = line.visits.last().expect("non-empty timeline");
-                for &(node, off) in &self.via[m][last.node * self.nn + to] {
+                for &(node, off) in
+                    &self.via[usize::from(line.pending_m)][last.node * self.nn + to]
+                {
                     if last.dep + off <= self.steps {
                         events.push((last.dep + off, p, usize::from(node)));
                     }
@@ -850,7 +1000,7 @@ impl World {
             }
             8 => {
                 let p = rng.below(np);
-                sol.metric[p] = u8::try_from(rng.below(NM)).expect("metric");
+                sol.metric[p] = u8::try_from(rng.below(self.metrics)).expect("metric");
             }
             _ => {
                 if sol.serve.is_empty() {
@@ -976,20 +1126,23 @@ impl World {
     }
 
     /// Per-agent sequential answer lists for an evaluated solution.
-    fn emit(&self, sol: &Solution, eval: &Evaluation, agents: usize) -> Vec<Vec<Action>> {
+    fn emit(&self, eval: &Evaluation, agents: usize) -> Vec<Vec<Action>> {
         let mut lists: Vec<Vec<Action>> = vec![Vec::new(); agents];
         // Patrol action lists with the tick each action starts at.
         let mut timed: Vec<Vec<(u32, Option<Direction>)>> = Vec::new();
-        for (p, line) in eval.lines.iter().enumerate() {
-            let m = usize::from(sol.metric[p]);
+        for line in &eval.lines {
             let mut out = Vec::new();
             let mut tick = 0u32;
-            let mut legs: Vec<(usize, usize)> =
-                line.visits.windows(2).map(|w| (w[0].node, w[1].node)).collect();
+            let mut legs: Vec<(usize, usize, usize)> = line
+                .visits
+                .windows(2)
+                .map(|w| (w[0].node, w[1].node, usize::from(w[1].m)))
+                .collect();
             if let Some((to, _)) = line.pending {
-                legs.push((line.visits.last().expect("non-empty").node, to));
+                let last = line.visits.last().expect("non-empty").node;
+                legs.push((last, to, usize::from(line.pending_m)));
             }
-            for (k, &(from, to)) in legs.iter().enumerate() {
+            for (k, &(from, to, m)) in legs.iter().enumerate() {
                 while tick < line.visits[k].dep {
                     out.push((tick, None));
                     tick += 1;
@@ -1121,11 +1274,11 @@ impl FleetCandidate {
     fn finish(
         ctx: &SolverContext<'_>,
         world: &World,
-        sol: &Solution,
+        _sol: &Solution,
         eval: &Evaluation,
     ) -> (AgentActions, Replay) {
         let n = ctx.state.agents.len();
-        let lists = world.emit(sol, eval, n);
+        let lists = world.emit(eval, n);
         let steps = ctx.day_steps as usize;
         let mut output = Vec::with_capacity(n * steps);
         for step in 0..steps {
@@ -1172,7 +1325,7 @@ impl Solver for FleetCandidate {
         }
         let later: Vec<u32> =
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
-        let world = World::new(state, ctx.day_steps, &later);
+        let world = World::new(state, ctx.day_steps, &later, self.legs);
         let window = (self.budget_ms > 0).then(|| {
             // Balls stop improving once the search has converged, and from
             // there a longer answer only costs the fourth ranking axis. The
@@ -1237,7 +1390,7 @@ impl Solver for FleetCandidate {
             let (plan, check) = Self::finish(ctx, &world, sol, eval);
             let tomorrow = match later.split_first() {
                 Some((&steps, rest)) if check.clean => {
-                    let next = World::new(&check.state, steps, rest);
+                    let next = World::new(&check.state, steps, rest, self.legs);
                     next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
                 }
                 _ => (0, 0),
@@ -1329,6 +1482,7 @@ pub fn choose_kinds(
                 seed: 42,
                 chains: 1,
                 adapt: true,
+                legs: 0,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
