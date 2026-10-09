@@ -233,7 +233,10 @@ struct TargetKey {
 /// is open. `key.variant` jitters the coverage cost key for search-solver
 /// trials (#312/#313). Updates `reserved` / `day_claimed` with the chosen
 /// series.
-#[allow(clippy::too_many_arguments, reason = "8 params: state+agent+paths+remaining+key+2 sets+self_target")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "8 params: state+agent+paths+remaining+key+2 sets+self_target"
+)]
 fn patrol_step(
     state: &engine::model::MatchState,
     agent: &Agent,

@@ -329,8 +329,9 @@ fn anytime_b_only_improvement_returned_on_large32() {
     let initial = baseline.decide(&ctx);
     let initial_axes = replay_axes(&state, &initial);
 
+    // Fixed trials mode: deterministic, no wall clock.
     let anytime = registry
-        .build("anytime:budget_ms=5000:seed=42:budget=official")
+        .build("anytime:trials=64:seed=42:budget=official")
         .and_then(|c| c.build_solver())
         .expect("anytime builds");
     let returned = anytime.decide(&ctx);

@@ -1,6 +1,6 @@
 {
   "ENGINE_base": "87595f2",
-  "implementation_sha": "pending commit",
+  "implementation_sha": "5e9771203e8b47cdfb873fae4c1be5ea9a60195e",
   "date": "2026-10-09",
   "classification": "OFFICIAL TIMELINE COMPLIANT",
   "fix": "Ownership-safe self-target: patrol_step gains self_target parameter; target selection exempts self_target from reserved deprioritization; reserved is NEVER mutated to free own target",
@@ -272,5 +272,7 @@
       ],
       "class": "D_WIN"
     }
-  ]
+  ],
+  "note_on_sha": "Measured at merge commit with release-0-4-0 @ 426321a integrated",
+  "trials_note": "B_WIN test uses fixed trials=64 for reproducibility; wall-clock budget_ms=5000 results may vary between machines"
 }
