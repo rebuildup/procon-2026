@@ -230,8 +230,13 @@ fn patrol_step(
             (x.0, x.1, u64::from(x.2) * (8 + jitter), x.3, x.4)
         });
     if let Some((_, _, _, series, _, first)) = target {
+        // Same-tick coordination only: prevent other patrols from targeting
+        // the same series this tick. day_claimed (which persists across ticks)
+        // is NOT updated here — inserting it at movement start causes the
+        // spread window to deprioritize this series on subsequent ticks,
+        // making the patrol switch targets and waste travel (Issue #342).
+        // day_claimed is only updated on actual pickup (claim_on_pick).
         reserved.insert(series);
-        day_claimed.insert(series);
         return legal_step(agent, first, map, remaining);
     }
     Action::wait(agent.id)
