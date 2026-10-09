@@ -13,6 +13,11 @@ on:
         required: false
         default: ""
         description: "Optional exact source main SHA (abort if it has changed)"
+      team_branch:
+        type: string
+        required: true
+        default: "link-personal-research"
+        description: "Existing team PR branch (link-personal-research or sync-research-YYYYMMDD)"
 
 permissions:
   contents: read
@@ -59,7 +64,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: cslab-nituc/procon2026
-          ref: link-personal-research
+          ref: ${{ inputs.team_branch }}
           path: team
           fetch-depth: 0
           token: ${{ steps.team_app.outputs.token || secrets.PROCON_TEAM_WRITE_TOKEN }}
@@ -69,6 +74,7 @@ jobs:
         id: preflight
         env:
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          TARGET_BRANCH: ${{ inputs.team_branch }}
         run: |
           set -euo pipefail
           sha="$(git -C source rev-parse HEAD)"
@@ -82,7 +88,11 @@ jobs:
             echo "::error::Tracked credential-like filenames detected. Review source before copying."
             exit 1
           fi
-          [[ "$(git -C team branch --show-current)" == "link-personal-research" ]] || {
+          if [[ "${TARGET_BRANCH}" != "link-personal-research" && ! "${TARGET_BRANCH}" =~ ^sync-research-[0-9]{8}(-[a-z0-9-]+)?$ ]]; then
+            echo "::error::Invalid target branch; only link-personal-research or sync-research-YYYYMMDD is allowed."
+            exit 1
+          fi
+          [[ "$(git -C team branch --show-current)" == "${TARGET_BRANCH}" ]] || {
             echo "::error::Unexpected target branch"; exit 1;
           }
           [[ -z "$(git -C team status --porcelain)" ]] || {
@@ -150,24 +160,27 @@ jobs:
         if: steps.subtree.outputs.changed == 'true'
         env:
           EXPECTED_TARGET_HEAD: ${{ steps.preflight.outputs.head }}
+          TARGET_BRANCH: ${{ inputs.team_branch }}
         run: |
           set -euo pipefail
-          remote_head="$(git -C team ls-remote origin refs/heads/link-personal-research | cut -f1)"
+          remote_head="$(git -C team ls-remote origin "refs/heads/${TARGET_BRANCH}" | cut -f1)"
           [[ "${remote_head}" == "${EXPECTED_TARGET_HEAD}" ]] || {
             echo "::error::PR branch changed during sync; retry after review"; exit 1;
           }
-          git -C team push origin HEAD:refs/heads/link-personal-research
+          git -C team push origin "HEAD:refs/heads/${TARGET_BRANCH}"
 
       - name: Summarize
         if: always()
         env:
           SOURCE_SHA: ${{ steps.preflight.outputs.sha }}
           CHANGED: ${{ steps.subtree.outputs.changed }}
+          TARGET_BRANCH: ${{ inputs.team_branch }}
         run: |
           {
             echo "## Research subtree sync"
             echo "Source main SHA: ${SOURCE_SHA}"
             echo "Subtree updated: ${CHANGED}"
-            echo "Target PR: https://github.com/cslab-nituc/procon2026/pull/26"
+            echo "Team branch: ${TARGET_BRANCH}"
+            echo "Bootstrap PR: https://github.com/cslab-nituc/procon2026/pull/26 (for link-personal-research only)"
             echo "No team branch was merged by this workflow."
           } >> "${GITHUB_STEP_SUMMARY}"
