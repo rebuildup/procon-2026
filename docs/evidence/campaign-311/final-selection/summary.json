@@ -1,0 +1,63 @@
+{
+  "measurement_sha": "d5a33aa",
+  "parity_status": "PROVISIONAL - MatchSim #342 parity pending",
+  "date": "2026-10-09",
+  "candidates": {
+    "A_anytime_15s": {
+      "id": "anytime:budget_ms=15000:seed=42:budget=official",
+      "sha": "d5a33aa",
+      "status": "D degradation risk - under fix",
+      "701": {
+        "V": 20,
+        "D": 199,
+        "B": 407
+      },
+      "note": "Best D/B when working, but can degrade D"
+    },
+    "B_park_far": {
+      "id": "coverage:budget=official:park=far",
+      "sha": "d5a33aa",
+      "status": "STABLE - recommended",
+      "701": {
+        "V": 20,
+        "D": 198,
+        "B": 358
+      },
+      "note": "Deterministic, fast, consistent"
+    },
+    "C_park_none": {
+      "id": "coverage:budget=official",
+      "sha": "d5a33aa",
+      "status": "STABLE fallback",
+      "701": {
+        "V": 20,
+        "D": 195,
+        "B": 379
+      },
+      "note": "More balls, less D"
+    },
+    "D_fuelaware": {
+      "id": "coverage:budget=official:park=far:fuelaware=true",
+      "sha": "d5a33aa",
+      "status": "CONDITIONAL - not default",
+      "multi_seed": {
+        "W": 6,
+        "D": 41,
+        "L": 13
+      },
+      "note": "Inconsistent across seeds, use only when fuel pressure confirmed"
+    }
+  },
+  "recommendation": {
+    "primary": "coverage:budget=official:park=far",
+    "fallback": "coverage:budget=official",
+    "conditional": "coverage:budget=official:park=far:fuelaware=true",
+    "reasoning": "park=far is deterministic and consistent. anytime has D degradation risk. fuelaware is condition-dependent."
+  },
+  "known_issues": [
+    "MatchSim #342 parity pending - all values provisional",
+    "anytime can degrade D (being fixed)",
+    "fuelaware inconsistent across seeds",
+    "fuel-tight cases show regression with fuelaware"
+  ]
+}
