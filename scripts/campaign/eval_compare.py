@@ -81,9 +81,13 @@ def case_files_from(paths: list[str]) -> list[Path]:
 
 
 def config_label(config: str) -> str:
-    """Filesystem-safe label for one config spec."""
-    cand = config.split("|", 1)[0]
-    label = re.sub(r"[^A-Za-z0-9=+.-]+", "-", cand)
+    """Filesystem-safe label for one config spec (`id|kinds=...`).
+
+    Distinct configs always get distinct labels — the kinds pattern is
+    part of the identity (same candidate id under `S,P,...` vs `P,S` is
+    a different row in the comparison).
+    """
+    label = re.sub(r"[^A-Za-z0-9=+.-]+", "-", config)
     return label.strip("-")
 
 
@@ -199,11 +203,19 @@ def main() -> None:
     sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip() or "unknown"
 
     configs = [(cand, kinds) for cand, kinds in (parse_config(c) for c in args.config)]
+    labels = [config_label(f"{cand}|{kinds}" if kinds else cand) for cand, kinds in configs]
+    if len(set(labels)) != len(labels):
+        raise SystemExit(
+            "config labels collide — different kinds on the same candidate id must stay "
+            f"distinguishable: {list(zip(configs, labels))}"
+        )
     ref_id = args.reference or configs[0][0]
-    ref_labels = [config_label(c) for c, _ in configs if c == ref_id]
-    if not ref_labels:
+    # Resolve the reference label with the same kinds-aware scheme as
+    # `labels` above — a cand-only label would never match and KeyError on
+    # all_runs when the same candidate id appears with different kinds.
+    ref_label = next((lab for (cand, _), lab in zip(configs, labels) if cand == ref_id), None)
+    if ref_label is None:
         raise SystemExit(f"--reference {ref_id!r} is not among the configs")
-    ref_label = ref_labels[0]
 
     all_runs: dict[str, dict[str, dict]] = {}
     for cand, kinds in configs:
