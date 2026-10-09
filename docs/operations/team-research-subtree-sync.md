@@ -9,10 +9,10 @@ Workflow: `.github/workflows/sync-research-to-team.yml`。**手動起動のみ**
 ## 認証（最初に必要）
 
 1. 個人側の GitHub Actions `GITHUB_TOKEN` は個人リポジトリの読取に使う。別のOrganizationリポジトリには書き込めない。
-2. チーム側 `cslab-nituc/procon2026` への書込権限を持つ **GitHub App installation token** または承認済みの適切なPATを、個人側リポジトリのActions Secret **`PROCON_TEAM_WRITE_TOKEN`** として用意する。ワークフローが利用する資格情報はチーム側のGit clone / 非force pushに必要な最小権限とする。
-3. Fine-grained PATを使える場合は、リソースオーナーを `cslab-nituc`、選択リポジトリを `procon2026` のみに限定し、`Contents: Read and write` を付与する。組織の承認設定によってはOwnerの承認が必要。
-4. **外部CollaboratorではFine-grained PATが対象Organizationを選択できない場合がある。** その場合はOwnerにOrganizationメンバーとして追加してもらうか、対象リポジトリへインストールしたGitHub Appの権限を使う。Classic PAT（広いrepo権限）は最小権限にできないので推奨しない。
-5. GitHub Appトークンは短命。GitHub Appsを用いる場合は、別の安全な認証発行手順（App ID/秘密鍵をActions Secret等から読み込み、actions/create-github-app-tokenで短命トークンを生成）に合わせてworkflowの`token:`部分を変更する必要がある。現状のworkflowは**Secretに格納された既存の書込トークンを直接使用するPAT向け構成**であり、GitHub Appトークンの自動発行は未実装。
+2. **推奨：チーム側GitHub App** を `cslab-nituc/procon2026` のみにインストールし、Repository permissionsは `Contents: Read and write`（必要なMetadata readは自動付与）とする。組織管理者によるインストール承認が必要。
+3. 個人側ActionsのRepository Variable **`PROCON_TEAM_APP_CLIENT_ID`** にAppのClient ID、Repository Secret **`PROCON_TEAM_APP_PRIVATE_KEY`** にそのAppの秘密鍵を登録する。ワークフローが `actions/create-github-app-token@v3` でインストール先を `cslab-nituc/procon2026` に限定した**短命のトークン**を発行し、ジョブ終了時に失効させる。
+4. **代替：PAT**。GitHub Appを利用できない場合、個人側のRepository Secret **`PROCON_TEAM_WRITE_TOKEN`** にチーム側への書込トークンを登録する。Fine-grained PATを利用できる場合はResource owner `cslab-nituc`、対象 `procon2026`、`Contents: Read and write` に限定し、必要ならOrg管理者の承認を得る。
+5. **外部CollaboratorはFine-grained PATでのアクセスに制約がある。** 対象Organizationへメンバー追加してもらうか、チーム側GitHub App方式を優先する。Classic PAT（広い`repo`権限）は最小権限にできないので非推奨。AppのClient ID変数が存在する場合はApp経路を優先し、失敗しても自動的にはPATへフォールバックしない。
 
 Secret登録先：`https://github.com/rebuildup/procon-2026/settings/secrets/actions`（GitHub Settings → Secrets and variables → Actions）。Secret値をIssue/PR/ログや会話へ貼らない。
 
@@ -40,7 +40,7 @@ Secret登録先：`https://github.com/rebuildup/procon-2026/settings/secrets/act
 ## 権限・失敗時
 
 - `Resource not accessible by integration`、`Repository not found`：チーム側トークンのスコープ/Org承認/招待を確認。
-- `Missing secret PROCON_TEAM_WRITE_TOKEN`：個人側Actions Secretが未設定。
+- 認証チェック失敗：GitHub AppのClient ID/秘密鍵、インストール先権限、またはPATのActions Secretを確認。
 - 個人側 `main` のSHA不一致：共有ファイルと最新コミットを再点検。
 - PR head競合：Pushせず停止する。チーム側の最新PRに取り直す。
 - `git subtree`/Git tree不一致：Pushせず停止する。同期方式をファイルコピーへ変更しない。
