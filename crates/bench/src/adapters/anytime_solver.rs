@@ -50,11 +50,25 @@ impl CandidateFactory for AnytimeFactory {
         if spec.param("budget") != Some("official") {
             return Err(CandidateError::Build("anytime requires budget=official".into()));
         }
-        let budget_ms = spec
-            .param("budget_ms")
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(0);
-        let seed = spec.param("seed").and_then(|s| s.parse::<u64>().ok()).unwrap_or(42);
+        // Strict parsing: reject invalid values explicitly (Issue #342).
+        // Silent fallback to defaults is forbidden.
+        let budget_ms = match spec.param("budget_ms") {
+            None => 0u32,
+            Some(s) => s.parse::<u32>().map_err(|_| {
+                CandidateError::Build(format!("invalid budget_ms: {s:?}"))
+            })?,
+        };
+        if budget_ms > 59000 {
+            return Err(CandidateError::Build(format!(
+                "budget_ms must be 0..=59000, got {budget_ms}"
+            )));
+        }
+        let seed = match spec.param("seed") {
+            None => 42u64,
+            Some(s) => s.parse::<u64>().map_err(|_| {
+                CandidateError::Build(format!("invalid seed: {s:?}"))
+            })?,
+        };
         Ok(Box::new(AnytimeCandidate { budget_ms, seed }))
     }
 }
