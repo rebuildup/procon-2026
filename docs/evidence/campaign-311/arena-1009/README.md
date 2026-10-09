@@ -625,6 +625,24 @@ sha256 再検証（`58d1a644`）のうえ再投入（本試合）。**cargo の 
 - revisions [4,18,34,56,70,91] — 6/6 全日受理・1日1 POST・error なし・`fleet day plan` 全日 `clean=true`・chains=4
 - 燃料 cap75・kinds 決定 21:30:03（1.5s 打ち切り内・試行 S,P,P,P 採用）・座礁 0 台
 
+## 公式スコア + 実測（match 1966 = `--kinds-auto` × **32×32/7台 最大クラス**・UI `#1967 第2卓`）
+
+`fleet:budget=official:budget_ms=10000` @ `5ddb153` + `--kinds-auto`（同一 binary/worktree・06:45 窓）。
+**32×32 / 8日 / 7台**（**auto 選択: S,P×6** — 7台クラスで auto 初選択）・daySteps [146,165,244,116,142,93,220,154]・燃料 cap344。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | 優勝以外に価値はありますか? | 21 | 168 | 992 | 258.3s |
+| **2** | **ヤバいこれ毒かも!…（当方）** | **21** | **168** | **988** | **85.0s** |
+| 3 | 信州そば | 21 | 168 | 975 | 224.4s |
+| 4–8 | うどん / 堀大輔 / apikey… / 多分うどん / ネオユニヴァース | 21 | 168 | 733–929 | 170.0–424.0s |
+| 9–10 | 🤖ramen / チーム-52c8 | 21 | 153 / 0 | 756 / 0 | 163.4s / 480.0s |
+
+- **rank 2/10: V=21, D=168/168 MAX, B=988（1位差 −4）, 回答 85.0s ≈ 10.6s/日（32×32 は探索が長く、適応制御下でも上限寄りを使用）, rate 964→1029 (+65)**
+- revisions [8,23,37,51,65,80,95,110] — 8/8 全日受理・1日1 POST・error なし・`fleet day plan` 全日 `clean=true`・chains=4・座礁 0 台
+- **auto 試行**: S,P×6 balls=948 vs 全車巡回 balls=259 → **S 構成採用**（7台・大盤では全車巡回の燃料枯渇リスクを正しく棄却）
+- 新版 4 試合（1960/1962/1964/1966）: **rank 1・3・1・2・rate 583→1029（+446）**・D 全試合 MAX・B は全試合 1位差 −6 以内
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -833,7 +851,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **29 行**（1810 … 1962 / 1964、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **30 行**（1810 … 1964 / 1966、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -862,6 +880,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1960-fleet-5ddb153.log` | match 1960（**fleet 新版 `5ddb153` 初投入**・budget 10000・rank 1。除去済み） |
 | `run-1962-fleet-auto.log` | match 1962（`--kinds-auto` 初投入・kinds 試行/選択ログ含む・rank 3。除去済み） |
 | `run-1964-fleet-auto.log` | match 1964（`--kinds-auto` 第2戦・タイブレーク優勝。除去済み） |
+| `run-1966-fleet-auto-7agents.log` | match 1966（`--kinds-auto` × 32×32/7台 最大クラス・rank 2。除去済み） |
 | `verify-5ddb153/` | 新版 `5ddb153` の投入前検証（公式ローカルサーバー・701盤面 10日×7台・燃料上限12）: `fixed7/`（固定kinds）/ `auto7/`（`--kinds-auto`）各 `summary.json`（SHA・candidate・revisions・binary hash）+ `cli.log`（`predicted_ends`・kinds 試行ログ）+ `server.log` |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
