@@ -1,19 +1,30 @@
 //! Single-step transition primitives.
 //!
-//! Each function corresponds to one phase of Q&A Q6's order:
+//! Each function corresponds to one phase of Q&A Q6's order. The official
+//! day is a tick timeline `0..=day_steps` where tick 0 is action-phase-only,
+//! ticks `1..=N-1` run reflection → action, and the final tick `N` runs the
+//! reflection only:
 //!
 //! 1. [`phase_wait`] — interpret missing/invalid actions as `Wait`.
-//! 2. [`phase_move`] — apply each agent's `Move` action (with bounds, terrain
-//!    and fuel checks). Out-of-bounds / impassable / fuel-short actions
-//!    degrade to a no-op `Wait` and are reported as `StepEvent::IllegalMove`.
-//! 3. [`phase_spawn`] — refill spot stock at the start of a new day.
-//! 4. [`phase_acquire`] — pick up balls from spots the agents stand on.
+//! 2. [`try_reserve_move`] — accept a `Move` at the action phase. The move is
+//!    *reserved*; it lands at the reflection of
+//!    `tick + terrain_step_cost(origin)` (Q10 / 募集要項図4).
+//! 3. [`apply_due_moves`] — the reflection half of the move: fuel is charged
+//!    and the position updates **at the due tick**, in that order (Q6:
+//!    燃料の消費 → 移動の反映). Out-of-bounds / impassable / fuel-short
+//!    orders are rejected at reservation and reported as
+//!    `StepEvent::IllegalMove`.
+//! 4. [`phase_spawn`] — refill spot stock at the start of a new day.
+//! 5. [`phase_acquire`] — pick up balls from spots the agents stand on.
 //!    Patrol only: `AgentKind::Supply` cannot collect 玉 (issue #234).
-//! 5. [`phase_fuel`] — deduct the fuel cost of the move that was applied in
-//!    phase 2 (separated so the move phase stays terrain/pure and the fuel
-//!    phase owns the "did we have enough?" decision).
-//! 6. [`phase_traffic_update`] — at end of day, recompute every road cell's
-//!    [`TrafficState`] from today's + yesterday's counts (Q&A Q13).
+//! 6. [`phase_fuel`] — deduct the fuel cost of a move at its reflection.
+//! 7. [`refill_fuel_if_supply_present`] — same-cell supply contact refuels
+//!    after the acquire (Q6: 燃料の補給 is last of the four).
+//! 8. [`record_stay_steps`] — traffic counts *stay* steps at the post-move
+//!    position of every reflection (Q27).
+//! 9. [`phase_traffic_update`] — at end of day, recompute every road cell's
+//!    [`TrafficState`] from the all-team stay-step average over the past 2
+//!    days (Q&A Q13 + 募集要項「道路セルと交通量」).
 //!
 //! The functions are independent so tests can exercise each phase in
 //! isolation; [`super::sim::MatchSim::step`] stitches them together in the
@@ -22,8 +33,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::model::{
-    Action, ActionKind, Agent, AgentKind, Cell, HexCoord, MapGrid, MatchState, Spot, Terrain,
-    TrafficState,
+    Action, ActionKind, Agent, AgentKind, Cell, Direction, HexCoord, MapGrid, MatchState,
+    PendingAction, Spot, Terrain, TrafficState,
 };
 use crate::rules::{
     SPOT_DAILY_PICK_PER_AGENT, TrafficThresholds, agent_at_daily_pick_cap, fuel_cost,
@@ -195,6 +206,143 @@ pub fn apply_moves(agents: &mut [Agent], outcomes: &HashMap<u8, MoveOutcome>) ->
 }
 
 // ---------------------------------------------------------------------------
+// 2b. Reserve — the Q6 action phase accepts a move without applying it.
+// ---------------------------------------------------------------------------
+
+/// Why a `Move` order was refused at the action phase (Q6: an illegal or
+/// step-mismatched order invalidates the WHOLE daily response).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReserveReject {
+    /// The destination is off the board or impassable terrain.
+    Illegal,
+    /// The departure terrain's step count does not fit in the rest of the
+    /// day — the move could not land within the day's last reflection. The
+    /// caller truncates the plan here (the same repair `wire_plan` applies
+    /// before submission) rather than flagging the response.
+    Truncated,
+}
+
+/// Validate and *reserve* one agent's `Move` at an action phase (Q6: 「移動
+/// を予約,燃料は反映フェーズで消費」).
+///
+/// Nothing is mutated: the caller stores the returned [`PendingAction`] and
+/// [`apply_due_moves`] charges the fuel and moves the agent at `due_step`.
+/// `now` is the current tick; `day_limit` is the day's final tick
+/// (`day_steps`) — a move whose due tick would land past it cannot be
+/// reflected within the day.
+///
+/// Fuel is deliberately **not** checked here: the official executability
+/// rule (`fuel >= fuel_cost(origin)`, Issue #342 P0-C) is evaluated at the
+/// reflection that lands the move, so a supply contact on an intervening
+/// tick can still pay for a move that was ordered with an empty tank
+/// (Q22 — 燃料の消費は各ステップの補給より前; `wire_plan`'s cursor models
+/// the same timing).
+///
+/// # Errors
+/// [`ReserveReject`] with the official rejection class. `Illegal` invalidates
+/// the whole response; `Truncated` is the element clock's budget repair (see
+/// the variant docs). A fuel-short landing is flagged by [`apply_due_moves`].
+pub fn try_reserve_move(
+    agent: &Agent,
+    dir: Direction,
+    map: &MapGrid,
+    now: u32,
+    day_limit: u32,
+) -> Result<PendingAction, ReserveReject> {
+    let target = dir.step(agent.pos);
+    let Some(origin) = map.get(agent.pos) else {
+        return Err(ReserveReject::Illegal);
+    };
+    // The move lands after the *departure* terrain's step count elapses
+    // (Q10 / 募集要項図4). `terrain_step_cost` is the same table the wire
+    // budget bills (`crate::wire_plan::terrain_step_cost`).
+    let Some(step_cost) = crate::wire_plan::terrain_step_cost(origin.terrain) else {
+        return Err(ReserveReject::Illegal);
+    };
+    let Some(cell) = map.get(target) else {
+        return Err(ReserveReject::Illegal);
+    };
+    if !cell.terrain.traversable() {
+        return Err(ReserveReject::Illegal);
+    }
+    let Some(due_step) = now.checked_add(step_cost) else {
+        return Err(ReserveReject::Truncated);
+    };
+    if due_step > day_limit {
+        return Err(ReserveReject::Truncated);
+    }
+    Ok(PendingAction::Move { to: target, due_step, fuel_cost: fuel_cost(origin.terrain) })
+}
+
+/// Accept one action at the action phase: `Wait` always reserves;
+/// `Move` goes through [`try_reserve_move`].
+///
+/// # Errors
+/// The [`ReserveReject`] of a refused move. `Wait` never fails.
+pub fn try_reserve(
+    agent: &Agent,
+    action: Action,
+    map: &MapGrid,
+    now: u32,
+    day_limit: u32,
+) -> Result<PendingAction, ReserveReject> {
+    match action.kind {
+        ActionKind::Wait => Ok(PendingAction::Wait { until_step: now.saturating_add(1) }),
+        ActionKind::Move(dir) => try_reserve_move(agent, dir, map, now, day_limit),
+    }
+}
+
+/// The reflection half of a move (Q6: 燃料の消費 → 移動の反映): charge the
+/// departure terrain's fuel and land every in-flight move whose `due_step`
+/// is `now`. Agents are processed in id order so the event stream stays
+/// deterministic.
+///
+/// The fuel check runs here — at the landing reflection — so an intervening
+/// supply contact can pay for the move (Q22). A move that still cannot pay
+/// is a `FuelShort` rejection of the whole response and the agent stays put.
+///
+/// Waiting in-flight actions are simply retired. Move events are emitted at
+/// the landing step — the point the official timeline considers the agent to
+/// have arrived (and therefore the point stay-steps and うどん acquisition
+/// see the new cell).
+pub fn apply_due_moves(state: &mut MatchState, now: u32, events: &mut Vec<StepEvent>) {
+    let due: Vec<u8> =
+        state.in_flight.iter().filter(|(_, p)| p.due_step() == now).map(|(id, _)| *id).collect();
+    for id in due {
+        let Some(pending) = state.in_flight.remove(&id) else { continue };
+        let PendingAction::Move { to, fuel_cost, .. } = pending else {
+            continue; // Wait retires silently
+        };
+        let Some(agent) = state.agents.iter().find(|a| a.id == id) else {
+            continue;
+        };
+        // Settled executability boundary (Issue #342 P0-C): the patrol must
+        // afford the *departure* cost. Supply agents never pay fuel.
+        if agent.kind != AgentKind::Supply && agent.fuel < fuel_cost {
+            events.push(StepEvent::FuelShort { agent_id: id });
+            events.push(StepEvent::IllegalMove {
+                agent_id: id,
+                reason: "fuel short at the move's reflection (Q6: whole response rejected)"
+                    .to_owned(),
+            });
+            state.illegal_action_count = state.illegal_action_count.saturating_add(1);
+            state.fuel_short_count = state.fuel_short_count.saturating_add(1);
+            state.day_response_invalid = true;
+            continue; // the agent stays at its origin
+        }
+        let Some(agent) = state.agents.iter_mut().find(|a| a.id == id) else {
+            continue;
+        };
+        if agent.kind != AgentKind::Supply {
+            agent.fuel = agent.fuel.saturating_sub(fuel_cost);
+        }
+        let from = agent.pos;
+        agent.pos = to;
+        events.push(StepEvent::Moved { agent_id: id, from, to });
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 3. Spawn — refill spot stock at day boundaries.
 // ---------------------------------------------------------------------------
 
@@ -238,9 +386,16 @@ pub fn phase_oracle_refill(agents: &mut [Agent], events: &mut Vec<StepEvent>) {
 }
 
 /// Reset the per-day traffic + pickup bookkeeping.
+///
+/// Also retires any in-flight / queued actions: the day's answer is consumed
+/// by the day, and unstarted trailing actions are dropped exactly the way
+/// `wire_plan::normalize_day_plan` truncates a plan to the day's budget.
 pub fn begin_day(state: &mut MatchState) {
     state.traffic_yesterday = std::mem::take(&mut state.traffic_today);
     state.spot_picks_today.clear();
+    state.in_flight.clear();
+    state.action_queues.clear();
+    state.day_response_invalid = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -348,30 +503,62 @@ pub fn refill_fuel_if_supply_present(
 // 6. Traffic update — at end of day, recompute road states.
 // ---------------------------------------------------------------------------
 
-/// Increment today's traffic counter for `coord` (a road cell).
-pub fn record_traversal(state: &mut MatchState, coord: HexCoord) {
-    if let Some(cell) = state.setting.map.get(coord) {
-        if matches!(cell.terrain, Terrain::Road(_)) {
-            *state.traffic_today.entry(coord).or_insert(0) += 1;
+/// Count one stay-step per agent at its **post-move** position (Q27: 「移動
+/// 後の滞在ステップ数」). Called once per reflection — step 0 is
+/// action-phase-only and does not count, the day's final reflection does.
+///
+/// Spec: 募集要項「道路セルと交通量」 — the traffic volume of a road cell is
+/// the per-team average of stay-steps over the past 2 days. Only the *own*
+/// team's stays are observed by the offline simulator; other teams' stays are
+/// never fabricated from guessed trajectories (see
+/// [`phase_traffic_update`] for the averaging and the prediction caveat).
+pub fn record_stay_steps(state: &mut MatchState) {
+    for agent in &state.agents {
+        if let Some(cell) = state.setting.map.get(agent.pos) {
+            if matches!(cell.terrain, Terrain::Road(_)) {
+                *state.traffic_today.entry(agent.pos).or_insert(0) += 1;
+            }
         }
     }
 }
 
-/// Recompute each road cell's [`TrafficState`] from today's + yesterday's
-/// counts (Q&A Q13 — over 2 days).
+/// Recompute each road cell's [`TrafficState`] from the **all-team stay-step
+/// average** over the past 2 days (Q&A Q13 + 募集要項「道路セルと交通量」):
+///
+/// ```text
+/// traffic = Σ_teams(stay-steps on the cell over yesterday + the day before)
+///           / team_count
+/// ```
+///
+/// `traffic_today` / `traffic_yesterday` hold the **own team's** raw
+/// stay-steps ([`record_stay_steps`]). Other teams' contributions are taken
+/// as 0 here: the offline simulator observes only its own agents, and
+/// fabricating opponents' movement would turn a rollout into a prediction.
+/// Callers that hold an observed all-team total (e.g. a replayed live
+/// match) should pre-scale their counts accordingly; callers that *estimate*
+/// future traffic must label that estimate a prediction and keep it out of
+/// this observation path.
+///
+/// `team_count` is the match's team count (`players` on the wire). A `0`
+/// value is treated as 1 so a single-team setting keeps its plain sum.
 ///
 /// Mutates the map in place and returns the updates for callers / events.
+/// The result is fixed for the whole next day — the official road state is
+/// published at day start and never changes mid-day.
 pub fn phase_traffic_update(
     state: &mut MatchState,
     thresholds: TrafficThresholds,
+    team_count: u32,
 ) -> Vec<(HexCoord, TrafficState)> {
     let mut updates = Vec::new();
+    let divisor = team_count.max(1);
     // Collect coords first to avoid borrow conflict on `map`.
     let road_coords: Vec<HexCoord> = state.setting.map.roads().map(|c| c.coord).collect();
     for coord in road_coords {
         let today = state.traffic_today.get(&coord).copied().unwrap_or(0);
         let yesterday = state.traffic_yesterday.get(&coord).copied().unwrap_or(0);
-        let new_state = thresholds.classify_pair(today, yesterday);
+        let average = today.saturating_add(yesterday) / divisor;
+        let new_state = thresholds.classify(average);
         if let Some(cell) = state.setting.map.get_mut(coord) {
             if let Terrain::Road(ref mut current) = cell.terrain {
                 // Only *changes* are reported: `MatchSim::step` gates
@@ -831,7 +1018,7 @@ mod tests {
         let mut state = MatchState::new(setting).unwrap();
         state.traffic_yesterday.insert(HexCoord::new(0, 0), 3); // yesterday was Busy
         state.traffic_today.insert(HexCoord::new(0, 0), 0); // today is quiet
-        let updates = phase_traffic_update(&mut state, TrafficThresholds::default());
+        let updates = phase_traffic_update(&mut state, TrafficThresholds::default(), 1);
         // Max(0, 3) = 3, classified as Busy.
         let r = updates.iter().find(|(c, _)| *c == HexCoord::new(0, 0)).unwrap();
         assert_eq!(r.1, TrafficState::Busy);
