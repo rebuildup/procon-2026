@@ -559,6 +559,14 @@ sha256 再検証（`58d1a644`）のうえ再投入（本試合）。**cargo の 
 - revisions [8,24,41,55,72,87,102,120,134,151] 全日受理・1日1 POST・燃料給油サイクル作動・座礁 0 台
 - **fleet 系で初の rate 減**（強豪 3 チーム入りのフィールド構成の影響）
 
+## 公式スコア + 実測（match 1954 = fleet 標準 config・16×16/5日・UI `#1955 第2卓`）
+
+`fleet:budget=official:budget_ms=5000` @ `7de05df`。16×16 / 5日 / 4台（S,P,P,P）・全日短日（daySteps [44,39,34,47,41]）・燃料 cap65。UI `#1955 第2卓`（卓id ずれ）。
+
+- **rank 5/10: V=11, D=55/55 MAX（1-4位と MAX クラスタ）, B=92/99（93%）, 回答 29.2s ≈ 5.8s/日, rate 527→583 (+56)**
+- 1位 優勝以外 99（差 −7）・6位 admin は D=54 → 当方が tier2 で上回り rank 5
+- revisions [7,19,33,45,59] 全日受理・1日1 POST・燃料給油サイクル作動（#1P 50→65・#2P 40→65 回復）・座礁 0 台
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -767,7 +775,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **25 行**（1810 … 1946 / 1950、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **26 行**（1810 … 1950 / 1954、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -792,6 +800,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1944-fleet.log` | match 1944（fleet 標準・16×16/6日 純 B 競争。除去済み） |
 | `run-1946-fleet.log` | match 1946（fleet・32×32/10日/7台 rank 5。除去済み） |
 | `run-1950-fleet.log` | match 1950（fleet 標準・24×24/10日 純 B 競争。除去済み） |
+| `run-1954-fleet.log` | match 1954（fleet 標準・16×16/5日 rank 5。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
