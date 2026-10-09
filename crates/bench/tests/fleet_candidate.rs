@@ -65,6 +65,8 @@ fn fleet_requires_official_budget_and_rejects_bad_values() {
     assert!(build("fleet:budget=official:chains=4").is_ok());
     assert!(build("fleet:budget=official:chains=0").is_err());
     assert!(build("fleet:budget=official:chains=9").is_err());
+    assert!(build("fleet:budget=official:budget_ms=500:adapt=off").is_ok());
+    assert!(build("fleet:budget=official:adapt=sometimes").is_err());
 }
 
 #[test]

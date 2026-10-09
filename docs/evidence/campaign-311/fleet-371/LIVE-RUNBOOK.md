@@ -11,12 +11,12 @@ cargo build --release --workspace --locked
 # 練習 Arena（:00/:15/:30/:45 の window に登録して 1 試合）
 infisical run --env=dev -- env PROCON_SOURCE_COMMIT_SHA=$(git rev-parse HEAD) \
   target/release/procon coordinator --arena --next --exit-after-match \
-  --candidate 'fleet:budget=official:budget_ms=5000' --kinds-auto
+  --candidate 'fleet:budget=official:budget_ms=10000' --kinds-auto
 
 # 本選サーバーなど、URL とトークンを直接渡す場合
 target/release/procon coordinator --server http://<host>:<port> --token <token> \
   --exit-after-match \
-  --candidate 'fleet:budget=official:budget_ms=5000' --kinds-auto
+  --candidate 'fleet:budget=official:budget_ms=10000' --kinds-auto
 ```
 
 ## 車種構成
@@ -32,7 +32,8 @@ target/release/procon coordinator --server http://<host>:<port> --token <token> 
 
 ## 探索予算
 
-- `budget_ms` は 1 日あたりの探索時間の上限。応答時間は順位の第 4 軸（V・D・B が全部同点のときだけ効く）なので、5000 を既定にする。
+- `budget_ms` は 1 日あたりの探索時間の**上限**。実際の探索時間は盤面の規模（巡回車数×スポット数）で決まり、16×16 は 1 秒前後、24×24 は 3 秒前後、32×32 は上限まで使う。応答時間は順位の第 4 軸で、練習 Arena では B 同点・回答時間決着が実際に起きた（match 1925）。
+- 上限は `budget_ms=10000` を勧める（32×32 は 4 秒でもまだ玉数が伸びる）。常に上限まで探索させたいときは `:adapt=off` を付ける。
 - coordinator は締切の 5 秒前までしか時間を渡さない。回答時間が短い日は、渡された時間から 0.3 秒引いた範囲で探索し、時間がゼロでも 0.25 秒は探索する。
 - 空きコア（最大 4）で並列に探索する。
 

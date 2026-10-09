@@ -50,6 +50,12 @@ const PARAMS: &[ParamSpec] = &[
         required: false,
         doc: "LIVE wall-clock cap per day plan, 1..59000; overrides iters",
     },
+    ParamSpec {
+        key: "adapt",
+        required: false,
+        doc: "on (default) | off: with budget_ms, stop small boards early \
+              (response time is the fourth ranking axis)",
+    },
     ParamSpec { key: "seed", required: false, doc: "search seed (default 42)" },
     ParamSpec {
         key: "chains",
@@ -93,11 +99,18 @@ impl CandidateFactory for FleetFactory {
             )));
         }
         let seed = parse(spec, "seed", 42u64)?;
+        let adapt = match spec.param("adapt") {
+            None | Some("on") => true,
+            Some("off") => false,
+            Some(other) => {
+                return Err(CandidateError::Build(format!("unknown adapt mode {other:?}")));
+            }
+        };
         let chains = parse(spec, "chains", 1u32)?;
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains }))
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
     }
 }
 
@@ -107,6 +120,8 @@ pub struct FleetCandidate {
     pub seed: u64,
     /// Offline chain count; live runs one chain per spare core (at most 4).
     pub chains: u32,
+    /// Live: shrink the window on boards whose search converges sooner.
+    pub adapt: bool,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -1159,7 +1174,15 @@ impl Solver for FleetCandidate {
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
         let world = World::new(state, ctx.day_steps, &later);
         let window = (self.budget_ms > 0).then(|| {
-            let budget = Duration::from_millis(u64::from(self.budget_ms));
+            // Balls stop improving once the search has converged, and from
+            // there a longer answer only costs the fourth ranking axis. The
+            // converged budget grew with (patrols x spots)^2 on the corpus:
+            // 16x16 boards were flat from 0.25 s, 24x24 from about 2 s, and
+            // 32x32 still gained at 4 s.
+            let scale = (world.patrols.len() * world.spots) as u64;
+            let converged = (scale * scale / 3).max(400);
+            let cap = u64::from(self.budget_ms);
+            let budget = Duration::from_millis(if self.adapt { cap.min(converged) } else { cap });
             if ctx.remaining_ms == u32::MAX {
                 budget
             } else {
@@ -1300,8 +1323,13 @@ pub fn choose_kinds(
         };
         let sender = sender.clone();
         std::thread::spawn(move || {
-            let solver =
-                FleetCandidate { iters: KINDS_TRIAL_ITERS, budget_ms: 0, seed: 42, chains: 1 };
+            let solver = FleetCandidate {
+                iters: KINDS_TRIAL_ITERS,
+                budget_ms: 0,
+                seed: 42,
+                chains: 1,
+                adapt: true,
+            };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
                     let score = (result.variety, result.daily_variety_sum, result.total_balls);
