@@ -5,7 +5,9 @@ def nbrs(r,c,H,W):
     for dr,dc in ((0,1),(0,-1),(1,0),(-1,0)):
         rr,cc=r+dr,c+dc
         if 0<=rr<H and 0<=cc<W: yield rr,cc
+TAG='real'
 def gen(seed,size,agents,days,short,fuel_mult):
+    global TAG
     rng=random.Random(seed); H=W=size
     frac=[rng.uniform(.2,.35),rng.uniform(.18,.3),rng.uniform(.2,.3),rng.uniform(.08,.2)]
     tot=sum(frac); frac=[f/tot for f in frac]
@@ -44,17 +46,21 @@ def gen(seed,size,agents,days,short,fuel_mult):
     for r,c in picked[nspots:]:
         g[r][c]=0; ag.append(r*W+c)
     lo,hi=W+H,(W+H)*4
-    if short: hi=int((W+H)*1.6)
+    if short: hi=int((W+H)*(1.6 if short is True else short))
     ds=[rng.randint(lo,hi) for _ in range(days)]
-    return {"case_id":f"fixture:real-{size}-a{agents}-d{days}-{'short' if short else 'mixed'}-s{seed}","seed":None,"generation_parameters":None,
-      "source":{"kind":"fixture","name":f"real-{size}-a{agents}-d{days}-{'short' if short else 'mixed'}-s{seed}"},
+    return {"case_id":f"fixture:{TAG}-{size}-a{agents}-d{days}-{'short' if short else 'mixed'}-s{seed}","seed":None,"generation_parameters":None,
+      "source":{"kind":"fixture","name":f"{TAG}-{size}-a{agents}-d{days}-{'short' if short else 'mixed'}-s{seed}"},
       "startsAt":1778227200,"daySeconds":[60]*days,"daySteps":ds,"map":{"height":H,"width":W,"cells":g},"spots":spots,"agents":ag,
       "fuelLimits":int(ds[0]*fuel_mult),"players":10,"busyThreshold":3,"jammedThreshold":8}
-out=sys.argv[1]; names=[]
-seed=1000
+out=sys.argv[1]; mode=sys.argv[2] if len(sys.argv)>2 else 'tune'; names=[]
+globals()['TAG']={'tune':'real','holdout':'hold','hard':'hard'}[mode]
+seed={'tune':1000,'holdout':5000,'hard':9000}[mode]
 for size,agopts in ((16,(4,4,3,5)),(24,(5,5,4,6)),(32,(7,7,6,8))):
-    for i in range(8):
+    for i in range(8 if mode!='hard' else 4):
         seed+=1; rng=random.Random(seed*7)
-        c=gen(seed,size,agopts[i%4],rng.choice([4,6,7,9,10]),short=(i%2==1),fuel_mult=[1.0,2.4,1.5,3.0][i%4] if i<4 else rng.uniform(1,3))
+        if mode=='hard':
+            c=gen(seed,size,agopts[i%4],rng.choice([7,9,10]),short=1.15,fuel_mult=1.0)
+        else:
+            c=gen(seed,size,agopts[i%4],rng.choice([4,6,7,9,10]),short=(i%2==1),fuel_mult=[1.0,2.4,1.5,3.0][i%4] if i<4 else rng.uniform(1,3))
         p=f"{out}/{c['source']['name']}.json"; json.dump(c,open(p,'w')); names.append(p)
 print(','.join(names))
