@@ -1,0 +1,37 @@
+{
+ "command": [
+  "target/release/procon-eval",
+  "--cases",
+  "openapi-sample",
+  "--case-files",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-16-a3-d9-short-s62003.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-16-a4-d10-short-s62001.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-16-a4-d7-short-s62002.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-16-a5-d10-short-s62004.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-24-a4-d9-short-s62007.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-24-a5-d9-short-s62005.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-24-a5-d9-short-s62006.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-24-a6-d10-short-s62008.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-32-a6-d9-short-s62011.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-32-a7-d9-short-s62009.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-32-a7-d9-short-s62010.json,docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-32-a8-d7-short-s62012.json",
+  "--candidates",
+  "fleet:budget=official:budget_ms=2000:adapt=on",
+  "--jobs",
+  "4",
+  "--output-dir",
+  "docs/evidence/campaign-311/eval-377/runs/hardextreme-fleet-baseline/runs/fleet-budget=official-budget-ms=2000-adapt=on-S-P-P-P-P-P-P-P",
+  "--quiet",
+  "--kinds",
+  "S,P,P,P,P,P,P,P"
+ ],
+ "candidate_id": "fleet:budget=official:budget_ms=2000:adapt=on",
+ "kinds": "S,P,P,P,P,P,P,P",
+ "case_files": [
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-16-a3-d9-short-s62003.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-16-a4-d10-short-s62001.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-16-a4-d7-short-s62002.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-16-a5-d10-short-s62004.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-24-a4-d9-short-s62007.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-24-a5-d9-short-s62005.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-24-a5-d9-short-s62006.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-24-a6-d10-short-s62008.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-32-a6-d9-short-s62011.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-32-a7-d9-short-s62009.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-32-a7-d9-short-s62010.json",
+  "docs/evidence/campaign-311/eval-377/corpus-hard-extreme/hard2-32-a8-d7-short-s62012.json"
+ ],
+ "jobs": 4,
+ "source_commit_sha": "0a0fddf2419db9df549dc4b58f981bb1c9a8d222",
+ "wall_clock_s": 43.6
+}

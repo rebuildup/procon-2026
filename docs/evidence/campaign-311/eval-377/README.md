@@ -101,6 +101,24 @@ python3 scripts/campaign/eval_compare.py \
 - ラベルは kinds 込み（`config_label` が `id|kinds` 全体を正規化）。
   同一 candidate id に異なる kinds を付けると衝突検出で異常終了する。
 
+### hard-extreme（seed 62001..62012, 12 面: 全日 `W+H`・燃料 1.0 倍）
+
+`runs/hardextreme-fleet-baseline/compare.json`（reference: `anytime-PS`）。
+
+| ラベル | vs anytime-PS（辞書順） | V 計 | D 計 | B 計 | invalid |
+|---|---|---:|---:|---:|---:|
+| `fleet-live2s` | W12 D0 L0 | 240 | 2068 | 2886 | 0 |
+| `fleet-chains4` | W11 D0 L1 | 240 | 2049 | 2783 | 0 |
+| `fleet-PS-chains4` | W11 D0 L1 | 240 | 1970 | 2316 | 0 |
+| `anytime-PS`（reference） | — | 237 | 1863 | 1982 | 0 |
+
+- 燃料タイト・歩数下限の最悪条件でも fleet は anytime に全面優位
+  （V 計 240 vs 237）。敗北 2 盤面は D の 3〜4 球差で、B 差は毎回 +30 球前後
+  （`fleet-chains4` vs `anytime-PS`: s62010 で D237/B308 vs D240/B269）。
+- invalid 0。`fleet-chains4`（S,P×8）と `fleet-PS-chains4` の kinds 差は
+  hard-extreme では D +79 / B +467 と holdout2 より大きく、
+  S 優先 kinds の燃料効率が厳しい盤面で効いている。
+
 ## 既知の限界
 
 - `budget_ms` の行は CPU 負荷（本計測中も並行 agent が重い探索を回して
@@ -114,5 +132,4 @@ python3 scripts/campaign/eval_compare.py \
 
 - sequential 再計測（`--jobs 1`）: 応答時間を軸 4 の証拠にするための
   `fleet-live2s` 専用バッチ。
-- `corpus-hard-extreme`（燃料 1.0 倍＋全日下限 12 面）での baseline。
 - #374 / #375 / #376 の各候補を同一ラベル形式で holdout2 に流す比較。
