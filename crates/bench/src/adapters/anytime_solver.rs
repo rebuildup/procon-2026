@@ -133,7 +133,7 @@ fn generate_variant(ctx: &SolverContext<'_>, seed: u64) -> AgentActions {
     let candidate = CoverageCandidate {
         park_risk: true,
         variant: seed,
-        fuel_aware: false,
+        
     };
     candidate.decide(ctx)
 }
@@ -148,7 +148,7 @@ impl Solver for AnytimeCandidate {
         // Initial solution: park=far (current best). Byte-identical to the
         // `coverage:budget=official:park=far` baseline, so returning it
         // unchanged cannot score below that candidate's full-match D.
-        let initial = CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }.decide(ctx);
+        let initial = CoverageCandidate { park_risk: true, variant: 0 }.decide(ctx);
         let initial_score = score_plan(ctx, &initial);
         let mut best = initial.clone();
         let mut best_score = initial_score;
