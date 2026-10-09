@@ -195,7 +195,7 @@ impl Solver for AnytimeCandidate {
             trial += 1;
 
             // Early stop: no improvement for many iterations.
-            if no_improve_count > 500 {
+            if no_improve_count > 2000 {
                 break;
             }
         }

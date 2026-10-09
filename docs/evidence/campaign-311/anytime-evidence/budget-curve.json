@@ -1,0 +1,53 @@
+{
+  "candidate": "anytime:budget_ms=N:seed=42:budget=official",
+  "implementation_sha": "7992b53",
+  "measurement_sha": "d5a33aa",
+  "date": "2026-10-09",
+  "parity_status": "PROVISIONAL - MatchSim #342 pending",
+  "case": "fixture:701 (10 days)",
+  "budget_curve": {
+    "0s": {
+      "V": 20,
+      "D": 198,
+      "B": 358,
+      "time_day_s": 0.01
+    },
+    "5s": {
+      "V": 20,
+      "D": 199,
+      "B": 369,
+      "time_day_s": 5.01,
+      "D_gain": 1,
+      "B_gain": 11
+    },
+    "15s": {
+      "V": 20,
+      "D": 199,
+      "B": 369,
+      "time_day_s": 14.87
+    },
+    "30s": {
+      "V": 20,
+      "D": 199,
+      "B": 369,
+      "time_day_s": 23.39
+    },
+    "45s": {
+      "V": 20,
+      "D": 199,
+      "B": 369,
+      "time_day_s": 25.09
+    }
+  },
+  "conclusion": {
+    "saturation_point": "5s",
+    "recommended_budget_ms": 5000,
+    "D_gain": 1,
+    "B_gain": 11,
+    "note": "Longer budgets (15-45s) do not improve further. 45s uses only 25s due to early stopping."
+  },
+  "search_parameters": {
+    "early_stop_threshold": 2000,
+    "acceptance": "two-phase (D increase, then B increase with D maintained)"
+  }
+}
