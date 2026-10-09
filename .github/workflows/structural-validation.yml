@@ -22,3 +22,23 @@ jobs:
         run: cargo clippy -p bench --all-targets --locked -- -D warnings
       - name: Structural candidate tests
         run: cargo test -p bench structural_ --locked -- --nocapture
+      - name: Official evaluator smoke (same fixtures and kinds)
+        shell: bash
+        run: |
+          mkdir -p target/structural-eval
+          PROCON_SOURCE_COMMIT_SHA="${GITHUB_SHA}" \
+            cargo run -q --locked -p bench --bin procon-eval -- \
+              --cases medium-16x16,large-32x32 \
+              --candidates 'structural:trials=8:seed=42:budget=official,anytime:trials=64:seed=42:budget=official,coverage:budget=official:park=far' \
+              --baseline 'anytime:trials=64:seed=42:budget=official' \
+              --kinds 'P,S' \
+              --output-dir target/structural-eval
+          cat target/structural-eval/report.md
+      - name: Publish evaluator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: structural-eval-${{ github.sha }}
+          path: target/structural-eval
+          if-no-files-found: ignore
+          retention-days: 7
