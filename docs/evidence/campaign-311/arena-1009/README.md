@@ -302,6 +302,25 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 - 回答 14.4s ≈ 2.1s/日 — 小盤では早期打ち切りが頻発（5s 予算未満）
 - 旧版との比較は盤面差（4台・16×16）があるため因果断定せず。**B 比率の向上傾向（51→55→51→68→73%）は #354 の B 改善受理が効き始めた可能性**（要継続観測）
 
+## 公式スコア + 実測（match 1906 = **PR #364**・目標振動修正 + B 改善・UI `#1908 第3卓`）
+
+`anytime:budget_ms=5000:seed=42:budget=official` @ **`bf17fd6`**（PR #364 現 head — **`49bac1fd` ownership-safe self-target / day_claimed 振動修正 + release tip `426321ae` 統合**。指示の 49bac1fd は途中コミットのため head を採用）。
+バイナリ sha256 `ab60bc4f…`（専用 target）。16×16 / 9日 / 4台（P,S,P,S）。UI `#1908 第3卓`（3卓ずれ）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | 色彩 | 13 | 116 | 194 | 239.4s |
+| 2–7 | newPC / OKJ-Admin / 堀大輔 / 𰻞𰻞 / admin / WhiteBoy | 13 | 114–115 | 170–200 | 8.1–128.7s |
+| **8** | **ユ（当方）** | **13** | **109** | **132** | **12.4s** |
+| 9–10 | まうす / Papasta | 13 | 85 / 76 | 122 / 100 | 10.9s / 279.8s |
+
+- **rank 8/10・rate 228→245（+17・3試合連続上昇、累計 188→245）**
+- **D=109/117（−8）** — 1位 −7・WhiteBoy（114）に届かず tier2 で順位確定。**全日短日**（daySteps 33–48）条件での 8 欠落
+- **B=132/194（68%）** — 順位には未反映（tier2 で決着）だが比率は維持
+- revisions [6,20,30,47,61,77,89,100,123] — 9/9 全日受理・1日1 POST・error なし
+- 燃料 cap80 全 agent 恒常（座礁 0）・4/4 全日稼働・回答 ≈1.4s/日（短日では早期打ち切り頻発）
+- **1903（同予算・`426321ae`）との差分 = 振動修正のみ** — 盤面差（4台/16×16 共通だが日数 7→9・daySteps 構成が違い）があるため単ため単純比較はしない
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -510,7 +529,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **10 行**（1810 … 1894 / 1903、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **11 行**（1810 … 1903 / 1906、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -520,6 +539,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1888-s7.log` / `run-1891-retune.log` | match 1888（seed ablation）/ 1891（Stage 2 系初投入）の同上（除去済み） |
 | `run-1894-6p1s.log` | match 1894（6P1S 構成・Supply 欠落の縮退観測。除去済み） |
 | `run-1903-rel-anytime.log` | match 1903（release 統合 anytime・`426321ae`/`d9e067f2`。除去済み） |
+| `run-1906-364.log` | match 1906（PR #364 振動修正版・`bf17fd6`/`ab60bc4f`。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
