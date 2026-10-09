@@ -241,6 +241,12 @@ fn patrol_step(
     key: TargetKey,
     day_claimed: &mut BTreeSet<u32>,
     reserved: &mut BTreeSet<u32>,
+    // The patrol's own in-flight target series. It must NOT be
+    // deprioritized by reserved.contains on re-evaluation ticks, or the
+    // patrol abandons it mid-travel (Issue #364). reserved is shared
+    // across patrols and must NOT be mutated to free it — another patrol
+    // may have reserved the same series at a different spot.
+    self_target: Option<u32>,
 ) -> (Action, Option<u32>) {
     let map = &state.setting.map;
     let can_pick_here = map.get(agent.pos).and_then(|c| c.spot.as_ref()).is_some_and(|s| {
@@ -392,13 +398,6 @@ impl Solver for CoverageCandidate {
             }
 
             let remaining = day_steps - clock[i];
-            // Free this patrol's own in-flight target from `reserved` so the
-            // target selector does not deprioritize it as "claimed by someone
-            // else". Without this, the patrol abandons its target mid-travel
-            // and oscillates between destinations (Issue #364).
-            if let Some(&prev) = self_targeted.get(&i) {
-                reserved.remove(&prev);
-            }
             let action = if agents[i].kind == AgentKind::Patrol {
                 // Fuel-return override (Issue #339): a patrol with critically
                 // low fuel heads for its paired Supply's **landing cell**
@@ -433,6 +432,7 @@ impl Solver for CoverageCandidate {
                         TargetKey { spread_window, variant: self.variant },
                         &mut day_claimed,
                         &mut reserved,
+                        self_targeted.get(&i).copied(),
                     );
                     // Record this patrol's target so we can free it from
                     // `reserved` on the next tick (Issue #364 oscillation fix).

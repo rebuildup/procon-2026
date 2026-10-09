@@ -301,3 +301,46 @@ fn anytime_no_improvement_returns_initial_plan_unchanged() {
         "returned plan must not regress: {returned_axes:?} vs initial {initial_axes:?}"
     );
 }
+
+/// Regression test: B-only improvement must be returned (Issue #364).
+///
+/// Uses `fixture:large-32x32` where anytime produces V=4/D=4/B=21 vs
+/// coverage's V=4/D=4/B=14. V and D are identical; B strictly increases.
+/// The final returned plan must reflect this B gain.
+#[test]
+fn anytime_b_only_improvement_returned_on_large32() {
+    let case = bench::CaseSpec::from_bundled_fixture("large-32x32").unwrap();
+    let pattern = bench::kinds::parse_kinds("P,S,P,S,P").unwrap();
+    let kinds = bench::kinds::resolve_kinds(Some(&pattern), case.setting.agents.len());
+    let team = domain::PlayerId::new("player-a").unwrap();
+    let setting = case.to_engine_setting_with_kinds(&team, Some(&kinds)).unwrap();
+    let state = MatchState::new(setting).unwrap();
+    let ctx = engine::model::SolverContext::from_state(&state);
+    let registry = CandidateRegistry::builtin();
+
+    let baseline = registry
+        .build("coverage:budget=official:park=far")
+        .and_then(|c| c.build_solver())
+        .expect("park=far builds");
+    let initial = baseline.decide(&ctx);
+    let initial_axes = replay_axes(&state, &initial);
+
+    let anytime = registry
+        .build("anytime:budget_ms=5000:seed=42:budget=official")
+        .and_then(|c| c.build_solver())
+        .expect("anytime builds");
+    let returned = anytime.decide(&ctx);
+    let returned_axes = replay_axes(&state, &returned);
+
+    // V must be identical
+    assert_eq!(returned_axes.0, initial_axes.0, "V must be the same for B_WIN classification");
+    // D must be identical
+    assert_eq!(returned_axes.1, initial_axes.1, "D must be the same for B_WIN classification");
+    // B must be strictly greater
+    assert!(
+        returned_axes.2 > initial_axes.2,
+        "B must strictly increase for B_WIN: got {} vs initial {}",
+        returned_axes.2,
+        initial_axes.2
+    );
+}
