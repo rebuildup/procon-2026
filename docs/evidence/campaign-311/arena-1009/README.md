@@ -244,6 +244,31 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 | 1883 | 15s | 32×32/9日 | 207/207 MAX | 55% | 15.9s | ≈15s（公式値から） |
 | 1885 | 30s | 32×32/5日 | 124/125（−1） | 51% | 19.3s | **25.1/26.4/18.4/13.1/10.3s（後半早期打ち切り）** |
 
+## 公式スコア + 実測（match 1888 = legacy experimental seed ablation ／ match 1891 = **Stage 2 系初投入** 公式時系列再チューン coverage）
+
+### match 1888 — `anytime:budget_ms=5000:seed=7:budget=official` @ `f848f27`（legacy experimental）
+
+16×16 / 7日 / 4台。UI 卓 = **`#1889 第2卓`**（lobby 1888 → UI +1 の従来パターン）。
+**rank 9/10: V=14, D=95/98（−3）, B=121, 回答 14.1s ≈ 2.0s/日（5s 予算に対し早期打ち切りが頻発した形）, rate 179→193 (+14)**。
+燃料 cap143 全 agent 恒常・座礁 0・4/4 全日稼働。revisions [1..7 相当] 全日受理。seed=7 は任意選択（offline seed sweep データなし・明記）。
+
+### match 1891 — `coverage:budget=official:park=none` @ **`5f700e5`**（**Stage 2 系初投入**）
+
+**PR #360（公式タイムクロック着地タイムラインへ coverage を再チューン + 新ENGINE `6431b25`）の初 live。**
+交互 kinds（P,S）のまま計画器改善単体を実験。24×24 / 7日 / 5台。UI `#1891 第1卓`（卓ID一致）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | 色彩 | 14 | 98 | 265 | 223.3s |
+| 2–9 | 聖橋高専 / やじゅうせんぱい / 堀大輔 / 優勝以外 / WhiteBoy / チーム-d1bd / 🤖SOBA / C0FFEE | 14 | 96–98 | 218–264 | 7.8–400.9s |
+| **10** | **ユ** | **14** | **85** | **179** | **4.3s** |
+
+- **D=85/98（−13）** — 上位は 96–98。**B=179/265（68%）**。rank 10、rate 193→188（−5）。
+- 受理: revisions [1,19,33,49,66,82,102] — **新ENGINE 実装で 7/7 全日 accepted・1日1 POST・error なし**（公式時系列計画が実サーバーで受理されることの初実証）。
+- 燃料 cap135: **座礁 0 台・5/5 全日稼働**。#0P は 135→65→132→88→135→79→106 と**給油サイクルで大振幅**（回復あり）。他 4 台恒常。
+- 回答 4.3s ≈ 0.6s/日（coverage = 探索なしの高速回答。期限には十分安全だが、予算活用の議論は anytime 系の課題として継続）。
+- **読み取り（1 試合・盤面差あり・因果断定せず）**: 時系列再チューン単体では本盤（24×24/7日/短日 daySteps [65..48]）で D −13 — 旧実装系の 24×24（1811: 108/120 −12, park=far）と相対差は同程度。**D 掘削には 350-parity 統合版（B 改善受理 + 目標保持修正）との統合が次の観測点**。701 offline は 20/188/429 を専任環境で再現済み（PR #360 値と一致）。
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -452,13 +477,14 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **6 行**（1810 / 1811 / 1857 / 1869 / 1883 / 1885、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **8 行**（1810 / 1811 / 1857 / 1869 / 1883 / 1885 / 1888 / 1891、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
 | `run-2000.log` | match 1869 の同上（anytime Stage 1。同様に除去済み） |
 | `run-1883-b15.log` | match 1883 の同上（legacy experimental・budget 15s ablation。除去済み） |
 | `run-1885-b30.log` | match 1885 の同上（budget 30s ablation・早期打ち切り実測。除去済み） |
+| `run-1888-s7.log` / `run-1891-retune.log` | match 1888（seed ablation）/ 1891（Stage 2 系初投入）の同上（除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
