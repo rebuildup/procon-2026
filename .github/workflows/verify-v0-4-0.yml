@@ -4,6 +4,7 @@ on:
     branches: ['release-0-4-0']
     paths:
       - 'crates/**'
+      - '.github/workflows/verify-v0-4-0.yml'
   workflow_dispatch:
 permissions:
   contents: read
