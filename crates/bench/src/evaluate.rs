@@ -334,6 +334,15 @@ pub struct EvalConfig {
     /// is a *pattern* expanded per case with [`crate::kinds::resolve_kinds`],
     /// because the corpus fields teams of 3, 4, 5, 6 and 8 agents.
     pub kinds: Option<Vec<engine::model::AgentKind>>,
+    /// Maximum number of `(candidate, case)` evaluations running concurrently.
+    /// `1` (default) preserves the historical sequential behaviour and is the
+    /// regression baseline. Values > 1 use a bounded worker pool.
+    ///
+    /// **Response-time fairness**: when `jobs > 1`, CPU contention inflates
+    /// `response_time_us`. Axes 1–3 (variety, daily_variety_sum, total_balls)
+    /// are unaffected; axis 4 must be re-measured sequentially for final
+    /// ranking (Issue #331).
+    pub jobs: usize,
     /// Counterfactual: top every Patrol tank up to `fuel_cap` at each day
     /// boundary (Issue #243's `oracle_refill`).
     ///
@@ -419,6 +428,7 @@ impl EvalConfig {
             isolation: Isolation::Thread,
             kinds: None,
             oracle_refill: false,
+            jobs: 1,
         }
     }
 
@@ -733,11 +743,75 @@ impl Evaluator {
     /// given input order. Every pair yields a record — a failure in one never
     /// short-circuits the rest.
     pub fn evaluate_all(&self, candidates: &[Candidate], cases: &[CaseSpec]) -> Vec<RunRecord> {
-        let mut out = Vec::with_capacity(candidates.len().saturating_mul(cases.len()));
-        for case in cases {
-            for candidate in candidates {
-                out.push(self.evaluate_one(candidate, case));
+        let jobs = self.config.jobs.max(1);
+        if jobs == 1 {
+            // Sequential: historical order (case-major, then candidate).
+            let mut out = Vec::with_capacity(candidates.len().saturating_mul(cases.len()));
+            for case in cases {
+                for candidate in candidates {
+                    out.push(self.evaluate_one(candidate, case));
+                }
             }
+            return out;
+        }
+        self.evaluate_all_parallel(candidates, cases, jobs)
+    }
+
+    /// Parallel evaluation with a bounded worker pool (Issue #331).
+    ///
+    /// Jobs are `(case_idx, candidate_idx)` pairs. Workers pull from a shared
+    /// queue via a mutex. Results are stored in a pre-allocated slice indexed
+    /// by `case_idx * n_candidates + candidate_idx`, so the output order is
+    /// deterministic regardless of completion order.
+    ///
+    /// **Axis-4 caveat**: `response_time_us` is measured under CPU contention
+    /// and must NOT be used for final ranking. Re-measure sequentially.
+    fn evaluate_all_parallel(
+        &self,
+        candidates: &[Candidate],
+        cases: &[CaseSpec],
+        jobs: usize,
+    ) -> Vec<RunRecord> {
+        let n_candidates = candidates.len();
+        let n_cases = cases.len();
+        let total = n_candidates * n_cases;
+        let jobs = jobs.min(total).max(1);
+
+        // Shared job queue: (case_idx, candidate_idx).
+        let queue: std::sync::Arc<std::sync::Mutex<Vec<(usize, usize)>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                (0..n_cases)
+                    .flat_map(|ci| (0..n_candidates).map(move |ki| (ci, ki)))
+                    .collect(),
+            ));
+
+        // Pre-allocated result slots (None until filled).
+        let results: std::sync::Arc<std::sync::Mutex<Vec<Option<RunRecord>>>> =
+            std::sync::Arc::new(std::sync::Mutex::new((0..total).map(|_| None).collect()));
+
+        std::thread::scope(|scope| {
+            for _ in 0..jobs {
+                let queue = std::sync::Arc::clone(&queue);
+                let results = std::sync::Arc::clone(&results);
+                scope.spawn(move || loop {
+                    let job = {
+                        let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
+                        q.pop()
+                    };
+                    let Some((ci, ki)) = job else { break };
+                    let record = self.evaluate_one(&candidates[ki], &cases[ci]);
+                    let slot = ci * n_candidates + ki;
+                    let mut r = results.lock().unwrap_or_else(|e| e.into_inner());
+                    r[slot] = Some(record);
+                });
+            }
+        });
+
+        // Collect and unwrap: every slot must be filled.
+        let mut out = Vec::with_capacity(total);
+        let mut r = results.lock().unwrap_or_else(|e| e.into_inner());
+        for slot in r.iter_mut() {
+            out.push(slot.take().expect("every (case, candidate) slot filled"));
         }
         out
     }
@@ -1095,6 +1169,7 @@ mod tests {
             isolation: Isolation::Thread,
             kinds: None,
             oracle_refill: false,
+        jobs: 1,
         });
 
         // Pretend a worker came back with its own (wrong) identity.
@@ -1136,6 +1211,7 @@ mod tests {
             isolation: Isolation::Thread,
             kinds: None,
             oracle_refill: false,
+        jobs: 1,
         });
 
         // Pretend a worker came back spelling the id its own way.

@@ -63,6 +63,7 @@ fn config(harness_deadline: HarnessDeadline, isolation: Isolation) -> EvalConfig
         isolation,
         kinds: None,
         oracle_refill: false,
+        jobs: 1,
     }
 }
 

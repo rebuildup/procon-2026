@@ -40,6 +40,7 @@ fn config() -> EvalConfig {
         isolation: Isolation::Thread,
         kinds: None,
         oracle_refill: false,
+        jobs: 1,
     }
 }
 

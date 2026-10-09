@@ -35,6 +35,7 @@ fn config(kinds: Option<Vec<AgentKind>>) -> EvalConfig {
         isolation: Isolation::Thread,
         kinds,
         oracle_refill: false,
+        jobs: 1,
     }
 }
 
