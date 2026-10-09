@@ -11,7 +11,8 @@
     "build": "cargo build --release -p bench --bin procon-eval --offline",
     "warmup": "./target/release/procon-eval --cases all --case-files crates/bench/tests/fixtures/arena-701.json --kinds 'P,S,P,S,P' --candidates 'coverage:budget=official:park=none,coverage:budget=official:park=far' --baseline 'coverage:budget=official:park=none' --jobs 1 --output-dir /tmp/warmup",
     "benchmark": "python3 benchmark.py (see below)",
-    "consistency_check": "python3 consistency.py (see below)"
+    "consistency_check": "python3 consistency.py (see below)",
+    "benchmark_script": "python3 docs/evidence/campaign-311/parallel-eval/benchmark.py --rounds 3"
   },
   "benchmark_results": {
     "small_workload": {
@@ -110,5 +111,77 @@
   "recommended_parallelism": {
     "value": 4,
     "rationale": "4 jobs gives 4.37x speedup on heavy workload; 6-8 jobs provide marginal improvement (4.63-4.66x) with increased CPU contention risk"
+  },
+  "search_over_parallelism": {
+    "issue": "Search candidate uses std::thread::available_parallelism() internally (10 cores on this host)",
+    "test": "search:trials=10000:seed=42:time_budget_ms=500:budget=official",
+    "results": {
+      "jobs=1": {
+        "elapsed_s": 4.661,
+        "response_us": [
+          156666,
+          136255,
+          500814
+        ]
+      },
+      "jobs=2": {
+        "elapsed_s": 2.63,
+        "response_us": [
+          223836,
+          201108,
+          505776
+        ]
+      },
+      "jobs=4": {
+        "elapsed_s": 1.653,
+        "response_us": [
+          422318,
+          424176,
+          528919
+        ]
+      }
+    },
+    "conclusion": "Response times inflate 2-3x with --jobs 4 due to CPU contention (40 threads for 10 cores). Use --jobs 1 or --jobs 2 when evaluating Search candidates."
+  },
+  "heavy_workload_benchmark": {
+    "description": "34 records (701 + 9 bundled + 7 generated), 3 rounds, shuffled order, warmup",
+    "jobs=1": {
+      "mean_s": 0.678,
+      "min_s": 0.651,
+      "max_s": 0.698,
+      "std_s": 0.02,
+      "rec_per_s": 50.2,
+      "speedup": 1.0
+    },
+    "jobs=2": {
+      "mean_s": 0.325,
+      "min_s": 0.321,
+      "max_s": 0.329,
+      "std_s": 0.003,
+      "rec_per_s": 104.5,
+      "speedup": 2.08
+    },
+    "jobs=4": {
+      "mean_s": 0.198,
+      "min_s": 0.192,
+      "max_s": 0.202,
+      "std_s": 0.004,
+      "rec_per_s": 171.9,
+      "speedup": 3.43
+    },
+    "jobs=8": {
+      "mean_s": 0.184,
+      "min_s": 0.179,
+      "max_s": 0.189,
+      "std_s": 0.004,
+      "rec_per_s": 184.5,
+      "speedup": 3.68
+    }
+  },
+  "regression_tests": {
+    "axes_1_3_and_status_match_across_jobs": "PASS",
+    "jobs_zero_is_auto": "PASS",
+    "panic_timeout_and_invalid_are_isolated_per_run": "PASS",
+    "process_isolation_kills_the_worker_on_timeout": "PASS"
   }
 }

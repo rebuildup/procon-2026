@@ -336,7 +336,8 @@ pub struct EvalConfig {
     pub kinds: Option<Vec<engine::model::AgentKind>>,
     /// Maximum number of `(candidate, case)` evaluations running concurrently.
     /// `1` (default) preserves the historical sequential behaviour and is the
-    /// regression baseline. Values > 1 use a bounded worker pool.
+    /// regression baseline. `0` is auto: [`std::thread::available_parallelism`]
+    /// (see [`Self::resolved_jobs`]). Values > 1 use a bounded worker pool.
     ///
     /// **Response-time fairness**: when `jobs > 1`, CPU contention inflates
     /// `response_time_us`. Axes 1–3 (variety, daily_variety_sum, total_balls)
@@ -462,6 +463,21 @@ impl EvalConfig {
     pub fn with_process_isolation(mut self, worker_exe: impl Into<std::path::PathBuf>) -> Self {
         self.isolation = Isolation::Process { worker_exe: worker_exe.into() };
         self
+    }
+
+    /// Resolve [`Self::jobs`] to a concrete worker count.
+    ///
+    /// `0` is auto and maps to [`std::thread::available_parallelism`]
+    /// (falling back to `1` if the OS will not say). Every other value is
+    /// taken as written; the parallel path then clamps it to the number of
+    /// pending `(case, candidate)` pairs. Never returns `0`.
+    #[must_use]
+    pub fn resolved_jobs(&self) -> usize {
+        if self.jobs == 0 {
+            std::thread::available_parallelism().map_or(1, usize::from)
+        } else {
+            self.jobs
+        }
     }
 }
 
@@ -743,7 +759,7 @@ impl Evaluator {
     /// given input order. Every pair yields a record — a failure in one never
     /// short-circuits the rest.
     pub fn evaluate_all(&self, candidates: &[Candidate], cases: &[CaseSpec]) -> Vec<RunRecord> {
-        let jobs = self.config.jobs.max(1);
+        let jobs = self.config.resolved_jobs();
         if jobs == 1 {
             // Sequential: historical order (case-major, then candidate).
             let mut out = Vec::with_capacity(candidates.len().saturating_mul(cases.len()));
@@ -1348,6 +1364,40 @@ mod tests {
         let candidates = vec![reg.build("wait").unwrap(), reg.build("loop:iterations=2").unwrap()];
         let corpus = Corpus::bundled_subset(&["small-8x8", "series-few"]).unwrap();
         let records = Evaluator::new(config()).evaluate_all(&candidates, &corpus.cases);
+        assert_eq!(records.len(), 4);
+        for r in &records {
+            assert!(r.is_scored(), "{} on {}: {}", r.candidate_id, r.case_id, r.status);
+        }
+    }
+
+    /// Issue #335 — `jobs = 0` is auto, not "clamp to 1". The resolution is
+    /// exactly [`std::thread::available_parallelism`], and an explicit `1`
+    /// stays sequential.
+    #[test]
+    fn jobs_zero_resolves_to_available_parallelism() {
+        let auto = std::thread::available_parallelism().map_or(1, usize::from);
+
+        let mut cfg = config();
+        cfg.jobs = 0;
+        assert_eq!(cfg.resolved_jobs(), auto, "0 must mean auto");
+        assert!(cfg.resolved_jobs() >= 1, "auto is never zero");
+
+        cfg.jobs = 1;
+        assert_eq!(cfg.resolved_jobs(), 1, "explicit 1 is preserved");
+        cfg.jobs = 4;
+        assert_eq!(cfg.resolved_jobs(), 4, "an explicit count is preserved");
+    }
+
+    /// Issue #335 — `jobs = 0` evaluates the same cross product as the
+    /// sequential baseline (the auto pool is still order-stable).
+    #[test]
+    fn jobs_zero_evaluates_the_full_cross_product() {
+        let reg = registry();
+        let candidates = vec![reg.build("wait").unwrap(), reg.build("loop:iterations=2").unwrap()];
+        let corpus = Corpus::bundled_subset(&["small-8x8", "series-few"]).unwrap();
+        let mut cfg = config();
+        cfg.jobs = 0;
+        let records = Evaluator::new(cfg).evaluate_all(&candidates, &corpus.cases);
         assert_eq!(records.len(), 4);
         for r in &records {
             assert!(r.is_scored(), "{} on {}: {}", r.candidate_id, r.case_id, r.status);
