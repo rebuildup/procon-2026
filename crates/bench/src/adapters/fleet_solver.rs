@@ -63,6 +63,14 @@ const PARAMS: &[ParamSpec] = &[
         doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
               by planning tomorrow from each chain's end. Live uses the spare cores",
     },
+    ParamSpec {
+        key: "horizon",
+        required: false,
+        doc: "0|1|2 (default 1): days planned ahead. 0 = today only (no tomorrow \
+              estimate in the score, no chain-selection replay of tomorrow); \
+              1 = tomorrow's greedy estimate in the score plus tomorrow's search \
+              at chain selection; 2 = also a day-after-tomorrow harvest estimate",
+    },
 ];
 
 fn parse<T: std::str::FromStr>(
@@ -110,7 +118,11 @@ impl CandidateFactory for FleetFactory {
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
+        let horizon = parse(spec, "horizon", 1u32)?;
+        if !(0..=2).contains(&horizon) {
+            return Err(CandidateError::Build(format!("horizon must be 0..=2, got {horizon}")));
+        }
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, horizon }))
     }
 }
 
@@ -122,6 +134,8 @@ pub struct FleetCandidate {
     pub chains: u32,
     /// Live: shrink the window on boards whose search converges sooner.
     pub adapt: bool,
+    /// Days planned ahead: 0 = today only, 1 = tomorrow, 2 = day after too.
+    pub horizon: u32,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -193,6 +207,10 @@ struct World {
     via: [Vec<Vec<(u16, u32)>>; NM],
     steps: u32,
     tomorrow: Option<u32>,
+    /// Day after tomorrow's steps, when the horizon reaches it.
+    day_after: Option<u32>,
+    /// How many days ahead this world scores (0 = today only).
+    horizon: u32,
     /// `(today's steps, later days' steps)` when tanks are paced.
     pace: Option<(u64, u64)>,
     patrols: Vec<PatrolInfo>,
@@ -208,8 +226,9 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
 
 impl World {
     #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
-    fn new(state: &MatchState, steps: u32, later: &[u32]) -> Self {
+    fn new(state: &MatchState, steps: u32, later: &[u32], horizon: u32) -> Self {
         let tomorrow = later.first().copied();
+        let day_after = (horizon >= 2).then(|| later.get(1).copied()).flatten();
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
         let cells = map.cells();
@@ -295,6 +314,8 @@ impl World {
             via: std::array::from_fn(|_| vec![Vec::new(); nn * nn]),
             steps,
             tomorrow,
+            day_after,
+            horizon,
             pace,
             patrols,
             supplies,
@@ -628,50 +649,64 @@ impl World {
                 line.pending.map_or(line.visits.last().expect("non-empty").arr, |_| self.steps);
             score -= i64::from(end) * 20 / i64::from(self.steps.max(1));
         }
-        if let Some(tomorrow) = self.tomorrow {
-            let starts: Vec<Start> = lines
-                .iter()
-                .zip(&self.patrols)
-                .map(|(line, patrol)| {
-                    let (node, offset) = line.pending.map_or_else(
-                        || (line.visits.last().expect("non-empty").node, 0),
-                        |(to, at)| (to, at - self.steps),
-                    );
-                    let fuel = match self.pace {
-                        // Paced: tomorrow's share of what is really left.
-                        Some((_, rest)) => {
-                            let left = patrol.fuel - (patrol.budget - line.fuel.min(patrol.budget));
-                            paced(left, u64::from(tomorrow), rest)
-                        }
-                        None => line.fuel,
-                    };
-                    Start { node, offset, fuel, escorted: line.escorted }
-                })
-                .collect();
-            let (d, b) = self.greedy(&starts, tomorrow, None);
-            // Tomorrow's series are worth nearly as much as today's; its
-            // balls are not counted (the greedy estimate is too coarse and
-            // trading today's sure balls for it measured worse).
-            let _ = b;
-            tomorrow_series = d;
-            score += d * W_SERIES * TOMORROW_NUM / TOMORROW_DEN;
-            for (p, start) in starts.iter().enumerate() {
-                let full = i64::from(self.patrols[p].cap.min(tomorrow));
-                let have = if start.escorted { full } else { i64::from(start.fuel).min(full) };
-                score += 150 * have / full.max(1);
+        if self.horizon >= 1 {
+            if let Some(tomorrow) = self.tomorrow {
+                let starts: Vec<Start> = lines
+                    .iter()
+                    .zip(&self.patrols)
+                    .map(|(line, patrol)| {
+                        let (node, offset) = line.pending.map_or_else(
+                            || (line.visits.last().expect("non-empty").node, 0),
+                            |(to, at)| (to, at - self.steps),
+                        );
+                        let fuel = match self.pace {
+                            // Paced: tomorrow's share of what is really left.
+                            Some((_, rest)) => {
+                                let left =
+                                    patrol.fuel - (patrol.budget - line.fuel.min(patrol.budget));
+                                paced(left, u64::from(tomorrow), rest)
+                            }
+                            None => line.fuel,
+                        };
+                        Start { node, offset, fuel, escorted: line.escorted }
+                    })
+                    .collect();
+                let (d, b, ends) = self.greedy(&starts, tomorrow, None);
+                // Tomorrow's series are worth nearly as much as today's; its
+                // balls are not counted (the greedy estimate is too coarse and
+                // trading today's sure balls for it measured worse).
+                let _ = b;
+                tomorrow_series = d;
+                score += d * W_SERIES * TOMORROW_NUM / TOMORROW_DEN;
+                for (p, start) in starts.iter().enumerate() {
+                    let full = i64::from(self.patrols[p].cap.min(tomorrow));
+                    let have = if start.escorted { full } else { i64::from(start.fuel).min(full) };
+                    score += 150 * have / full.max(1);
+                }
+                if let Some(day2) = self.day_after {
+                    // Day 2 is two traffic recomputes away, so its estimate
+                    // decays once more; the patrols start the fresh day at
+                    // tick 0 wherever tomorrow's estimate left them.
+                    let fresh: Vec<Start> =
+                        ends.iter().map(|end| Start { offset: 0, ..*end }).collect();
+                    let (d2, _b2, _ends2) = self.greedy(&fresh, day2, None);
+                    score +=
+                        d2 * W_SERIES * TOMORROW_NUM * TOMORROW_NUM / (TOMORROW_DEN * TOMORROW_DEN);
+                }
             }
         }
         Evaluation { score, today: (series, balls), tomorrow_series, lines, supplies }
     }
 
     /// Nearest-useful-spot greedy from `starts` over a `steps`-tick day:
-    /// `(series, balls)`. With `routes`, also records each patrol's order.
+    /// `(series, balls)`, plus each patrol's end state for chaining another
+    /// day's estimate. With `routes`, also records each patrol's order.
     fn greedy(
         &self,
         starts: &[Start],
         steps: u32,
         mut routes: Option<&mut Vec<Vec<u16>>>,
-    ) -> (i64, i64) {
+    ) -> (i64, i64, Vec<Start>) {
         let np = starts.len();
         let mut at: Vec<usize> = starts.iter().map(|s| s.node).collect();
         let mut tick: Vec<u32> = starts.iter().map(|s| s.offset).collect();
@@ -747,7 +782,15 @@ impl World {
                 routes[p].push(u16::try_from(node).expect("node"));
             }
         }
-        (series, balls)
+        let ends = (0..np)
+            .map(|p| Start {
+                node: at[p],
+                offset: tick[p],
+                fuel: fuel[p],
+                escorted: starts[p].escorted,
+            })
+            .collect();
+        (series, balls, ends)
     }
 
     fn initial(&self) -> Solution {
@@ -781,7 +824,7 @@ impl World {
             })
             .collect();
         let mut routes = vec![Vec::new(); np];
-        self.greedy(&starts, self.steps, Some(&mut routes));
+        let (_s, _b, _ends) = self.greedy(&starts, self.steps, Some(&mut routes));
         let metric = escorted.iter().map(|&e| u8::from(!e)).collect();
         Solution { routes, metric, serve }
     }
@@ -1098,6 +1141,8 @@ struct Candidate {
     model: (i64, i64),
     /// Tomorrow's `(series, balls)` from the plan's end state.
     tomorrow: (i64, i64),
+    /// Day-after-tomorrow series estimate (horizon 2), already decayed.
+    day2: i64,
 }
 
 impl Candidate {
@@ -1106,7 +1151,9 @@ impl Candidate {
         (
             self.check.clean,
             self.check.variety,
-            i64::try_from(self.check.series_today).unwrap_or(i64::MAX) + self.tomorrow.0,
+            i64::try_from(self.check.series_today).unwrap_or(i64::MAX)
+                + self.tomorrow.0
+                + self.day2,
             i64::from(self.check.balls_today) + self.tomorrow.1,
         )
     }
@@ -1115,6 +1162,43 @@ impl Candidate {
 impl FleetCandidate {
     fn seed(&self, ctx: &SolverContext<'_>, k: usize) -> u64 {
         self.seed ^ (u64::from(ctx.day) << 32) ^ ((k as u64) << 48)
+    }
+
+    /// Live search window for one day's plan: the `budget_ms` cap, shrunk to
+    /// the converged budget when `adapt` is on, and to the time the
+    /// coordinator still grants.
+    fn live_window(
+        &self,
+        ctx: &SolverContext<'_>,
+        patrols: usize,
+        spots: usize,
+    ) -> Option<Duration> {
+        if self.budget_ms == 0 {
+            return None;
+        }
+        Some({
+            // Balls stop improving once the search has converged, and from
+            // there a longer answer only costs the fourth ranking axis. The
+            // converged budget grew with (patrols x spots)^2 on the corpus:
+            // 16x16 boards were flat from 0.25 s, 24x24 from about 2 s, and
+            // 32x32 still gained at 4 s.
+            let scale = (patrols * spots) as u64;
+            let converged = (scale * scale / 3).max(400);
+            let cap = u64::from(self.budget_ms);
+            let budget = Duration::from_millis(if self.adapt { cap.min(converged) } else { cap });
+            if ctx.remaining_ms == u32::MAX {
+                budget
+            } else {
+                // The coordinator already holds back its submission margin
+                // (`solver_budget_ms`), so only the replay check and encoding
+                // are left to cover. A quarter second of search is kept even
+                // when it reports no time: the greedy start alone measured
+                // far weaker than a short search.
+                budget.min(Duration::from_millis(u64::from(
+                    ctx.remaining_ms.saturating_sub(300).max(250),
+                )))
+            }
+        })
     }
 
     /// Turn an evaluated solution into the day's answer and replay it.
@@ -1172,30 +1256,8 @@ impl Solver for FleetCandidate {
         }
         let later: Vec<u32> =
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
-        let world = World::new(state, ctx.day_steps, &later);
-        let window = (self.budget_ms > 0).then(|| {
-            // Balls stop improving once the search has converged, and from
-            // there a longer answer only costs the fourth ranking axis. The
-            // converged budget grew with (patrols x spots)^2 on the corpus:
-            // 16x16 boards were flat from 0.25 s, 24x24 from about 2 s, and
-            // 32x32 still gained at 4 s.
-            let scale = (world.patrols.len() * world.spots) as u64;
-            let converged = (scale * scale / 3).max(400);
-            let cap = u64::from(self.budget_ms);
-            let budget = Duration::from_millis(if self.adapt { cap.min(converged) } else { cap });
-            if ctx.remaining_ms == u32::MAX {
-                budget
-            } else {
-                // The coordinator already holds back its submission margin
-                // (`solver_budget_ms`), so only the replay check and encoding
-                // are left to cover. A quarter second of search is kept even
-                // when it reports no time: the greedy start alone measured
-                // far weaker than a short search.
-                budget.min(Duration::from_millis(u64::from(
-                    ctx.remaining_ms.saturating_sub(300).max(250),
-                )))
-            }
-        });
+        let world = World::new(state, ctx.day_steps, &later, self.horizon);
+        let window = self.live_window(ctx, world.patrols.len(), world.spots);
         // Live: one chain per spare core. Offline: `chains`.
         let live = window.is_some();
         let chains = if live {
@@ -1226,23 +1288,32 @@ impl Solver for FleetCandidate {
             let (sol, eval) = &first[k];
             if !second {
                 let (plan, check) = Self::finish(ctx, &world, sol, eval);
-                return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
+                return Candidate { plan, check, model: eval.today, tomorrow: (0, 0), day2: 0 };
             }
             let seed = self.seed(ctx, k) ^ 0x5bd1_e995;
             if settled {
                 let (sol, eval) = world.search(self.iters / 3, until, seed, 5.0, Some(sol.clone()));
                 let (plan, check) = Self::finish(ctx, &world, &sol, &eval);
-                return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
+                return Candidate { plan, check, model: eval.today, tomorrow: (0, 0), day2: 0 };
             }
             let (plan, check) = Self::finish(ctx, &world, sol, eval);
             let tomorrow = match later.split_first() {
-                Some((&steps, rest)) if check.clean => {
-                    let next = World::new(&check.state, steps, rest);
-                    next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
+                Some((&steps, rest)) if check.clean && self.horizon >= 1 => {
+                    // The inner world keeps horizon 1: its "tomorrow" is our
+                    // day 2, read back below as the day-2 estimate.
+                    let next = World::new(&check.state, steps, rest, 1);
+                    let (_sol2, eval2) =
+                        next.search(self.iters / 3, until, seed, CHAIN_T0[0], None);
+                    let day2 = if self.horizon >= 2 {
+                        eval2.tomorrow_series * TOMORROW_NUM / TOMORROW_DEN
+                    } else {
+                        0
+                    };
+                    (eval2.today, day2)
                 }
-                _ => (0, 0),
+                _ => ((0, 0), 0),
             };
-            Candidate { plan, check, model: eval.today, tomorrow }
+            Candidate { plan, check, model: eval.today, tomorrow: tomorrow.0, day2: tomorrow.1 }
         });
         // Ties keep the first chain (`max_by_key` returns the last maximum).
         let Some(best) = candidates.into_iter().rev().max_by_key(Candidate::key) else {
@@ -1261,6 +1332,7 @@ impl Solver for FleetCandidate {
             replay_balls = best.check.balls_today,
             tomorrow_series = best.tomorrow.0,
             tomorrow_balls = best.tomorrow.1,
+            day2_series = best.day2,
             predicted_ends = ?best.check.ends,
             "fleet day plan"
         );
@@ -1329,6 +1401,7 @@ pub fn choose_kinds(
                 seed: 42,
                 chains: 1,
                 adapt: true,
+                horizon: 1,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
