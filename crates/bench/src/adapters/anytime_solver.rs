@@ -162,6 +162,19 @@ impl Solver for AnytimeCandidate {
         let mut best = initial.clone();
         let mut best_score = initial_score;
 
+        // B-phase detection: when D is at ceiling (all series acquired today),
+        // switch to B-focused exploration with higher seed diversity.
+        let total_series = ctx
+            .state
+            .setting
+            .map
+            .cells()
+            .iter()
+            .filter_map(|c| c.spot.as_ref().map(|s| s.series))
+            .collect::<std::collections::BTreeSet<_>>()
+            .len() as u32;
+        let mut d_at_ceiling = best_score.1 >= total_series;
+
         // If no budget, return the initial solution.
         if self.budget_ms == 0 {
             return best;
@@ -219,6 +232,8 @@ impl Solver for AnytimeCandidate {
                 best = plan;
                 best_score = score;
                 no_improve_count = 0;
+                // Update D ceiling status.
+                d_at_ceiling = best_score.1 >= total_series;
             } else {
                 no_improve_count += 1;
             }
