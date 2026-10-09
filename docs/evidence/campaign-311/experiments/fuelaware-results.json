@@ -85,18 +85,19 @@
       }
     },
     "fuel_cap": {
-      "60": {
+      "75_tight_official_min": {
         "base": [
           27,
-          120,
-          133
+          124,
+          136
         ],
         "fuelaware": [
           27,
-          109,
-          119
+          120,
+          139
         ],
-        "dD": -11
+        "dD": -4,
+        "note": "daySteps[0]=75 at seed 42; tightest official-valid fuelLimits"
       },
       "100": {
         "base": [
@@ -138,6 +139,53 @@
         "dD": 2
       }
     },
-    "conclusion": "fuelaware helps at moderate fuel (100-200), regresses at tight fuel (60). Fewer agents benefit more."
+    "conclusion": "fuelaware helps at moderate fuel (100-200, dD +1..+5). At the tightest official-valid cap (75 = daySteps[0]) it slightly regresses (dD -4). Fewer agents benefit more."
+  },
+  "exclusions": [
+    "fuel_cap=60 (dD -11) REMOVED: fuelLimits=60 < daySteps[0]=75 at seed 42, so the case is not an official-legal match and its numbers are not admissible evidence.",
+    "fuel_stranding Match 1811 numbers are 32x32 stand-ins, NOT 24x24 evidence (generate_large_case hardcodes edge=32).",
+    "fuel_stranding cap=60 stress case REMOVED for the same fuelLimits floor violation; replaced by cap=100."
+  ],
+  "fuel_stranding_32x32": {
+    "note": "shape stand-ins on 32x32 only; MatchSim provisional; rerun after lint-only cleanups",
+    "match_1810_shape": {
+      "base": [
+        27,
+        123,
+        142
+      ],
+      "fuelaware": [
+        27,
+        131,
+        159
+      ],
+      "dD": 8
+    },
+    "match_1811_shape_32x32_not_24x24": {
+      "base": [
+        20,
+        108,
+        121
+      ],
+      "fuelaware": [
+        20,
+        113,
+        128
+      ],
+      "dD": 5
+    },
+    "fuel_tight_cap100": {
+      "base": [
+        27,
+        119,
+        128
+      ],
+      "fuelaware": [
+        27,
+        113,
+        133
+      ],
+      "dD": -6
+    }
   }
 }
