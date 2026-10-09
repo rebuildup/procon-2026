@@ -1,0 +1,30 @@
+name: Structural solver validation
+on:
+  push:
+    branches: ['366']
+  pull_request:
+    paths:
+      - 'crates/bench/src/adapters/structural_solver.rs'
+      - 'crates/bench/src/adapters/mod.rs'
+      - 'crates/bench/src/candidate.rs'
+      - '.github/workflows/structural-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  structural:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy -p bench --all-targets --locked -- -D warnings
+      - name: Structural candidate tests
+        run: cargo test -p bench structural_ --locked -- --nocapture
