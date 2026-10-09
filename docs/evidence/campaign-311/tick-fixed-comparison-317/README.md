@@ -20,7 +20,7 @@ source: `0eb3a9f6e91ada406f6d1cff4d65e3c60c9fe7b9`（refuel tick 修正 `8728ed5
 | 対戦 | 結果 |
 |---|---|
 | coverage vs kmeans5 | 12勝1分0敗 |
-| search:16 vs kmeans5 | 12勝0分1敗（openapi-sample で response time 同点負け） |
+| search:16 vs kmeans5 | 12勝0分1敗（openapi-sample は前3軸同点・response time 軸で敗） |
 | search:64 vs kmeans5 | 12勝0分1敗（同上） |
 | search:16 vs coverage | 8勝5敗 |
 | search:64 vs coverage | 9勝4敗 |
