@@ -450,6 +450,24 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 
 **結論: B は 5s 以降飽和（94–97%）**。回答時間タイブレークの観点から **B を維持する最小予算 `budget_ms=5000` を標準 config とする**（rank 3 実績あり）。
 
+## 公式スコア + 実測（match 1930 = fleet 標準 config・**24×24/10日 大盤長日クラス**・UI `#1930 第1卓`）
+
+**`fleet:budget=official:budget_ms=5000`** @ `7de05df`（標準 config）。
+**24×24 / 10日 / 5台**（S,P,P,P,P）・daySteps [165,163,153,156,105,129,77,162,125,151]（長日）・燃料 cap311。UI `#1930 第1卓`（卓ID一致）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | チーム-ae2f | 14 | 140 | 595 | 48.6s |
+| 2–8 | うどん / o / 信州そば / 🤖SOBA / 多分うどん / 堀大輔 / ヘキサンジオール | 14 | 140 | 585–594 | 17.5–462.9s |
+| **9** | **ユ（当方）** | **14** | **140** | **577** | **57.6s** |
+| 10 | 超10G | 14 | 140 | 532 | 156.2s |
+
+- **全チーム D=140/140 MAX・V=14 同点の純 B 競争** → **B=577/595 = 97%（1位差 −18）**・rank 9・rate 388→394 (+6)
+- **大盤長日クラス（旧実装で B 51–55% だった 1869/1883 クラス相当）でも fleet が 97% 到達** — 未観測クラスの埋め完了
+- 回答 57.6s ÷ 10 ≈ **5.8s/日**（budget 5000 設定どおり・10日マッチで初実証）
+- revisions [12,30,53,70,92,112,135,153,172,192] — 10/10 全日受理・1日1 POST・error なし
+- 燃料 cap311: 給油サイクル全日作動（184→311 回復など）・**座礁 0 台・5/5 全日稼働**
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -658,7 +676,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **17 行**（1810 … 1925 / 1928、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **18 行**（1810 … 1928 / 1930、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -675,6 +693,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1919-fleet-b5.log` | match 1919（fleet × 5s・rank 3。除去済み） |
 | `run-1925-fleet-b15.log` | match 1925（fleet × 15s・B 97%。除去済み） |
 | `run-1928-fleet-b30.log` | match 1928（fleet × 30s・5台初投入・ラダー完成。除去済み） |
+| `run-1930-fleet-b5.log` | match 1930（fleet 標準 config・24×24/10日 大盤長日。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
