@@ -11,8 +11,8 @@
 //! - Returns immediately when no series improvement is found
 use crate::adapters::coverage_solver::CoverageCandidate;
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
-use engine::model::{AgentActions, AgentKind, Solver, SolverContext};
 use engine::MatchSim;
+use engine::model::{AgentActions, AgentKind, Solver, SolverContext};
 use std::time::{Duration, Instant};
 
 pub struct AnytimeFactory;
@@ -23,16 +23,8 @@ const PARAMS: &[ParamSpec] = &[
         doc: "wall-clock cap per day plan: 0 = off (deterministic park=far) | \
               1..59000 explores with best-improvement (live: 50000 leaves margin)",
     },
-    ParamSpec {
-        key: "seed",
-        required: false,
-        doc: "exploration seed (default 42)",
-    },
-    ParamSpec {
-        key: "budget",
-        required: true,
-        doc: "official (required)",
-    },
+    ParamSpec { key: "seed", required: false, doc: "exploration seed (default 42)" },
+    ParamSpec { key: "budget", required: true, doc: "official (required)" },
 ];
 
 impl CandidateFactory for AnytimeFactory {
@@ -54,9 +46,9 @@ impl CandidateFactory for AnytimeFactory {
         // Silent fallback to defaults is forbidden.
         let budget_ms = match spec.param("budget_ms") {
             None => 0u32,
-            Some(s) => s.parse::<u32>().map_err(|_| {
-                CandidateError::Build(format!("invalid budget_ms: {s:?}"))
-            })?,
+            Some(s) => s
+                .parse::<u32>()
+                .map_err(|_| CandidateError::Build(format!("invalid budget_ms: {s:?}")))?,
         };
         if budget_ms > 59000 {
             return Err(CandidateError::Build(format!(
@@ -65,9 +57,9 @@ impl CandidateFactory for AnytimeFactory {
         }
         let seed = match spec.param("seed") {
             None => 42u64,
-            Some(s) => s.parse::<u64>().map_err(|_| {
-                CandidateError::Build(format!("invalid seed: {s:?}"))
-            })?,
+            Some(s) => s
+                .parse::<u64>()
+                .map_err(|_| CandidateError::Build(format!("invalid seed: {s:?}")))?,
         };
         Ok(Box::new(AnytimeCandidate { budget_ms, seed }))
     }
@@ -98,17 +90,13 @@ fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32, u
     let series_today = state
         .series_acquired_by_day
         .get(&ctx.day)
-        .map_or(0, |s| s.len() as u32);
-    let balls_today: u32 = state.agents.iter().map(|a| a.total_inventory()).sum();
+        .map_or(0, |s| u32::try_from(s.len()).unwrap_or(u32::MAX));
+    let balls_today: u32 = state.agents.iter().map(engine::model::Agent::total_inventory).sum();
 
     // Next-day positioning: fuel remaining + proximity to ALL series (not just
     // unacquired, since tomorrow needs to re-acquire them).
-    let fuel_value: u32 = state
-        .agents
-        .iter()
-        .filter(|a| a.kind == AgentKind::Patrol)
-        .map(|a| a.fuel.min(50))
-        .sum();
+    let fuel_value: u32 =
+        state.agents.iter().filter(|a| a.kind == AgentKind::Patrol).map(|a| a.fuel.min(50)).sum();
 
     let mut proximity: u32 = 0;
     for c in state.setting.map.cells() {
@@ -128,7 +116,7 @@ fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32, u
     // Use series_taken (cumulative) after simulation to catch cases where
     // today's plan would LOSE a previously-acquired series (which is
     // impossible in the engine, but guards against local scoring errors).
-    let full_variety = state.series_taken.len() as u32;
+    let full_variety = u32::try_from(state.series_taken.len()).unwrap_or(u32::MAX);
 
     // Tuple: (full_V, series_today→D contribution, balls_today→B contribution,
     //         next_day positioning). The comparison in the acceptance loop
@@ -139,11 +127,7 @@ fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32, u
 /// Generate a variant of park=far with a different exploration seed.
 fn generate_variant(ctx: &SolverContext<'_>, seed: u64) -> AgentActions {
     // Use park=far with a seed-dependent variant.
-    let candidate = CoverageCandidate {
-        park_risk: true,
-        variant: seed,
-        
-    };
+    let candidate = CoverageCandidate { park_risk: true, variant: seed };
     candidate.decide(ctx)
 }
 
@@ -161,19 +145,6 @@ impl Solver for AnytimeCandidate {
         let initial_score = score_plan(ctx, &initial);
         let mut best = initial.clone();
         let mut best_score = initial_score;
-
-        // B-phase detection: when D is at ceiling (all series acquired today),
-        // switch to B-focused exploration with higher seed diversity.
-        let total_series = ctx
-            .state
-            .setting
-            .map
-            .cells()
-            .iter()
-            .filter_map(|c| c.spot.as_ref().map(|s| s.series))
-            .collect::<std::collections::BTreeSet<_>>()
-            .len() as u32;
-        let mut d_at_ceiling = best_score.1 >= total_series;
 
         // If no budget, return the initial solution.
         if self.budget_ms == 0 {
@@ -224,16 +195,13 @@ impl Solver for AnytimeCandidate {
             let v_safe = score.0 >= best_score.0;
             let d_gain = score.1 > best_score.1;
             let d_same_b_gain = score.1 == best_score.1 && score.2 > best_score.2;
-            let tie_better_pos = score.1 == best_score.1
-                && score.2 == best_score.2
-                && score.3 > best_score.3;
+            let tie_better_pos =
+                score.1 == best_score.1 && score.2 == best_score.2 && score.3 > best_score.3;
             let accept = v_safe && (d_gain || d_same_b_gain || tie_better_pos);
             if accept {
                 best = plan;
                 best_score = score;
                 no_improve_count = 0;
-                // Update D ceiling status.
-                d_at_ceiling = best_score.1 >= total_series;
             } else {
                 no_improve_count += 1;
             }
