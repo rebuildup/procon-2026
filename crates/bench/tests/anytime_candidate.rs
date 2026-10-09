@@ -260,19 +260,14 @@ fn anytime_final_return_reflects_b_improvement_trial() {
     let improved = solver.decide(&ctx);
     let improved_axes = replay_axes(&state, &improved);
 
-    // With the day_claimed oscillation fix (Issue #363), trial variants may
-    // produce the same plan as the initial on small fixtures — the coverage
-    // solver is more deterministic and the variant jitter may not find a
-    // different (better) tour. The guarantee is: the returned plan is never
-    // WORSE than the initial.
-    assert_eq!(improved_axes.0, initial_axes.0, "axis 1 (V) must not regress");
-    assert_eq!(improved_axes.1, initial_axes.1, "axis 2 (D) must not regress");
-    assert!(
-        improved_axes.2 >= initial_axes.2,
-        "axis 3 (B) must not regress: got {} vs initial {}",
-        improved_axes.2,
-        initial_axes.2
-    );
+    // STRICT final-return guard (Issue #354 / #364): the returned plan must
+    // BE the B-improved trial — not the initial plan. The pre-fix guard
+    // compared only the axis-2 series count and returned the initial plan on
+    // a B-only improvement, so both assertions below fail against it (and an
+    // implementation that always returns the initial plan would pass the
+    // weaker "not worse" form — the `>=` relaxation is therefore reverted).
+    assert_ne!(improved, initial, "trial #2 (variant 5) must replace the returned plan");
+    assert_eq!(improved_axes, (3, 3, 7), "same V, same D, one extra ball");
 }
 
 /// With no improving trial, the initial park=far plan must still come back
@@ -289,20 +284,27 @@ fn anytime_no_improvement_returns_initial_plan_unchanged() {
         .expect("park=far builds");
     let initial = baseline.decide(&ctx);
 
-    // seed=9, trials=1: with the day_claimed oscillation fix (Issue #364),
-    // the coverage solver's base plan may differ. The guarantee is: the
-    // returned plan is never WORSE than the initial in V/D/B dictionary
-    // order (byte-identity depends on whether any trial improves).
+    // seed=1, trials=1: the single trial (variant) replays the same tour and
+    // scores exactly the initial axes (3, 3, 6) — NO trial improves (equal
+    // V/D/B, equal-or-worse positioning). The guarantee is byte-identity:
+    // the initial park=far plan is returned untouched. A final guard that
+    // returned a trial on an all-axes tie ("improved-when-equal") or that
+    // discarded the initial plan would produce a different `AgentActions`
+    // and fail this assertion (the `>=` non-regression form accepted both).
     let solver = registry
-        .build("anytime:trials=1:seed=9:budget=official")
+        .build("anytime:trials=1:seed=1:budget=official")
         .and_then(|c| c.build_solver())
         .expect("anytime trials id builds");
     let returned = solver.decide(&ctx);
     let returned_axes = replay_axes(&state, &returned);
-    let initial_axes = replay_axes(&state, &initial);
-    assert!(
-        returned_axes >= initial_axes,
-        "returned plan must not regress: {returned_axes:?} vs initial {initial_axes:?}"
+    assert_eq!(
+        returned_axes,
+        replay_axes(&state, &initial),
+        "no improving trial: the axes must stay exactly the initial (3, 3, 6)"
+    );
+    assert_eq!(
+        returned, initial,
+        "no improving trial: the initial plan must be returned byte-identically"
     );
 }
 

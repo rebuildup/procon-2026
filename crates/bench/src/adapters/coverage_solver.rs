@@ -231,8 +231,8 @@ struct TargetKey {
 /// the nearest harvest target. `key.spread_window` enables park-mode spreading
 /// across unclaimed series (Issue #331); the caller decides when that window
 /// is open. `key.variant` jitters the coverage cost key for search-solver
-/// trials (#312/#313). Updates `reserved` / `day_claimed` with the chosen
-/// series.
+/// trials (#312/#313). Inserts the chosen series into `reserved` (an
+/// in-flight reservation); `day_claimed` is only updated on actual pickup.
 #[allow(
     clippy::too_many_arguments,
     reason = "8 params: state+agent+paths+remaining+key+2 sets+self_target"
@@ -245,11 +245,13 @@ fn patrol_step(
     key: TargetKey,
     day_claimed: &mut BTreeSet<u32>,
     reserved: &mut BTreeSet<u32>,
-    // The patrol's own in-flight target series. It must NOT be
-    // deprioritized by reserved.contains on re-evaluation ticks, or the
-    // patrol abandons it mid-travel (Issue #364). reserved is shared
-    // across patrols and must NOT be mutated to free it — another patrol
-    // may have reserved the same series at a different spot.
+    // The patrol's own continuing goal (Issue #364). While it is still
+    // in-flight and NOT yet acquired, it must not be deprioritized by
+    // reserved.contains on re-evaluation ticks, or the patrol abandons it
+    // mid-travel and oscillates between destinations. The exemption ends as
+    // soon as the series is acquired (by this patrol or another): an
+    // acquired series keeps its penalty, so its remaining spots lose to
+    // unclaimed series.
     self_target: Option<u32>,
 ) -> (Action, Option<u32>) {
     let map = &state.setting.map;
@@ -257,10 +259,14 @@ fn patrol_step(
         s.current_stock > 0 && !agent_at_daily_pick_cap(agent, agent.pos, &state.spot_picks_today)
     });
     if can_pick_here {
-        if let Some(spot) = map.get(agent.pos).and_then(|c| c.spot.as_ref()) {
-            reserved.insert(spot.series);
+        let series = map.get(agent.pos).and_then(|c| c.spot.as_ref()).map(|s| s.series);
+        if let Some(series) = series {
+            reserved.insert(series);
         }
-        return (Action::wait(agent.id), None);
+        // Standing pick pending: claim the series under this patrol's own
+        // name so a same-tick patrol does not double-book the same spot.
+        // The pick reflection graduates it into `day_claimed`.
+        return (Action::wait(agent.id), series);
     }
     let target = map
         .cells()
@@ -271,8 +277,18 @@ fn patrol_step(
         })
         .filter_map(|s| {
             let route = paths[index(map, s.pos)];
+            // Foreign claims deprioritize a series: another patrol holds an
+            // in-flight reservation, or the series was already acquired
+            // today. The patrol's OWN active target is exempt from the
+            // reservation penalty while it is still un-acquired —
+            // deprioritizing it made the patrol abandon its in-flight goal
+            // and oscillate (Issue #364). An acquired claim is never
+            // exempted: the series was really picked, so chasing its
+            // remaining spots must lose to unclaimed series.
+            let foreign_claim = (reserved.contains(&s.series) && self_target != Some(s.series))
+                || day_claimed.contains(&s.series);
             (route.cost <= remaining && route.first.is_some()).then_some((
-                reserved.contains(&s.series) && self_target != Some(s.series),
+                foreign_claim,
                 // Park: spread across unclaimed series only on medium+ days
                 // whose tomorrow is also medium+. Short days scatter patrols;
                 // spreading the day before a short day can strand the next
@@ -355,14 +371,34 @@ impl Solver for CoverageCandidate {
         // Day-scoped claim set: once a patrol targets a series, no other
         // patrol re-targets it. Park mode keeps claims across the whole day so
         // agents spread across series instead of converging (Issue #331).
+        //
+        // This is the **acquired** set of the Issue #364 bookkeeping split:
+        // series really picked today (the official day-start acquisitions
+        // plus every shadow pick). It is persistent — no reservation release
+        // ever removes from it, so an acquired series keeps its selection
+        // penalty for the whole day.
         let mut day_claimed: BTreeSet<u32> =
             state.series_acquired_by_day.get(&ctx.day).cloned().unwrap_or_default();
+        // Global "someone is going for this" set: the acquired claims plus
+        // every live in-flight reservation. A patrol's own active target is
+        // exempt in `patrol_step` (self-exemption, not by erasing claims).
         let mut reserved = day_claimed.clone();
-        // Per-patrol currently-targeted series: the patrol's OWN in-flight
-        // target must not be deprioritized by `reserved.contains` on
-        // subsequent ticks, or the patrol abandons it mid-travel and
-        // oscillates between destinations (Issue #364).
-        let mut self_targeted: std::collections::HashMap<usize, u32> =
+        // Per-patrol in-flight reservations (owner -> series). Only the
+        // owning patrol releases its entry — when its move lands and the
+        // spot is acquired (the claim graduates into `day_claimed`), or when
+        // it re-targets away (fuel-refuel interruption, unreachable goal).
+        // The pre-fix day-global set kept such claims alive all day, so a
+        // series an interrupted patrol abandoned stayed blocked for every
+        // other patrol (zombie claim, Issue #364).
+        let mut reservations: std::collections::HashMap<usize, u32> =
+            std::collections::HashMap::new();
+        // Per-patrol currently-targeted series (the **active_target**
+        // concept, Issue #364): the patrol's OWN in-flight target must not be
+        // deprioritized by `reserved.contains` on subsequent ticks, or the
+        // patrol abandons it mid-travel and oscillates between destinations.
+        // It survives a reservation release (a patrol that detours to refuel
+        // resumes its goal) and is cleared when the goal is acquired.
+        let mut active_target: std::collections::HashMap<usize, u32> =
             std::collections::HashMap::new();
         // Per-agent sequential answer lists (the wire's per-agent bodies).
         let mut lists: Vec<Vec<Action>> = vec![Vec::new(); n];
@@ -393,12 +429,16 @@ impl Solver for CoverageCandidate {
                 let standing = agents[i].pos;
                 phase_acquire(&agents[i], &mut state, &mut events);
                 refill_fuel_if_supply_present(&mut agents, standing, &mut events);
-                claim_picked_series(&agents[i], &state, &mut day_claimed, &mut reserved);
+                let picked =
+                    claim_picked_series(&agents[i], &state, &mut day_claimed, &mut reserved);
+                release_on_pick(i, picked, &mut reservations, &mut active_target);
             } else if clock[i] > 0 {
                 let standing = agents[i].pos;
                 phase_acquire(&agents[i], &mut state, &mut events);
                 refill_fuel_if_supply_present(&mut agents, standing, &mut events);
-                claim_picked_series(&agents[i], &state, &mut day_claimed, &mut reserved);
+                let picked =
+                    claim_picked_series(&agents[i], &state, &mut day_claimed, &mut reserved);
+                release_on_pick(i, picked, &mut reservations, &mut active_target);
             }
 
             let remaining = day_steps - clock[i];
@@ -415,6 +455,14 @@ impl Solver for CoverageCandidate {
                     None
                 };
                 if let Some(s) = fuel_return_supply {
+                    // Fuel-refuel interruption (reservation lifecycle (b)):
+                    // the patrol re-targets away from its coverage goal, so
+                    // its OWN in-flight reservation is released — other
+                    // patrols may claim the series meanwhile (a stale global
+                    // entry would zombie-claim it all day, Issue #364). The
+                    // continuing goal stays in `active_target`, so the patrol
+                    // resumes it after refuelling instead of wandering.
+                    release_reservation(i, &mut reservations, &day_claimed, &mut reserved);
                     let goal = landings[s].unwrap_or(agents[s].pos);
                     let paths = routes(&state.setting.map, &agents[i], true);
                     (
@@ -436,17 +484,28 @@ impl Solver for CoverageCandidate {
                         TargetKey { spread_window, variant: self.variant },
                         &mut day_claimed,
                         &mut reserved,
-                        self_targeted.get(&i).copied(),
+                        active_target.get(&i).copied(),
                     );
-                    // Record this patrol's target so we can free it from
-                    // `reserved` on the next tick (Issue #364 oscillation fix).
-                    match target_series {
-                        Some(series) => {
-                            self_targeted.insert(i, series);
+                    if let Some(series) = target_series {
+                        // Continuing goal: the reservation is registered
+                        // under this patrol's own name every tick it still
+                        // holds the goal. Overwriting the slot first releases
+                        // only this patrol's own previous claim (re-targeting
+                        // away is lifecycle (b)); other patrols' entries are
+                        // never touched.
+                        if reservations.get(&i).copied() != Some(series) {
+                            release_reservation(i, &mut reservations, &day_claimed, &mut reserved);
                         }
-                        None => {
-                            self_targeted.remove(&i);
-                        }
+                        reservations.insert(i, series);
+                        active_target.insert(i, series);
+                    } else {
+                        // No reachable target and no pending pick: the patrol
+                        // holds no in-flight claim, so its own reservation is
+                        // released. A day-global set would keep the zombie
+                        // claim alive and starve patrols that could still
+                        // reach the series (Issue #364).
+                        release_reservation(i, &mut reservations, &day_claimed, &mut reserved);
+                        active_target.remove(&i);
                     }
                     (step, target_series)
                 }
@@ -515,18 +574,69 @@ impl Solver for CoverageCandidate {
 
 /// Record the series an agent just picked as claimed for today, so no patrol
 /// re-targets it. `phase_acquire` keeps the official cap / stock bookkeeping
-/// in `state`; this mirrors the claim side of the old per-step loop.
+/// in `state`; this mirrors the claim side of the old per-step loop. Returns
+/// the picked series, or `None` when this reflection picked nothing.
+///
+/// The claim is the **acquired** side of the Issue #364 bookkeeping split:
+/// it is persistent and no reservation release ever erases it (the pre-fix
+/// release erased an acquired claim, re-opened the series, and made patrols
+/// re-visit its remaining spots before unclaimed series).
 fn claim_picked_series(
     agent: &Agent,
     state: &engine::model::MatchState,
     day_claimed: &mut BTreeSet<u32>,
     reserved: &mut BTreeSet<u32>,
-) {
+) -> Option<u32> {
     if state.spot_picks_today.get(&(agent.id, agent.pos)).copied().unwrap_or(0) > 0 {
         if let Some(spot) = state.setting.map.get(agent.pos).and_then(|c| c.spot.as_ref()) {
             reserved.insert(spot.series);
             day_claimed.insert(spot.series);
+            return Some(spot.series);
         }
+    }
+    None
+}
+
+/// Reservation lifecycle (a) (Issue #364): the move landed and the spot was
+/// really picked — the picked series graduates into the persistent acquired
+/// claim (`day_claimed` / `reserved`) and the patrol's own in-flight
+/// reservation is dropped. The global `reserved` entry stays: it now
+/// represents the acquired claim, never an in-flight one. Only that patrol's
+/// own entries are touched; other patrols' reservations survive.
+fn release_on_pick(
+    owner: usize,
+    picked: Option<u32>,
+    reservations: &mut std::collections::HashMap<usize, u32>,
+    active_target: &mut std::collections::HashMap<usize, u32>,
+) {
+    let Some(series) = picked else { return };
+    if reservations.get(&owner).copied() == Some(series) {
+        reservations.remove(&owner);
+    }
+    // Goal achieved: the exemption must not survive the pick, or the patrol
+    // would re-target the acquired series' remaining spots (which stay
+    // un-exempted anyway through `day_claimed`).
+    if active_target.get(&owner).copied() == Some(series) {
+        active_target.remove(&owner);
+    }
+}
+
+/// Reservation lifecycle (b) (Issue #364): a patrol re-targets away from its
+/// goal (fuel-refuel interruption, unreachable goal), so its own in-flight
+/// reservation is released. The global `reserved` entry is removed only when
+/// no other patrol still holds the series and the series was not acquired —
+/// an acquired claim (`day_claimed`) is persistent and is never re-opened by
+/// a release.
+fn release_reservation(
+    owner: usize,
+    reservations: &mut std::collections::HashMap<usize, u32>,
+    day_claimed: &BTreeSet<u32>,
+    reserved: &mut BTreeSet<u32>,
+) {
+    let Some(series) = reservations.remove(&owner) else { return };
+    let still_held = reservations.values().any(|&s| s == series) || day_claimed.contains(&series);
+    if !still_held {
+        reserved.remove(&series);
     }
 }
 
