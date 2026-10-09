@@ -347,6 +347,34 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 - **seed 変更の観測**: 1909（seed42×15s: D50 MAX・B74）と同系統の結果 — **短日盤では seed/予算によらず D≈MAX・B が 50–60% に張り付く**構造が再確認された
 - B=60 は直近最低水準 — 収穫効率の改善（dev 側 `31f2062`/統合 Anytime 系）が唯一の突破口
 
+## 公式スコア + 実測（match 1917 = **fleet 候補初投入**（PR #372）・UI `#1918 第2卓`）
+
+**`fleet:budget=official:budget_ms=1500`** @ **`7de05df`**（PR #372 head = release tip `426321ae` + `e46f000`(364-fix2) + FleetFactory 登録）。
+バイナリ sha256 `58d1a644…`（専用 target）。**kinds `S,P,P,P,P,P,P,P`**（先頭 S = 任意台数で Supply 1 台保証）。
+16×16 / 4日 / 4台（S,P,P,P — **縮退なし**）。UI `#1918 第2卓`（卓id ずれ）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | Lux Lunae | 11 | 44 | 95 | 158.9s |
+| 2–8 | 優勝以外 / kami / 信州そば / うどん / Kuronica / OKJ-Admin / ネオユニヴァース | 11 | 44 | 89–94 | 5.1–206.2s |
+| **9** | **ユ（当方）** | **11** | **44** | **85** | **8.2s** |
+| 10 | まうす | 11 | 39 | 63 | 5.1s |
+
+- **D=44/44 MAX**（V=11 全チーム同点）→ 順位は第 3 軸（B）で確定。**B=85/95（89% = 全試合最高比率、1位差 −10 のみ）**・rank 9・rate 235→237 (+2)
+- 回答 8.2s ≈ 2.05s/日（budget_ms=1500 + 正規化/HTTP — 設定どおり）
+- revisions [7,28,47,65] — 4/4 全日受理・1日1 POST・error なし
+- 燃料 cap62: #2P は 45→**62 に回復**（給油インターセプト作動の実測）、#1/#3 は 37/36 へ漸減しつつ全日稼働（**座礁 0 台**）
+
+### 同クラス比較（短日・小盤の純 B 競争 — 盤面差あり・因果断定せず）
+
+| 試合 | 候補 | B vs 1位 |
+|---|---|---|
+| 1909 | anytime 15s（seed42） | 60%（74/123） |
+| 1912 | anytime 5s（seed7） | ~50–60%（60/1位不明） |
+| **1917** | **fleet 1.5s** | **89%（85/95）** |
+
+**fleet の B 改善（PR #372 offline +46%）が live の短日小盤でも発現した最初の証拠。**
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -555,7 +583,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **13 行**（1810 … 1909 / 1912、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **14 行**（1810 … 1912 / 1917、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -568,6 +596,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1906-364.log` | match 1906（PR #364 振動修正版・`bf17fd6`/`ab60bc4f`。除去済み） |
 | `run-1909-b15.log` | match 1909（bf17fd6 × 15s・全日短日 = 完全 B 競争。除去済み） |
 | `run-1912-s7.log` | match 1912（bf17fd6 × seed7。除去済み） |
+| `run-1917-fleet.log` | match 1917（fleet 初投入・`7de05df`/`58d1a644`。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
