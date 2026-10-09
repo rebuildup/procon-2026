@@ -341,7 +341,7 @@ fn build_plan(
 }
 
 /// Every still-stocked spot whose series the baseline has missed today.
-/// The result is indexed exactly like `spots` from the same map's cells().
+/// The result is indexed exactly like `spots` from the same map's `cells()`.
 fn missing_spot_indices(ctx: &SolverContext<'_>, plan: &AgentActions) -> Vec<usize> {
     let mut state = ctx.state.clone();
     let sim = MatchSim::default();
