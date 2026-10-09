@@ -51,6 +51,12 @@ const PARAMS: &[ParamSpec] = &[
         doc: "LIVE wall-clock cap per day plan, 1..59000; overrides iters",
     },
     ParamSpec { key: "seed", required: false, doc: "search seed (default 42)" },
+    ParamSpec {
+        key: "chains",
+        required: false,
+        doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
+              by planning tomorrow from each chain's end. Live uses the spare cores",
+    },
 ];
 
 fn parse<T: std::str::FromStr>(
@@ -87,7 +93,11 @@ impl CandidateFactory for FleetFactory {
             )));
         }
         let seed = parse(spec, "seed", 42u64)?;
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed }))
+        let chains = parse(spec, "chains", 1u32)?;
+        if !(1..=8).contains(&chains) {
+            return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
+        }
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains }))
     }
 }
 
@@ -95,7 +105,15 @@ pub struct FleetCandidate {
     pub iters: u32,
     pub budget_ms: u32,
     pub seed: u64,
+    /// Offline chain count; live runs one chain per spare core (at most 4).
+    pub chains: u32,
 }
+
+/// Starting temperatures of the chains, in score units (one ball = 100).
+/// The cool schedule collects the most balls on roomy days; the hot ones
+/// keep more series on days too short to reach everything (measured on the
+/// hard corpus), so the chains differ and tomorrow's replay picks.
+const CHAIN_T0: [f64; 4] = [40.0, 150.0, 400.0, 40.0];
 
 const NM: usize = 3;
 const FAST: usize = 0;
@@ -401,6 +419,8 @@ struct Evaluation {
     score: i64,
     /// Today's modelled `(series, balls)`.
     today: (i64, i64),
+    /// Series the greedy estimate reaches tomorrow (0 on the last day).
+    tomorrow_series: i64,
     lines: Vec<Timeline>,
     supplies: Vec<SupplyLine>,
 }
@@ -586,6 +606,7 @@ impl World {
             }
         }
         let mut score = fresh * W_NEW + series * W_SERIES + balls * W_BALL;
+        let mut tomorrow_series = 0;
         // Idle time is worth a little: prefer the shorter of two equal days.
         for line in &lines {
             let end =
@@ -617,6 +638,7 @@ impl World {
             // balls are not counted (the greedy estimate is too coarse and
             // trading today's sure balls for it measured worse).
             let _ = b;
+            tomorrow_series = d;
             score += d * W_SERIES * TOMORROW_NUM / TOMORROW_DEN;
             for (p, start) in starts.iter().enumerate() {
                 let full = i64::from(self.patrols[p].cap.min(tomorrow));
@@ -624,7 +646,7 @@ impl World {
                 score += 150 * have / full.max(1);
             }
         }
-        Evaluation { score, today: (series, balls), lines, supplies }
+        Evaluation { score, today: (series, balls), tomorrow_series, lines, supplies }
     }
 
     /// Nearest-useful-spot greedy from `starts` over a `steps`-tick day:
@@ -875,18 +897,23 @@ impl World {
         }
     }
 
-    fn search(&self, iters: u32, deadline: Option<Instant>, seed: u64) -> (Solution, Evaluation) {
+    fn search(
+        &self,
+        iters: u32,
+        deadline: Option<Instant>,
+        seed: u64,
+        t0: f64,
+        start: Option<Solution>,
+    ) -> (Solution, Evaluation) {
         let mut rng = Rng(seed);
-        let mut current = self.initial();
+        let mut current = start.unwrap_or_else(|| self.initial());
         let mut current_eval = self.evaluate(&current);
         let mut best = current.clone();
         let mut best_score = current_eval.score;
         if self.spots == 0 {
             return (best, current_eval);
         }
-        // Temperatures in score units (one ball = 100): measured best on the
-        // tuning corpus; hotter schedules lose balls at every search length.
-        let (t0, t1) = (40.0f64, 1.0f64);
+        let t1 = 1.0f64;
         let started = Instant::now();
         let mut live_progress = 0.0f64;
         let mut i = 0u32;
@@ -1012,32 +1039,103 @@ fn action(agent: usize, dir: Option<Direction>) -> Action {
 struct Replay {
     /// No illegal, fuel-short or step-mismatched action.
     clean: bool,
+    variety: usize,
     series_today: usize,
-    balls_total: u32,
+    balls_today: u32,
     /// Predicted next day-start `(wire cell index, fuel)` per agent.
     ends: Vec<(usize, u32)>,
+    /// The state the next day starts from.
+    state: MatchState,
 }
 
 fn replay(ctx: &SolverContext<'_>, plan: &AgentActions) -> Replay {
     let mut state = ctx.state.clone();
     let before = (state.illegal_action_count, state.rejected_response_count);
+    let held: u32 = state.agents.iter().map(engine::Agent::total_inventory).sum();
     let sim = MatchSim::default();
     for step in plan.actions.chunks(ctx.agent_ids.len().max(1)) {
         sim.step(&mut state, &AgentActions::new(step.to_vec()));
     }
     let width = usize::from(state.setting.map.size.width);
+    let total: u32 = state.agents.iter().map(engine::Agent::total_inventory).sum();
     Replay {
         clean: (state.illegal_action_count, state.rejected_response_count) == before,
+        variety: state.series_taken.len(),
         series_today: state
             .series_acquired_by_day
             .get(&ctx.day)
             .map_or(0, std::collections::BTreeSet::len),
-        balls_total: state.agents.iter().map(engine::Agent::total_inventory).sum(),
+        balls_today: total.saturating_sub(held),
         ends: state
             .agents
             .iter()
             .map(|a| (cell_index(width, a.pos.col, a.pos.row), a.fuel))
             .collect(),
+        state,
+    }
+}
+
+/// One chain's finished day: its plan, the official replay of it, and what
+/// the same planner then makes of tomorrow.
+struct Candidate {
+    plan: AgentActions,
+    check: Replay,
+    model: (i64, i64),
+    /// Tomorrow's `(series, balls)` from the plan's end state.
+    tomorrow: (i64, i64),
+}
+
+impl Candidate {
+    /// Clean first; then variety, series and balls over today and tomorrow.
+    fn key(&self) -> (bool, usize, i64, i64) {
+        (
+            self.check.clean,
+            self.check.variety,
+            i64::try_from(self.check.series_today).unwrap_or(i64::MAX) + self.tomorrow.0,
+            i64::from(self.check.balls_today) + self.tomorrow.1,
+        )
+    }
+}
+
+impl FleetCandidate {
+    fn seed(&self, ctx: &SolverContext<'_>, k: usize) -> u64 {
+        self.seed ^ (u64::from(ctx.day) << 32) ^ ((k as u64) << 48)
+    }
+
+    /// Turn an evaluated solution into the day's answer and replay it.
+    fn finish(
+        ctx: &SolverContext<'_>,
+        world: &World,
+        sol: &Solution,
+        eval: &Evaluation,
+    ) -> (AgentActions, Replay) {
+        let n = ctx.state.agents.len();
+        let lists = world.emit(sol, eval, n);
+        let steps = ctx.day_steps as usize;
+        let mut output = Vec::with_capacity(n * steps);
+        for step in 0..steps {
+            for (i, list) in lists.iter().enumerate() {
+                output.push(list.get(step).copied().unwrap_or_else(|| action(i, None)));
+            }
+        }
+        let plan =
+            crate::adapters::walk::BudgetMode::Official.apply(ctx, AgentActions::new(output));
+        let check = replay(ctx, &plan);
+        (plan, check)
+    }
+}
+
+/// Run `job` for every chain: on threads when live, in turn when offline (so
+/// an `iters` run is reproducible).
+fn per_chain<T: Send>(chains: usize, threaded: bool, job: impl Fn(usize) -> T + Sync) -> Vec<T> {
+    if threaded && chains > 1 {
+        std::thread::scope(|scope| {
+            let job = &job;
+            let handles: Vec<_> = (0..chains).map(|k| scope.spawn(move || job(k))).collect();
+            handles.into_iter().filter_map(|h| h.join().ok()).collect()
+        })
+    } else {
+        (0..chains).map(job).collect()
     }
 }
 
@@ -1050,7 +1148,6 @@ impl Solver for FleetCandidate {
         let fallback =
             || CoverageCandidate { park_risk: false, variant: 0, fuel_aware: false }.decide(ctx);
         let state = ctx.state;
-        let n = state.agents.len();
         // Agent ids index the answer lists; anything else is not this
         // candidate's contract.
         if state.agents.iter().enumerate().any(|(i, a)| usize::from(a.id) != i)
@@ -1061,9 +1158,9 @@ impl Solver for FleetCandidate {
         let later: Vec<u32> =
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
         let world = World::new(state, ctx.day_steps, &later);
-        let deadline = (self.budget_ms > 0).then(|| {
+        let window = (self.budget_ms > 0).then(|| {
             let budget = Duration::from_millis(u64::from(self.budget_ms));
-            let window = if ctx.remaining_ms == u32::MAX {
+            if ctx.remaining_ms == u32::MAX {
                 budget
             } else {
                 // The coordinator already holds back its submission margin
@@ -1071,53 +1168,80 @@ impl Solver for FleetCandidate {
                 // are left to cover. A quarter second of search is kept even
                 // when it reports no time: the greedy start alone measured
                 // far weaker than a short search.
-                Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(300).max(250)))
-            };
-            started + budget.min(window)
-        });
-        let seed = self.seed ^ (u64::from(ctx.day) << 32);
-        let (sol, eval) = if deadline.is_some() {
-            // Live: independent chains on the spare cores, best score wins.
-            // Offline (`iters`) stays one chain so a run is reproducible.
-            let chains = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 4);
-            std::thread::scope(|scope| {
-                let handles: Vec<_> = (0..chains as u64)
-                    .map(|k| {
-                        let world = &world;
-                        scope.spawn(move || world.search(self.iters, deadline, seed ^ (k << 48)))
-                    })
-                    .collect();
-                handles.into_iter().filter_map(|h| h.join().ok()).max_by_key(|(_, eval)| eval.score)
-            })
-            .unwrap_or_else(|| world.search(0, None, seed))
-        } else {
-            world.search(self.iters, deadline, seed)
-        };
-        let lists = world.emit(&sol, &eval, n);
-        let steps = ctx.day_steps as usize;
-        let mut output = Vec::with_capacity(n * steps);
-        for step in 0..steps {
-            for (i, list) in lists.iter().enumerate() {
-                output.push(list.get(step).copied().unwrap_or_else(|| action(i, None)));
+                budget.min(Duration::from_millis(u64::from(
+                    ctx.remaining_ms.saturating_sub(300).max(250),
+                )))
             }
-        }
-        let plan =
-            crate::adapters::walk::BudgetMode::Official.apply(ctx, AgentActions::new(output));
-        let check = replay(ctx, &plan);
+        });
+        // Live: one chain per spare core. Offline: `chains`.
+        let live = window.is_some();
+        let chains = if live {
+            std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 4)
+        } else {
+            self.chains as usize
+        };
+        // Several chains get a second phase on 30% of the window (offline: a
+        // third of `iters`); one chain spends everything on the day plan.
+        let second = chains > 1;
+        let plan_until = window.map(|w| started + if second { w * 7 / 10 } else { w });
+        let until = window.map(|w| started + w);
+        let first = per_chain(chains, live, |k| {
+            world.search(self.iters, plan_until, self.seed(ctx, k), CHAIN_T0[k % 4], None)
+        });
+        // Is tomorrow's variety at stake? If every chain covers every series
+        // today and the mere greedy estimate covers them all tomorrow, the
+        // chains differ only in balls: polish them. Otherwise let the same
+        // planner play tomorrow from each chain's end and compare.
+        let all_series =
+            i64::try_from(world.series.iter().collect::<std::collections::BTreeSet<_>>().len())
+                .unwrap_or(i64::MAX);
+        let settled = later.is_empty()
+            || first
+                .iter()
+                .all(|(_, e)| e.today.0 == all_series && e.tomorrow_series == all_series);
+        let candidates: Vec<Candidate> = per_chain(first.len(), live, |k| {
+            let (sol, eval) = &first[k];
+            if !second {
+                let (plan, check) = Self::finish(ctx, &world, sol, eval);
+                return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
+            }
+            let seed = self.seed(ctx, k) ^ 0x5bd1_e995;
+            if settled {
+                let (sol, eval) = world.search(self.iters / 3, until, seed, 5.0, Some(sol.clone()));
+                let (plan, check) = Self::finish(ctx, &world, &sol, &eval);
+                return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
+            }
+            let (plan, check) = Self::finish(ctx, &world, sol, eval);
+            let tomorrow = match later.split_first() {
+                Some((&steps, rest)) if check.clean => {
+                    let next = World::new(&check.state, steps, rest);
+                    next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
+                }
+                _ => (0, 0),
+            };
+            Candidate { plan, check, model: eval.today, tomorrow }
+        });
+        // Ties keep the first chain (`max_by_key` returns the last maximum).
+        let Some(best) = candidates.into_iter().rev().max_by_key(Candidate::key) else {
+            return fallback();
+        };
         // Evidence line for live runs: what the model promised, what the
         // official replay delivers, and where the server should report the
         // agents tomorrow. Game state only.
         tracing::info!(
             day = ctx.day,
-            clean = check.clean,
-            model_series = eval.today.0,
-            model_balls = eval.today.1,
-            replay_series = check.series_today,
-            replay_balls_total = check.balls_total,
-            predicted_ends = ?check.ends,
+            clean = best.check.clean,
+            chains,
+            model_series = best.model.0,
+            model_balls = best.model.1,
+            replay_series = best.check.series_today,
+            replay_balls = best.check.balls_today,
+            tomorrow_series = best.tomorrow.0,
+            tomorrow_balls = best.tomorrow.1,
+            predicted_ends = ?best.check.ends,
             "fleet day plan"
         );
-        if check.clean { plan } else { fallback() }
+        if best.check.clean { best.plan } else { fallback() }
     }
 }
 
@@ -1176,7 +1300,8 @@ pub fn choose_kinds(
         };
         let sender = sender.clone();
         std::thread::spawn(move || {
-            let solver = FleetCandidate { iters: KINDS_TRIAL_ITERS, budget_ms: 0, seed: 42 };
+            let solver =
+                FleetCandidate { iters: KINDS_TRIAL_ITERS, budget_ms: 0, seed: 42, chains: 1 };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
                     let score = (result.variety, result.daily_variety_sum, result.total_balls);

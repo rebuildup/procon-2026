@@ -62,14 +62,21 @@ fn fleet_requires_official_budget_and_rejects_bad_values() {
     assert!(build("fleet:budget=official:iters=many").is_err());
     assert!(build("fleet:budget=official:budget_ms=60000").is_err());
     assert!(build("fleet:budget=official:park=far").is_err());
+    assert!(build("fleet:budget=official:chains=4").is_ok());
+    assert!(build("fleet:budget=official:chains=0").is_err());
+    assert!(build("fleet:budget=official:chains=9").is_err());
 }
 
 #[test]
 fn fleet_iters_mode_is_reproducible() {
     let (_, state) = state_701("S,P,P,P,P");
     let ctx = SolverContext::from_state(&state);
-    let id = "fleet:budget=official:iters=300:seed=42";
-    assert_eq!(solver(id).decide(&ctx), solver(id).decide(&ctx));
+    for id in [
+        "fleet:budget=official:iters=300:seed=42",
+        "fleet:budget=official:iters=300:seed=42:chains=3",
+    ] {
+        assert_eq!(solver(id).decide(&ctx), solver(id).decide(&ctx), "{id}");
+    }
 }
 
 /// One Supply serving four Patrols must keep all of them fuelled: every
@@ -128,4 +135,14 @@ fn choose_kinds_defaults_to_first_slot_supply_when_out_of_time() {
     assert_eq!(trials.len(), 0);
     assert_eq!(kinds[0], AgentKind::Supply);
     assert!(kinds[1..].iter().all(|&k| k == AgentKind::Patrol));
+}
+
+/// Several chains choose the day plan by planning tomorrow from each chain's
+/// end; the chosen plans must stay legal on a board where a Supply-less team
+/// cannot cover everything (so the tomorrow comparison really runs).
+#[test]
+fn fleet_chains_stay_legal_when_tomorrow_decides() {
+    play_701("fleet:budget=official:iters=300:seed=3:chains=3", "P,P,P,P,P");
+    let (daily, _) = play_701("fleet:budget=official:iters=600:seed=3:chains=2", "S,P,P,P,P");
+    assert!(daily >= 196, "daily variety sum {daily}");
 }
