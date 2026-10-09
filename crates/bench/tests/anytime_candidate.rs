@@ -160,20 +160,24 @@ fn anytime_rejects_invalid_seed() {
 ///
 /// Construction intent (all Plain terrain, patrol step cost 2/cell):
 ///
-/// - Four spots at hand-checked walking distances from the shared patrol
-///   start `(2, 2)` such that the visit ORDER decides how many picks fit
-///   into the tight 22-step day budget.
+/// - Two patrol starts are split (`(2, 1)` and `(4, 4)`), and the four
+///   spots sit at hand-checked walking distances (2-7 cells, cube metric)
+///   from those starts so that the visit ORDER decides how many picks fit
+///   into the tight 26-step day budget (13 weighted moves).
 /// - `park=far` variant 0 (the anytime initial plan) ends the day with
-///   V=3 / D=3 / B=6; jitter variant 4 visits the spots in an order that
+///   V=3 / D=3 / B=6; jitter variant 5 visits the spots in an order that
 ///   fits one extra pick: same V, same D, B=7.
-/// - Variant seeds only jitter the coverage cost key (`cost * (8 + jitter)`)
-///   and rotate the patrol order, so the flip between the two orders is
-///   deterministic for a fixed seed.
+/// - Variant seeds only jitter the coverage cost key (`cost * (8 + jitter)`
+///   per target cell) and rotate the patrol order, so the flip between the
+///   two orders is deterministic for a fixed seed. Pinned against the
+///   release-0-4-0 tip `87595f2` in BOTH profiles (Issue #342 gate red:
+///   the previous fixture's variant-4 premise no longer held after the
+///   #353/#354 planner changes — it failed in dev and release alike).
 ///
 /// Official axes: V = `series_taken` (tier 1), D = `series_acquired_by_day`
 /// (tier 2), B = total balls picked (tier 3).
 fn b_improvement_setting() -> MatchSetting {
-    let spots = [(5i32, 0i32, 1u32), (6, 1, 2), (6, 3, 3), (9, 0, 3)];
+    let spots = [(8i32, 1i32, 1u32), (7, 5, 2), (4, 5, 3), (3, 0, 3)];
     let (w, h) = (16u8, 16u8);
     let cells: Vec<Cell> = (0..i32::from(h))
         .flat_map(|row| {
@@ -192,11 +196,11 @@ fn b_improvement_setting() -> MatchSetting {
         team: PlayerId::new("player-a").unwrap(),
         map: MapGrid::new(MapSize::new(w, h).unwrap(), cells).unwrap(),
         agents: vec![
-            Agent::patrol_with_fuel(0, HexCoord::new(2, 2), 60),
-            Agent::patrol_with_fuel(1, HexCoord::new(2, 2), 60),
+            Agent::patrol_with_fuel(0, HexCoord::new(2, 1), 60),
+            Agent::patrol_with_fuel(1, HexCoord::new(4, 4), 60),
             Agent::supply(2, HexCoord::new(2, 2)),
         ],
-        day_steps: 22,
+        day_steps: 26,
         num_days: 2,
         day_steps_by_day: Vec::new(),
     }
@@ -245,11 +249,12 @@ fn anytime_final_return_reflects_b_improvement_trial() {
     let initial_axes = replay_axes(&state, &initial);
     assert_eq!(initial_axes, (3, 3, 6), "fixture baseline must stay pinned");
 
-    // `trials=2:seed=2`: trial 1 (variant 3) does not improve; trial 2
-    // (variant 4) has the same V and D but B 6 -> 7. Deterministic offline
-    // mode: no wall clock anywhere in this path.
+    // `trials=2:seed=3`: trial 1 (variant 4) scores an exact tie
+    // (3, 3, 6, 190) and is not accepted; trial 2 (variant 5) has the same
+    // V and D but B 6 -> 7. Deterministic offline mode: no wall clock
+    // anywhere in this path.
     let solver = registry
-        .build("anytime:trials=2:seed=2:budget=official")
+        .build("anytime:trials=2:seed=3:budget=official")
         .and_then(|c| c.build_solver())
         .expect("anytime trials id builds");
     let improved = solver.decide(&ctx);
@@ -276,10 +281,11 @@ fn anytime_no_improvement_returns_initial_plan_unchanged() {
         .expect("park=far builds");
     let initial = baseline.decide(&ctx);
 
-    // seed=1, trials=1: variant 2 scores (3, 3, 6) — no axis improves, so
-    // the initial plan must be returned byte-identically.
+    // seed=9, trials=1: variant 10 scores (3, 3, 6, 189) — strictly worse
+    // positioning on an equal V/D/B, so no axis improves and the initial
+    // plan must be returned byte-identically.
     let solver = registry
-        .build("anytime:trials=1:seed=1:budget=official")
+        .build("anytime:trials=1:seed=9:budget=official")
         .and_then(|c| c.build_solver())
         .expect("anytime trials id builds");
     assert_eq!(solver.decide(&ctx), initial, "no-improvement run returns initial");
