@@ -248,6 +248,8 @@ just eval-list
 ```text
 loop                                  iterations / initial / seed / operators / lookahead / walk / assign
 multiloop                             grid / kmeans / seed / refine / walk / assign
+coverage                              budget / park
+search                                trials / seed / time_budget_ms / budget / park
 greedy
 nearest
 astar                                 policy
@@ -271,7 +273,15 @@ multiloop:kmeans=4:seed=42:walk=astar:assign=patrol
 greedy
 nearest
 astar:policy=step
+search:trials=32:seed=42:budget=official:park=far
 ```
+
+`search`（Issue #315）は seeded reconstruction を各日の `MatchSim` 実行で比較します。
+`trials` は決定的な探索回数（既定 8）、`seed` は既定 42、`time_budget_ms` は各日の壁時計上限
+（既定 0 = 時間打切りなし）、`budget=official` は必須です。`park=none`（既定）は従来の search
+候補と同じ挙動・IDを保ちます。`park=far` は初期計画と各再構築 trial に #331 の翌日向け
+series spreading を適用し、`coverage:budget=official:park=far` の停車方針を探索中も維持します。
+この追加キーは ID の末尾に付くため既存 candidate ID は変わりません。
 
 `initial` の候補: `greedy`（既定）/ `identity` / `reverse` / `sweep-row` / `sweep-col` / `random`。
 `reverse` は入力順の完全な反転（`identity` の逆）で、座標にも seed にも依存しない決定的ツアーです。

@@ -31,11 +31,13 @@ const PARAMS: &[ParamSpec] = &[
               (live: 20000 leaves the rest of the 60s day window to the wire)",
     },
     ParamSpec { key: "budget", required: true, doc: "official (required)" },
+    ParamSpec { key: "park", required: false, doc: "none (default) | far" },
 ];
 struct SearchCandidate {
     trials: u32,
     seed: u64,
     time_budget_ms: u32,
+    park_risk: bool,
 }
 // This is a one-day retention criterion, not a claim about the full match.
 fn replay_score(ctx: &SolverContext<'_>, plan: &AgentActions) -> (usize, u32) {
@@ -55,7 +57,7 @@ impl Solver for SearchCandidate {
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let started = Instant::now();
-        let mut best = CoverageCandidate { park_risk: false, variant: 0 }.decide(ctx);
+        let mut best = CoverageCandidate { park_risk: self.park_risk, variant: 0 }.decide(ctx);
         let mut score = replay_score(ctx, &best);
         // The wall clock is bounded from both sides (Issue #311, live
         // match 1762's revision=-1): the explicit `time_budget_ms` and the
@@ -78,7 +80,7 @@ impl Solver for SearchCandidate {
                     break;
                 }
                 let plan = CoverageCandidate {
-                    park_risk: false,
+                    park_risk: self.park_risk,
                     variant: mix(self.seed.wrapping_add(u64::from(trial))),
                 }
                 .decide(ctx);
@@ -110,7 +112,7 @@ impl Solver for SearchCandidate {
                             break;
                         }
                         let plan = CoverageCandidate {
-                            park_risk: false,
+                            park_risk: self.park_risk,
                             variant: mix(self.seed.wrapping_add(trial)),
                         }
                         .decide(ctx);
@@ -152,6 +154,13 @@ impl CandidateFactory for SearchFactory {
         super::reject_unknown_params(spec, PARAMS)?;
         let trials = spec.param_u32("trials")?.unwrap_or(8);
         let time_budget_ms = spec.param_u32("time_budget_ms")?.unwrap_or(0);
+        let park_risk = match spec.param("park") {
+            None | Some("none") => false,
+            Some("far") => true,
+            Some(other) => {
+                return Err(CandidateError::Build(format!("unknown park mode {other:?}")));
+            }
+        };
         if !(1..=1_048_576).contains(&trials)
             || time_budget_ms > 59_000
             || spec.param("budget") != Some("official")
@@ -165,6 +174,7 @@ impl CandidateFactory for SearchFactory {
             trials,
             seed: spec.param_u64("seed")?.unwrap_or(42),
             time_budget_ms,
+            park_risk,
         }))
     }
 }
@@ -198,7 +208,8 @@ mod tests {
         let coverage_score =
             replay_score(&ctx, &CoverageCandidate { park_risk: false, variant: 0 }.decide(&ctx));
         let searched =
-            SearchCandidate { trials: 1_048_576, seed: 42, time_budget_ms: 150 }.decide(&ctx);
+            SearchCandidate { trials: 1_048_576, seed: 42, time_budget_ms: 150, park_risk: false }
+                .decide(&ctx);
         assert!(searched.is_well_shaped(&ctx.agent_ids, ctx.day_steps), "step-major shape");
         assert!(
             replay_score(&ctx, &searched) >= coverage_score,

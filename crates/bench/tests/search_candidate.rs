@@ -2,7 +2,15 @@ use bench::CandidateRegistry;
 #[test]
 fn search_is_registered_and_bounded() {
     let r = CandidateRegistry::builtin();
-    assert!(r.build("search:trials=8:seed=42:budget=official").is_ok());
+    let legacy = r.build("search:trials=8:seed=42:budget=official").unwrap();
+    assert_eq!(legacy.id(), "search:trials=8:seed=42:budget=official");
+    assert!(r.build("search:trials=32:seed=42:budget=official:park=far").is_ok());
+    assert!(
+        r.build("search:trials=8:seed=42:budget=official:park=invalid")
+            .unwrap()
+            .build_solver()
+            .is_err()
+    );
     assert!(r.build("search:trials=0:seed=42:budget=official").unwrap().build_solver().is_err());
     // The 64-trial cap was Issue #315's exploration bound; the answer-time
     // gap (Issue #311) needs hundreds+ trials or a wall clock, so the cap
