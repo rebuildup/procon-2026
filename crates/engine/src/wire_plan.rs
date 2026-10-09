@@ -684,11 +684,30 @@ mod tests {
     /// Fuel is part of the official legality rules: a patrol that cannot pay
     /// for the next move has that move (and everything after it) dropped,
     /// rather than submitted and rejected wholesale.
+    ///
+    /// The settled boundary (342-fuel, official simple-server probes) is
+    /// **departure-only**: a move is fuel-short iff `fuel < fuel_cost(origin)`.
+    /// Carrying less than the *destination* costs is legal and must not be
+    /// dropped (Plain(fuel=1)→Mountain(cost=2) is accepted by the server).
     #[test]
     fn fuel_short_moves_are_dropped_not_submitted() {
         let map = map_with('r');
-        // Entering the road costs 2 fuel; the patrol carries only 1.
-        let broke = patrol_at(0, 0, 1);
+        // Entering the road costs 2 fuel *on the road*, but this move departs
+        // 平地 (cost 1): fuel=1 affords it under the settled departure-only
+        // rule, so the move must be kept — not dropped as the pre-342-fuel
+        // conservative `max(origin, destination)` guard did.
+        let thin = patrol_at(0, 0, 1);
+        let normalized = normalize_agent_plan(&thin, &map, 6, &[2, 2, 2, -3]);
+        assert_eq!(
+            normalized.as_slice(),
+            &[2, -4],
+            "fuel=1 departing 平地 must keep the first move (destination cost is not billed); \
+             the next move departs 道路 (fuel 2) and is dropped"
+        );
+        validate_agent_plan(&thin, &map, 6, &normalized).expect("padded plan validates");
+
+        // fuel=0 cannot even depart 平地 (cost 1): the move is dropped.
+        let broke = patrol_at(0, 0, 0);
         let normalized = normalize_agent_plan(&broke, &map, 6, &[2, 2, 2, -3]);
         assert_eq!(normalized.as_slice(), &[-6], "the unfuelable move must not be submitted");
         validate_agent_plan(&broke, &map, 6, &normalized).expect("padded plan validates");
@@ -727,10 +746,10 @@ mod tests {
     }
 
     /// The shadow tank deducts the **departed** cell's fuel, so it tracks
-    /// the official one move for move — the third step here would still be
-    /// affordable under the old entered-cell deduction (4 − 1 − 1 = 2) but
-    /// not under the official one (4 − 2 − 1 = 1, and entering the road at
-    /// `(3, 0)` costs 2).
+    /// the official one move for move. All three steps here are affordable
+    /// under the settled departure-only rule (4 − 2 − 1 − 1 = 0): the second
+    /// and third steps depart 平地 (cost 1) even though the third enters a
+    /// 道路 (cost 2 there) — only the departure is billed (Q&A Q11 / Q25).
     #[test]
     fn fuel_is_deducted_from_the_departed_cell() {
         let row = "rbbrbbbb";
@@ -739,8 +758,8 @@ mod tests {
         let normalized = normalize_agent_plan(&agent, &map, 6, &[2, 2, 2, -3]);
         assert_eq!(
             normalized.as_slice(),
-            &[2, 2, -3],
-            "the tank runs dry before the road at (3,0): 1 + 2 + 3 waits = 6"
+            &[2, 2, 2, -1],
+            "departure costs 2 + 1 + 1 drain the tank exactly: 1 + 2 + 2 + 1 wait = 6"
         );
         validate_agent_plan(&agent, &map, 6, &normalized).expect("padded plan validates");
     }

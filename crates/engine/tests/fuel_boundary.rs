@@ -83,7 +83,11 @@ fn conservative_legal_moves_stay_legal() {
         (Terrain::Mountain, Terrain::Road(engine::model::TrafficState::Jammed), 2),
         (Terrain::Road(engine::model::TrafficState::Smooth), Terrain::Plain, 2),
         (Terrain::Road(engine::model::TrafficState::Busy), Terrain::Mountain, 2),
-        (Terrain::Road(engine::model::TrafficState::Jammed), Terrain::Road(engine::model::TrafficState::Smooth), 2),
+        (
+            Terrain::Road(engine::model::TrafficState::Jammed),
+            Terrain::Road(engine::model::TrafficState::Smooth),
+            2,
+        ),
     ];
     for (origin, destination, old_guard) in pairs {
         let fuel = old_guard.max(fuel_cost(origin)).max(fuel_cost(destination));
@@ -100,7 +104,10 @@ fn conservative_legal_moves_stay_legal() {
 fn road_departure_still_requires_two() {
     // 道路 departure bills 2 regardless of what it enters.
     let agent = patrol_with_fuel(1);
-    assert_eq!(move_fuel(&agent, Terrain::Road(engine::model::TrafficState::Smooth), Terrain::Plain), None);
+    assert_eq!(
+        move_fuel(&agent, Terrain::Road(engine::model::TrafficState::Smooth), Terrain::Plain),
+        None
+    );
     let agent = patrol_with_fuel(2);
     assert_eq!(
         move_fuel(&agent, Terrain::Road(engine::model::TrafficState::Jammed), Terrain::Plain),
@@ -138,7 +145,8 @@ fn try_move_allows_plain_one_into_mountain() {
     let agent = patrol_with_fuel(1);
     let mut outcomes = Vec::new();
     let mut events = Vec::new();
-    let outcome = try_move(&agent, Action::step(0, Direction::Right), &map, &mut outcomes, &mut events);
+    let outcome =
+        try_move(&agent, Action::step(0, Direction::Right), &map, &mut outcomes, &mut events);
     assert!(outcome.is_moved(), "fuel=1 平地→山地 must move under the official rule");
 }
 
@@ -150,7 +158,8 @@ fn try_move_rejects_mountain_one_into_plain() {
     agent.pos = HexCoord::new(0, 0);
     let mut outcomes = Vec::new();
     let mut events = Vec::new();
-    let outcome = try_move(&agent, Action::step(0, Direction::Right), &map, &mut outcomes, &mut events);
+    let outcome =
+        try_move(&agent, Action::step(0, Direction::Right), &map, &mut outcomes, &mut events);
     assert!(!outcome.is_moved(), "fuel=1 山地→平地 must be refused (departure costs 2)");
 }
 
@@ -171,7 +180,8 @@ fn move_fuel_and_try_move_share_the_boundary() {
         let agent = patrol_with_fuel(fuel);
         let mut outcomes = Vec::new();
         let mut events = Vec::new();
-        let outcome = try_move(&agent, Action::step(0, Direction::Right), &map, &mut outcomes, &mut events);
+        let outcome =
+            try_move(&agent, Action::step(0, Direction::Right), &map, &mut outcomes, &mut events);
         let contract = move_fuel(&agent, origin, destination);
         assert_eq!(
             outcome.is_moved(),
