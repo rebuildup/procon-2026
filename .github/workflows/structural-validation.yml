@@ -2,12 +2,6 @@ name: Structural solver validation
 on:
   push:
     branches: ['366']
-  pull_request:
-    paths:
-      - 'crates/bench/src/adapters/structural_solver.rs'
-      - 'crates/bench/src/adapters/mod.rs'
-      - 'crates/bench/src/candidate.rs'
-      - '.github/workflows/structural-validation.yml'
 
 permissions:
   contents: read
