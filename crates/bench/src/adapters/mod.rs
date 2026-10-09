@@ -100,3 +100,6 @@ pub(crate) fn reject_unknown_params(
 
 pub mod search_solver;
 pub use search_solver::SearchFactory;
+
+pub mod structural_solver;
+pub use structural_solver::StructuralFactory;
