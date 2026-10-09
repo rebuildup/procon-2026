@@ -321,6 +321,22 @@ A系列 1 因子変更（予算 15s→**30s**、seed 42 固定）。`anytime:bud
 - 燃料 cap80 全 agent 恒常（座礁 0）・4/4 全日稼働・回答 ≈1.4s/日（短日では早期打ち切り頻発）
 - **1903（同予算・`426321ae`）との差分 = 振動修正のみ** — 盤面差（4台/16×16 共通だが日数 7→9・daySteps 構成が違い）があるため単ため単純比較はしない
 
+## 公式スコア + 実測（match 1909 = `bf17fd6` × budget 15s・UI `#1909 第1卓`）
+
+`anytime:budget_ms=15000:seed=42:budget=official` @ `bf17fd6`（PR #364 版・1 因子変更 5s→15s）。
+16×16 / 5日 / 4台（P,S,P,S）・**全日短日**（daySteps [37,38,36,39,43]）。UI `#1909 第1卓`（卓ID一致）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1–3 | チーム-ae2f / 優勝以外 / ノーベル賞… | 10 | 50 | 123 | 26.0–147.6s |
+| 4–9 | o / 🤖SOBA / 牛めしセット / ヘキサンジオール / ちゃんぽん / 自己解生成… | 10 | 50 | 108–121 | 2.1–196.7s |
+| **10** | **ユ（当方）** | **10** | **50** | **74** | **7.3s** |
+
+- **全チーム D=50/50 MAX**（V=10 全員同点）→ **完全な B 競争**。B=74/123 = **60%**・rate 245→233（−12・強豪フィールド）
+- **回答 7.3s ≈ 1.5s/日** — 15s 予算でも短日では早期打ち切りが即発火（探索空間が小さい）
+- revisions [4,23,41,60,79] 全日受理・1日1 POST・燃料 cap72 恒常（座礁 0）
+- **短日盤の構造**: D は誰でも MAX → **B 効率が唯一の差別化軸**（当方 60% — 収穫効率改善が本命）
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -529,7 +545,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **11 行**（1810 … 1903 / 1906、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **12 行**（1810 … 1906 / 1909、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -540,6 +556,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1894-6p1s.log` | match 1894（6P1S 構成・Supply 欠落の縮退観測。除去済み） |
 | `run-1903-rel-anytime.log` | match 1903（release 統合 anytime・`426321ae`/`d9e067f2`。除去済み） |
 | `run-1906-364.log` | match 1906（PR #364 振動修正版・`bf17fd6`/`ab60bc4f`。除去済み） |
+| `run-1909-b15.log` | match 1909（bf17fd6 × 15s・全日短日 = 完全 B 競争。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
