@@ -21,11 +21,21 @@
 //! **one illegal action invalidates the whole day's plan**
 //! (`revision = -1`).
 //!
-//! # Fuel is billed on the departed cell too (Issue #245)
+//! # Fuel is billed on the departed cell only (Issue #245, settled by #342)
 //!
 //! The official server charges a move's **fuel** from the cell the agent
 //! leaves — the same cell that bills the step cost — not from the cell it
-//! enters. [`crate::transitions::try_move`] shares the same fuel transition. Probed against the official binary on
+//! enters, and executability is **`fuel >= fuel_cost(origin)` alone**: a
+//! move that merely cannot afford the *destination*'s fuel is legal. That
+//! departure-only boundary is settled against the official simple answer
+//! server (Q&A Q11/Q25 — `docs/evidence/campaign-311/official-server-parity/`:
+//! 平地 fuel=1 → 山地 is *accepted* at `revision = 1` and ends at fuel=0,
+//! 山地 fuel=1 → 平地 is rejected, and the threshold sits on `>=`); it is
+//! exactly what [`crate::rules::move_fuel`] pins and
+//! [`crate::transitions::try_move`] shares.
+//!
+//! The departure cell (as opposed to the entered cell) was first located by
+//! probing the official binary on
 //! localhost with match550's board (`busyThreshold 1`,
 //! `jammedThreshold 3`, 9 days, 7 agents, `--kinds P`,
 //! `loop:iterations=32:initial=greedy:lookahead=crossday:walk=astar`):
@@ -47,12 +57,14 @@
 //! | must afford `max(origin, entered)`, billed on that | wrong (days 6/7 predicted rejected) | correct |
 //! | strict `fuel > cost` | wrong (day 7 predicted rejected) | correct |
 //!
-//! The two surviving readings are indistinguishable from acceptance data
-//! alone, so this boundary enforces their **intersection**: a move must
-//! afford the fuel of both the departed and the entered cell, and the
-//! replay deducts the departed cell's cost. That is never weaker than the
-//! pre-#245 rule (it only adds the departed-cell check) and it rejects
-//! exactly the two observed cases. The step budget was never the problem:
+//! Those probes left two readings alive ("billed on the departed cell" and
+//! the stricter "must afford both cells, billed on the departed one") —
+//! acceptance data alone could not separate them. The #342 official-server
+//! probes above do: the destination-affordance reading is **wrong** (a
+//! patrol with less fuel than the destination costs still gets `revision:
+//! 1`), so this boundary charges and checks the **departed cell only**,
+//! never weaker than the pre-#245 entered-cell rule for the cases those
+//! probes observed. The step budget was never the problem:
 //! every day of both runs summed to `daySteps` exactly under the traffic
 //! `GET /` reported — the payload carries **all** road cells (246 entries
 //! for a 246-road map, every day of both runs), so the overlay has no
@@ -107,11 +119,11 @@ use crate::transitions::phase_fuel;
 /// fuel cost)`.
 ///
 /// The cell the agent **departs** bills both the step budget (module table)
-/// and the fuel deduction; the move also has to afford the fuel of the cell
-/// it **enters**, which keeps this boundary at least as strict as it was
-/// before Issue #245 while adding the departed-cell check that the two
-/// localhost rejections needed. `Err` carries the reason the official
-/// server reports when it rejects the whole day for one illegal action.
+/// and the fuel deduction; executability is `fuel >= fuel_cost(origin)`
+/// alone (Q&A Q11/Q25, settled against the official server — Issue #342
+/// P0-C and `crate::rules::move_fuel`). `Err` carries the reason the
+/// official server reports when it rejects the whole day for one illegal
+/// action.
 ///
 /// An agent standing off the board is the caller's error path (a corrupted
 /// live state, not a bad action); an agent standing on a pond falls out of
@@ -684,11 +696,30 @@ mod tests {
     /// Fuel is part of the official legality rules: a patrol that cannot pay
     /// for the next move has that move (and everything after it) dropped,
     /// rather than submitted and rejected wholesale.
+    ///
+    /// The settled boundary (342-fuel, official simple-server probes) is
+    /// **departure-only**: a move is fuel-short iff `fuel < fuel_cost(origin)`.
+    /// Carrying less than the *destination* costs is legal and must not be
+    /// dropped (Plain(fuel=1)→Mountain(cost=2) is accepted by the server).
     #[test]
     fn fuel_short_moves_are_dropped_not_submitted() {
         let map = map_with('r');
-        // Entering the road costs 2 fuel; the patrol carries only 1.
-        let broke = patrol_at(0, 0, 1);
+        // Entering the road costs 2 fuel *on the road*, but this move departs
+        // 平地 (cost 1): fuel=1 affords it under the settled departure-only
+        // rule, so the move must be kept — not dropped as the pre-342-fuel
+        // conservative `max(origin, destination)` guard did.
+        let thin = patrol_at(0, 0, 1);
+        let normalized = normalize_agent_plan(&thin, &map, 6, &[2, 2, 2, -3]);
+        assert_eq!(
+            normalized.as_slice(),
+            &[2, -4],
+            "fuel=1 departing 平地 must keep the first move (destination cost is not billed); \
+             the next move departs 道路 (fuel 2) and is dropped"
+        );
+        validate_agent_plan(&thin, &map, 6, &normalized).expect("padded plan validates");
+
+        // fuel=0 cannot even depart 平地 (cost 1): the move is dropped.
+        let broke = patrol_at(0, 0, 0);
         let normalized = normalize_agent_plan(&broke, &map, 6, &[2, 2, 2, -3]);
         assert_eq!(normalized.as_slice(), &[-6], "the unfuelable move must not be submitted");
         validate_agent_plan(&broke, &map, 6, &normalized).expect("padded plan validates");
@@ -727,10 +758,10 @@ mod tests {
     }
 
     /// The shadow tank deducts the **departed** cell's fuel, so it tracks
-    /// the official one move for move — the third step here would still be
-    /// affordable under the old entered-cell deduction (4 − 1 − 1 = 2) but
-    /// not under the official one (4 − 2 − 1 = 1, and entering the road at
-    /// `(3, 0)` costs 2).
+    /// the official one move for move. All three steps here are affordable
+    /// under the settled departure-only rule (4 − 2 − 1 − 1 = 0): the second
+    /// and third steps depart 平地 (cost 1) even though the third enters a
+    /// 道路 (cost 2 there) — only the departure is billed (Q&A Q11 / Q25).
     #[test]
     fn fuel_is_deducted_from_the_departed_cell() {
         let row = "rbbrbbbb";
@@ -739,8 +770,8 @@ mod tests {
         let normalized = normalize_agent_plan(&agent, &map, 6, &[2, 2, 2, -3]);
         assert_eq!(
             normalized.as_slice(),
-            &[2, 2, -3],
-            "the tank runs dry before the road at (3,0): 1 + 2 + 3 waits = 6"
+            &[2, 2, 2, -1],
+            "departure costs 2 + 1 + 1 drain the tank exactly: 1 + 2 + 2 + 1 wait = 6"
         );
         validate_agent_plan(&agent, &map, 6, &normalized).expect("padded plan validates");
     }
