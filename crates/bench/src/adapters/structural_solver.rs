@@ -352,9 +352,10 @@ fn replay_score(ctx: &SolverContext<'_>, candidate: &AgentActions) -> Option<Sco
         return None;
     }
     let variety = u32::try_from(state.series_taken.len()).expect("bounded contest series count");
-    let today = state.series_acquired_by_day.get(&ctx.day).map_or(0, |s| {
-        u32::try_from(s.len()).expect("bounded contest series count")
-    });
+    let today = state
+        .series_acquired_by_day
+        .get(&ctx.day)
+        .map_or(0, |s| u32::try_from(s.len()).expect("bounded contest series count"));
     let balls: u32 = state.agents.iter().map(engine::model::Agent::total_inventory).sum();
     let fuel: u32 =
         state.agents.iter().filter(|a| a.kind == AgentKind::Patrol).map(|a| a.fuel.min(100)).sum();
