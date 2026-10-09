@@ -508,6 +508,22 @@ sha256 再検証（`58d1a644`）のうえ再投入（本試合）。**cargo の 
 - 1位 0f0 489（差 −19）。7位 SOBA 475 → 当方 470 で tier3 決着
 - revisions [9,22,39,54,66,85,101,116,134,150] 全日受理・1日1 POST・燃料給油サイクル全日作動（座礁 0 台）
 
+## 公式スコア + 実測（match 1942 = fleet 標準 config・**32×32/7台クラス初観測**・UI `#1942 第1卓`）
+
+`fleet:budget=official:budget_ms=5000` @ `7de05df`。**32×32 / 4日 / 7台**（S,P×6 — **fleet 初の 7 台マッチ**）・daySteps [85,112,175,113]（長日）・燃料 cap173。UI `#1942 第1卓`（卓ID一致）。
+
+| 順位 | チーム | V | D | B | 回答 |
+|---:|---|---:|---:|---:|---:|
+| 1 | チーム-ae2f | 25 | 100 | 413 | 116.1s |
+| 2–8 | 0f0 / 信州そば / ヘキサンジオール / 堀大輔 / Papasta / SOBA / おいせの | 25 | 100 | 361–407 | 32.2–214.1s |
+| **9** | **ユ（当方）** | **25** | **100** | **358** | **22.9s** |
+| 10 | まうす | 25 | 100 | 244 | 8.3s |
+
+- **全チーム D=100/100 MAX・V=25 同点の純 B 競争** → **B=358/413 = 87%**・rank 9・rate 496→483 (−13・強豪フィールド)
+- **32×32/7台クラスの比較（1810 coverage park=far: B=138/340 = 41%）→ fleet 87%** — 同クラスで最大の改善（日数 5→4 の差はある・因果断定せず）
+- **7台マッチで fleet 初投入** — S 先頭 kinds で Supply 1 台保証・**座礁 0 台・7/7 全日稼働**（moves 49–119/日）
+- revisions [7,25,54,76] 全日受理・1日1 POST・回答 ≈5.7s/日
+
 ## 回答時間の検証（追加指示への回答）
 
 ### 結論
@@ -716,7 +732,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 
 | ファイル | 内容 |
 |---|---|
-| `runs.jsonl` | evidence **21 行**（1810 … 1936 / 1938、`record_kind: "arena-run"`、schema は arena.md） |
+| `runs.jsonl` | evidence **22 行**（1810 … 1938 / 1942、`record_kind: "arena-run"`、schema は arena.md） |
 | `run-1030.log` | match 1810 の RUST_LOG=debug 実行ログ（提出 body 全文・登録経緯。token 検出 0 件） |
 | `run-1045.log` | match 1811 の同上（token 検出 0 件） |
 | `run-1830.log` | match 1857 の同上（token / email / ローカルパス 検出 0 件に除去済み） |
@@ -737,6 +753,7 @@ PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" RUST_LOG=debug \
 | `run-1934-fleet.log` | match 1934（fleet 標準・rate +57。除去済み） |
 | `run-1936-fleet.log` | match 1936（fleet 標準・rate +31。除去済み） |
 | `run-1938-fleet.log` | match 1938（fleet 標準・24×24/10日。除去済み） |
+| `run-1942-fleet.log` | match 1942（fleet・32×32/7台クラス初観測。除去済み） |
 | `source-sha.txt` | `60ed527…`（1810/1811/1857 の共通 SHA。1869 は `f848f2758e76ee1da3733182315f3bcbf104ab83` — evidence 行の `source_commit_sha` 参照） |
 
 ## 未了
