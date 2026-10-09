@@ -25,6 +25,7 @@ pub struct CoverageFactory;
 const PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "budget", required: true, doc: "official (required)" },
     ParamSpec { key: "park", required: false, doc: "none (default) | far" },
+    ParamSpec { key: "fuelaware", required: false, doc: "false (default) | true" },
 ];
 impl CandidateFactory for CoverageFactory {
     fn algorithm(&self) -> &'static str {
@@ -267,7 +268,15 @@ impl Solver for CoverageCandidate {
         let mut state = fresh_day_state(ctx);
         let n = state.agents.len();
         let patrols = patrol_order(&state, self.variant);
-        let (pairs, assigned) = if self.fuel_aware {
+        // Use fuel-aware pairing only when fuel pressure exists (Issue #342).
+        // This avoids disrupting normal assignment when no fuel issue exists.
+        let min_patrol_fuel = patrols
+            .iter()
+            .map(|&p| state.agents[p].fuel)
+            .min()
+            .unwrap_or(u32::MAX);
+        let has_fuel_pressure = min_patrol_fuel < 50; // threshold
+        let (pairs, assigned) = if self.fuel_aware && has_fuel_pressure {
             supply_pairs_fuel_aware(&state, &patrols)
         } else {
             supply_pairs(&state, &patrols)
