@@ -233,6 +233,7 @@ struct TargetKey {
 /// is open. `key.variant` jitters the coverage cost key for search-solver
 /// trials (#312/#313). Updates `reserved` / `day_claimed` with the chosen
 /// series.
+#[allow(clippy::too_many_arguments, reason = "8 params: state+agent+paths+remaining+key+2 sets+self_target")]
 fn patrol_step(
     state: &engine::model::MatchState,
     agent: &Agent,
@@ -268,7 +269,7 @@ fn patrol_step(
         .filter_map(|s| {
             let route = paths[index(map, s.pos)];
             (route.cost <= remaining && route.first.is_some()).then_some((
-                reserved.contains(&s.series),
+                reserved.contains(&s.series) && self_target != Some(s.series),
                 // Park: spread across unclaimed series only on medium+ days
                 // whose tomorrow is also medium+. Short days scatter patrols;
                 // spreading the day before a short day can strand the next

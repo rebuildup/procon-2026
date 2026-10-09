@@ -1,0 +1,276 @@
+{
+  "ENGINE_base": "87595f2",
+  "implementation_sha": "pending commit",
+  "date": "2026-10-09",
+  "classification": "OFFICIAL TIMELINE COMPLIANT",
+  "fix": "Ownership-safe self-target: patrol_step gains self_target parameter; target selection exempts self_target from reserved deprioritization; reserved is NEVER mutated to free own target",
+  "unique_cases": 10,
+  "classification_counts": {
+    "V_WIN": 0,
+    "D_WIN": 1,
+    "B_WIN": 6,
+    "TIE": 3,
+    "V_LOSS": 0,
+    "D_LOSS": 0,
+    "B_LOSS": 0,
+    "INVALID": 0
+  },
+  "B_WIN_cases": [
+    {
+      "case": "fixture:medium-16x16",
+      "park": [
+        4,
+        4,
+        9
+      ],
+      "anytime": [
+        4,
+        4,
+        11
+      ],
+      "dB": 2
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park": [
+        4,
+        4,
+        16
+      ],
+      "anytime": [
+        4,
+        4,
+        17
+      ],
+      "dB": 1
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park": [
+        3,
+        9,
+        24
+      ],
+      "anytime": [
+        3,
+        9,
+        28
+      ],
+      "dB": 4
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park": [
+        2,
+        2,
+        8
+      ],
+      "anytime": [
+        2,
+        2,
+        9
+      ],
+      "dB": 1
+    },
+    {
+      "case": "fixture:series-many",
+      "park": [
+        4,
+        4,
+        9
+      ],
+      "anytime": [
+        4,
+        4,
+        10
+      ],
+      "dB": 1
+    },
+    {
+      "case": "fixture:series-few",
+      "park": [
+        1,
+        1,
+        9
+      ],
+      "anytime": [
+        1,
+        1,
+        11
+      ],
+      "dB": 2
+    }
+  ],
+  "D_WIN_cases": [
+    {
+      "case": "fixture:701",
+      "park": [
+        20,
+        196,
+        426
+      ],
+      "anytime": [
+        20,
+        200,
+        446
+      ],
+      "dD": 4,
+      "dB": 20
+    }
+  ],
+  "701_detail": {
+    "coverage_park_far": {
+      "V": 20,
+      "D": 196,
+      "B": 426
+    },
+    "anytime_5000ms": {
+      "V": 20,
+      "D": 200,
+      "B": 446
+    },
+    "note": "anytime achieves D=200 (MAX for 20 series \u00d7 10 days). Coverage also improved from 185 to 196."
+  },
+  "all_results": [
+    {
+      "case": "fixture:openapi-sample",
+      "park": [
+        2,
+        2,
+        3
+      ],
+      "anytime": [
+        2,
+        2,
+        3
+      ],
+      "class": "TIE"
+    },
+    {
+      "case": "fixture:small-8x8",
+      "park": [
+        2,
+        2,
+        7
+      ],
+      "anytime": [
+        2,
+        2,
+        7
+      ],
+      "class": "TIE"
+    },
+    {
+      "case": "fixture:medium-16x16",
+      "park": [
+        4,
+        4,
+        9
+      ],
+      "anytime": [
+        4,
+        4,
+        11
+      ],
+      "class": "B_WIN"
+    },
+    {
+      "case": "fixture:large-32x32",
+      "park": [
+        4,
+        4,
+        16
+      ],
+      "anytime": [
+        4,
+        4,
+        17
+      ],
+      "class": "B_WIN"
+    },
+    {
+      "case": "fixture:road-heavy",
+      "park": [
+        2,
+        2,
+        4
+      ],
+      "anytime": [
+        2,
+        2,
+        4
+      ],
+      "class": "TIE"
+    },
+    {
+      "case": "fixture:road-heavy-v2",
+      "park": [
+        3,
+        9,
+        24
+      ],
+      "anytime": [
+        3,
+        9,
+        28
+      ],
+      "class": "B_WIN"
+    },
+    {
+      "case": "fixture:mountain-heavy",
+      "park": [
+        2,
+        2,
+        8
+      ],
+      "anytime": [
+        2,
+        2,
+        9
+      ],
+      "class": "B_WIN"
+    },
+    {
+      "case": "fixture:series-many",
+      "park": [
+        4,
+        4,
+        9
+      ],
+      "anytime": [
+        4,
+        4,
+        10
+      ],
+      "class": "B_WIN"
+    },
+    {
+      "case": "fixture:series-few",
+      "park": [
+        1,
+        1,
+        9
+      ],
+      "anytime": [
+        1,
+        1,
+        11
+      ],
+      "class": "B_WIN"
+    },
+    {
+      "case": "fixture:701",
+      "park": [
+        20,
+        196,
+        426
+      ],
+      "anytime": [
+        20,
+        200,
+        446
+      ],
+      "class": "D_WIN"
+    }
+  ]
+}
