@@ -852,7 +852,9 @@ impl World {
         if self.spots == 0 {
             return (best, current_eval);
         }
-        let (t0, t1) = (400.0f64, 5.0f64);
+        // Temperatures in score units (one ball = 100): measured best on the
+        // tuning corpus; hotter schedules lose balls at every search length.
+        let (t0, t1) = (40.0f64, 1.0f64);
         let started = Instant::now();
         let mut live_progress = 0.0f64;
         let mut i = 0u32;
@@ -1033,7 +1035,23 @@ impl Solver for FleetCandidate {
             started + budget.min(window)
         });
         let seed = self.seed ^ (u64::from(ctx.day) << 32);
-        let (sol, eval) = world.search(self.iters, deadline, seed);
+        let (sol, eval) = if deadline.is_some() {
+            // Live: independent chains on the spare cores, best score wins.
+            // Offline (`iters`) stays one chain so a run is reproducible.
+            let chains = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 4);
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = (0..chains as u64)
+                    .map(|k| {
+                        let world = &world;
+                        scope.spawn(move || world.search(self.iters, deadline, seed ^ (k << 48)))
+                    })
+                    .collect();
+                handles.into_iter().filter_map(|h| h.join().ok()).max_by_key(|(_, eval)| eval.score)
+            })
+            .unwrap_or_else(|| world.search(0, None, seed))
+        } else {
+            world.search(self.iters, deadline, seed)
+        };
         let lists = world.emit(&sol, &eval, n);
         let steps = ctx.day_steps as usize;
         let mut output = Vec::with_capacity(n * steps);
