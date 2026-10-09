@@ -1,20 +1,18 @@
 //! Anytime solver: use the full answer window to improve the plan (Issue #340).
 //!
 //! Starts from the current best candidate (park=far) and generates variants.
-//! Scores by current-day axes plus next-day positioning (fuel + proximity).
-//! Always returns the best valid plan found, even if interrupted.
+//! Scores by current-day series (the only axis that can replace the initial
+//! plan) plus diagnostic ball / next-day positioning values.
 //!
 //! Unlike `search`, this is a true anytime algorithm:
 //! - Initial solution is the strongest candidate (park=far)
 //! - Variants explore assignment/ordering changes, not just cost jitter
-//! - Scoring includes next-day positioning value
-//! - Returns immediately when no improvement is found
+//! - Acceptance is series-only so full-match D cannot be traded for B
+//! - Returns immediately when no series improvement is found
 use crate::adapters::coverage_solver::CoverageCandidate;
 use crate::candidate::{CandidateError, CandidateFactory, CandidateSpec, ParamSpec};
-use engine::model::{AgentActions, AgentKind, HexCoord, Solver, SolverContext};
+use engine::model::{AgentActions, AgentKind, Solver, SolverContext};
 use engine::MatchSim;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 pub struct AnytimeFactory;
@@ -45,7 +43,7 @@ impl CandidateFactory for AnytimeFactory {
         PARAMS
     }
     fn describe(&self) -> &'static str {
-        "Anytime search from park=far with next-day positioning score"
+        "Anytime search from park=far; accept only strict series gains"
     }
     fn build(&self, spec: &CandidateSpec) -> Result<Box<dyn Solver>, CandidateError> {
         super::reject_unknown_params(spec, PARAMS)?;
@@ -66,8 +64,17 @@ struct AnytimeCandidate {
     seed: u64,
 }
 
-/// Score a plan: (series_today, balls_today, next_day_value).
-/// next_day_value rewards fuel remaining and proximity to unvisited series.
+/// Score a plan for anytime search (Issue #342).
+/// Returns (`series_today`, `balls_today`, `next_day_value`).
+///
+/// CRITICAL: `series_today` maps to official D (`daily_variety_sum`).
+/// This MUST NOT decrease. `balls_today` maps to official B.
+/// `next_day_value` is a heuristic for future positioning.
+///
+/// Only `series_today` is allowed to replace the initial park=far plan.
+/// Today's ending position decides tomorrow's reachable series, so a
+/// ball-only gain (or a series gain bought with a collapsed tomorrow)
+/// can lower full-match D — the sum of per-day varieties.
 fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32) {
     let mut state = ctx.state.clone();
     let sim = MatchSim::default();
@@ -79,38 +86,30 @@ fn score_plan(ctx: &SolverContext<'_>, plan: &AgentActions) -> (u32, u32, u32) {
         .get(&ctx.day)
         .map_or(0, |s| s.len() as u32);
     let balls_today: u32 = state.agents.iter().map(|a| a.total_inventory()).sum();
-    
-    // Next-day positioning: fuel remaining + proximity to unvisited series.
+
+    // Next-day positioning: fuel remaining + proximity to ALL series (not just
+    // unacquired, since tomorrow needs to re-acquire them).
     let fuel_value: u32 = state
         .agents
         .iter()
         .filter(|a| a.kind == AgentKind::Patrol)
-        .map(|a| a.fuel.min(100)) // cap to avoid dominating
+        .map(|a| a.fuel.min(50))
         .sum();
-    
-    // Proximity: reward being close to spots of series not yet acquired today.
-    let acquired: std::collections::BTreeSet<u32> = state
-        .series_acquired_by_day
-        .get(&ctx.day)
-        .cloned()
-        .unwrap_or_default();
+
     let mut proximity: u32 = 0;
     for c in state.setting.map.cells() {
-        if let Some(spot) = &c.spot {
-            if !acquired.contains(&spot.series) {
-                // Reward agents being close to this spot.
-                for agent in &state.agents {
-                    if agent.kind == AgentKind::Patrol {
-                        let dist = crate::adapters::walk::hex_distance(agent.pos, c.coord);
-                        if dist < 10 {
-                            proximity += 10 - dist;
-                        }
+        if c.spot.is_some() {
+            for agent in &state.agents {
+                if agent.kind == AgentKind::Patrol {
+                    let dist = crate::adapters::walk::hex_distance(agent.pos, c.coord);
+                    if dist < 15 {
+                        proximity += 15 - dist;
                     }
                 }
             }
         }
     }
-    
+
     (series_today, balls_today, fuel_value + proximity)
 }
 
@@ -131,16 +130,20 @@ impl Solver for AnytimeCandidate {
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let started = Instant::now();
-        
-        // Initial solution: park=far (current best).
-        let mut best = CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }.decide(ctx);
-        let mut best_score = score_plan(ctx, &best);
-        
+
+        // Initial solution: park=far (current best). Byte-identical to the
+        // `coverage:budget=official:park=far` baseline, so returning it
+        // unchanged cannot score below that candidate's full-match D.
+        let initial = CoverageCandidate { park_risk: true, variant: 0, fuel_aware: false }.decide(ctx);
+        let initial_score = score_plan(ctx, &initial);
+        let mut best = initial.clone();
+        let mut best_score = initial_score;
+
         // If no budget, return the initial solution.
         if self.budget_ms == 0 {
             return best;
         }
-        
+
         // Calculate deadline: respect both explicit budget and live window.
         let live_window = (ctx.remaining_ms != u32::MAX)
             .then(|| Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(5_000))));
@@ -149,61 +152,45 @@ impl Solver for AnytimeCandidate {
             Some(live) => started + live.min(search_budget),
             None => started + search_budget,
         };
-        
-        // Anytime exploration: generate variants and keep the best.
-        let threads = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 8);
-        let trial_counter = AtomicU64::new(1);
-        let stop = AtomicBool::new(false);
-        let global_best: Mutex<Option<(u64, (u32, u32, u32), AgentActions)>> = Mutex::new(None);
-        
-        // Store initial solution as the baseline.
-        *global_best.lock().unwrap() = Some((0, best_score, best.clone()));
-        
-        std::thread::scope(|scope| {
-            for _ in 0..threads {
-                scope.spawn(|| {
-                    let mut local_best: Option<(u64, (u32, u32, u32), AgentActions)> = None;
-                    let mut iterations = 0u64;
-                    while !stop.load(Ordering::Relaxed) && Instant::now() < deadline {
-                        let trial = trial_counter.fetch_add(1, Ordering::Relaxed);
-                        iterations += 1;
-                        
-                        // Generate variant with different seed.
-                        let plan = generate_variant(ctx, self.seed.wrapping_add(trial));
-                        let score = score_plan(ctx, &plan);
-                        
-                        // Keep if better than local best.
-                        if local_best.as_ref().is_none_or(|(_, s, _)| score > *s) {
-                            local_best = Some((trial, score, plan));
-                            
-                            // Update global best.
-                            let mut global = global_best.lock().unwrap();
-                            if global.as_ref().is_none_or(|(_, s, _)| score > *s) {
-                                *global = Some((trial, score, local_best.as_ref().unwrap().2.clone()));
-                            }
-                        }
-                        
-                        // Stop if no improvement for many iterations (converged).
-                        if iterations > 1000 && local_best.is_some() {
-                            let global = global_best.lock().unwrap();
-                            if let Some((_, global_score, _)) = global.as_ref() {
-                                if local_best.as_ref().unwrap().1 == *global_score {
-                                    // No improvement for 1000 iterations, stop.
-                                    stop.store(true, Ordering::Relaxed);
-                                }
-                            }
-                        }
-                    }
-                });
+
+        // Deterministic anytime exploration (Issue #342).
+        // Single-threaded with fixed trial order ensures reproducibility
+        // regardless of --jobs parallelism.
+        let mut trial = 1u64;
+        let mut no_improve_count = 0u64;
+
+        while Instant::now() < deadline {
+            // Generate variant with deterministic seed.
+            let plan = generate_variant(ctx, self.seed.wrapping_add(trial));
+            let score = score_plan(ctx, &plan);
+
+            // Series-only acceptance (Issue #342 Phase 3):
+            // replace the plan only when series_today strictly increases.
+            // Ball-only gains are rejected: today's ending position decides
+            // tomorrow's reachable series, so trading positioning for B can
+            // lower full-match D (Σ per-day varieties). A series gain is the
+            // only local signal that maps 1:1 onto a D increase today.
+            if score.0 > best_score.0 {
+                best = plan;
+                best_score = score;
+                no_improve_count = 0;
+            } else {
+                no_improve_count += 1;
             }
-        });
-        
-        // Return the global best.
-        let result = global_best.lock().unwrap();
-        if let Some((_, _, plan)) = result.as_ref() {
-            plan.clone()
-        } else {
-            best
+
+            trial += 1;
+
+            // Early stop: no improvement for many iterations.
+            if no_improve_count > 500 {
+                break;
+            }
         }
+
+        // If no variant beat the initial series count, return the initial
+        // park=far plan untouched. Full-match D then matches the baseline.
+        if best_score.0 <= initial_score.0 {
+            return initial;
+        }
+        best
     }
 }
