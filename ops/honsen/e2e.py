@@ -50,6 +50,8 @@ p.add_argument('--expect-missed-days', type=int, default=0,
                help='days allowed to end without an accepted plan (for drills that lose a day on purpose)')
 p.add_argument('--record', action='store_true',
                help='run with --record-dir <output-dir>/records and check the record against what the proxy saw')
+p.add_argument('--slot-window-ms', type=int, default=0,
+               help='set PROCON_SUPPLY_SLOT_WINDOW_MS for the coordinator (0 leaves it unset)')
 p.add_argument('--output-dir', type=Path, required=True)
 a = p.parse_args()
 
@@ -203,6 +205,8 @@ for key in list(env):
         del env[key]
 env.update(PROCON_TOKEN=TOKEN, RUST_LOG='info', RUST_BACKTRACE='1', NO_COLOR='1',
            PROCON_RESUME_RUNNING_MATCH='1')
+if a.slot_window_ms:
+    env['PROCON_SUPPLY_SLOT_WINDOW_MS'] = str(a.slot_window_ms)
 command = [str(a.cli.resolve()), 'coordinator', '--server', f'http://127.0.0.1:{proxy.server_port}',
            '--candidate', a.candidate, '--exit-after-match',
            '--state-output', str(a.output_dir / 'state.json')]
