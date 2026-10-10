@@ -19,7 +19,19 @@
 | `budget_ms` | 0（=clockless） | live の wall-clock cap（1..59000）。指定すると iters を無効化 | 収束目安は 16×16 ≈0.25s / 24×24 ≈2s / **32×32 は 4s でも伸びる**（`fleet_solver.rs:1194-1197`）。実測は @10s 単点（B 406–425, s9012） | **予算カーブは未測定** → バッチ 1。chains スレッド並列と window 共有（計画フェーズ 7/10 分割, `:1229`）に相互作用 |
 | `adapt` | on | budget_ms>0 のとき収束推定で早期打ち切り | **未測定**（既存 live 測定はすべて adapt=off） | convoy 側 embedded は adapt=false 固定（`convoy_solver.rs:133`）。小盤面で回答短縮（第 4 軸）を狙うが B への影響不明 |
 | `seed` | 42 | 探索 seed。`seed ^ (day<<32) ^ (k<<48)` で日別決定論 | @10s s9012: s42=406 vs s7=425（同バッチ別実行, ±10–20 域） | chains 数を増やすと chain 内 seed 分散の相対影響は減る想定。chains8 seed 魯棒性 → バッチ 1 |
-| `chains` | 1 | 探索 chain 数（1..16）。2+ で明日計画の比較が有効化。offline は逐次、live は 1 chain/core（明示時は上限引き上げ, Issue #409） | **clockless: chains4 ≫ chains1**（holdout 33 case: 20 勝 0 敗 13 分, B 合計 +174）。**@10s: chains8 vs chains4 = 3 勝 3 敗 12 分, B +25**。32×32 の公式勝者は chains8 4/6 | chains12/16 未測定 → バッチ 1。live 上限は core 数 |
+| `chains` | 1 | 探索 chain 数（1..16）。2+ で明日計画の比較が有効化。offline は逐次、live は 1 chain/core（明示時は上限引き上げ, Issue #409） | **mode ごとに挙動が違い、D リスクも別物**（詳細は下記 chains 専用節）。offline: chains4 ≫ chains1（holdout 33 case: 20 勝 0 敗 13 分, B 合計 +174）。clocked @10s: chains8 vs chains4 = 3 勝 3 敗 12 分（b4-chains8-full vs b10s-seed42, 18 セル） | chains12/16 未測定 → バッチ 1。**s9008 の dV 推移を chains12/16 でも追跡する**。live 上限は core 数 |
+
+**chains の辞書順リスク — mode 別評価（E1 更新。「chains8 = D 中性」は不正確。mode を必ず明記して評価する）**:
+
+- **mode (a) offline iters モード**（chains 逐次・各 chain 60k 全走破・決定論。`wsl-corpus/param-chains8/` vs `hard-fleet-iters60k-chains4` + `holdout-fleet-iters60k-chains4`、20 比較セル）:
+  - **s9008 で dV −4（175 vs 179）・B −10・辞書順負け。決定論なので再現する**。これが chains8 の最悪ケース。
+  - 一方 s9007 で dV +1、s9010 で dV +1（B −15 でも dV +1 で辞書順勝ち）。**offline chains8 の D は双方向に動く**。
+  - 辞書順合計: chains8 19 勝 1 負。B 合計は改善傾向（s9009 +31 など）。
+  - 機構: chain 選択キー `Candidate::key`（`fleet_solver.rs:1121-1128`）は (clean, 累積 V, 当日+翌日 series, balls) で**日の variety sum（公式 dV）を直接最適化しない**。offline では各 chain が 60k 走破して truly 多様な計画を作るため、ball 多め・variety 配分後倒しの計画が選ばれ、dV を落とすことがある。
+- **mode (b) clocked @10s**（wall-clock 分割・chain 並列。`wsl-10s/b4-chains8-full/` vs `b10s-seed42` fleet chains4、18 比較セル）:
+  - dV 低下は **s9008 seed42 の −1（179 vs 180）のみ**。seed7 では下落なし（s9008 dV 180）。32×32 セル（s9011/s9009/s9010/s9012/s5023/s5020）の dV 下落は 0。
+  - 辞書順 3 勝 3 負 12 分。機構: wall-clock 分割で各 chain が未収束のまま選択に回るため offline ほど計画が多様化せず、dV を落とす頻度は低い。ただし seed 依存で −1 が出ることはある。
+- **追跡方針**: chains12/16 の結果が出たら s9008 の dV（offline では基準 179・clocked では 180）を各 mode で追跡。offline で −4 が chains12/16 に継承・拡大するかが採用の分岐点。R1（clocked 32×32 → chains8）は clocked 32×32 の dV 下落 0 の範囲でのみ確定枠のまま。
 
 ### 1.2 convoy（`crates/bench/src/adapters/convoy_solver.rs:48-87`）
 
@@ -81,8 +93,8 @@
 
 | 領域 | 選択仮枠 | 根拠 | 確定度 |
 |---|---|---|---|
-| clocked・32×32 | **chains8**（R1 確定枠）。chains12/16 はバッチ 1 次第で差し替え | 32×32 公式勝者 chains8 4/6、convoy 0/6 | 確定（規則レベル） |
-| clocked・24×24 | convoy 既定（width24/depth8/forecast both）維持。chains8 との差はノイズ以下 | 18 セル中差 ≤3 が大半、s9005 −10 / s9008 +28 が逆向き | 未確定（chains ラダーで再評価） |
+| clocked・32×32 | **chains8**（R1 確定枠）。chains12/16 はバッチ 1 次第で差し替え | 32×32 公式勝者 chains8 4/6、convoy 0/6。**clocked 32×32 セルの chains8 dV 下落は 0（両 seed・b4-chains8-full）** | 確定（規則レベル・mode (b) に限る） |
+| clocked・24×24 | convoy 既定（width24/depth8/forecast both）維持。chains8 との差はノイズ以下 | 18 セル中差 ≤3 が大半、s9005 −10 / s9008 +28 が逆向き。**chains8 は s9008 で dV −1 セルあり（seed42・clocked）で、convoy 維持を支持** | 未確定（chains ラダーで再評価） |
 | clocked・16×16 | convoy 既定。depth 2–3 で同成果（時間余剰） | match3 depth データ、s9003/s5001 差 ≤3 | 未確定 |
 | clockless・16×16 | convoy（iters 既定 60k） | honsen-like 17 勝 2 敗 8 分、match3 dV+1 | 比較的高 |
 | clockless・24×24-a4 | convoy = fleet 同点 | s9007 (20,139,174) 両候補同点 | 未確定 |
@@ -94,15 +106,16 @@
 ## 4. バッチ結果の分析プロトコル（measurer2 の param-* 着信後、順次実行）
 
 各 `param-*` バッチごとに以下を実施し team-lead へ報告:
-1. **辞書順監視**: 既定設定 vs 変更設定を全セルで (V, dV, B) 比較。dV が 1 でも低下したセルを列挙（B 改善があっても採用候補から外す）。
-2. **B 改善判定**: ±20 未満はノイズ扱い。±20 以上のセルだけ「改善/悪化」と判定し、seed 反転（clocked 2 実行）で方向が保存されるか確認。
+1. **辞書順監視（mode を必ず明記）**: 既定設定 vs 変更設定を全セルで (V, dV, B) 比較。dV が 1 でも低下したセルを列挙（B 改善があっても採用候補から外す）。chains 系の D リスクは **offline iters モード（chains 逐次・全走破）と clocked（wall-clock 分割）を別モードとして両方判定する** — E1 で両 mode の D 挙動が異なることが確認済み（offline s9008 dV −4 決定論 vs clocked s9008 seed42 のみ −1）。mode 間で比較・統合しない。
+2. **B 改善判定**: ±20 未満はノイズ扱い。±20 以上のセルだけ「改善/悪化」と判定し、seed 反転（clocked 2 実行）で方向が保存されるか確認。offline は決定論なので seed 反転の代わりに dV 推移で追跡する。
 3. **最悪ケース**: B 低下 >20 または dV 低下の盤面を列挙し、盤面条件（規模・日数・補給数）との相関を見る。条件付き採用（§3 の枠の更新）に回す。
 4. **スクリーニング/検証の分離**: スクリーニング 9 盤面で選んだ設定は検証 27 盤面の結果が出るまで「草案」のまま。検証での劣化セル数が 0（辞書順）を確認して初めて採用推薦。
 5. **wall-clock/timeout 監視**: rt > 予算×1.05 の日、harness deadline 超過、`day_budget_exceeded_days` を確認（convoy は既に day0 +0.9–1.0s のオーバーラン実績あり）。
+6. **chains ラダー（chains12/16）は s9008 の dV 推移を追跡**（offline 基準 179・clocked 基準 180）。「D 中性」主張は mode 明記の上でのみ行う。
 
 ## 5. 参照パス
 
-- chains: `wsl-corpus/holdout-fleet-iters60k-1chain/runs.jsonl`（chains1）vs `holdout-fleet-iters60k-chains4/`（chains4）; `wsl-10s/b10s-seed42|seed7/runs.jsonl`（chains4 vs chains8 @10s）
+- chains: `wsl-corpus/holdout-fleet-iters60k-1chain/runs.jsonl`（chains1）vs `holdout-fleet-iters60k-chains4/`（chains4）; `wsl-10s/b10s-seed42|seed7/runs.jsonl`（chains4 vs chains8 @10s）; **E1 offline chains8: `wsl-corpus/param-chains8/runs.jsonl`（s9008 dV −4 確認）; E1 clocked chains8 全 corpus: `wsl-10s/b4-chains8-full/runs.jsonl`（s9008 seed42 dV −1・32×32 セルは下落 0）**
 - iters: `wsl-corpus/hard-fleet-iters60k-chains4/` vs `hard-fleet-iters120k-chains4/`
 - clockless convoy timeout: `wsl-corpus/hard-convoy-iters120k/runs.jsonl`
 - convoy depth/width（match3）: `wsl-10s/round1-solo.jsonl`、`convoy-shape.jsonl`、`convoy-seeds.jsonl`

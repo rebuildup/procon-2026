@@ -159,3 +159,10 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
 - [21:47] **E1 開始 (1/3)**: `wsl-corpus/param-chains8/` — holdout24+hard12+fixture9 ×
   `fleet:budget=official:iters=60000:chains=8:seed=42`、kinds `S,P,P,P,P,P,P,P`（chains4 baseline と同一構成）、jobs 6、nice 15。
   比較先: `wsl-corpus/{holdout,hard}-fleet-iters60k-chains4`（clockless baseline 済み）。
+- [21:52] **E1 chains8 完了**: 45 runs 全 success、illegal=0 / fuel_short=0 / rejected=0 / timeout=0。ウォール ~6m（jobs 6）。
+  chains4 baseline（iters=60000）との盤面別辞書順比較（openapi-sample 除外）: **19 win / 24 draw / 1 LOSE**。
+  - **D-loss 1 件: hard s9008** 20/179/236 → 20/**175**/226（V 同点・D -4・B -10）。chains8 は辞書順リスクが実在（監視必要）
+  - s9010 は逆に D 188→189 で B -15 の win。B 総量は全面増（例: s9012 373→383、s5016 464→472、s5017 1143→1144）
+  - rt 最大 174.8s（s5017、10 日合計）/ maxday 最大 31.8s（s5017）— 60s 期限に対し余裕あり
+  証跡: `wsl-corpus/param-chains8/{runs.jsonl,aggregate.json}`。
+- [21:52] **E1 開始 (2/3)**: `wsl-corpus/param-chains12/` — 同一構成で `chains=12`。
