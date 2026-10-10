@@ -209,7 +209,7 @@ enum Cmd {
 
         /// Keep a full record of the match under `<DIR>/<run-id>/`
         /// (Issue #394): `manifest.json`, `setting.json` (the map and match
-        /// setting as served), `events.jsonl` (every day's observed state,
+        /// setting in the wire shape), `events.jsonl` (every day's observed state,
         /// the complete submitted plan, each `POST /` attempt and its
         /// verdict), `coordinator.log` and `state.json`. Written by a
         /// background thread; a full queue or a failing disk loses records,
