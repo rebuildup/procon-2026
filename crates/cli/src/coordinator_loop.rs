@@ -71,6 +71,7 @@ use thiserror::Error;
 use crate::action_adapter::decision_to_actions;
 use crate::arena::Secret;
 use crate::candidate_bridge::{apply_live_agents, apply_live_traffic};
+use crate::match_record::{DayStatus, MatchRecorder, RecordEvent, SubmitOutcome};
 use crate::protocol_to_engine::{
     protocol_setting_to_engine, protocol_setting_to_engine_with_kinds,
 };
@@ -214,6 +215,10 @@ pub struct CoordinatorLoopConfig {
     /// deadline); a server that announces `starts_at` early and still expects
     /// `POST /agent` would be left without our kinds.
     pub resume_running_match: bool,
+    /// Durable match record (`--record-dir`, Issue #394). Disabled by
+    /// default, in which case every call on it is a no-op; when enabled the
+    /// loop only ever hands it records through a non-blocking queue.
+    pub recorder: MatchRecorder,
 }
 
 impl Default for CoordinatorLoopConfig {
@@ -236,6 +241,7 @@ impl Default for CoordinatorLoopConfig {
             live_state_slot: None,
             secret_redaction: None,
             resume_running_match: false,
+            recorder: MatchRecorder::disabled(),
         }
     }
 }
@@ -292,6 +298,7 @@ impl CoordinatorLoopConfig {
             live_state_slot: None,
             secret_redaction: None,
             resume_running_match: false,
+            recorder: MatchRecorder::disabled(),
         })
     }
 }
@@ -520,6 +527,13 @@ fn unix_now() -> i64 {
 /// is logged via `tracing::warn!` and never propagated. The match loop
 /// continues whether or not the snapshot was successfully written.
 fn write_snapshot(cfg: &CoordinatorLoopConfig, snap: &MatchStateSnapshot) {
+    // The run directory keeps its own copy of the snapshot (Issue #394),
+    // written by the recorder thread; `--state-output` below is unchanged.
+    if cfg.recorder.is_enabled() {
+        if let Ok(json) = serde_json::to_vec_pretty(snap) {
+            cfg.recorder.state_snapshot(json);
+        }
+    }
     let Some(path) = cfg.state_output_path.as_ref() else {
         return;
     };
@@ -635,6 +649,26 @@ pub async fn run_coordinator_loop(
     let result =
         run_coordinator_loop_inner(client, solver, cfg.clone(), &mut snap, on_day_accepted).await;
 
+    cfg.recorder.event_with(|| match &result {
+        Ok(outcome) => RecordEvent::MatchEnd {
+            status: "completed".to_owned(),
+            days_completed: outcome.days_completed,
+            revisions: outcome.revisions.clone(),
+            error: None,
+        },
+        Err(e) => RecordEvent::MatchEnd {
+            status: if matches!(e, CoordinatorLoopError::Rejected { .. }) {
+                "rejected".to_owned()
+            } else {
+                "error".to_owned()
+            },
+            days_completed: snap.revisions.len(),
+            revisions: snap.revisions.clone(),
+            error: Some(e.to_string()),
+        },
+    });
+    cfg.recorder.report_health();
+
     // Final snapshot: terminal status (Completed / Rejected / Error).
     match &result {
         Ok(outcome) => {
@@ -690,7 +724,12 @@ where
     let mut setting_polls = 0_u32;
     let wire_setting = loop {
         match client.get_match_setting().await {
-            Ok(s) => break s,
+            Ok(s) => {
+                cfg.recorder.setting(&s);
+                cfg.recorder
+                    .event(RecordEvent::Setting { starts_at: s.starts_at, polls: setting_polls });
+                break s;
+            }
             Err(protocol::HttpClientError::AccessTime { .. }) => {
                 // Pre-start window: server returns 403 before the first
                 // setting snapshot exists. Back off and retry — but not
@@ -768,6 +807,7 @@ where
             kinds = %bench::kinds::render_kinds(&kinds),
             "match already in progress: resuming with the composition the server reports"
         );
+        cfg.recorder.event(RecordEvent::Resume { day: state.day });
         kinds
     } else if simulated_kinds {
         let team = PlayerId::new(&cfg.team_id)
@@ -787,6 +827,20 @@ where
     } else {
         agent_kinds_for(n_agents, &cfg.solver_name, cfg.agent_kinds.as_deref())
     };
+    cfg.recorder.event_with(|| RecordEvent::Kinds {
+        source: if resumed {
+            "server"
+        } else if cfg.agent_kinds.is_some() {
+            "explicit"
+        } else if simulated_kinds {
+            "auto"
+        } else {
+            "default"
+        }
+        .to_owned(),
+        kinds: to_wire_kinds(&submitted_kinds).iter().map(|k| k.value()).collect(),
+        pattern: bench::kinds::render_kinds(&submitted_kinds),
+    });
     if !resumed {
         // Evidence (Issue #243): log the composition being declared in the same
         // `P,S,…` spelling `--kinds` takes, so a run log and the flag that
@@ -798,13 +852,20 @@ where
             solver = %cfg.solver_name,
             "agent kinds selected for POST /agent"
         );
-        submit_agent_with_retry(
+        let agent_submit_began = std::time::Instant::now();
+        let submitted = submit_agent_with_retry(
             &client,
             to_wire_kinds(&submitted_kinds),
             cfg.kind_submit_max_attempts,
             cfg.kind_submit_backoff,
         )
-        .await?;
+        .await;
+        cfg.recorder.event_with(|| RecordEvent::AgentSubmit {
+            ok: submitted.is_ok(),
+            elapsed_ms: elapsed_ms(agent_submit_began),
+            error: submitted.as_ref().err().map(ToString::to_string),
+        });
+        submitted?;
     }
 
     // Kinds accepted -> Running snapshot. `day` stays `None` because
@@ -860,11 +921,17 @@ where
     // re-poll here until the server announces the start. The rest of
     // the setting (map / day_steps / day_seconds / agents) is static so
     // the snapshot from Phase 1 stays valid.
+    if wire_setting.starts_at > 0 {
+        cfg.recorder.event(RecordEvent::MatchStart { starts_at: wire_setting.starts_at });
+    }
     if wire_setting.starts_at == 0 {
         let mut start_polls = 0_u32;
         loop {
             match client.get_match_setting().await {
-                Ok(s) if s.starts_at > 0 => break,
+                Ok(s) if s.starts_at > 0 => {
+                    cfg.recorder.event(RecordEvent::MatchStart { starts_at: s.starts_at });
+                    break;
+                }
                 Ok(_) | Err(protocol::HttpClientError::AccessTime { .. }) => {
                     // Kinds are registered but the match has not announced a
                     // start yet. Bounded, and visible: a cancelled match or a
@@ -904,6 +971,7 @@ where
     // Phase 5: per-day loop, driven by the day the server reports.
     let mut expected_day = resumed_state.as_ref().map_or(0, |s| s.day.max(0));
     while expected_day < total_days_i32 {
+        let fetch_began = std::time::Instant::now();
         let state = if let Some(state) = resumed_state.take() {
             state
         } else {
@@ -918,11 +986,23 @@ where
                 .sum();
             let patience = Duration::from_secs(u64::try_from(remaining_seconds).unwrap_or(0))
                 + cfg.match_state_backoff * cfg.match_state_max_attempts.max(1);
-            fetch_state_with_retry(&client, patience, cfg.match_state_backoff, expected_day).await?
+            fetch_state_with_retry(
+                &client,
+                patience,
+                cfg.match_state_backoff,
+                expected_day,
+                &cfg.recorder,
+            )
+            .await?
         };
         if state.day >= total_days_i32 {
             break;
         }
+        cfg.recorder.event_with(|| RecordEvent::DayState {
+            expected_day,
+            fetch_ms: elapsed_ms(fetch_began),
+            observed: state.clone(),
+        });
         if state.day > expected_day {
             tracing::error!(
                 expected_day,
@@ -930,6 +1010,9 @@ where
                 "the server is ahead of us: the days in between went unanswered"
             );
             unanswered_days.extend((expected_day..state.day).filter_map(|d| u32::try_from(d).ok()));
+            cfg.recorder.event_with(|| RecordEvent::DaysSkipped {
+                days: (expected_day..state.day).filter_map(|d| u32::try_from(d).ok()).collect(),
+            });
         }
         let day_idx = usize::try_from(state.day).unwrap_or(0);
         let day = u32::try_from(state.day).unwrap_or(0);
@@ -998,6 +1081,21 @@ where
             Ok(actions) => actions,
             Err(reason) => {
                 tracing::error!(day, reason = %reason, "no plan for this day; leaving it unanswered");
+                cfg.recorder.event_with(|| RecordEvent::PlanFailed {
+                    day,
+                    solve_ms: millis_since(now_ms),
+                    reason: reason.clone(),
+                });
+                cfg.recorder.event_with(|| RecordEvent::DayResult {
+                    day,
+                    status: DayStatus::Unanswered,
+                    revision: None,
+                    attempts: 0,
+                    answer_ms: Utc::now().timestamp_millis() - now_ms,
+                    margin_ms: state.ends_at.saturating_mul(1000) - Utc::now().timestamp_millis(),
+                    reason: Some(reason.clone()),
+                });
+                cfg.recorder.report_health();
                 unanswered_days.push(day);
                 sleep_until_day_end(&state, expected_day < total_days_i32).await;
                 continue;
@@ -1008,6 +1106,16 @@ where
         // the submit call: day-start agent state (kind / pos / fuel) plus
         // the movement shape of the normalized plan we are about to send.
         let summary = DaySummary::new(day, &state.agents, &actions);
+        // Issue #394 — the full body, not a summary: this is the one record
+        // a route can be redrawn from. Queued before the POST so a crash
+        // during delivery still leaves what was about to be sent.
+        cfg.recorder.event_with(|| RecordEvent::Plan {
+            day,
+            day_steps,
+            budget_ms: remaining_ms,
+            solve_ms: millis_since(now_ms),
+            actions: actions.clone(),
+        });
 
         // Operator visibility: when DEBUG logging is on, dump the
         // exact wire payload we are about to send. Gated by the
@@ -1037,7 +1145,29 @@ where
         }
 
         let submitted_at_ms = Utc::now().timestamp_millis();
-        match submit_plan_until_deadline(&client, &actions, state.ends_at, day).await? {
+        let (submission, attempts) =
+            submit_plan_until_deadline(&client, &actions, state.ends_at, day, &cfg.recorder)
+                .await?;
+        cfg.recorder.event_with(|| {
+            let (status, revision, reason) = match &submission {
+                DaySubmission::Accepted(revision) => (DayStatus::Accepted, Some(*revision), None),
+                DaySubmission::Rejected(revision) => (DayStatus::Rejected, Some(*revision), None),
+                DaySubmission::Unanswered(reason) => {
+                    (DayStatus::Unanswered, None, Some(reason.clone()))
+                }
+            };
+            RecordEvent::DayResult {
+                day,
+                status,
+                revision,
+                attempts,
+                answer_ms: Utc::now().timestamp_millis() - now_ms,
+                margin_ms: state.ends_at.saturating_mul(1000) - Utc::now().timestamp_millis(),
+                reason,
+            }
+        });
+        cfg.recorder.report_health();
+        match submission {
             DaySubmission::Accepted(revision) => {
                 tracing::info!(
                     day,
@@ -1145,41 +1275,71 @@ async fn submit_plan_until_deadline(
     actions: &ActionPlanBody,
     ends_at: i64,
     day: u32,
-) -> Result<DaySubmission, CoordinatorLoopError> {
+    recorder: &MatchRecorder,
+) -> Result<(DaySubmission, u32), CoordinatorLoopError> {
     let deadline_ms = ends_at.saturating_mul(1000);
     let mut attempt = 0_u32;
     loop {
         attempt += 1;
-        let error = match client.submit_actions(actions.clone()).await {
-            Ok(accepted) => return Ok(DaySubmission::Accepted(accepted.revision)),
+        let began = std::time::Instant::now();
+        let response = client.submit_actions(actions.clone()).await;
+        let attempted = |outcome: SubmitOutcome, revision: Option<i32>, error: Option<String>| {
+            recorder.event_with(|| RecordEvent::SubmitAttempt {
+                day,
+                attempt,
+                elapsed_ms: elapsed_ms(began),
+                outcome,
+                revision,
+                error,
+            });
+        };
+        let error = match response {
+            Ok(accepted) => {
+                attempted(SubmitOutcome::Accepted, Some(accepted.revision), None);
+                return Ok((DaySubmission::Accepted(accepted.revision), attempt));
+            }
             Err(protocol::HttpClientError::Http { status: 200, message })
                 if message.starts_with("rejected: revision=") =>
             {
                 let revision =
                     message.trim_start_matches("rejected: revision=").parse::<i32>().unwrap_or(-1);
-                return Ok(DaySubmission::Rejected(revision));
+                attempted(SubmitOutcome::Rejected, Some(revision), Some(message));
+                return Ok((DaySubmission::Rejected(revision), attempt));
             }
             Err(
                 e @ (protocol::HttpClientError::Auth { .. }
                 | protocol::HttpClientError::InvalidUrl(_)),
             ) => {
+                attempted(SubmitOutcome::Fatal, None, Some(e.to_string()));
                 return Err(CoordinatorLoopError::ActionSubmit(e));
             }
             Err(protocol::HttpClientError::AccessTime { message }) => {
-                return Ok(DaySubmission::Unanswered(format!("answer window closed: {message}")));
+                attempted(SubmitOutcome::WindowClosed, None, Some(message.clone()));
+                return Ok((
+                    DaySubmission::Unanswered(format!("answer window closed: {message}")),
+                    attempt,
+                ));
             }
             Err(protocol::HttpClientError::Http { status, message })
                 if (400..500).contains(&status) && !matches!(status, 408 | 425 | 429) =>
             {
-                return Ok(DaySubmission::Unanswered(format!("HTTP {status}: {message}")));
+                let reason = format!("HTTP {status}: {message}");
+                attempted(SubmitOutcome::ClientError, None, Some(reason.clone()));
+                return Ok((DaySubmission::Unanswered(reason), attempt));
             }
-            Err(e) => e,
+            Err(e) => {
+                attempted(SubmitOutcome::NoVerdict, None, Some(e.to_string()));
+                e
+            }
         };
         let left_ms = deadline_ms - Utc::now().timestamp_millis();
         if left_ms <= i64::try_from(SUBMIT_RETRY_PAUSE.as_millis()).unwrap_or(i64::MAX) {
-            return Ok(DaySubmission::Unanswered(format!(
-                "no verdict after {attempt} attempt(s): {error}"
-            )));
+            return Ok((
+                DaySubmission::Unanswered(format!(
+                    "no verdict after {attempt} attempt(s): {error}"
+                )),
+                attempt,
+            ));
         }
         tracing::warn!(day, attempt, left_ms, error = %error, "POST / got no verdict; sending the same plan again");
         tokio::time::sleep(SUBMIT_RETRY_PAUSE).await;
@@ -1324,6 +1484,7 @@ async fn fetch_state_with_retry(
     patience: Duration,
     backoff: Duration,
     expected_day: i32,
+    recorder: &MatchRecorder,
 ) -> Result<protocol::match_config::MatchState, CoordinatorLoopError> {
     let started = tokio::time::Instant::now();
     loop {
@@ -1337,6 +1498,11 @@ async fn fetch_state_with_retry(
             Err(protocol::HttpClientError::AccessTime { message }) => message,
             Err(e) => {
                 tracing::warn!(expected_day, error = %e, "GET / failed; asking again");
+                recorder.event_with(|| RecordEvent::RequestFailed {
+                    endpoint: "GET /".to_owned(),
+                    day: Some(expected_day),
+                    error: e.to_string(),
+                });
                 e.to_string()
             }
         };
@@ -1347,6 +1513,16 @@ async fn fetch_state_with_retry(
         }
         tokio::time::sleep(backoff).await;
     }
+}
+
+/// Milliseconds since `began`, for the match record.
+fn elapsed_ms(began: std::time::Instant) -> u64 {
+    u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// Milliseconds of wall clock since `then_ms` (UNIX milliseconds).
+fn millis_since(then_ms: i64) -> u64 {
+    u64::try_from(Utc::now().timestamp_millis().saturating_sub(then_ms)).unwrap_or(0)
 }
 
 /// Reserve one request timeout for submission after the solver finishes.
@@ -1458,9 +1634,15 @@ mod tests {
             .create_async()
             .await;
         let client = protocol::MatchClient::new(server.url(), "test").unwrap();
-        let state = fetch_state_with_retry(&client, Duration::from_secs(5), Duration::ZERO, 1)
-            .await
-            .unwrap();
+        let state = fetch_state_with_retry(
+            &client,
+            Duration::from_secs(5),
+            Duration::ZERO,
+            1,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap();
         assert_eq!(state.day, 1);
         old.assert_async().await;
         new.assert_async().await;
@@ -1480,7 +1662,14 @@ mod tests {
                 .create_async()
                 .await;
             let client = protocol::MatchClient::new(server.url(), "test").unwrap();
-            let result = fetch_state_with_retry(&client, Duration::ZERO, Duration::ZERO, 1).await;
+            let result = fetch_state_with_retry(
+                &client,
+                Duration::ZERO,
+                Duration::ZERO,
+                1,
+                &MatchRecorder::disabled(),
+            )
+            .await;
             assert_eq!(result.is_ok(), succeeds);
             if let Ok(state) = result {
                 assert!(state.day > 1, "the caller follows the server to the later day");
@@ -1509,9 +1698,15 @@ mod tests {
             .create_async()
             .await;
         let client = protocol::MatchClient::new(server.url(), "test").unwrap();
-        let state = fetch_state_with_retry(&client, Duration::from_secs(5), Duration::ZERO, 1)
-            .await
-            .unwrap();
+        let state = fetch_state_with_retry(
+            &client,
+            Duration::from_secs(5),
+            Duration::ZERO,
+            1,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap();
         assert_eq!(state.day, 1);
         garbage.assert_async().await;
         good.assert_async().await;
@@ -1529,8 +1724,14 @@ mod tests {
             .create_async()
             .await;
         let client = protocol::MatchClient::new(server.url(), "test").unwrap();
-        let result =
-            fetch_state_with_retry(&client, Duration::from_secs(5), Duration::ZERO, 0).await;
+        let result = fetch_state_with_retry(
+            &client,
+            Duration::from_secs(5),
+            Duration::ZERO,
+            0,
+            &MatchRecorder::disabled(),
+        )
+        .await;
         assert!(matches!(result, Err(CoordinatorLoopError::State(_))), "{result:?}");
         denied.assert_async().await;
     }
@@ -1561,7 +1762,16 @@ mod tests {
             .await;
         let client = protocol::MatchClient::new(server.url(), "test").unwrap();
         let plan: ActionPlanBody = vec![vec![-3]];
-        let verdict = submit_plan_until_deadline(&client, &plan, far_deadline(), 0).await.unwrap();
+        let verdict = submit_plan_until_deadline(
+            &client,
+            &plan,
+            far_deadline(),
+            0,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap()
+        .0;
         assert!(matches!(verdict, DaySubmission::Accepted(7)));
         broken.assert_async().await;
         unreadable.assert_async().await;
@@ -1581,7 +1791,16 @@ mod tests {
             .await;
         let client = protocol::MatchClient::new(server.url(), "test").unwrap();
         let plan: ActionPlanBody = vec![vec![-3]];
-        let verdict = submit_plan_until_deadline(&client, &plan, far_deadline(), 0).await.unwrap();
+        let verdict = submit_plan_until_deadline(
+            &client,
+            &plan,
+            far_deadline(),
+            0,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap()
+        .0;
         assert!(matches!(verdict, DaySubmission::Rejected(-1)));
         rejected.assert_async().await;
     }
@@ -1594,9 +1813,16 @@ mod tests {
         let broken = server.mock("POST", "/").with_status(503).expect(1).create_async().await;
         let client = protocol::MatchClient::new(server.url(), "test").unwrap();
         let plan: ActionPlanBody = vec![vec![-3]];
-        let verdict = submit_plan_until_deadline(&client, &plan, Utc::now().timestamp() - 1, 0)
-            .await
-            .unwrap();
+        let verdict = submit_plan_until_deadline(
+            &client,
+            &plan,
+            Utc::now().timestamp() - 1,
+            0,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap()
+        .0;
         assert!(matches!(verdict, DaySubmission::Unanswered(_)));
         broken.assert_async().await;
     }

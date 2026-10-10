@@ -48,6 +48,8 @@ p.add_argument('--kill-after-post', action='store_true',
                help='with --kill-day: kill after that day was accepted instead of before it was answered')
 p.add_argument('--expect-missed-days', type=int, default=0,
                help='days allowed to end without an accepted plan (for drills that lose a day on purpose)')
+p.add_argument('--record', action='store_true',
+               help='run with --record-dir <output-dir>/records and check the record against what the proxy saw')
 p.add_argument('--output-dir', type=Path, required=True)
 a = p.parse_args()
 
@@ -73,6 +75,7 @@ with socket.socket() as sock:
 
 faults = [dict(json.loads(f), fired=0) for f in a.fault]
 records = []
+setting_seen = {}
 lock = threading.Lock()
 current_day = {'value': -1}
 kill_request = threading.Event()
@@ -152,6 +155,7 @@ class Proxy(BaseHTTPRequestHandler):
         if self.command == 'POST' and path == '/':
             record['response'] = parsed
             record['body_agents'] = len(json.loads(body)) if body else 0
+            record['body'] = json.loads(body) if body else None
         elif self.command == 'GET' and path == '/' and isinstance(parsed, dict):
             record['response'] = {'day': parsed.get('day'), 'endsAt': parsed.get('endsAt'),
                                   'agents': parsed.get('agents')}
@@ -162,6 +166,8 @@ class Proxy(BaseHTTPRequestHandler):
             record['body'] = json.loads(body) if body else None
         else:
             record['response'] = {'startsAt': parsed.get('startsAt')} if isinstance(parsed, dict) else parsed
+            if path == '/setting' and isinstance(parsed, dict):
+                setting_seen.setdefault('first', parsed)
         with lock:
             records.append(record)
         if a.kill_day >= 0 and not kill_request.is_set():
@@ -200,6 +206,8 @@ env.update(PROCON_TOKEN=TOKEN, RUST_LOG='info', RUST_BACKTRACE='1', NO_COLOR='1'
 command = [str(a.cli.resolve()), 'coordinator', '--server', f'http://127.0.0.1:{proxy.server_port}',
            '--candidate', a.candidate, '--exit-after-match',
            '--state-output', str(a.output_dir / 'state.json')]
+if a.record:
+    command += ['--record-dir', str(a.output_dir / 'records')]
 if a.kinds == 'auto':
     command.append('--kinds-auto')
 elif a.kinds != 'none':
@@ -279,11 +287,75 @@ summary = {
 }
 ok = (final_exit is not None and final_exit[0] == 'exit' and final_exit[1] == 0
       and len(missed) <= a.expect_missed_days and kinds)
+
+
+def check_record():
+    """Compare the run directories with what crossed the proxy."""
+    problems = []
+    runs = sorted(d for d in (a.output_dir / 'records').glob('*') if d.is_dir())
+    plans, results, observed, lines = {}, {}, set(), 0
+    for run in runs:
+        for name in ('manifest.json', 'setting.json', 'events.jsonl', 'coordinator.log', 'state.json'):
+            if not (run / name).is_file():
+                problems.append(f'{run.name}: {name} missing')
+            elif TOKEN in (run / name).read_text(errors='replace'):
+                problems.append(f'{run.name}: {name} contains the token')
+        if (run / 'setting.json').is_file():
+            saved = json.loads((run / 'setting.json').read_text())
+            served = dict(setting_seen.get('first', {}), startsAt=saved.get('startsAt'))
+            if saved != served:
+                problems.append(f'{run.name}: setting.json differs from GET /setting')
+        events = (run / 'events.jsonl').read_text().splitlines() if (run / 'events.jsonl').is_file() else []
+        for raw in events:
+            if not raw.strip():
+                continue
+            try:
+                event = json.loads(raw)
+            except ValueError:
+                problems.append(f'{run.name}: unparsable event line')
+                continue
+            lines += 1
+            if event['type'] == 'plan':
+                plans[event['day']] = event['actions']
+            elif event['type'] == 'day_result':
+                results[event['day']] = (event['status'], event['revision'])
+            elif event['type'] == 'day_state':
+                observed.add(event['observed']['day'])
+    for day in range(days_total):
+        posts = [r for r in records if r['method'] == 'POST' and r['path'] == '/' and r['day_context'] == day
+                 and r.get('body') is not None]
+        accepted = [r for r in posts if r.get('status') == 200 and isinstance(r.get('response'), dict)
+                    and r['response'].get('revision', -1) >= 0]
+        if posts and plans.get(day) != posts[-1]['body']:
+            problems.append(f'day {day}: recorded plan differs from the POST body')
+        if posts and len(plans.get(day, [])) != len(problem['agentStarts']):
+            problems.append(f'day {day}: plan does not cover every agent')
+        if accepted:
+            want = ('accepted', accepted[-1]['response']['revision'])
+            # A day whose verdict arrived just as the process was killed has a plan but no result.
+            if day in results and tuple(results[day]) != want:
+                problems.append(f'day {day}: recorded verdict {results[day]} != server {want}')
+            if day not in results and a.kill_day != day:
+                problems.append(f'day {day}: accepted by the server but no verdict recorded')
+    show = subprocess.run([str(a.cli.resolve()), 'record', 'show', str(runs[-1])], capture_output=True, text=True) \
+        if runs else None
+    if show is None or show.returncode != 0:
+        problems.append('procon record show failed')
+    return {'runs': [r.name for r in runs], 'event_lines': lines, 'days_with_plan': sorted(plans),
+            'days_observed': sorted(observed), 'continues': [json.loads((r / 'manifest.json').read_text())
+                                                             .get('continues_run_id') for r in runs],
+            'problems': problems}
+
+
+if a.record:
+    summary['record'] = check_record()
+    ok = ok and not summary['record']['problems']
 summary['verdict'] = 'PASS' if ok else 'FAIL'
 (a.output_dir / 'summary.json').write_text(json.dumps(summary, indent=2, ensure_ascii=False) + '\n')
 (a.output_dir / 'requests.json').write_text(json.dumps(records, indent=1, ensure_ascii=False) + '\n')
 print(json.dumps({k: summary[k] for k in ('verdict', 'case', 'size', 'agents', 'days_total', 'missed_days',
-                                          'exit_codes', 'wall_seconds', 'kinds_accepted')}, ensure_ascii=False))
+                                          'exit_codes', 'wall_seconds', 'kinds_accepted', 'record')
+                  if k in summary}, ensure_ascii=False))
 for d in days:
     print('  day', d['day'], 'accepted' if d['accepted'] else 'MISSED', 'posts=%d' % d['post_attempts'],
           'answer=%ss' % d.get('answer_seconds'), 'margin=%ss' % d.get('margin_seconds'))
