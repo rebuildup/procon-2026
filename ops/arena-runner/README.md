@@ -12,7 +12,9 @@ This is intentionally a single-host design. Do not run two independent hosts aga
 
 ## Runtime pins
 
-- Solver source: `5ddb153a16d44bb34c2c3ed5cea4aa8044f95bf0`
+- Solver source: `13a0106aa5b1ac26dc0856bc93f731ca0e44f390` (`main` after PR #388;
+  release tip `08aa550`. `crates/` content is identical to tag `v0.4.0` —
+  `fleet` from PR #372 plus the lost-day coordinator fix `71a9c0f` from Issue #385)
 - Primary: `fleet:budget=official:budget_ms=10000` with `--kinds-auto`
 - Manual fallback: `anytime:budget_ms=5000:seed=42:budget=official` without `--kinds-auto`
 - Arena: `https://procon37arena.online`
