@@ -179,3 +179,8 @@ offline-only の強さの重み下げ適用例: convoy の match3 solo D 最上�
 | **P1（embed ラダー）** | **外れ（実測確定）** — `wsl-10s/p1-embed-rung/` では想定の優位は確認されず | 現行 convoy のまま。追加修正は保留 |
 | **P3（persist）** | **+25 以上のバンドに実測で到達（実測確定）** — persist で s9012 B+18〜38（`wsl-10s/p3-persist-s9012/`: s9012 B407 vs default 369 = +38） | **beam 時間配分の再設計**が convoy 改善継続の残タスクとして確定（beam が時間配分で律速されていることが実証） |
 | **chains8 full corpus** | **D 下落盤面 0（実測確定）** — hard D1837 vs 1834・B+92、holdout D3452 同値・B+104、maxdaily 10.0〜10.2s（`wsl-10s/b4-chains8-full/`） | **chains8 = 採用推奨として確定**（実時間・辞書順の両条件が揃った） |
+---
+
+## 8. 最終収束追記（2026-10-11 本戦当日）
+
+本ハンドオフ（§7 確定版）以降のバッチ 1・F 系列・bail 計測の最終分類は **`summary/final-convergence-20261011.md`** に固定した。要約: 本番採用なし（release-0-5-1 維持）／chains8・bail・depth2・chains8@2.5-5s は「有効だが本番未採用」／fuel 軸・chains12 clocked・対戦交通比較は「結論未確定」のまま計測停止。指定されていた個別事項（match 2052・s9003 dV−1 の正確な記録・s9012 bail −30 再現・負荷汚染と無効サンプル・サチり判定の停止リスク）は同ファイル §2 に記載。
