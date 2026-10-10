@@ -1,0 +1,82 @@
+{
+  "agent_kinds": "S,P,P,P",
+  "binary_sha256": "23a7b97e2fa677983cd1796da2e4c4baedfff3d24df68112cd3b345042d2d342",
+  "continues_run_id": null,
+  "days": [
+    {
+      "agents": 4,
+      "day": 0,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 72,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 1,
+      "status": "accepted",
+      "traffics": 0
+    },
+    {
+      "agents": 4,
+      "day": 1,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 68,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 2,
+      "status": "accepted",
+      "traffics": 0
+    },
+    {
+      "agents": 4,
+      "day": 2,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 76,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 3,
+      "status": "accepted",
+      "traffics": 0
+    }
+  ],
+  "events": 17,
+  "map": {
+    "agents": 4,
+    "cells": 256,
+    "days": 3,
+    "height": 16,
+    "spots": 14,
+    "width": 16
+  },
+  "missing_seq": 0,
+  "recorder": {
+    "dropped": 0,
+    "events_numbered": 17,
+    "write_errors": 0
+  },
+  "result": {
+    "days_completed": 3,
+    "error": null,
+    "revisions": [
+      1,
+      2,
+      3
+    ],
+    "status": "completed"
+  },
+  "run_id": "20261010T160833Z-p20828",
+  "schema_version": 1,
+  "solver": {
+    "candidate_id": "sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42",
+    "kinds_auto": true,
+    "kinds_flag": null,
+    "label": "candidate:sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42",
+    "loop_initial_strategy": "greedy",
+    "loop_iterations": 32,
+    "solver_flag": "loop"
+  },
+  "source_commit_sha": "21dd16c25a99ba6c8c4c36ed6e61f8ae130f9640",
+  "started_at": "2026-10-10T16:08:33.627Z",
+  "unparsed_lines": 0
+}
