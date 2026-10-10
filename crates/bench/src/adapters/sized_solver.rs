@@ -33,6 +33,12 @@ const PARAMS: &[ParamSpec] = &[
         required: false,
         doc: "fleet's fuel_need on boards wider than 16, with fuel_mix=on (default 50; 0: off)",
     },
+    ParamSpec {
+        key: "chains",
+        required: false,
+        doc: "fleet's chain count on boards wider than 16, 1..16 (default 0: the fleet \
+              default, four chains live on one core each)",
+    },
 ];
 
 /// Boards up to this side go to `convoy`.
@@ -68,6 +74,10 @@ impl CandidateFactory for SizedFactory {
         let convoy_ms = parse(spec, "convoy_ms", budget_ms.min(20_000))?;
         let seed = parse(spec, "seed", 42u64)?;
         let fuel_need = parse(spec, "fuel_need", 50u32)?;
+        let chains = parse(spec, "chains", 0u32)?;
+        if chains > 16 {
+            return Err(CandidateError::Build(format!("chains must be 0..=16, got {chains}")));
+        }
         let pair = |key: &str, value: String| (key.to_owned(), value);
         let mut small = vec![pair("budget", "official".into()), pair("seed", seed.to_string())];
         if convoy_ms > 0 {
@@ -85,6 +95,9 @@ impl CandidateFactory for SizedFactory {
         if fuel_need > 0 {
             large.push(pair("fuel_need", fuel_need.to_string()));
             large.push(pair("fuel_mix", "on".into()));
+        }
+        if chains > 0 {
+            large.push(pair("chains", chains.to_string()));
         }
         Ok(Box::new(SizedCandidate {
             small: ConvoyFactory.build(&CandidateSpec::new("convoy", small))?,
