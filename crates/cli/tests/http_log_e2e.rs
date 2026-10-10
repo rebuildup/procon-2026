@@ -243,7 +243,15 @@ async fn every_status_and_failure_is_logged_as_it_happened() {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         format!("http://{}", listener.local_addr().expect("addr"))
     };
-    let cd = client(&dead, Some(&logged), 0);
+    // A generous timeout: Windows takes about two seconds to report a refused
+    // connection on loopback, and a shorter limit would (correctly) be logged
+    // as a timeout instead of the connect failure this case is about.
+    let cd = MatchClient::builder(&dead, TOKEN)
+        .retry_policy(RetryPolicy { max_retries: 0, backoff_millis: &[] })
+        .request_timeout(Duration::from_secs(20))
+        .observer(logged.log.clone())
+        .build()
+        .expect("client");
     assert!(matches!(cd.get_json::<Value>("/setting").await, Err(HttpClientError::Transport(_))));
 
     let all = entries(&logged);
