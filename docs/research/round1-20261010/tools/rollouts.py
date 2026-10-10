@@ -63,6 +63,15 @@ def experiments() -> dict[str, list[dict]]:
         for ms in (250, 1000, 2000, 5000, 10000, 20000, 40000)
         for i in range(3)
     ]
+    # Issue #409: chain count above four under the live budget. The harness
+    # has no clock (remaining_ms = u32::MAX), so the live path runs only
+    # because budget_ms is set; `chains=<N>` now widens the live cap to N.
+    exp["issue409"] = [
+        {"label": f"c{c}-s{s}", "mode": "solo", "traffic": "observed",
+         "candidate": f"fleet:budget=official:budget_ms=10000:adapt=off:chains={c}:seed={s}"}
+        for c in (4, 8, 12, 16)
+        for s in (1, 2, 3, 7)
+    ]
     exp["iters"] = [
         {"label": f"iters{it}-seed{s}", "mode": "solo", "traffic": "observed",
          "candidate": fleet(it, s)}
