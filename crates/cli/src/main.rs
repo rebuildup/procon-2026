@@ -24,6 +24,7 @@ mod initial_strategy;
 mod loop_runner;
 mod match_config;
 mod match_record;
+mod monitor;
 mod openapi_fixture;
 mod protocol_to_engine;
 mod solver_adapter;
@@ -229,6 +230,33 @@ enum Cmd {
         /// writing happen on a background thread. Off when omitted.
         #[arg(long, value_name = "DIR", env = "PROCON_HTTP_LOG_DIR")]
         http_log_dir: Option<PathBuf>,
+
+        /// Serve a live dashboard on `127.0.0.1:<PORT>` (Issue #429):
+        /// `GET /` (one HTML page), `GET /telemetry.json` (search counters
+        /// sampled by the candidate's loops) and `GET /table.json` (the
+        /// per-day table read back from the record). The search writes only
+        /// atomics, and only every 256 iterations, so the cost to the
+        /// search is a relaxed load per stride. Off when omitted
+        /// (`PROCON_TELEMETRY=1` is the same as `--telemetry 8437`).
+        #[arg(long, value_name = "PORT", env = "PROCON_TELEMETRY")]
+        telemetry: Option<u16>,
+
+        /// Enable `POST /cutoff` on the telemetry monitor (Issue #429): an
+        /// operator (or the dashboard button) may ask the CURRENT day's
+        /// search to finish early and submit the best plan found. It sets
+        /// the same flag the wall-clock deadline shares the loop with — the
+        /// normal replay / trust-gate / fallback path runs unchanged, and a
+        /// new day starts with the flag cleared. Requires `--telemetry`.
+        /// Off by default: disabled-until-verified on the Windows run.
+        #[arg(long, requires = "telemetry")]
+        allow_search_cutoff: bool,
+
+        /// Which run directory the dashboard's per-day table reads.
+        /// Defaults to the run `--record-dir` creates for this process
+        /// (resolved after the recorder starts); an explicit path wins
+        /// (e.g. watching a different run on the same machine).
+        #[arg(long, value_name = "DIR")]
+        telemetry_run_dir: Option<PathBuf>,
     },
     /// Read back a match record written by `coordinator --record-dir`.
     #[command(subcommand)]
@@ -565,7 +593,11 @@ async fn run(
             arena_evidence,
             record_dir,
             http_log_dir,
+            telemetry,
+            allow_search_cutoff,
+            telemetry_run_dir,
         } => {
+            let recorder_run_dir = recorder.dir().map(std::path::Path::to_path_buf);
             cmd_coordinator(
                 server,
                 token,
@@ -578,6 +610,12 @@ async fn run(
                 exit_after_match,
                 ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto },
                 RecordFlags { record_dir, recorder, http_log_dir, http_log },
+                TelemetryFlags {
+                    telemetry,
+                    allow_search_cutoff,
+                    telemetry_run_dir,
+                    recorder_run_dir,
+                },
             )
             .await?;
         }
@@ -686,6 +724,19 @@ struct RecordFlags {
     http_log: Option<std::sync::Arc<http_log::HttpLog>>,
 }
 
+/// Telemetry-monitor inputs for [`cmd_coordinator`] (Issue #429).
+struct TelemetryFlags {
+    /// `--telemetry <PORT>` (`None` = off, the default).
+    telemetry: Option<u16>,
+    /// `--allow-search-cutoff` (requires `--telemetry`).
+    allow_search_cutoff: bool,
+    /// `--telemetry-run-dir` (defaults to this run's record directory).
+    telemetry_run_dir: Option<PathBuf>,
+    /// The run directory the recorder already created (for the default
+    /// above); `None` while `--record-dir` is off.
+    recorder_run_dir: Option<PathBuf>,
+}
+
 /// One `--kinds` pattern, parsed once by [`parse_kinds_pattern`] while clap
 /// reads the flags (Issues #238/#243).
 ///
@@ -784,9 +835,12 @@ async fn cmd_coordinator(
     exit_after_match: bool,
     arena_flags: ArenaFlags,
     record_flags: RecordFlags,
+    telemetry_flags: TelemetryFlags,
 ) -> Result<()> {
     let ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto } = arena_flags;
     let RecordFlags { record_dir, recorder, http_log_dir, http_log } = record_flags;
+    let TelemetryFlags { telemetry, allow_search_cutoff, telemetry_run_dir, recorder_run_dir } =
+        telemetry_flags;
     if next && !arena {
         anyhow::bail!(
             "--next requires --arena: the :00/:15/:30/:45 cadence and the \
@@ -900,6 +954,17 @@ async fn cmd_coordinator(
                 "arena": profile.is_some(),
                 "record": record,
                 "http_log": http_log,
+                "telemetry": telemetry.map_or_else(
+                    || json!({ "enabled": false }),
+                    |p| json!({
+                        "enabled": true,
+                        "addr": format!("127.0.0.1:{p}"),
+                        "allow_search_cutoff": allow_search_cutoff,
+                        "run_dir": telemetry_run_dir
+                            .or_else(|| recorder_run_dir.clone())
+                            .map(|d| d.display().to_string()),
+                    }),
+                ),
             })
         );
         return Ok(());
@@ -909,6 +974,42 @@ async fn cmd_coordinator(
     let base_url = effective_server
         .ok_or_else(|| anyhow::anyhow!("PROCON_SERVER (or --server) must be set"))?;
     let token = effective_token.unwrap_or_default();
+
+    // Issue #429 — telemetry (off by default): label the search counters
+    // with this run, then start the localhost dashboard on its own thread.
+    // A failed bind or a crashed monitor never touches the match: the
+    // monitor only reads files the coordinator already wrote and atomics
+    // the search already updated.
+    let _monitor = if let Some(port) = telemetry {
+        let run_dir = telemetry_run_dir.or_else(|| recorder_run_dir.clone());
+        let candidate_label =
+            candidate.clone().unwrap_or_else(|| format!("{solver}:{loop_initial_strategy:?}"));
+        bench::telemetry::SEARCH.enable(bench::telemetry::TelemetryMeta {
+            run_id: recorder.run_id().map_or_else(|| "(no record)".to_owned(), str::to_owned),
+            candidate: candidate_label,
+        });
+        match monitor::spawn(monitor::MonitorConfig {
+            enabled: true,
+            allow_cutoff: allow_search_cutoff,
+            port,
+            run_dir,
+        }) {
+            Some(addr) => {
+                tracing::info!(
+                    addr = %addr,
+                    cutoff = allow_search_cutoff,
+                    "telemetry monitor listening (open http://{addr}/ in a browser)"
+                );
+                Some(addr)
+            }
+            None => None,
+        }
+    } else {
+        if allow_search_cutoff {
+            anyhow::bail!("--allow-search-cutoff requires --telemetry <PORT>");
+        }
+        None
+    };
     let mut client_builder = MatchClient::builder(base_url.clone(), token)
         .retry_policy(RetryPolicy::default())
         .request_timeout(std::time::Duration::from_secs(5));

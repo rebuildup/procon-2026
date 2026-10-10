@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "run_id": "20261010T044644Z-fixture",
+  "started_at": "2026-10-10T04:46:44.476Z",
+  "solver": {
+    "label": "candidate:fleet:budget=official:budget_ms=10000:adapt=off",
+    "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off",
+    "solver_flag": "loop",
+    "kinds_auto": true
+  }
+}

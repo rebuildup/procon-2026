@@ -90,6 +90,18 @@ pub enum CutoffError {
     Idle,
 }
 
+impl std::fmt::Display for CutoffError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Disabled => f.write_str("telemetry is off"),
+            Self::Idle => f.write_str("no day is being planned right now"),
+            Self::DayMismatch { current } => {
+                write!(f, "that day is not being planned (current: {current})")
+            }
+        }
+    }
+}
+
 /// Global search telemetry. All fields are atomics; see the module docs for
 /// the contract.
 pub struct Telemetry {
