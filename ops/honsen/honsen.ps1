@@ -28,7 +28,7 @@ param(
     [string]$Command = 'help',
     [string]$Server = '',
     [string]$Exe = '',
-    [string]$Candidate = 'fleet:budget=official:budget_ms=59000:adapt=off',
+    [string]$Candidate = 'sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0',
     [string[]]$KindsArgs = @('--kinds-auto'),
     [string]$RunDir = '',
     [int]$MaxRunMinutes = 40
