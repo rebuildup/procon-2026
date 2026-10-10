@@ -57,9 +57,9 @@
 
 - match3 では **convoy が両 seed で D 最上位**。@20s にすると s42 は D +1（45→46）で辞書順も強化、B は −5。
 
-### 2.3 実行中（判定時に結果未確認 →「未検証」扱い）
+### 2.3 実行中（§7 時点ではすべて回収済み — 結果は §7 に反映）
 
-convoy fleet_iters=120000 hard、convoy@20s 9 盤面展開、2 補給@20s。
+convoy fleet_iters=120000 hard、convoy@20s 9 盤面展開、2 補給@20s。→ 確定結果: 120k は予算不適合で棄却（§7.2）、2 補給@20s も B −8 で棄却維持（`wsl-10s/c2-20s-s2/`）、convoy@20s 展開は §7.3-3 の負荷ノイズ修正の根拠（`wsl-10s/b3-20s-seed42/`）。
 
 ## 3. 三分類判定表（公式辞書順 V→D→B）
 
@@ -71,6 +71,9 @@ convoy fleet_iters=120000 hard、convoy@20s 9 盤面展開、2 補給@20s。
 | **convoy@10s** | **棄却** | 24×24 以上で B 不足・s9007 D −1。match3 solo でも s42 decide 10.013s と一時超過 | — |
 | **2 補給 kinds**（c-s2） | **棄却** | 同 kinds fleet と D 同点でも B −12。1 補給構成比 D −42（構造差）。kinds-auto が 2 補給を選択しない | —（rider 自体の illegal/fuel 0 は確認済み） |
 | **width/forecast 変更**（width12/48、busy、persist） | **棄却** | default（width24・both）が最良かほぼ同等。busy の s9012 +32 は 1 盤面のみ | — |
+
+**【確定版での三分類更新 — PR #407 途中報告 16 と整合。上表の証跡は温存】**
+最終分類は §7.2/§7.5 に基づき次のとおり: **chains8 = 採用推奨**（full corpus D 下落 0・maxdaily 10.0〜10.2s で実時間・辞書順の両条件が確定。旧「本番候補」から昇格確定）／**convoy = 改善継続**（旧「条件付き採用候補」→ 対戦交通・seed 魯棒性・kinds-auto 併用が未確認のため条件付き採用には届かず。残タスクは beam 時間配分の再設計）／**convoy@10s hard 構成・fleet_iters=120000・2 補給 kinds・persist 既定化・width 変更 = 棄却・保留**（120k は `wsl-corpus/hard-convoy-iters120k/` の maxdaily 52.24s で予算不適合が確定）。fleet 現行はフォールバックとして維持。
 
 ## 4. 確認済み / 未検証の分離
 
@@ -93,6 +96,8 @@ convoy fleet_iters=120000 hard、convoy@20s 9 盤面展開、2 補給@20s。
 
 ## 5. Issue/PR agent への引き渡し
 
+（確定版の注意: 採用推奨は chains8、convoy は改善継続 — §7.2。本節の convoy 関連の条件・リスクは convoy を将来投入する場合の前提として読むこと）
+
 - **Candidate ID（実行可能なもの）**
   - chains8: `fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8`（`--chains 8` + `--kinds-auto`）
   - convoy: `convoy:budget=official:budget_ms=20000:seed=42`（`--budget-ms 20000`、kinds `S,P,P,P…` 補給 1 台、`--kinds-auto` 併用）
@@ -114,9 +119,9 @@ convoy fleet_iters=120000 hard、convoy@20s 9 盤面展開、2 補給@20s。
 
 ---
 
-## 7. 判定基準の確定準備（**ドラフト — 全計測回収後に確定版へ更新**）
+## 7. 最終判定（**確定版 — 2026-10-10、全計測回収後。PR #407 途中報告 16 と整合**）
 
-前半（§1-6）の判定を温存し、本節は最終判断のための基準を先回りして固定するもの。
+前半（§1-6）の判定と証跡は温存。本節が最終版で、§7.2 の三分類は PR #407 途中報告 16 と整合している。
 本節の P1 / P3 は**測定責任者の計画番号**であり、§6 の優先度番号とは別物なので混同しないこと。
 
 ### 7.1 実戦条件の定義と重み付け
@@ -131,15 +136,17 @@ convoy fleet_iters=120000 hard、convoy@20s 9 盤面展開、2 補給@20s。
 
 判定原則: **実戦条件に適合する証拠を優先し、offline-only の強さ（clockless 決定論優位、solo 観測交通での優位等）は採用根拠の重みを下げる**。未検証の優位性は確定として扱わない（引用には必ず証跡パスを添える）。
 
-### 7.2 候補別の判定基準表
+### 7.2 候補別の判定基準表（確定）
 
 凡例: ✅ = 条件確認済み（証跡あり）、⬜ = 未確認、⚠ = 確認したが条件付き/懸念あり。
 
 | 判定クラス | convoy | chains8 | fleet 現行 |
 |---|---|---|---|
-| **採用推奨**（実時間制約と辞書順優位を確認済み） | 実時間: solo@20s ≤7.2s ✅（`wsl-10s/round1-solo.jsonl`）／負荷時 +0.47〜1.05s 超過 ⚠。辞書順: holdout D 下落 0・B+99 ✅（`origin/406 convoy-holdout-406/README.md`）、match3 solo D 最上位 ✅。**⬜ Windows native 計時・対戦交通・seed 魯棒性が未確認のため採用推奨には届いていない** | 実時間: budget 内収束（WSL 単独 +0.03〜0.09s、監査値 +0.1〜0.7s）⚠。辞書順: B 全 corpus 最上位 ✅、V/D 盤面別 ±1 ✅（`wsl-10s/b10s-seed42,7/runs.jsonl`）。実戦条件 (a)(c) 適合 ✅。**⬜ 対戦交通・full corpus（計測中）のみ未確認** | 実戦条件 (a)(b)(c) 全適合 ✅（現行投入標準 13a0106）。ただし辞書順優位は「D 現行維持」のみで B は最下位 |
-| **改善継続**（優位だが条件依存・未検証） | **現時点の位置**。条件依存: budget_ms=20000 必須・補給 1 台 kinds・超過監視。未検証: seed 魯棒性（⬜）、対戦交通（⬜）、kinds-auto 併用動作（⬜）、iters=120k（計測中 ⬜） | 部分的に該当: 対戦交通（⬜）と full corpus（⬜）が揃えば採用推奨へ昇格 | chains8 置換の検証対象として継続（B +25/+21 の追認） |
-| **棄却・保留**（悪化確認 or 制約不適合） | convoy@10s（D −1 実測: s9003 `wsl-10s/b10s-seed42`、s9007 `origin/406 sequential-budget`）／2 補給 kinds（D −42 構造差）／width・forecast 変更（default 最良） | 該当なし（D 下落が full corpus で拡大した場合は §7.5 分岐へ） | 該当なし |
+| **採用推奨**（実時間制約と辞書順優位を確認済み） | 実時間: solo@20s ≤7.2s ✅（`wsl-10s/round1-solo.jsonl`）／負荷時超過 ⚠（b3 maxdaily 23.71s を含む、§7.3-2）。辞書順: holdout D 下落 0・B+99 ✅、match3 solo D 最上位 ✅。**対戦交通・seed 魯棒性・kinds-auto 併用が未確認のため採用推奨には届かない → 改善継続** | **現時点の位置 = 採用推奨**。実時間: full corpus maxdaily 10.0〜10.2s ✅（`wsl-10s/b4-chains8-full/`）。辞書順: hard 12 盤面 D1837 vs 1834・B+92、holdout 24 盤面 D3452 同値・B+104、**D 下落盤面 0** ✅。B 優位の大きさは負荷依存（§7.3-3）だが、robust な match3 B+4 と V/D・deadline 中立性で downside なし | 実戦条件 (a)(b)(c) 全適合 ✅（現行投入標準 13a0106）。chains8 採用時のフォールバック |
+| **改善継続**（優位だが条件依存・未検証） | **現時点の位置**。残タスクは **beam 時間配分の再設計**（P3 実測: persist で s9012 B+18〜38、`wsl-10s/p3-persist-s9012/` — beam が時間配分で律速されていることが実証済み）。他の未検証: 対戦交通（⬜）、seed 魯棒性（⬜）、kinds-auto 併用動作（⬜） | 対戦交通（⬜）のみ残る（採用推奨の残課題） | chains8 置換検証は完了（B 優位は負荷依存のため、置換根拠は match3 B+4 と V/D・deadline 中立性） |
+| **棄却・保留**（悪化確認 or 制約不適合） | convoy@10s hard 構成（D −1 実測: s9003 `wsl-10s/b10s-seed42`、s9007 `origin/406 sequential-budget`）／2 補給 kinds（D 同点でも B −8〜−12、1 補給比 D −42。@20s 再確認: `wsl-10s/c2-20s-s2/`）／**fleet_iters=120000**（maxdaily 52.24s で 10s 予算不適合・D 崩落、`wsl-corpus/hard-convoy-iters120k/`）／persist 既定化（default 最良、busy は s9012 単盤面のみ）／width 変更（default 最良） | 該当なし | 該当なし |
+
+chains8 full corpus の測定条件注記: baseline は決定論的な `fleet iters=60000 chains=4`（clockless）、chains8 側は `budget_ms=10000`（clocked）で条件差がある。D 比較には影響しない（clocked 側が不利になる方向）ため「D 下落 0」の判定は保全される。
 
 ### 7.3 明示的に反映するリスク項目（監査値）
 
@@ -148,11 +155,12 @@ convoy fleet_iters=120000 hard、convoy@20s 9 盤面展開、2 補給@20s。
    - chains8: 盤面別 **±1**（seed42 s9008 D−1、seed7 s9003 D+1 — `wsl-10s/b10s-*/runs.jsonl`）。
 2. **wall-clock 予算超過**（60s 期限への余裕とセットで評価）
    - 監査値: convoy **+0.47〜1.05s**（下端 = WSL b2-20s maxdaily 20.47s、上端 = 406 高負荷 21.0s）、chains8/fleet **+0.1〜0.7s**。
-   - WSL 単独実行では chains8/fleet +0.03〜0.09s（`wsl-10s/*/runs.jsonl` maxdaily）と小さく、**超過幅は負荷依存**。
-   - 60s 期限: 1 日あたり最大 ~1.05s 超過 × 5 日 = 累積最大 ~5.25s を期限余裕から差し引いて評価する。
-3. **B の実行間変動**
+   - 追加観測: b3 逐次でも convoy@20s maxdaily 23.71s（+3.71s、`wsl-10s/b3-20s-seed42/`）と予算を大きく超過した日がある。chains8 full corpus は 10.0〜10.2s に収束（`wsl-10s/b4-chains8-full/`）。
+   - 60s 期限: 1 日あたりの最大超過 × 5 日 = 累積最大 ~5.25s（監査値ベース、b3 観測を入れると ~18.5s）を期限余裕から差し引いて評価する。convoy 採用時は超過監視を必須化。
+3. **B の実行間変動（負荷ノイズ修正 — 確定）**
    - 負荷下で **±10〜18**（`origin/406`: jobs=3 並走時の負けは CPU 競合と記録）。clockless は決定論。
-   - **B 差 ±20 未満は有意性が弱い**。chains8 の B +21〜25（2 seed 合計 +46）は閾値付近であり、盤面別判断は常に V/D が先行する。
+   - **低負荷再測（b3）で B 順位が反転した**: s9012 は b2（高負荷）で convoy 388 < fleet 396 < chains8 415 だったが b3 で convoy 412 > fleet 407 > chains8 403（`wsl-10s/b2-20s-s9012/` vs `wsl-10s/b3-20s-seed42/`）。chains8 の corpus B 優位も反転（b10s: chains8 3136 > fleet 3111 → b3: chains8 3111 < fleet 3124）。**つまり s9012 劣勢も chains8 の corpus B 優位も負荷依存であり、B 差の多くは負荷ノイズ**。
+   - **robust な根拠は match3 B+4（chains8 55 vs fleet 51、`wsl-10s/round1-solo.jsonl`）と convoy の match3 型 D 改善（45/46 vs 43）のみ**。B 差 ±20 未満は有意性が弱いとして、盤面別判断は常に V/D が先行する。
 
 ### 7.4 実戦条件適合の証拠確認
 
@@ -164,17 +172,10 @@ convoy fleet_iters=120000 hard、convoy@20s 9 盤面展開、2 補給@20s。
 
 offline-only の強さの重み下げ適用例: convoy の match3 solo D 最上位（`round1-solo.jsonl`）と holdout B+99（`origin/406`）は**決定打には使えない**。convoy の採用は対戦交通での D 優位確認（P0/P1 計測）が揃って初めて確定する。
 
-### 7.5 convoy 最終判定の分岐表（先行固定）
+### 7.5 最終判定の分岐表（確定 — 実測で全分岐が解決）
 
-| 分岐トリガ | 結果 | 判定 |
+| 分岐トリガ | 実測結果 | 最終判定 |
 |---|---|---|
-| **P1（embed ラダー）** | 的中（想定通りの優位） | 修正案 **P2 の統合が必須条件**（統合前に再計測で追認するまで採用確定にしない） |
-| P1 | 外れ | 現行 convoy のまま §7.2 の判定へ。追加修正は保留 |
-| **P3（persist）** | **+25 以上** | beam 完走性の設計見直し → 採用判断を保留し設計側へエスカレーション |
-| P3 | +5〜+25 | 条件付き採用のまま監視対象に追加（有意性は §7.3-3 の閾値で再評価） |
-| P3 | +5 未満 | persist 影響なしとして閉じる |
-| **chains8 full corpus**（計測中） | D 下落盤面 0 | 本番候補として確定 |
-| chains8 full corpus | D 下落盤面 ±1 のみ | 採用継続、監視項目に残す（§7.3-1） |
-| chains8 full corpus | D 下落盤面 2 点以上が複数 | 採用延期、下落盤面の盤面特性分析を実施 |
-
-注意: P1 / P3 の成功・閾値の定義は暫定値であり、測定責任者の計画仕様と合意の上で確定版で固定する。全計測回収まで本節はドラフト扱い。
+| **P1（embed ラダー）** | **外れ（実測確定）** — `wsl-10s/p1-embed-rung/` では想定の優位は確認されず | 現行 convoy のまま。追加修正は保留 |
+| **P3（persist）** | **+25 以上のバンドに実測で到達（実測確定）** — persist で s9012 B+18〜38（`wsl-10s/p3-persist-s9012/`: s9012 B407 vs default 369 = +38） | **beam 時間配分の再設計**が convoy 改善継続の残タスクとして確定（beam が時間配分で律速されていることが実証） |
+| **chains8 full corpus** | **D 下落盤面 0（実測確定）** — hard D1837 vs 1834・B+92、holdout D3452 同値・B+104、maxdaily 10.0〜10.2s（`wsl-10s/b4-chains8-full/`） | **chains8 = 採用推奨として確定**（実時間・辞書順の両条件が揃った） |
