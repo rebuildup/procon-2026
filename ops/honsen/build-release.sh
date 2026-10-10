@@ -11,7 +11,7 @@ set -euo pipefail
 
 NAME="${1:?usage: build-release.sh <name> <git-sha> [candidate] [kinds-args]}"
 SHA_IN="${2:?usage: build-release.sh <name> <git-sha> [candidate] [kinds-args]}"
-CANDIDATE="${3:-fleet:budget=official:budget_ms=59000:adapt=off}"
+CANDIDATE="${3:-sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0}"
 KINDS_ARGS="${4---kinds-auto}"
 HONSEN_HOME="${HONSEN_HOME:-$HOME/.procon-honsen}"
 DEST="$HONSEN_HOME/releases/$NAME"

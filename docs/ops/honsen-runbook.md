@@ -26,7 +26,7 @@ Windows 11 で動かす場合は [`honsen-windows.md`](honsen-windows.md)、試�
 # 1) 電源アダプタと LAN ケーブルを接続。Wi-Fi は切る（競技 LAN 以外へ出ないようにする）
 networksetup -setairportpower en0 off
 
-# 2) バイナリと sha256 を確認（current が v2-71a9c0f、backup が v1-5ddb153 で、どちらも OK）
+# 2) バイナリと sha256 を確認（current が v3-8b7324b-sized、backup が v2-71a9c0f-59s で、どちらも OK）
 honsen releases
 
 # 3) 接続先とトークンを登録（トークンは画面にも履歴にも残りません）
@@ -73,7 +73,7 @@ honsen status -w              # 監視画面（1 秒ごとに更新、Ctrl-C で
 - `試合状態 : running`
 - `revision : [1, 2, 3, …]` — 日が進むたびに 1 つ増える。**0 以上の数字 = サーバーが受理した**
 - 最新ログに `plan accepted by server day=N revision=R … margin_ms=…`（`margin_ms` は締切までの残り時間）
-- 既定候補（`budget_ms=59000:adapt=off`）は毎日ほぼ時間いっぱいまで探索する。受理の行が出るのは各日の開始から約 54 秒後で、`margin_ms` は 5200 前後になる。これが正常値で、日の前半にログが進まないのは故障ではない
+- 既定候補（`sized`）は盤面の長辺で探索を切り替える。16 以下は各日の開始から数秒〜20 秒ほどで受理の行が出る。17 以上は毎日ほぼ時間いっぱいまで探索するので、受理の行は約 54 秒後、`margin_ms` は 5200 前後になる。どちらも正常値で、大きい盤面で日の前半にログが進まないのは故障ではない
 
 「送った」だけでは受理ではありません。受理の根拠はサーバーが返した `revision` だけです。
 
@@ -101,15 +101,16 @@ honsen status -w              # 監視画面（1 秒ごとに更新、Ctrl-C で
 
 ```bash
 honsen stop                # 動いていれば止める
-honsen rollback            # backup (v1-5ddb153) に切り替え
+honsen rollback            # backup (v2-71a9c0f-59s) に切り替え
 honsen preflight official
 ```
 
 | 症状 | 切り替え先 |
 |---|---|
-| v2 が起動直後に落ちる、復旧処理がおかしい | `honsen rollback`（v1-5ddb153。Arena で 5 試合の実績。ただし試合途中の再開はできない） |
+| 現行版が起動直後に落ちる、小さい盤面の回答がおかしい | `honsen rollback`（v2-71a9c0f-59s。fleet 59 秒・adapt=off、Arena で 8 試合の実績。試合途中の再開もできる） |
+| v2 系でも復旧処理がおかしい | `honsen use v1-5ddb153`（fleet 10 秒。ただし試合途中の再開はできない） |
 | fleet の回答が何日も `rejected` になる | `honsen use v2-71a9c0f-anytime`（旧候補 anytime。玉数は落ちるが別系統の計画） |
-| 元に戻す | `honsen use v2-71a9c0f` |
+| 元に戻す | `honsen use v3-8b7324b-sized` |
 
 ## 4. 競技終了後
 

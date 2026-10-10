@@ -4,6 +4,7 @@
     xq.py add  ID TIMEOUT_S -- CMD...     append a job (ID must be new)
     xq.py run  [JOBS]                      run pending jobs, JOBS at a time (default 1)
     xq.py status                           one line per job
+    xq.py unlock ID                        clear the lock of a job whose runner died
 
 State lives next to this file's parent: queue/jobs.jsonl (append-only job
 list), queue/done.jsonl (append-only results), logs/ID.log. `run` skips every
@@ -18,6 +19,18 @@ JOBS, DONE, LOGS = f"{ROOT}/queue/jobs.jsonl", f"{ROOT}/queue/done.jsonl", f"{RO
 def load(path):
     return [json.loads(l) for l in open(path)] if os.path.exists(path) else []
 def run_one(job):
+    # One runner per job: a second `run` started meanwhile skips it. A lock
+    # left by a runner that died is cleared with `xq.py unlock ID`.
+    lock = f"{ROOT}/queue/running-{job['id']}.lock"
+    try:
+        os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    except FileExistsError:
+        return {"id": job["id"], "status": "skipped: running elsewhere"}
+    try:
+        return _run(job)
+    finally:
+        os.remove(lock)
+def _run(job):
     began = time.time()
     with open(f"{LOGS}/{job['id']}.log", "w") as log:
         try:
@@ -43,8 +56,11 @@ elif cmd == "run":
     with cf.ThreadPoolExecutor(int(sys.argv[2]) if len(sys.argv) > 2 else 1) as ex:
         for rec in ex.map(run_one, pending):
             print(json.dumps(rec), flush=True)
+elif cmd == "unlock":
+    os.remove(f"{ROOT}/queue/running-{sys.argv[2]}.lock")
 else:
     done = {d["id"]: d for d in load(DONE)}
     for j in load(JOBS):
         d = done.get(j["id"])
-        print(j["id"], d["status"] if d else "pending", d.get("seconds", "") if d else "", sep="\t")
+        running = os.path.exists(f"{ROOT}/queue/running-{j['id']}.lock")
+        print(j["id"], d["status"] if d else ("running" if running else "pending"), d.get("seconds", "") if d else "", sep="\t")
