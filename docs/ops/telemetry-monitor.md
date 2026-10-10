@@ -19,7 +19,7 @@
     --kinds-auto --telemetry 8437
 ```
 
-- `--telemetry 8437` を足すだけ。`PROCON_TELEMETRY=1` 環境変数でも同じ（`1` はポート 8437 の意味）。
+- `--telemetry 8437` を足すだけ。`PROCON_TELEMETRY=8437` 環境変数でも同じ（**env にはポート番号そのものを入れる。`=1` はポート 1 への bind 試みて失敗（非致命・モニターだけ出ない）になるので使わない**）。CLI flag が優先。
 - `--candidate` の値は普段のものをそのまま使う（テレメトリは candidate id に依存しない）。
 
 ウィンドウ 2 — ブラウザ:

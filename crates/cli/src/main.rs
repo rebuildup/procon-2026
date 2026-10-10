@@ -236,8 +236,9 @@ enum Cmd {
         /// sampled by the candidate's loops) and `GET /table.json` (the
         /// per-day table read back from the record). The search writes only
         /// atomics, and only every 256 iterations, so the cost to the
-        /// search is a relaxed load per stride. Off when omitted
-        /// (`PROCON_TELEMETRY=1` is the same as `--telemetry 8437`).
+        /// search is a relaxed load per stride. Off when omitted. The env
+        /// var takes the port number itself (`PROCON_TELEMETRY=8437` is the
+        /// same as `--telemetry 8437`).
         #[arg(long, value_name = "PORT", env = "PROCON_TELEMETRY")]
         telemetry: Option<u16>,
 
