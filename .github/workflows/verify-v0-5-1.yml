@@ -68,12 +68,12 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:HONSEN_HOME = Join-Path $env:RUNNER_TEMP 'honsen'
-          New-Item -ItemType Directory -Force $env:HONSEN_HOME | Out-Null
+          # CI用の模擬値のみ。実際のトークンはワークフローに含めない。
           @('PROCON_SERVER=http://127.0.0.1:18080', 'PROCON_TOKEN="local-e2e-token"') |
-            Set-Content -LiteralPath (Join-Path $env:HONSEN_HOME '.env') -Encoding UTF8
-          Remove-Item Env:PROCON_TOKEN -ErrorAction SilentlyContinue
-          Remove-Item Env:PROCON_SERVER -ErrorAction SilentlyContinue
+            Set-Content -LiteralPath .\.env -Encoding UTF8
+          # .env が既存の環境変数より優先することも検証する。
+          $env:PROCON_TOKEN = 'incorrect-override'
+          $env:PROCON_SERVER = 'http://127.0.0.1:65534'
           $case = 'docs/evidence/campaign-311/fleet-371/corpus-hard/hard-16-a4-d10-short-s9001.json'
           $mock = Join-Path $env:RUNNER_TEMP 'mock.json'
           $server = Start-Process python -PassThru -NoNewWindow -ArgumentList @(
@@ -81,13 +81,12 @@ jobs:
             '--days', '3', '--day-seconds', '8', '--summary', $mock)
           Start-Sleep -Seconds 3
 
-          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ops\honsen\honsen.ps1 `
-            start -Exe target\release\procon.exe
+          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\ops\honsen\honsen.ps1 start
           if ($LASTEXITCODE -ne 0) { throw "honsen.ps1 start exited with $LASTEXITCODE" }
           if (-not $server.WaitForExit(60000)) { $server.Kill(); throw 'mock server did not finish' }
           Get-Content $mock
 
-          $run = Get-ChildItem (Join-Path $env:HONSEN_HOME 'records') -Directory | Select-Object -First 1
+          $run = Get-ChildItem '.\records' -Directory | Select-Object -First 1
           foreach ($name in 'manifest.json', 'setting.json', 'events.jsonl', 'coordinator.log', 'state.json') {
             if (-not (Test-Path (Join-Path $run.FullName $name))) { throw "$name is missing" }
           }
@@ -124,7 +123,7 @@ jobs:
           }
 
           # HTTP log: same run id, every exchange parses, plans are whole.
-          $http = Join-Path $env:HONSEN_HOME "logs\$($run.Name)\http.jsonl"
+          $http = Join-Path '.\logs' "$($run.Name)\http.jsonl"
           $entries = Get-Content $http | ForEach-Object { $_ | ConvertFrom-Json }
           $posts = @($entries | Where-Object { $_.method -eq 'POST' -and $_.url.EndsWith(':18080/') -and $_.status -eq 200 })
           if ($posts.Count -ne 3) { throw "expected 3 accepted POST /, got $($posts.Count)" }
@@ -135,8 +134,8 @@ jobs:
           }
 
           $leaks = @(
-            Get-ChildItem (Join-Path $env:HONSEN_HOME 'records') -Recurse -File
-            Get-ChildItem (Join-Path $env:HONSEN_HOME 'logs') -Recurse -File
+            Get-ChildItem '.\records' -Recurse -File
+            Get-ChildItem '.\logs' -Recurse -File
           ) | Select-String -SimpleMatch 'local-e2e-token'
           if ($leaks) { $leaks | ForEach-Object { $_.Path }; throw 'the token was written to disk' }
           'Windows native match with .env: OK'
@@ -145,5 +144,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-native-records
-          path: ${{ runner.temp }}/honsen
+          path: |
+            records/
+            logs/
           if-no-files-found: warn
