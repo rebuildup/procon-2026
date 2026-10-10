@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "source_kind": "post_match_preliminary_baseline",
+  "competition": "2026-10-10 本選1回戦",
+  "evidence_directory": "data/round1/20261010T044644Z-p28796",
+  "run_id": "20261010T044644Z-p28796",
+  "result": {
+    "rank": {
+      "value": 3,
+      "provenance": "user_report",
+      "confirmed_by_official_record": false
+    },
+    "official_score": {
+      "V": null,
+      "D": null,
+      "B": null,
+      "T": null,
+      "provenance": "not_available"
+    },
+    "status": {
+      "value": "completed",
+      "provenance": "manifest"
+    }
+  },
+  "execution": {
+    "source_sha": "7a93ad76549397e21178476d472a6a070ecddfce",
+    "source_sha_origin": "git-working-directory",
+    "binary_sha256": "ff28c73a8c43fbfba2cdb3339dc7c37e8cfbfc6c03bdd46d2e1818cc06d636cf",
+    "os": "windows",
+    "arch": "x86_64",
+    "package_version": "0.5.0",
+    "candidate": "fleet:budget=official:budget_ms=10000:adapt=off",
+    "kinds_auto": true,
+    "kinds": "S,P,P,P"
+  },
+  "setting": {
+    "players": 10,
+    "width": 16,
+    "height": 16,
+    "agents": 4,
+    "days": 5,
+    "day_steps": [
+      32,
+      36,
+      40,
+      40,
+      48
+    ],
+    "day_seconds": [
+      60,
+      60,
+      60,
+      60,
+      60
+    ],
+    "fuel_limit": 40,
+    "spots": 16,
+    "brands": 10
+  },
+  "daily_submission": [
+    {
+      "day": 0,
+      "revision": 3,
+      "attempts": 1,
+      "status": "accepted",
+      "answer_ms": 10004,
+      "margin_ms": 50603
+    },
+    {
+      "day": 1,
+      "revision": 12,
+      "attempts": 1,
+      "status": "accepted",
+      "answer_ms": 10004,
+      "margin_ms": 49589
+    },
+    {
+      "day": 2,
+      "revision": 21,
+      "attempts": 1,
+      "status": "accepted",
+      "answer_ms": 10004,
+      "margin_ms": 49571
+    },
+    {
+      "day": 3,
+      "revision": 30,
+      "attempts": 1,
+      "status": "accepted",
+      "answer_ms": 10003,
+      "margin_ms": 49559
+    },
+    {
+      "day": 4,
+      "revision": 37,
+      "attempts": 1,
+      "status": "accepted",
+      "answer_ms": 10005,
+      "margin_ms": 49539
+    }
+  ],
+  "recorder": {
+    "numbered_events": 25,
+    "dropped": 0,
+    "write_errors": 0
+  },
+  "original_sha256": {
+    "coordinator.log": "f0431e2499c98491fec2ec30abf83a2b7d0143aa6bb083792690e000d843754e",
+    "events.jsonl": "549075c9f66592ee8163308de1cca06a0fc094328252b8fac42a61d95729efb4",
+    "manifest.json": "5446d77bbea52bb521b20df778380e712633f9a1681a710edc882630b67a2681",
+    "setting.json": "5478dae2b36c00fc420c4e7935a1ab2dd3065a2fe915a04d5ab174d02d853fe4",
+    "state.json": "536759361c5b4db38875f7dcc644d7a0c8c7c939e59eb760d6b596645304e2bc"
+  },
+  "missing_evidence": [
+    "official_final_scoreboard",
+    "per_team_final_V_D_B_and_rank",
+    "full_http_log"
+  ],
+  "notes": [
+    "Live observations do not establish total official V/D/B.",
+    "Planner model/replay/tomorrow estimates are not official scoring.",
+    "A single-team offline replay cannot fully reproduce ten-player traffic."
+  ]
+}
