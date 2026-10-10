@@ -195,6 +195,21 @@ official 24×24 の 7 盤面、wall-clock 20 秒、`convoy:…:cluster=on:bail=o
 
 合計では D +10・B +1.1% だが、**51 盤面中 4 盤面で D が下がる**（1〜2 系列）。採点が 1 seed なので seed の揺れを含むが、D を落とす場合がある以上、Experimental のまま。
 
+### 5.5 16×16：`fleet` 59 秒 対 `convoy` 20 秒（同じ wall-clock 条件）
+
+official 16×16 の 6 盤面、`fleet:budget=official:budget_ms=59000:adapt=off:seed=42` 対 `convoy:budget=official:budget_ms=20000:seed=42`、1 run ずつ順に実行（`results/official16-players2-wall-fleet59-vs-convoy20.jsonl`）。`sized` が 16 以下で渡す設定そのもの。
+
+| 盤面 | 上限 D | fleet 59 秒 V/D/B | convoy 20 秒 V/D/B | convoy の最長回答 |
+|---|---:|---|---|---:|
+| 1997 | 60 | 12/60/106 | 12/60/107 | 14.9 秒 |
+| 2002 | 50 | 10/50/64 | 10/50/70 | 5.8 秒 |
+| 2010 | 50 | 10/50/88 | 10/50/88 | 11.4 秒 |
+| 2012 | 50 | 10/50/96 | 10/50/96 | 6.1 秒 |
+| 2014 | 55 | 11/**53**/63 | 11/**54**/72 | 5.2 秒 |
+| 2019 | 55 | 11/55/107 | 11/55/107 | 17.4 秒 |
+
+convoy が 3 勝 3 分 0 敗、ΔD +1、ΔB +16、D が下がった盤面は 0、違法・拒否 0。2014（実戦は fleet 59 秒で D 50、1 位 53）は wall-clock でも fleet が 53、convoy が 54。convoy は 20 秒の枠を使い切らず 5〜17 秒で答える。1 seed・6 盤面。
+
 ## 4. 実験の実行基盤（`tools/xq.py`）
 
 worktree は merge 後に他セッションの整理で消えることがあり、今回 2 つの計測が実行ファイルごと消えて `exit 1` になった。盤面・道具・実行ファイル・結果は worktree の外（`~/.procon-goal-lab/`）に置き、計測は `xq.py` の待ち行列で回す。
