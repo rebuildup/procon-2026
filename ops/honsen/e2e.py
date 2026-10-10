@@ -207,7 +207,7 @@ command = [str(a.cli.resolve()), 'coordinator', '--server', f'http://127.0.0.1:{
            '--candidate', a.candidate, '--exit-after-match',
            '--state-output', str(a.output_dir / 'state.json')]
 if a.record:
-    command += ['--record-dir', str(a.output_dir / 'records')]
+    command += ['--record-dir', str(a.output_dir / 'records'), '--http-log-dir', str(a.output_dir / 'logs')]
 if a.kinds == 'auto':
     command.append('--kinds-auto')
 elif a.kinds != 'none':
@@ -289,6 +289,53 @@ ok = (final_exit is not None and final_exit[0] == 'exit' and final_exit[1] == 0
       and len(missed) <= a.expect_missed_days and kinds)
 
 
+def check_http_log(runs, problems):
+    """Compare logs/<run-id>/http.jsonl and the console copy with what crossed the proxy."""
+    exchanges = []
+    console = (a.output_dir / 'cli.log').read_text(errors='replace')
+    for run in runs:
+        path = a.output_dir / 'logs' / run.name / 'http.jsonl'
+        if not path.is_file():
+            problems.append(f'{run.name}: http.jsonl missing')
+            continue
+        text = path.read_text()
+        if TOKEN in text:
+            problems.append(f'{run.name}: http.jsonl contains the token')
+        for raw in text.splitlines():
+            if not raw.strip():
+                continue
+            try:
+                entry = json.loads(raw)
+            except ValueError:
+                problems.append(f'{run.name}: unparsable http.jsonl line')
+                continue
+            if entry['type'] == 'exchange':
+                exchanges.append(entry)
+                head = f"[HTTP #{entry['n']}] {entry['ts']} {entry['method']} {entry['url']} -> "
+                if head not in console:
+                    problems.append(f"{run.name}: request #{entry['n']} is in http.jsonl but not on the console")
+                for side in ('request_body', 'response_body'):
+                    if entry[side] and entry[side] not in console:
+                        problems.append(f"{run.name}: {side} of #{entry['n']} is not on the console in full")
+    if '[MASKED]' not in console:
+        problems.append('console shows no masked token header')
+    # The killed process may have had one request in flight; allow that much.
+    slack = 1 if a.kill_day >= 0 else 0
+    if not len(records) - slack <= len(exchanges) <= len(records):
+        problems.append(f'http.jsonl has {len(exchanges)} exchanges, the proxy saw {len(records)} requests')
+    if slack == 0:
+        for entry, seen in zip(exchanges, records):
+            where = f"request #{entry['n']}"
+            if entry['method'] != seen['method'] or not entry['url'].endswith(seen['path']):
+                problems.append(f'{where}: logged {entry["method"]} {entry["url"]}, proxy saw {seen["method"]} {seen["path"]}')
+            if seen.get('body') is not None and json.loads(entry['request_body'] or 'null') != seen['body']:
+                problems.append(f'{where}: logged request body differs from what the proxy received')
+            if not seen.get('fault') and entry['status'] != seen.get('status'):
+                problems.append(f'{where}: logged status {entry["status"]}, proxy answered {seen.get("status")}')
+            if seen.get('fault') in ('drop_before', 'drop_after') and entry['result'] != 'failed':
+                problems.append(f'{where}: a dropped connection was logged as {entry["result"]}')
+
+
 def check_record():
     """Compare the run directories with what crossed the proxy."""
     problems = []
@@ -341,6 +388,7 @@ def check_record():
         if runs else None
     if show is None or show.returncode != 0:
         problems.append('procon record show failed')
+    check_http_log(runs, problems)
     return {'runs': [r.name for r in runs], 'event_lines': lines, 'days_with_plan': sorted(plans),
             'days_observed': sorted(observed), 'continues': [json.loads((r / 'manifest.json').read_text())
                                                              .get('continues_run_id') for r in runs],

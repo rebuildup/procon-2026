@@ -1,0 +1,100 @@
+{
+  "case": "hard-16-a4-d10-short-s9001.json",
+  "size": "16x16",
+  "agents": 4,
+  "days_total": 4,
+  "source_sha": "2984c208f8962e01a47668026ac135b50f0a9221",
+  "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cli_sha256": "5346ede261746705f377ee9b62b2500d09e93615407ad065339cfea81ae05ff9",
+  "candidate": "fleet:budget=official:budget_ms=10000",
+  "kinds_flag": "auto",
+  "kinds_accepted": [
+    1,
+    0,
+    0,
+    0
+  ],
+  "faults": [],
+  "kill_day": -1,
+  "kill_after_post": false,
+  "exit_codes": [
+    [
+      "exit",
+      0
+    ]
+  ],
+  "token_header_on_every_request": true,
+  "token_in_cli_log": false,
+  "days": [
+    {
+      "day": 0,
+      "day_seconds": 12,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        1
+      ],
+      "answer_seconds": 0.615,
+      "margin_seconds": 11.376
+    },
+    {
+      "day": 1,
+      "day_seconds": 12,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        2
+      ],
+      "answer_seconds": 0.643,
+      "margin_seconds": 10.694
+    },
+    {
+      "day": 2,
+      "day_seconds": 12,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        3
+      ],
+      "answer_seconds": 0.621,
+      "margin_seconds": 11.062
+    },
+    {
+      "day": 3,
+      "day_seconds": 12,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        4
+      ],
+      "answer_seconds": 0.602,
+      "margin_seconds": 10.447
+    }
+  ],
+  "missed_days": [],
+  "wall_seconds": 47.8,
+  "limitation": "Official simple server on localhost, idle opponents; proves protocol acceptance, not score.",
+  "record": {
+    "runs": [
+      "20261010T022747Z-p67513"
+    ],
+    "event_lines": 21,
+    "days_with_plan": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "days_observed": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "continues": [
+      null
+    ],
+    "problems": []
+  },
+  "verdict": "PASS"
+}

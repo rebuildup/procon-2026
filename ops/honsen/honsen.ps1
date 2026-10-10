@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     本選用 Windows ネイティブ起動スクリプト（WSL / Docker / Git Bash 不要）。
 

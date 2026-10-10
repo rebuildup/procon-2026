@@ -3,7 +3,7 @@
 操作担当者向け。Rust の知識は要りません。コマンドはすべてそのまま打てます。
 検証の根拠は [`docs/evidence/honsen-385/README.md`](../evidence/honsen-385/README.md)。
 
-Windows 11 で動かす場合は [`honsen-windows.md`](honsen-windows.md)、試合記録の形式は [`match-record.md`](match-record.md) を参照。`honsen start` は `~/.procon-honsen/records/` に試合記録を残す（`--record-dir` に対応したバイナリの場合）。
+Windows 11 で動かす場合は [`honsen-windows.md`](honsen-windows.md)、試合記録の形式は [`match-record.md`](match-record.md) を参照。`honsen start` は `~/.procon-honsen/records/` に試合記録、`~/.procon-honsen/logs/` に HTTP 通信ログ（[`http-log.md`](http-log.md)）を残す（対応したバイナリの場合。通信ログの全文は `coordinator.log` にも流れる）。
 
 - 対象端末: MacBook Air (Apple M5, arm64, macOS)。ビルド済みバイナリは `~/.procon-honsen/` にあり、競技中のビルドは不要
 - コマンド: `~/.procon-honsen/bin/honsen`（以下 `honsen` と書く）
