@@ -208,3 +208,22 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   - s5001: fuel −9 / mix −1〜3（B-only 微減・D 同点）。s9003: 全候補同点
   - 欠落セル（負荷 invalid）: s9005 c8×3、s9008 c4 anchor/fuel、s9012 c8 fuel/mix、s5016 c4×3+c8 anchor、s5023 c4 fuel/mix、s5020 全 6 — **静穏時に再実行**
   分析ツール: `results-405/tools/fseries_gain.py`（gain/mix_effect 分解・DV-LOSS 列挙）
+- [00:2x] **F3-offline 確定集計（invalid セルにも決定論スコア記録あり・scored=False は wall 起因棄却のみ）**:
+  盤面別 B 利得（fuel / mix、同 chain アンカー比・D 動きを併記）:
+  | 盤面（比） | c4 fuel | c4 mix | c8 fuel | c8 mix |
+  |---|---|---|---|---|
+  | s9003 (1.0) | 0 | 0 | 0 | 0 |
+  | s9005 | −4 | 0 | +3 | +1 |
+  | s9008 | +10 (D+1) | +29 (D+1) | **+37 (D+5)** | +30 (D+5) |
+  | s9012 (1.0) | **+56** | +44 | +24(inv) | +43(inv) |
+  | s5001 | −9 | −3 | −7 | −1 |
+  | s5013 (2.78) | +1 | −1 | +1 | 0 |
+  | s5016 (2.72) | +4 | −1 | −3 | −7 |
+  | s5023 (1.38) | −27(inv) | −11(inv) | −29 | −16 |
+  | s5020 (3.0) | −2 | −13 | (timeout×2) | 〃 |
+  - 合計（完了セル）: fuel-only +29(c4)/+26(c8)、mix +44(c4)/+50(c8)。**mix > fuel-only が両 chain で成立**（非拘束盤面の損を消す機構どおり）
+  - **D 下落セル = 0**（完了セル全 34 対で dV ≥0。s5020 c8 timeout 2 セルは真欠落）
+  - §6.2 分解式の判定: c4 と c8 で mix 利得が同幅 → **重複なし・独立寄与**。希釈なし
+  - 監視セル: s5023 fuel-only −29（B-only・D 同点）、s5020 c8 未測定
+  - 判定: `fuel_need=50:fuel_mix=on` は offline 辞書順で非劣化・B 合計 +44〜50。**chains8 offline の唯一の D-loss（s9008）を消す**点で chains8 採用の辞書順リスクを低減。検証 27 盤面と clocked 確認を経て初めて採用推薦
+  欠落 2 セル（s5020 c8 fuel/mix）と inv セルの scored 再取得のため、静穏時に corpus9 再実行。
