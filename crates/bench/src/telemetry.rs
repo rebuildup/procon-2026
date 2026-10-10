@@ -408,6 +408,85 @@ fn unix_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
+/// Minimal dashboard for the offline eval (`procon-eval --worker
+/// --telemetry <PORT>`, Issue #429): `/telemetry.json`, a small
+/// auto-refresh page, and `POST /cutoff` (same day-scoped request flag —
+/// starting the demo server is the opt-in). The full run monitor (per-day
+/// table, gated cutoff button) lives in the CLI, which owns the record
+/// parser — the eval process has no run directory to read.
+///
+/// Returns the bound address; `None` when the port cannot be taken (the
+/// evaluation continues either way).
+#[must_use]
+pub fn spawn_demo_server(port: u16) -> Option<String> {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port)).ok()?;
+    let addr = listener.local_addr().ok()?.to_string();
+    let _ = std::thread::Builder::new().name("telemetry-demo".into()).spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut buf = [0_u8; 1024];
+            let Ok(read) = stream.read(&mut buf) else { continue };
+            let head = String::from_utf8_lossy(&buf[..read]);
+            let path = head.lines().next().unwrap_or_default().split_whitespace().nth(1);
+            let path = path.unwrap_or_default().split('?').next().unwrap_or_default();
+            let (ctype, body): (&'static str, Vec<u8>) = match path {
+                "/telemetry.json" => (
+                    "application/json",
+                    serde_json::to_vec(&SEARCH.snapshot()).unwrap_or_default(),
+                ),
+                "/cutoff" if head.starts_with("POST") => {
+                    // The demo is opt-in by construction (an explicit
+                    // `--telemetry` started it), so the route mirrors that:
+                    // same flag, same day-scoped request, normal completion
+                    // path — never a kill.
+                    let answer = match SEARCH.request_cutoff(None) {
+                        Ok(()) => serde_json::json!({
+                            "ok": true,
+                            "day": SEARCH.day(),
+                            "note": "the search finishes at its next check",
+                        }),
+                        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+                    };
+                    ("application/json", serde_json::to_vec(&answer).unwrap_or_default())
+                }
+                _ => ("text/html; charset=utf-8", DEMO_PAGE.as_bytes().to_vec()),
+            };
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: {ctype}\r\ncontent-length: {}\r\ncache-control: no-store\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(head.as_bytes()).and_then(|()| stream.write_all(&body));
+        }
+    });
+    Some(addr)
+}
+
+/// The demo page: raw JSON polling, tabular counters, one polyline.
+const DEMO_PAGE: &str = r##"<!doctype html>
+<html lang="ja">
+<meta charset="utf-8"><title>procon-eval telemetry (Issue #429)</title>
+<style>body{font-family:system-ui,sans-serif;margin:1rem}td,th{border:1px solid #ccc;padding:2px 8px;font-variant-numeric:tabular-nums}table{border-collapse:collapse;font-size:.9rem}</style>
+<h1>procon-eval telemetry</h1>
+<table><tbody id="t"></tbody></table>
+<svg id="s" width="600" height="80"><polyline id="p" fill="none" stroke="#0a6" stroke-width="2"/></svg>
+<script>
+const rows = [["day","day"],["phase","phase"],["iters","iters"],["target","iters_target"],["best","best"],["improvements","improvements"],["elapsed ms","elapsed_ms"],["plans","plans"]];
+async function tick(){
+  const t = await (await fetch("/telemetry.json",{cache:"no-store"})).json();
+  document.getElementById("t").innerHTML = rows.map(([l,k])=>"<tr><th>"+l+"</th><td>"+t[k]+"</td></tr>").join("");
+  const c = t.curve||[];
+  if(c.length>1){
+    const s0=Math.min(...c.map(p=>p[1])),s1=Math.max(...c.map(p=>p[1]));
+    const t0=c[0][0],t1=Math.max(t0+1,c[c.length-1][0]);
+    document.getElementById("p").setAttribute("points",c.map(([ms,s])=>
+      ((ms-t0)/(t1-t0)*590+5).toFixed(1)+","+(75-(s-s0)/Math.max(1,s1-s0)*70).toFixed(1)).join(" "));
+  }
+}
+tick(); setInterval(tick, 1500);
+</script>
+"##;
+
 #[cfg(test)]
 mod tests {
     use super::*;

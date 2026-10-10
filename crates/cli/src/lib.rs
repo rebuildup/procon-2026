@@ -21,6 +21,7 @@ pub mod coordinator_loop;
 pub mod http_log;
 pub mod initial_strategy;
 pub mod match_record;
+pub mod monitor;
 pub mod openapi_fixture;
 pub mod protocol_to_engine;
 pub mod solver_adapter;

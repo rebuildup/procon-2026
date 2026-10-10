@@ -195,6 +195,14 @@ struct Args {
     /// Worker mode: commit SHA to stamp on the record.
     #[arg(long = "source-commit-sha", requires = "worker", default_value = "unknown")]
     source_commit_sha: String,
+
+    /// Serve the Issue #429 dashboard on `127.0.0.1:<PORT>` while this
+    /// process searches, and feed the search counters. Offline demo and
+    /// debugging: the counters move exactly as they would in a live run
+    /// (same atomics, same stride). Requires `--worker` (the batch parent
+    /// isolates each run, so the monitor would outlive the search).
+    #[arg(long, requires = "worker")]
+    telemetry: Option<u16>,
 }
 
 #[derive(Debug)]
@@ -319,6 +327,18 @@ fn run_worker(args: &Args) -> Exit {
     // even when it cannot evaluate anything. A silent non-zero exit would be
     // indistinguishable from a crash, and the parent would have to guess at
     // the cause. The only way to produce no output is to be killed.
+    // Issue #429: `--telemetry` turns the counters on and serves the
+    // dashboard for the length of this one evaluation.
+    if let Some(port) = args.telemetry {
+        bench::telemetry::SEARCH.enable(bench::telemetry::TelemetryMeta {
+            run_id: "offline-eval".to_owned(),
+            candidate: args.candidate_id.clone(),
+        });
+        match bench::telemetry::spawn_demo_server(port) {
+            Some(addr) => eprintln!("telemetry monitor: http://{addr}/"),
+            None => eprintln!("telemetry monitor: bind failed; continuing without it"),
+        }
+    }
     let record = match worker_record(args) {
         Ok(r) => r,
         // The real case id is re-stamped by the parent from its own `CaseSpec`,
