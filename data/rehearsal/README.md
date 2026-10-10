@@ -16,24 +16,28 @@
 ```bash
 git checkout 398
 cargo build --release --locked -p bench --bin procon-eval
-cargo run --locked -p cli --bin procon -- match-config validate data/rehearsal/2026-10-10-105938.setting.json
 
-# まず短い比較。出力先 target/rehearsal-20261010
+# 短い比較（6 run）。出力先 target/rehearsal-20261010
 python3 scripts/rehearsal_20261010_eval.py
 
-# 広い探索予算比較・反復試行も含む
-python3 scripts/rehearsal_20261010_eval.py --full
+# Stage A〜C: 戦略 × 車種 × 探索予算 × seed（118 run、約12分）
+python3 scripts/rehearsal_20261010_eval.py --full --out target/rehearsal-20261010/full
+
+# Stage D: 上位設定の反復と seed 依存の確認（85 run）
+python3 scripts/rehearsal_20261010_eval.py --confirm --out target/rehearsal-20261010/confirm
+
+# Stage D: 本番設定と固定探索時間の交互 A/B（56 run）
+python3 scripts/rehearsal_20261010_eval.py --paired --out target/rehearsal-20261010/paired
 ```
 
-Windows PowerShell で動かす場合は:
+Windows PowerShell では `python3` を `py -3` に替え、`--bin target/release/procon-eval.exe` を付ける。
 
-```powershell
-cargo build --release --locked -p bench --bin procon-eval
-cargo run --locked -p cli --bin procon -- match-config validate data/rehearsal/2026-10-10-105938.setting.json
-py -3 scripts/rehearsal_20261010_eval.py --bin target/release/procon-eval.exe --full
-```
+スクリプトは起動時に生 JSON の SHA256、CaseSpec との完全一致、盤面寸法・台数・日数・燃料・しきい値を検査し、合わなければ何も実行しない。
+`procon match-config validate` は別形式（`days` と agent オブジェクトを持つローカル試合設定）用で、サーバーの `GET /setting` をそのまま保存した生ファイルには使えない。
 
-成果物: `target/rehearsal-20261010/report.md`, `results.csv`, `results.json`, 各 candidate/kinds 別の `runs.jsonl` と stderr/stdout。保存対象の証拠は `docs/evidence/rehearsal-20261010/` にコピーし、rawログに token がないことを点検してからPRへ追加する。**結果値や勝者は未実測のまま文書に書かない。**
+`--only <文字列>` はラベルで絞り込み、`--resume` は `--out` に残っている計測済み run を再利用する。
+成果物は `report.md`、`results.csv`、`results.json`、`summary.json` と、run ごとの `runs.jsonl`・stdout・stderr。
+順位は反復中の**最悪** V/D/B で付ける。
 
 注意: `procon-eval` の `--cases` は bundled fixture を最低1つ指定する仕様なので、スクリプトは `small-8x8` も起動する。**結果表では case_id=`fixture:rehearsal-20261010-105938` のみを評価する**。`--case-files` へ生の `*.setting.json` を直接指定しない。
 
@@ -47,9 +51,24 @@ py -3 scripts/rehearsal_20261010_eval.py --bin target/release/procon-eval.exe --
 - 探索時間は各日60秒に収め、車種構成の提出は別の30秒締切に収める。過去の予行演習は途中退場しているため、本来の競技スコアとして扱わない
 - これは **単独チームの canonical offline replay**。10名の道路競合、公式HTTPによる5日受理、Windows本番実機の安定性は別ゲート。最終決定は Issue #398 に証拠を記録する
 
-## 現行の比較基準（過去 evidence、今回の勝者ではない）
+## 実測結果（2026-10-10、source `54a0bb9`）
 
-過去の研究コーパスでは `fleet:budget=official:budget_ms=10000` + `--kinds-auto` が有力。
-[既存 fleet evidence](../../docs/evidence/campaign-311/fleet-371/README.md) と
-[本選準備 evidence](../../docs/evidence/honsen-385/README.md) を参照。
-この盤面では燃料40・日数5のため、全車巡回と補給1台のどちらがV/D/Bを改善するか **実測で決める**。
+| 位置づけ | Candidate | Kinds | V / D / B | T |
+|---|---|---|---|---:|
+| この盤面の最高点 | `fleet:budget=official:iters=60000:chains=4:seed=3` | `S,P,P,P` | 10 / 49 / 102 | 2.0 s |
+| 次点・未知盤面にも使える設定 | `fleet:budget=official:budget_ms=10000:adapt=off` | `--kinds-auto` | 10 / 49 / 94〜104 | 50 s |
+| 現行の本番設定 | `fleet:budget=official:budget_ms=10000` | `--kinds-auto` | 10 / 48〜49 / 86〜104 | 3.9 s |
+
+Windows（PowerShell）での起動:
+
+```powershell
+$env:PROCON_TOKEN = "<配布されたトークン>"
+$env:PROCON_RESUME_RUNNING_MATCH = "1"
+.\procon.exe coordinator --server http://<サーバー>:<ポート> --exit-after-match `
+  --candidate "fleet:budget=official:budget_ms=10000:adapt=off" --kinds-auto
+```
+
+起動スクリプト `ops/honsen/honsen.ps1` を使う場合は `start -Server http://<IP>:<ポート> -Candidate "fleet:budget=official:budget_ms=10000:adapt=off"`。
+
+最高点の設定は seed をこの盤面に合わせたもので、同じ盤面だと分かっている場合にだけ使う。Windows 実機と 10 チームが動く試合では未確認。
+計測の内訳、フォールバック、未確認の項目は [docs/evidence/rehearsal-20261010/README.md](../../docs/evidence/rehearsal-20261010/README.md) にある。
