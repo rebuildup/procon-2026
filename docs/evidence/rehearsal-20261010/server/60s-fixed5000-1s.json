@@ -1,0 +1,89 @@
+{
+  "case": "2026-10-10-105938.case.json",
+  "size": "16x16",
+  "agents": 4,
+  "days_total": 5,
+  "source_sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+  "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cli_sha256": "9b62675346fad3508d901397b58712d6c0add0d845df29e0fd89b675d5d4a5ec",
+  "candidate": "fleet:budget=official:budget_ms=5000:adapt=off",
+  "kinds_flag": "S,P,P,P",
+  "kinds_accepted": [
+    1,
+    0,
+    0,
+    0
+  ],
+  "faults": [],
+  "kill_day": -1,
+  "kill_after_post": false,
+  "exit_codes": [
+    [
+      "exit",
+      0
+    ]
+  ],
+  "token_header_on_every_request": true,
+  "token_in_cli_log": false,
+  "days": [
+    {
+      "day": 0,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        1
+      ],
+      "answer_seconds": 5.003,
+      "margin_seconds": 54.592
+    },
+    {
+      "day": 1,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        2
+      ],
+      "answer_seconds": 5.004,
+      "margin_seconds": 54.585
+    },
+    {
+      "day": 2,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        3
+      ],
+      "answer_seconds": 5.003,
+      "margin_seconds": 54.58
+    },
+    {
+      "day": 3,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        4
+      ],
+      "answer_seconds": 5.005,
+      "margin_seconds": 54.571
+    },
+    {
+      "day": 4,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        5
+      ],
+      "answer_seconds": 5.004,
+      "margin_seconds": 54.563
+    }
+  ],
+  "missed_days": [],
+  "wall_seconds": 255.4,
+  "limitation": "Official simple server on localhost, idle opponents; proves protocol acceptance, not score.",
+  "verdict": "PASS"
+}

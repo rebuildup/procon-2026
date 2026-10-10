@@ -1,0 +1,1509 @@
+[
+  {
+    "label": "confirm-det60k-seed3",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=3",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      102
+    ],
+    "best": [
+      10,
+      49,
+      102
+    ],
+    "stable": true,
+    "t_median_us": 1779895,
+    "max_day_us": 428709,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 10.47
+  },
+  {
+    "label": "confirm-det120k-seed2",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=120000:chains=4:seed=2",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      102
+    ],
+    "best": [
+      10,
+      49,
+      102
+    ],
+    "stable": true,
+    "t_median_us": 10385931,
+    "max_day_us": 3303702,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 12.11
+  },
+  {
+    "label": "confirm-det20k-seed11",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4:seed=11",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 606629,
+    "max_day_us": 138556,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.21
+  },
+  {
+    "label": "confirm-det60k-seed42-again",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 1707849,
+    "max_day_us": 405584,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 12.79
+  },
+  {
+    "label": "confirm-det60k-seed42",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=42",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 2851583,
+    "max_day_us": 846967,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.21
+  },
+  {
+    "label": "confirm-det240k-seed2026",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=240000:chains=4:seed=2026",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 6878475,
+    "max_day_us": 1518839,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.33
+  },
+  {
+    "label": "confirm-det240k-seed3",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=240000:chains=4:seed=3",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 7004852,
+    "max_day_us": 1557401,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.91
+  },
+  {
+    "label": "confirm-det120k-seed7",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=120000:chains=4:seed=7",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      98
+    ],
+    "best": [
+      10,
+      49,
+      98
+    ],
+    "stable": true,
+    "t_median_us": 3505805,
+    "max_day_us": 843243,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 15.44
+  },
+  {
+    "label": "confirm-det120k-seed3",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=120000:chains=4:seed=3",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      98
+    ],
+    "best": [
+      10,
+      49,
+      98
+    ],
+    "stable": true,
+    "t_median_us": 3883467,
+    "max_day_us": 877323,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 16.52
+  },
+  {
+    "label": "confirm-det60k-seed11",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=11",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      97
+    ],
+    "best": [
+      10,
+      49,
+      97
+    ],
+    "stable": true,
+    "t_median_us": 1708147,
+    "max_day_us": 397901,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 9.71
+  },
+  {
+    "label": "confirm-det60k-seed2",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=2",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      97
+    ],
+    "best": [
+      10,
+      49,
+      97
+    ],
+    "stable": true,
+    "t_median_us": 1711430,
+    "max_day_us": 391117,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 10.47
+  },
+  {
+    "label": "confirm-det120k-seed12",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=120000:chains=4:seed=12",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      96
+    ],
+    "best": [
+      10,
+      49,
+      96
+    ],
+    "stable": true,
+    "t_median_us": 3364562,
+    "max_day_us": 768468,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 13.38
+  },
+  {
+    "label": "confirm-det240k-seed42",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=240000:chains=4:seed=42",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      95
+    ],
+    "best": [
+      10,
+      49,
+      95
+    ],
+    "stable": true,
+    "t_median_us": 9648132,
+    "max_day_us": 2206630,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 12.39
+  },
+  {
+    "label": "confirm-det60k-seed2026",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=2026",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      94
+    ],
+    "best": [
+      10,
+      49,
+      94
+    ],
+    "stable": true,
+    "t_median_us": 1730576,
+    "max_day_us": 412634,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 9.1
+  },
+  {
+    "label": "confirm-det120k-seed2026",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=120000:chains=4:seed=2026",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      94
+    ],
+    "best": [
+      10,
+      49,
+      94
+    ],
+    "stable": true,
+    "t_median_us": 3986176,
+    "max_day_us": 1042733,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 13.38
+  },
+  {
+    "label": "confirm-ms1000-off",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=1000:adapt=off",
+    "runs": 10,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      94
+    ],
+    "best": [
+      10,
+      49,
+      102
+    ],
+    "stable": false,
+    "t_median_us": 5001716,
+    "max_day_us": 1001942,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 10.94
+  },
+  {
+    "label": "confirm-det240k-seed12",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=240000:chains=4:seed=12",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      94
+    ],
+    "best": [
+      10,
+      49,
+      94
+    ],
+    "stable": true,
+    "t_median_us": 6871507,
+    "max_day_us": 1676016,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 9.13
+  },
+  {
+    "label": "confirm-det240k-seed2",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=240000:chains=4:seed=2",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      94
+    ],
+    "best": [
+      10,
+      49,
+      94
+    ],
+    "stable": true,
+    "t_median_us": 7678344,
+    "max_day_us": 2090271,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 13.53
+  },
+  {
+    "label": "confirm-ms2000-off",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=2000:adapt=off",
+    "runs": 10,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      93
+    ],
+    "best": [
+      10,
+      49,
+      102
+    ],
+    "stable": false,
+    "t_median_us": 10001990,
+    "max_day_us": 2000752,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 10.63
+  },
+  {
+    "label": "confirm-det20k-seed2",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4:seed=2",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      48,
+      103
+    ],
+    "stable": true,
+    "t_median_us": 599379,
+    "max_day_us": 137656,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.93
+  },
+  {
+    "label": "confirm-ms250",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=250",
+    "runs": 10,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 1252407,
+    "max_day_us": 258184,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 18.74
+  },
+  {
+    "label": "confirm-det60k-seed7",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=7",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      48,
+      103
+    ],
+    "stable": true,
+    "t_median_us": 1768705,
+    "max_day_us": 398770,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 9.71
+  },
+  {
+    "label": "confirm-ms500",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=500",
+    "runs": 10,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 2501983,
+    "max_day_us": 502282,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 17.56
+  },
+  {
+    "label": "confirm-det120k-seed11",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=120000:chains=4:seed=11",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      48,
+      103
+    ],
+    "stable": true,
+    "t_median_us": 3687184,
+    "max_day_us": 835500,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 14.28
+  },
+  {
+    "label": "confirm-det120k-seed42",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=120000:chains=4:seed=42",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      48,
+      103
+    ],
+    "stable": true,
+    "t_median_us": 6221768,
+    "max_day_us": 2049204,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 9.1
+  },
+  {
+    "label": "confirm-det240k-seed11",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=240000:chains=4:seed=11",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      48,
+      103
+    ],
+    "stable": true,
+    "t_median_us": 7381411,
+    "max_day_us": 1672170,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 9.57
+  },
+  {
+    "label": "confirm-det240k-seed1",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=240000:chains=4:seed=1",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      48,
+      103
+    ],
+    "stable": true,
+    "t_median_us": 11779284,
+    "max_day_us": 3120450,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 10.94
+  },
+  {
+    "label": "confirm-det20k-seed2026",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4:seed=2026",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      102
+    ],
+    "best": [
+      10,
+      48,
+      102
+    ],
+    "stable": true,
+    "t_median_us": 910578,
+    "max_day_us": 221406,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.21
+  },
+  {
+    "label": "confirm-det240k-seed7",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=240000:chains=4:seed=7",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      102
+    ],
+    "best": [
+      10,
+      48,
+      102
+    ],
+    "stable": true,
+    "t_median_us": 7395070,
+    "max_day_us": 1856980,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.04
+  },
+  {
+    "label": "confirm-det20k-seed7",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4:seed=7",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      101
+    ],
+    "best": [
+      10,
+      48,
+      101
+    ],
+    "stable": true,
+    "t_median_us": 581997,
+    "max_day_us": 127950,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.93
+  },
+  {
+    "label": "confirm-det20k-seed1",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4:seed=1",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      101
+    ],
+    "best": [
+      10,
+      48,
+      101
+    ],
+    "stable": true,
+    "t_median_us": 589797,
+    "max_day_us": 136925,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.93
+  },
+  {
+    "label": "confirm-ms10000",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000",
+    "runs": 10,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      101
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 3842571,
+    "max_day_us": 771437,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 19.12
+  },
+  {
+    "label": "confirm-det60k-seed12",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=12",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      100
+    ],
+    "best": [
+      10,
+      48,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 1717210,
+    "max_day_us": 411521,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 9.71
+  },
+  {
+    "label": "confirm-det120k-seed1",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=120000:chains=4:seed=1",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      100
+    ],
+    "best": [
+      10,
+      48,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 11516445,
+    "max_day_us": 2879670,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.87
+  },
+  {
+    "label": "confirm-det60k-seed1",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=1",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      99
+    ],
+    "best": [
+      10,
+      48,
+      99
+    ],
+    "stable": true,
+    "t_median_us": 1656729,
+    "max_day_us": 386028,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 10.47
+  },
+  {
+    "label": "confirm-det20k-seed42",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4:seed=42",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      98
+    ],
+    "best": [
+      10,
+      48,
+      98
+    ],
+    "stable": true,
+    "t_median_us": 568172,
+    "max_day_us": 140656,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.93
+  },
+  {
+    "label": "confirm-det20k-seed3",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4:seed=3",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      97
+    ],
+    "best": [
+      10,
+      48,
+      97
+    ],
+    "stable": true,
+    "t_median_us": 566232,
+    "max_day_us": 133901,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.93
+  },
+  {
+    "label": "confirm-det20k-seed12",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4:seed=12",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      96
+    ],
+    "best": [
+      10,
+      48,
+      96
+    ],
+    "stable": true,
+    "t_median_us": 662828,
+    "max_day_us": 169672,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 11.21
+  }
+]

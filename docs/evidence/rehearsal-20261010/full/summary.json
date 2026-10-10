@@ -1,0 +1,2268 @@
+[
+  {
+    "label": "det60k-1s-seed3",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=3",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      102
+    ],
+    "best": [
+      10,
+      49,
+      102
+    ],
+    "stable": true,
+    "t_median_us": 2145047,
+    "max_day_us": 492347,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 30.09
+  },
+  {
+    "label": "det60k-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 1627704,
+    "max_day_us": 379003,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.52
+  },
+  {
+    "label": "ms1000-on-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=1000:adapt=on",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      102
+    ],
+    "stable": false,
+    "t_median_us": 3842005,
+    "max_day_us": 768547,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 7.49
+  },
+  {
+    "label": "live-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 3842085,
+    "max_day_us": 791754,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.52
+  },
+  {
+    "label": "ms2000-on-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=2000:adapt=on",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 3842287,
+    "max_day_us": 768573,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 6.2
+  },
+  {
+    "label": "ms1000-off-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=1000:adapt=off",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      100
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": true,
+    "t_median_us": 5002190,
+    "max_day_us": 1000569,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 6.96
+  },
+  {
+    "label": "live-1s-seed3",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000:seed=3",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      98
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 3842361,
+    "max_day_us": 768627,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 34.3
+  },
+  {
+    "label": "det60k-1s-seed2",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=2",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      97
+    ],
+    "best": [
+      10,
+      49,
+      97
+    ],
+    "stable": true,
+    "t_median_us": 2056934,
+    "max_day_us": 473637,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 34.3
+  },
+  {
+    "label": "ms500-on-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=500:adapt=on",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      97
+    ],
+    "best": [
+      10,
+      49,
+      99
+    ],
+    "stable": false,
+    "t_median_us": 2501958,
+    "max_day_us": 500503,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 7.93
+  },
+  {
+    "label": "ms2000-off-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=2000:adapt=off",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      97
+    ],
+    "best": [
+      10,
+      49,
+      102
+    ],
+    "stable": false,
+    "t_median_us": 10002240,
+    "max_day_us": 2000603,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 5.86
+  },
+  {
+    "label": "ms250-on-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=250:adapt=on",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      96
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 1251819,
+    "max_day_us": 250499,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.38
+  },
+  {
+    "label": "ms250-off-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=250:adapt=off",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      96
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 1252050,
+    "max_day_us": 250546,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.19
+  },
+  {
+    "label": "live-s3",
+    "kinds": "P,P,P,S",
+    "candidate": "fleet:budget=official:budget_ms=10000",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      95
+    ],
+    "best": [
+      10,
+      49,
+      97
+    ],
+    "stable": false,
+    "t_median_us": 3841942,
+    "max_day_us": 768763,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.73
+  },
+  {
+    "label": "ms10000-off-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000:adapt=off",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      95
+    ],
+    "best": [
+      10,
+      49,
+      104
+    ],
+    "stable": false,
+    "t_median_us": 50002384,
+    "max_day_us": 10000554,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 4.94
+  },
+  {
+    "label": "det60k-1s-seed2026",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=2026",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      94
+    ],
+    "best": [
+      10,
+      49,
+      94
+    ],
+    "stable": true,
+    "t_median_us": 1723013,
+    "max_day_us": 422967,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 23.3
+  },
+  {
+    "label": "live-1s-seed7",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000:seed=7",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      94
+    ],
+    "best": [
+      10,
+      49,
+      101
+    ],
+    "stable": false,
+    "t_median_us": 3842889,
+    "max_day_us": 768791,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 30.09
+  },
+  {
+    "label": "ms5000-off-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=5000:adapt=off",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      94
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 25002306,
+    "max_day_us": 5000569,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 4.9
+  },
+  {
+    "label": "live-s2",
+    "kinds": "P,P,S,P",
+    "candidate": "fleet:budget=official:budget_ms=10000",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      91
+    ],
+    "best": [
+      10,
+      49,
+      101
+    ],
+    "stable": false,
+    "t_median_us": 3841944,
+    "max_day_us": 768473,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.8
+  },
+  {
+    "label": "live-s1",
+    "kinds": "P,S,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      91
+    ],
+    "best": [
+      10,
+      49,
+      101
+    ],
+    "stable": false,
+    "t_median_us": 3842071,
+    "max_day_us": 769347,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.98
+  },
+  {
+    "label": "live-1s-seed1",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000:seed=1",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      87
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 3851499,
+    "max_day_us": 776609,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 16.83
+  },
+  {
+    "label": "ms5000-on-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=5000:adapt=on",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      49,
+      86
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 3842049,
+    "max_day_us": 768576,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 5.09
+  },
+  {
+    "label": "live-1s-seed2026",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000:seed=2026",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      105
+    ],
+    "best": [
+      10,
+      49,
+      96
+    ],
+    "stable": false,
+    "t_median_us": 3842671,
+    "max_day_us": 768689,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 24.63
+  },
+  {
+    "label": "det60k-1s-seed7",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=7",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      48,
+      103
+    ],
+    "stable": true,
+    "t_median_us": 1779772,
+    "max_day_us": 406370,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 26.69
+  },
+  {
+    "label": "ms10000-on-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000:adapt=on",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      103
+    ],
+    "best": [
+      10,
+      49,
+      100
+    ],
+    "stable": false,
+    "t_median_us": 3842146,
+    "max_day_us": 768548,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 5.11
+  },
+  {
+    "label": "ms500-off-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=500:adapt=off",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      101
+    ],
+    "best": [
+      10,
+      49,
+      94
+    ],
+    "stable": false,
+    "t_median_us": 2501973,
+    "max_day_us": 500488,
+    "daily_varieties": [
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        9,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 7.48
+  },
+  {
+    "label": "det60k-1s-seed1",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4:seed=1",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      99
+    ],
+    "best": [
+      10,
+      48,
+      99
+    ],
+    "stable": true,
+    "t_median_us": 6667301,
+    "max_day_us": 1712528,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 20.64
+  },
+  {
+    "label": "trial-s1",
+    "kinds": "P,S,P,P",
+    "candidate": "fleet:budget=official:iters=8000",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      98
+    ],
+    "best": [
+      10,
+      48,
+      98
+    ],
+    "stable": true,
+    "t_median_us": 48027,
+    "max_day_us": 11489,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.98
+  },
+  {
+    "label": "det20k-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      98
+    ],
+    "best": [
+      10,
+      48,
+      98
+    ],
+    "stable": true,
+    "t_median_us": 551832,
+    "max_day_us": 137344,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.52
+  },
+  {
+    "label": "trial-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:iters=8000",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      96
+    ],
+    "best": [
+      10,
+      48,
+      96
+    ],
+    "stable": true,
+    "t_median_us": 60482,
+    "max_day_us": 15150,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.52
+  },
+  {
+    "label": "live-1s-seed2",
+    "kinds": "S,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000:seed=2",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      95
+    ],
+    "best": [
+      10,
+      48,
+      102
+    ],
+    "stable": false,
+    "t_median_us": 3859746,
+    "max_day_us": 780238,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ],
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 30.84
+  },
+  {
+    "label": "trial-s2",
+    "kinds": "P,P,S,P",
+    "candidate": "fleet:budget=official:iters=8000",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      91
+    ],
+    "best": [
+      10,
+      48,
+      91
+    ],
+    "stable": true,
+    "t_median_us": 50723,
+    "max_day_us": 12001,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.29
+  },
+  {
+    "label": "trial-s3",
+    "kinds": "P,P,P,S",
+    "candidate": "fleet:budget=official:iters=8000",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      48,
+      88
+    ],
+    "best": [
+      10,
+      48,
+      88
+    ],
+    "stable": true,
+    "t_median_us": 51031,
+    "max_day_us": 13893,
+    "daily_varieties": [
+      [
+        8,
+        10,
+        10,
+        10,
+        10
+      ]
+    ],
+    "load": 8.5
+  },
+  {
+    "label": "live-psps",
+    "kinds": "P,S,P,S",
+    "candidate": "fleet:budget=official:budget_ms=10000",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      44,
+      66
+    ],
+    "best": [
+      10,
+      44,
+      66
+    ],
+    "stable": true,
+    "t_median_us": 2001560,
+    "max_day_us": 400445,
+    "daily_varieties": [
+      [
+        8,
+        8,
+        9,
+        9,
+        10
+      ],
+      [
+        8,
+        8,
+        9,
+        9,
+        10
+      ],
+      [
+        8,
+        8,
+        9,
+        9,
+        10
+      ]
+    ],
+    "load": 9.24
+  },
+  {
+    "label": "det60k-psps",
+    "kinds": "P,S,P,S",
+    "candidate": "fleet:budget=official:iters=60000:chains=4",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      43,
+      71
+    ],
+    "best": [
+      10,
+      43,
+      71
+    ],
+    "stable": true,
+    "t_median_us": 1195580,
+    "max_day_us": 266444,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        8,
+        9,
+        10
+      ]
+    ],
+    "load": 7.45
+  },
+  {
+    "label": "trial-2s",
+    "kinds": "S,S,P,P",
+    "candidate": "fleet:budget=official:iters=8000",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      43,
+      70
+    ],
+    "best": [
+      10,
+      43,
+      70
+    ],
+    "stable": true,
+    "t_median_us": 43597,
+    "max_day_us": 9798,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 8.67
+  },
+  {
+    "label": "det20k-psps",
+    "kinds": "P,S,P,S",
+    "candidate": "fleet:budget=official:iters=20000:chains=4",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      43,
+      69
+    ],
+    "best": [
+      10,
+      43,
+      69
+    ],
+    "stable": true,
+    "t_median_us": 414595,
+    "max_day_us": 92741,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 7.45
+  },
+  {
+    "label": "trial-psps",
+    "kinds": "P,S,P,S",
+    "candidate": "fleet:budget=official:iters=8000",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      43,
+      67
+    ],
+    "best": [
+      10,
+      43,
+      67
+    ],
+    "stable": true,
+    "t_median_us": 51183,
+    "max_day_us": 13322,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 7.45
+  },
+  {
+    "label": "live-2s",
+    "kinds": "S,S,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      43,
+      66
+    ],
+    "best": [
+      10,
+      44,
+      68
+    ],
+    "stable": false,
+    "t_median_us": 2001480,
+    "max_day_us": 400413,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        8,
+        9,
+        10
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        10
+      ],
+      [
+        7,
+        9,
+        8,
+        9,
+        10
+      ]
+    ],
+    "load": 8.67
+  },
+  {
+    "label": "anytime-psps",
+    "kinds": "P,S,P,S",
+    "candidate": "anytime:budget_ms=5000:seed=42:budget=official",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      42,
+      57
+    ],
+    "best": [
+      10,
+      42,
+      57
+    ],
+    "stable": true,
+    "t_median_us": 1702461,
+    "max_day_us": 391055,
+    "daily_varieties": [
+      [
+        7,
+        8,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        8,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 9.24
+  },
+  {
+    "label": "coverage-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "coverage:budget=official",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      33,
+      46
+    ],
+    "best": [
+      10,
+      33,
+      46
+    ],
+    "stable": true,
+    "t_median_us": 2480,
+    "max_day_us": 775,
+    "daily_varieties": [
+      [
+        7,
+        7,
+        7,
+        6,
+        6
+      ]
+    ],
+    "load": 7.9
+  },
+  {
+    "label": "anytime-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "anytime:budget_ms=5000:seed=42:budget=official",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      10,
+      25,
+      35
+    ],
+    "best": [
+      10,
+      25,
+      35
+    ],
+    "stable": true,
+    "t_median_us": 372925,
+    "max_day_us": 217122,
+    "daily_varieties": [
+      [
+        10,
+        6,
+        3,
+        3,
+        3
+      ],
+      [
+        10,
+        6,
+        3,
+        3,
+        3
+      ]
+    ],
+    "load": 7.45
+  },
+  {
+    "label": "det60k-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:iters=60000:chains=4",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      59
+    ],
+    "best": [
+      9,
+      43,
+      59
+    ],
+    "stable": true,
+    "t_median_us": 1024914,
+    "max_day_us": 238236,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 7.9
+  },
+  {
+    "label": "ms250-off-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=250:adapt=off",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 1251341,
+    "max_day_us": 250358,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 5.08
+  },
+  {
+    "label": "ms250-on-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=250:adapt=on",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 1251381,
+    "max_day_us": 250364,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 5.08
+  },
+  {
+    "label": "ms500-off-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=500:adapt=off",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 2501461,
+    "max_day_us": 500375,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 5.14
+  },
+  {
+    "label": "ms500-on-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=500:adapt=on",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 2501466,
+    "max_day_us": 500383,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 5.15
+  },
+  {
+    "label": "ms1000-off-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=1000:adapt=off",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 5001436,
+    "max_day_us": 1000397,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 5.12
+  },
+  {
+    "label": "ms1000-on-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=1000:adapt=on",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 5002087,
+    "max_day_us": 1001399,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 5.05
+  },
+  {
+    "label": "ms5000-on-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=5000:adapt=on",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 6826321,
+    "max_day_us": 1365384,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 4.53
+  },
+  {
+    "label": "live-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000",
+    "runs": 3,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 6826423,
+    "max_day_us": 1365836,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 7.96
+  },
+  {
+    "label": "ms2000-on-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=2000:adapt=on",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 6826470,
+    "max_day_us": 1365382,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 4.88
+  },
+  {
+    "label": "ms10000-on-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000:adapt=on",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 6826494,
+    "max_day_us": 1365397,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 4.56
+  },
+  {
+    "label": "ms2000-off-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=2000:adapt=off",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 10001418,
+    "max_day_us": 2000381,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 4.81
+  },
+  {
+    "label": "ms5000-off-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=5000:adapt=off",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 25001534,
+    "max_day_us": 5000386,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 4.83
+  },
+  {
+    "label": "ms10000-off-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:budget_ms=10000:adapt=off",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      58
+    ],
+    "best": [
+      9,
+      43,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 50002598,
+    "max_day_us": 10001329,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ],
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 4.81
+  },
+  {
+    "label": "trial-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:iters=8000",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      57
+    ],
+    "best": [
+      9,
+      43,
+      57
+    ],
+    "stable": true,
+    "t_median_us": 29319,
+    "max_day_us": 6855,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 7.9
+  },
+  {
+    "label": "det20k-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "fleet:budget=official:iters=20000:chains=4",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      43,
+      55
+    ],
+    "best": [
+      9,
+      43,
+      55
+    ],
+    "stable": true,
+    "t_median_us": 351069,
+    "max_day_us": 79000,
+    "daily_varieties": [
+      [
+        7,
+        9,
+        9,
+        9,
+        9
+      ]
+    ],
+    "load": 7.9
+  },
+  {
+    "label": "anytime-1s",
+    "kinds": "S,P,P,P",
+    "candidate": "anytime:budget_ms=5000:seed=42:budget=official",
+    "runs": 2,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      40,
+      58
+    ],
+    "best": [
+      9,
+      40,
+      58
+    ],
+    "stable": true,
+    "t_median_us": 1195179,
+    "max_day_us": 415370,
+    "daily_varieties": [
+      [
+        9,
+        9,
+        8,
+        7,
+        7
+      ],
+      [
+        9,
+        9,
+        8,
+        7,
+        7
+      ]
+    ],
+    "load": 7.9
+  },
+  {
+    "label": "coverage-psps",
+    "kinds": "P,S,P,S",
+    "candidate": "coverage:budget=official",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      38,
+      54
+    ],
+    "best": [
+      9,
+      38,
+      54
+    ],
+    "stable": true,
+    "t_median_us": 3984,
+    "max_day_us": 826,
+    "daily_varieties": [
+      [
+        7,
+        7,
+        8,
+        9,
+        7
+      ]
+    ],
+    "load": 8.98
+  },
+  {
+    "label": "coverage-4p",
+    "kinds": "P,P,P,P",
+    "candidate": "coverage:budget=official",
+    "runs": 1,
+    "excluded": 0,
+    "sha": "54a0bb9a1af1252d6df83ec201574e18bf4023c0",
+    "worst": [
+      9,
+      22,
+      37
+    ],
+    "best": [
+      9,
+      22,
+      37
+    ],
+    "stable": true,
+    "t_median_us": 1046,
+    "max_day_us": 650,
+    "daily_varieties": [
+      [
+        9,
+        4,
+        3,
+        3,
+        3
+      ]
+    ],
+    "load": 7.45
+  }
+]
