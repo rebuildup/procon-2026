@@ -166,3 +166,17 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   - rt 最大 174.8s（s5017、10 日合計）/ maxday 最大 31.8s（s5017）— 60s 期限に対し余裕あり
   証跡: `wsl-corpus/param-chains8/{runs.jsonl,aggregate.json}`。
 - [21:52] **E1 開始 (2/3)**: `wsl-corpus/param-chains12/` — 同一構成で `chains=12`。
+- [22:02] **E1 chains12 完了**: 45 runs 全 success、illegal=0 等 0。ウォール ~9m（jobs 6）。
+  - vs chains4 baseline: **23 win / 20 draw / 1 LOSE**（LOSE = hold s5010 B-only -2: 20/120/210→208）。**D-loss なし**（s9008 は 20/180/255 win に回復）
+  - vs chains8: 10 win / 32 draw / 2 LOSE（いずれも B-only 微減 -3/-2）。B 合計 11813 → **11863**（+50）
+  - B 総量は chains8 > chains4 を維持、chains12 はさらに微増。rt maxday 最大 35.2s（s5017）— 60s 期限内
+  証跡: `wsl-corpus/param-chains12/{runs.jsonl,aggregate.json}`。
+- [22:02] **E1 開始 (3/3)**: `wsl-corpus/param-chains16/` — 同一構成で `chains=16`。
+- [22:11] **E1 chains16 完了 / E1 全体完了**: 45 runs 全 success、illegal=0 等 0。ウォール ~8m（jobs 6）。
+  - **chains ラダー結論（gen36 B 合計・openapi 除外）**: chains4 = 11745 → chains8 = 11813 → chains12 = **11863** → chains16 = 11858。**ピークは chains12**
+  - vs chains4 baseline: chains16 は 25 win / 15 draw / **4 LOSE**（すべて B-only、s9011 -12 / s5023 -19 を含む）
+  - vs chains12: 12 win / 28 draw / 4 LOSE（B-only のみ、最大 -19）。**全ラダーを通じて D-loss は chains8 の s9008 のみ**（chains12/16 では出ず）
+  - rt maxday 最大 ~19.4s 台（s5023）〜35s（chains12 s5017）— 60s 期限内
+  - 判定メモ: chains12 が B 総量・辞書順リスクの両面で最良候補。D 非劣化の観点では chains8 の s9008 D-loss が残るため、本命は chains12・対抗 chains8
+  証跡: `wsl-corpus/param-chains{8,12,16}/{runs.jsonl,aggregate.json}`。
+- [22:11] **E2 開始 (1/3)**: `wsl-corpus/param-chains8-seed7/` — holdout24+fixture9 × `fleet:budget=official:iters=60000:chains=8:seed=7`、jobs 6、nice 15。

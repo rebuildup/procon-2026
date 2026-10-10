@@ -20,6 +20,8 @@
 | `adapt` | on | budget_ms>0 のとき収束推定で早期打ち切り | **未測定**（既存 live 測定はすべて adapt=off） | convoy 側 embedded は adapt=false 固定（`convoy_solver.rs:133`）。小盤面で回答短縮（第 4 軸）を狙うが B への影響不明 |
 | `seed` | 42 | 探索 seed。`seed ^ (day<<32) ^ (k<<48)` で日別決定論 | @10s s9012: s42=406 vs s7=425（同バッチ別実行, ±10–20 域） | chains 数を増やすと chain 内 seed 分散の相対影響は減る想定。chains8 seed 魯棒性 → バッチ 1 |
 | `chains` | 1 | 探索 chain 数（1..16）。2+ で明日計画の比較が有効化。offline は逐次、live は 1 chain/core（明示時は上限引き上げ, Issue #409） | **mode ごとに挙動が違い、D リスクも別物**（詳細は下記 chains 専用節）。offline: chains4 ≫ chains1（holdout 33 case: 20 勝 0 敗 13 分, B 合計 +174）。clocked @10s: chains8 vs chains4 = 3 勝 3 敗 12 分（b4-chains8-full vs b10s-seed42, 18 セル） | chains12/16 未測定 → バッチ 1。**s9008 の dV 推移を chains12/16 でも追跡する**。live 上限は core 数 |
+| `fuel_need` | 0（off） | 0..=300（`fleet_solver.rs:128-131`）。翌日 burn 需要 `need = 翌日 steps × 平均 fuel/tick`（cap 上限）に対する開局時 fuel 被覆率に応じ計画スコアへ `worth × covered/need` のボーナス（`fleet_solver.rs:352-374, 729-732`）。盤面に補給 spot がない盤面では不発動（`:352`） | **未測定** → F1/F2/F3（PR #430）。機構上、燃料が実際に拘束する盤面（fuel/day0-step 比 ≲1.5）でのみ差分を出す性質を持つ（詳細は §6） | 燃料に余裕のある盤面（比 ≥2）では項がほぼ定数化して中性のはず — F3 の holdout（比 1.0–3.0）で検証。dV への影響は未計測 |
+| `fuel_mix` | off | 2+ chains のとき奇数 chain のみ fuel 項を外す（`fleet_solver.rs:1287-1288, 1328`）。fuel_steered 計画と素計画の多様化 | **未測定** → F1（chains8 × fuel_mix の組合せ効果は PR #430 で未計測） | fuel_need=0 では無意味。chain 選択キー `Candidate::key` に燃料 end-state は含まれないため、fuel_steered 計画が key で負ける構造の確認を F1 で行う（§6） |
 
 **chains の辞書順リスク — mode 別評価（E1 更新。「chains8 = D 中性」は不正確。mode を必ず明記して評価する）**:
 
@@ -45,6 +47,7 @@
 | `forecast` | both | 先読日の道路予測: persist / busy / both（合算） | @10s 14 board: both が best 11・persist best 1（s5013 +1）・busy best 1（s5020 +3）。**既定 both から動かす根拠なし** | both は scenario 数 2 → beam 時間半分ずつ。32×32 では scenario 削減が完走率を上げるが B 利得は未確認（P3 で検証予定） |
 | `width` | 24 | beam の日末状態保持数 | match3: w1 (10,41,52) / w4 42 / w8 44 / **w24 (10,45,59)** / w48 同 / w96 (10,43,53) 劣化。corpus @10s: w12 は s5023 −10・s5016 −5、w48 は s5020 +4・s5023 −13 | 24 維持が現データ最良。w48 の 32×32 逆転は ±20 内で再現性未確認 |
 | `labels` | 1,500,000 | 1 巡回日 label search の上限 | **未測定**。到達時は pool 崩壊（S2・`convoy_solver.rs:461-465`） | 増やすと時間超過リスク、減らすと pool 崩壊前倒し。単独スイープの優先度は低い |
+| `fuel_need`/`fuel_mix` | 0/off | embedded fleet の当日計画への透過（`convoy_solver.rs:67-74, 144-145`）。lookahead fleet は固定で 0 | **未測定** | fleet 単体の F1/F2/F3 結果が出るまで convoy 側の組合せ評価は後回しが自然（beam 偏離の評価キーにも fuel 項は流れ込む） |
 
 ### 1.3 内部固定値（パラメータ化されていない = §2 の構造課題）
 
@@ -86,6 +89,16 @@
 - **根拠**: `convoy_solver.rs:857-899`（コメントと riders フィルタ）。補給 2 台盤面（c-s2）では convoy と fleet が B 差 ≤14 で混在し、1 補給のような差が表れていない。
 - **期待利得**: c-s2 型（補給 2 台）での計画空間拡大。未確定ゾーン（32×32: −14/−7/+7、chains8 未測定）の解像。
 - **検証条件**: c-s2 の 9 盤面 @10s で変更版 convoy vs fleet vs chains8（chains8 未測定の補完も兼ねる）。2 補給では盤面構成自体が変わるため 1 補給の結果と直接比較しない。
+
+### S5. 補給スロット選択（choose_supply_slot）が procon-eval 候補として不存在・players=1 前提
+
+- **課題**: 開局時の Supply スロット選択（Issue #428）は coordinator 側の opt-in 機能で、procon-eval の候補パラメータとして存在しない。実戦前提（複数チームの道路占有）と solo trial の前提差がある。採否判断を solo 計測だけですませられない構造。
+- **根拠**:
+  - `fleet_solver.rs:1488-1539`: 各スロットを Supply にした全 solo replay を `config.team_count = 1` で試行（threads = core 数、seed 42+round、完了ラウンドのみ採択、1 ラウンドも完了しなければ slot 0 維持）。関数 doc コメント自身が「`team_count=1` では他チーム不在のため道路が渋滞せず、road-side start の価値を過大評価する」と明記（`:1480-1483`）。
+  - `coordinator_loop.rs:826-831, 1564-1569`: 環境変数 `PROCON_SUPPLY_SLOT_WINDOW_MS` での opt-in、Supply がちょうど 1 台のときのみ発動、`POST /agent` window を追加消費。tracing は `supply slot trial` としてスロット別 (V, dV, B) を出力。
+  - procon-eval 候補文字列からは指定不能 → F 系の測定は PR の players=1 前提に依存（実戦との乖離 5–25% の注意書きは PR #430 側）。offline 再現は `crates/bench/examples/slot_probe.rs` 系の専用ツールが現状の唯一の経路。
+- **期待利得**: 開局 kinds 決定の road-side スロット利得（B/D 改善）。ただし solo 過大評価分を差し引いた実効値での判断が前提。
+- **検証条件**: **Arena 検証ゲートを必須として扱う**。solo（players=1）のスロット別利得と実戦（複数チーム道路占有・road-side 選択の逆転が起きうる）での乖離を Arena ログで確認するまで採用判断に進めない。tools/slotpick.py 系の専用ツールを offline 再現に使う場合も、`team_count>1` の試行モードを追加できるかを評価条件に含める。
 
 ## 3. 条件付きパラメータ選択の仮枠（R1/R2 の拡張草案）
 
