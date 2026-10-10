@@ -1265,7 +1265,7 @@ impl Solver for ConvoyCandidate {
         );
         if std::env::var_os("CONVOY_DEBUG").is_some() {
             eprintln!(
-                "day {} pool {} complete {} chosen {} sum_chosen {:?} sum_fleet {:?} script_root {:?} sum_script {:?} today {:?}",
+                "day {} pool {} complete {} chosen {} sum_chosen {:?} sum_fleet {:?} script_root {:?} sum_script {:?} today {:?} pool_max_series {}",
                 ctx.day,
                 pool.len(),
                 complete,
@@ -1275,6 +1275,7 @@ impl Solver for ConvoyCandidate {
                 script.as_ref().map(|s| s.0),
                 script.as_ref().map(|s| sums[s.0]),
                 pool[best].today(),
+                pool.iter().map(|p| p.series_today).max().unwrap_or(0),
             );
         }
         if self.keep {
