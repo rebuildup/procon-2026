@@ -509,6 +509,7 @@ impl MatchClient {
                         url,
                         body.as_deref(),
                         attempt,
+                        attempt < max_retries,
                         body_unused_on_success,
                     )
                     .await
@@ -571,6 +572,7 @@ impl MatchClient {
         url: &str,
         body: Option<&[u8]>,
         attempt: usize,
+        will_retry_transient: bool,
         body_unused_on_success: bool,
     ) -> Result<reqwest::Response, SendFailure> {
         let started_at = std::time::SystemTime::now();
@@ -608,12 +610,34 @@ impl MatchClient {
         let header_map = response.headers().clone();
         let headers: Vec<(String, String)> = header_map
             .iter()
-            .map(|(name, value)| {
-                (name.as_str().to_owned(), String::from_utf8_lossy(value.as_bytes()).into_owned())
-            })
+            .map(|(name, value)| (name.as_str().to_owned(), header_text(value.as_bytes())))
             .collect();
-        match response.bytes().await {
-            Ok(bytes) => {
+        // A transient status that is about to be retried is thrown away by
+        // the caller without its body being read. Waiting for that body
+        // here would hold the retry back by up to the request timeout, so
+        // it is given a moment to arrive (it usually has) and no more.
+        let body = if will_retry_transient && Self::is_transient_status(status) {
+            match tokio::time::timeout(DISCARDED_BODY_WAIT, response.bytes()).await {
+                Ok(read) => read.map(Some),
+                Err(_) => Ok(None),
+            }
+        } else {
+            response.bytes().await.map(Some)
+        };
+        match body {
+            Ok(None) => {
+                report(HttpOutcome::Failed {
+                    kind: "body",
+                    error: format!(
+                        "the body had not arrived after {} ms and was not waited for: \
+                         this response is discarded and the request repeated",
+                        DISCARDED_BODY_WAIT.as_millis()
+                    ),
+                    partial: Some((status.as_u16(), headers)),
+                });
+                Ok(rebuild_response(status, version, header_map, bytes::Bytes::new()))
+            }
+            Ok(Some(bytes)) => {
                 report(HttpOutcome::Response {
                     status: status.as_u16(),
                     headers,
@@ -641,6 +665,30 @@ impl MatchClient {
         let code = status.as_u16();
         matches!(code, 408 | 425 | 429) || (500..600).contains(&code)
     }
+}
+
+/// How long an observer waits for the body of a response that is about to
+/// be discarded and retried.
+const DISCARDED_BODY_WAIT: Duration = Duration::from_millis(200);
+
+/// A header value as text. Bytes that are not UTF-8 are written as `\xNN`
+/// (and a literal backslash as `\\`), so different values never log alike.
+fn header_text(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(bytes.len() + 8);
+    for &byte in bytes {
+        if byte == b'\\' {
+            out.push_str("\\\\");
+        } else if byte.is_ascii_graphic() || byte == b' ' {
+            out.push(char::from(byte));
+        } else {
+            let _ = write!(out, "\\x{byte:02x}");
+        }
+    }
+    out
 }
 
 /// Why a request produced no usable response.
@@ -800,6 +848,14 @@ impl MatchClientBuilder {
 mod tests {
     use super::*;
     use mockito::Server;
+
+    #[test]
+    fn header_text_keeps_utf8_and_escapes_everything_else() {
+        assert_eq!(header_text(b"application/json"), "application/json");
+        assert_eq!(header_text("日本語".as_bytes()), "日本語");
+        assert_eq!(header_text(b"a\xffb\\c\x00"), "a\\xffb\\\\c\\x00");
+        assert_ne!(header_text(b"\xff"), header_text(b"\xfe"));
+    }
 
     /// Build a client that targets a mockito server with zero backoff so
     /// tests run quickly.

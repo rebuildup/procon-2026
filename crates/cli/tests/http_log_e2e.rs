@@ -592,3 +592,52 @@ fn a_decode_error_is_attached_to_its_own_exchange() {
     assert_console_matches_file(&logged, &all);
     assert_eq!(logged.log.lost().0, 1, "the orphan failure is counted, not misattributed");
 }
+
+/// A 503 whose body never finishes must not hold the retry back: without the
+/// log the client retries as soon as the status arrives, and with the log it
+/// may wait a moment for the body, never the whole request timeout.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stalled_503_body_does_not_delay_the_retry() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let url = format!("http://{}", listener.local_addr().expect("addr"));
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut request = [0_u8; 4096];
+                let _ = socket.read(&mut request).await;
+                let head = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 500\r\n\r\npartial";
+                let _ = socket.write_all(head.as_bytes()).await;
+                // Keep the connection open: the body never completes.
+                tokio::time::sleep(Duration::from_secs(30)).await;
+            });
+        }
+    });
+
+    for with_log in [false, true] {
+        let logged = with_log.then(start_log);
+        let mut builder = MatchClient::builder(&url, TOKEN)
+            .retry_policy(RetryPolicy { max_retries: 3, backoff_millis: &[1, 1, 1] })
+            .request_timeout(Duration::from_secs(3));
+        if let Some(logged) = logged.as_ref() {
+            builder = builder.observer(logged.log.clone());
+        }
+        let client = builder.build().expect("client");
+        let began = std::time::Instant::now();
+        let result = client.get_match_state().await;
+        let took = began.elapsed();
+        assert!(
+            matches!(result, Err(HttpClientError::Http { status: 503, .. })),
+            "log={with_log}: {result:?}"
+        );
+        // Three retried attempts cost at most a short wait each; only the
+        // last one reads the body to the 3 s timeout (as without the log).
+        assert!(took < Duration::from_secs(5), "log={with_log}: took {took:?}");
+        if let Some(logged) = logged.as_ref() {
+            let all = entries(logged);
+            assert_eq!(all.len(), 4);
+            assert!(all.iter().all(|e| e.status == Some(503)), "the status is kept on every try");
+            assert!(all[0].error.as_deref().unwrap_or("").contains("not waited for"));
+        }
+    }
+}

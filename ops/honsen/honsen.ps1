@@ -194,32 +194,41 @@ function Get-LatestRun {
     return $null
 }
 
-# 二重起動の防止。ディレクトリの作成は「なければ作る」が 1 操作なので、同時に
-# 2 つの start を打っても片方しか通らない。持ち主の PID を書いておき、その
-# プロセスがもういなければ（前回の異常終了）引き継ぐ。
-$LockDir = Join-Path $HonsenHome 'lock'
+# 二重起動の防止。ロックファイルを「なければ作る」(CreateNew) で開く。これは 1 操作
+# なので、同時に 2 つの start を打っても片方しか通らない。中身は持ち主の PID。
+# 持ち主がもういなければ（前回の異常終了）引き継ぐ。PID がまだ書かれていない
+# ロックは作成途中かもしれないので、すぐには捨てず、少し待って読み直す。
+$LockFile = Join-Path $HonsenHome 'lock'
 
 function Enter-Lock {
     for ($try = 0; $try -lt 2; $try++) {
         try {
-            New-Item -ItemType Directory -Path $LockDir -ErrorAction Stop | Out-Null
-            Set-Content -LiteralPath (Join-Path $LockDir 'pid') -Value $PID
+            $stream = [System.IO.File]::Open($LockFile, [System.IO.FileMode]::CreateNew,
+                [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+            try {
+                $bytes = [System.Text.Encoding]::ASCII.GetBytes("$PID")
+                $stream.Write($bytes, 0, $bytes.Length)
+            }
+            finally { $stream.Dispose() }
             return
         }
-        catch {
+        catch [System.IO.IOException] {
             $owner = 0
-            try { $owner = [int](Get-Content -LiteralPath (Join-Path $LockDir 'pid') -ErrorAction Stop) } catch { }
+            for ($read = 0; $read -lt 10 -and $owner -le 0; $read++) {
+                try { $owner = [int]([System.IO.File]::ReadAllText($LockFile).Trim()) } catch { $owner = 0 }
+                if ($owner -le 0) { Start-Sleep -Milliseconds 200 }
+            }
             if ($owner -gt 0 -and (Get-Process -Id $owner -ErrorAction SilentlyContinue)) {
                 throw "別の honsen.ps1 start が動いています（PID $owner）。二重起動はできません。"
             }
-            Remove-Item -LiteralPath $LockDir -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $LockFile -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
-    throw "ロックを取得できません: $LockDir"
+    throw "ロックを取得できません: $LockFile"
 }
 
 function Exit-Lock {
-    Remove-Item -LiteralPath $LockDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $LockFile -Force -ErrorAction SilentlyContinue
 }
 
 function Invoke-Start([string]$ExePath) {
