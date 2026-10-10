@@ -67,6 +67,39 @@ fn fleet_requires_official_budget_and_rejects_bad_values() {
     assert!(build("fleet:budget=official:chains=9").is_err());
     assert!(build("fleet:budget=official:budget_ms=500:adapt=off").is_ok());
     assert!(build("fleet:budget=official:adapt=sometimes").is_err());
+    assert!(build("fleet:budget=official:traffic=off").is_ok());
+    assert!(build("fleet:budget=official:traffic=persist").is_ok());
+    assert!(build("fleet:budget=official:traffic=own").is_ok());
+    assert!(build("fleet:budget=official:traffic=bogus").is_err());
+}
+
+/// The traffic param must be opt-in: without it (or with the explicit
+/// default) the planner answers byte-identically (Issue #408).
+#[test]
+fn fleet_traffic_default_is_identity() {
+    let (_, state) = state_701("S,P,P,P,P");
+    let ctx = SolverContext::from_state(&state);
+    for seed in ["42", "3"] {
+        let base = format!("fleet:budget=official:iters=300:seed={seed}:chains=2");
+        assert_eq!(
+            solver(&base).decide(&ctx),
+            solver(&format!("{base}:traffic=off")).decide(&ctx),
+            "traffic=off must not change the plan"
+        );
+    }
+}
+
+/// `traffic=persist` stays reproducible and plays a legal, well-shaped whole
+/// match on 701 whose every plan is a fixed point of the official
+/// normalization — the forecast may reorder plans, never break the contract.
+#[test]
+fn fleet_traffic_persist_stays_legal_and_reproducible() {
+    let id = "fleet:budget=official:iters=300:seed=42:chains=2:traffic=persist";
+    let (daily, _balls) = play_701(id, "S,P,P,P,P");
+    assert!(daily >= 196, "daily variety sum {daily}");
+    let (_, state) = state_701("S,P,P,P,P");
+    let ctx = SolverContext::from_state(&state);
+    assert_eq!(solver(id).decide(&ctx), solver(id).decide(&ctx), "reproducible");
 }
 
 #[test]

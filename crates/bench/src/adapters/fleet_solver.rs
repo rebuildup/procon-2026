@@ -63,7 +63,36 @@ const PARAMS: &[ParamSpec] = &[
         doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
               by planning tomorrow from each chain's end. Live uses the spare cores",
     },
+    ParamSpec {
+        key: "traffic",
+        required: false,
+        doc: "off (default) | persist | own: tomorrow-road forecast for the phase-2 \
+              plan pick; off keeps the replayed roads",
+    },
 ];
+
+/// How the phase-2 "plan tomorrow from the chain's end" sees the next day's
+/// road states (Issue #408).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TrafficMode {
+    /// The replayed state as the simulator left it: every road reclassified
+    /// from the own team's stay-step counts only (`MatchSim::default` has
+    /// `team_count = 1`, so the official division by the team count is
+    /// missing and own stays are overstated ~team-count-fold).
+    #[default]
+    Off,
+    /// Tomorrow's roads = today's observed states, carried over: the official
+    /// average (all teams / team count) is unknown, so the last observation
+    /// is the best guess and the plan cannot be blamed for roads it did not
+    /// meet.
+    Persist,
+    /// Own-stay prediction: like [`TrafficMode::Off`], the replay-derived
+    /// classification stands — the own stay-step contribution is the one
+    /// signal a replay can compute without fabricating other teams'
+    /// trajectories. The `team_count = 1` distortion is documented, not
+    /// corrected: the solver never sees the match's team count.
+    Own,
+}
 
 fn parse<T: std::str::FromStr>(
     spec: &CandidateSpec,
@@ -110,7 +139,15 @@ impl CandidateFactory for FleetFactory {
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
+        let traffic = match spec.param("traffic") {
+            None | Some("off") => TrafficMode::Off,
+            Some("persist") => TrafficMode::Persist,
+            Some("own") => TrafficMode::Own,
+            Some(other) => {
+                return Err(CandidateError::Build(format!("unknown traffic mode {other:?}")));
+            }
+        };
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, traffic }))
     }
 }
 
@@ -122,6 +159,8 @@ pub struct FleetCandidate {
     pub chains: u32,
     /// Live: shrink the window on boards whose search converges sooner.
     pub adapt: bool,
+    /// Tomorrow-road forecast for the phase-2 plan pick (Issue #408).
+    pub traffic: TrafficMode,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -653,6 +692,11 @@ impl World {
             // balls are not counted (the greedy estimate is too coarse and
             // trading today's sure balls for it measured worse).
             let _ = b;
+            // The estimate runs thousands of times per search, so it walks
+            // today's road costs even under a traffic forecast (`persist`
+            // predicts tomorrow's roads equal today's — the same costs; an
+            // own-stay prediction would need per-iteration matrices). The
+            // phase-2 replay below is where the forecast decides.
             tomorrow_series = d;
             score += d * W_SERIES * TOMORROW_NUM / TOMORROW_DEN;
             for (p, start) in starts.iter().enumerate() {
@@ -1050,6 +1094,21 @@ fn action(agent: usize, dir: Option<Direction>) -> Action {
     dir.map_or_else(|| Action::wait(id), |d| Action::step(id, d))
 }
 
+/// Overwrite every road cell's state with the one `from` observes (`persist`
+/// forecast, Issue #408): the replay has already reclassified the roads from
+/// the own team's stay counts alone, and the last observed state is the
+/// better estimate of what the server publishes tomorrow. Both maps come
+/// from the same case, so the cells line up pairwise.
+fn overlay_roads(state: &mut MatchState, from: &MatchState) {
+    for (cell, observed) in state.setting.map.cells_mut().iter_mut().zip(from.setting.map.cells()) {
+        if let (Terrain::Road(current), Terrain::Road(published)) =
+            (&mut cell.terrain, &observed.terrain)
+        {
+            *current = *published;
+        }
+    }
+}
+
 /// One day replayed through the official simulator.
 struct Replay {
     /// No illegal, fuel-short or step-mismatched action.
@@ -1237,7 +1296,26 @@ impl Solver for FleetCandidate {
             let (plan, check) = Self::finish(ctx, &world, sol, eval);
             let tomorrow = match later.split_first() {
                 Some((&steps, rest)) if check.clean => {
-                    let next = World::new(&check.state, steps, rest);
+                    // The replayed state's roads were reclassified at the day
+                    // boundary from the own team's stay counts alone:
+                    // `replay` runs `MatchSim::default`, whose `team_count`
+                    // is 1 where the official average divides by the match's
+                    // team count — own stays are overstated ~team-count-fold
+                    // (and the thresholds are the simulator defaults, not the
+                    // match's). `persist` forecasts tomorrow's roads as
+                    // today's published states instead; `own` keeps the
+                    // stay-derived classification, the one signal a replay
+                    // can compute without fabricating other teams.
+                    let next = match self.traffic {
+                        TrafficMode::Persist => {
+                            let mut state = check.state.clone();
+                            overlay_roads(&mut state, ctx.state);
+                            World::new(&state, steps, rest)
+                        }
+                        TrafficMode::Off | TrafficMode::Own => {
+                            World::new(&check.state, steps, rest)
+                        }
+                    };
                     next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
                 }
                 _ => (0, 0),
@@ -1329,6 +1407,7 @@ pub fn choose_kinds(
                 seed: 42,
                 chains: 1,
                 adapt: true,
+                traffic: TrafficMode::Off,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
