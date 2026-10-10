@@ -65,6 +65,15 @@
 
 参考として残す（`results/v1-*.jsonl`）：32×32 の 22 対で 17/0/5・+1.4%、新規 32×32 の 16 対で 9/1/6・+0.8%（区間 ±3.5）、16×16・24×24 の 60 対で +1.4% だが D が下がる対が 6。届かない区間を扱う 2 を足して初めて D が伸びた。
 
+### 16×16 では `convoy` に届かない
+
+| 条件 | 対 | fleet + 燃料項 + `midleg` 対 `convoy` | ΔD（D が下がった対） | ΔB |
+|---|---:|---|---|---:|
+| 難盤面 16×16（round1-like 16 + 実盤面 2）× seed 42・7、fleet は `iters=60000:chains=4`、convoy は時計なし（`results/convoy-hard16-players2.jsonl`） | 36 | 6 勝 2 分 28 敗 | −13（16） | −84 |
+| Arena official 16×16 の 6 盤面、fleet 59 秒 対 convoy 20 秒（`results/v2-16x16-wall59-fleet-midleg.jsonl`、convoy は `traffic-calibration-445` 5.5 の run） | 6 | 0 勝 2 分 4 敗 | −4（2） | −19 |
+
+`midleg` で `fleet` は難盤面の D を +15 伸ばすが、巡回車の 1 日をセル単位で厳密に解く `convoy` との差はまだ埋まらない（2014 の盤面で 51 対 54）。**16×16 は `convoy` のまま**（`sized` の境界 16 を維持）。
+
 ## 読み方と限界
 
 - B は探索量固定・holdout・wall-clock のどれでも +2〜2.5%。D は合計では増える（+18、+2）が、個別には下がる対がある（134 対中 7、holdout 32 対中 3）。wall-clock の 6 盤面では D は動かなかった。
