@@ -1,0 +1,3970 @@
+{
+  "source_commit_shas": [
+    "a69412b4f069e8b9ac840293f7c273426664a8a9"
+  ],
+  "baseline_candidate_id": null,
+  "candidates": [
+    "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+    "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+    "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+    "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+    "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+    "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8"
+  ],
+  "cases": [
+    "fixture:openapi-sample",
+    "fixture:small-8x8",
+    "fixture:medium-16x16",
+    "fixture:large-32x32",
+    "fixture:road-heavy",
+    "fixture:road-heavy-v2",
+    "fixture:mountain-heavy",
+    "fixture:series-many",
+    "fixture:series-few",
+    "fixture:hard-16-a3-d9-short-s9003"
+  ],
+  "per_case": [
+    {
+      "case_id": "fixture:openapi-sample",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000353,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000253,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000327,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000271,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000326,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000290,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:small-8x8",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000275,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000288,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000287,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000407,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000296,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 7,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000406,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:medium-16x16",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 14,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000318,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 14,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000382,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 14,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000439,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 14,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000408,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 14,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000329,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 14,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000394,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:large-32x32",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 23,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000740,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 23,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000712,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 23,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000810,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 23,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000643,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 23,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000560,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 23,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000813,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:road-heavy",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000999,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000960,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000987,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000965,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000755,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 6,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 5,
+            "total_response_time_ms": 10001
+          },
+          "response_time_us": 10001169,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:road-heavy-v2",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 3,
+            "daily_variety_sum": 9,
+            "total_noodles": 35,
+            "total_response_time_ms": 30001
+          },
+          "response_time_us": 30001859,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 2,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 3,
+            "daily_variety_sum": 9,
+            "total_noodles": 34,
+            "total_response_time_ms": 30001
+          },
+          "response_time_us": 30001661,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 2,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 3,
+            "daily_variety_sum": 9,
+            "total_noodles": 34,
+            "total_response_time_ms": 30001
+          },
+          "response_time_us": 30001982,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 4,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 3,
+            "daily_variety_sum": 9,
+            "total_noodles": 34,
+            "total_response_time_ms": 30002
+          },
+          "response_time_us": 30002897,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 5,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 3,
+            "daily_variety_sum": 9,
+            "total_noodles": 33,
+            "total_response_time_ms": 30001
+          },
+          "response_time_us": 30001511,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 6,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 3,
+            "daily_variety_sum": 9,
+            "total_noodles": 32,
+            "total_response_time_ms": 30001
+          },
+          "response_time_us": 30001741,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:mountain-heavy",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000353,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000372,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000545,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000795,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000493,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 6,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 2,
+            "daily_variety_sum": 2,
+            "total_noodles": 10,
+            "total_response_time_ms": 10001
+          },
+          "response_time_us": 10001285,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:series-many",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000488,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000815,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000668,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000919,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000843,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 4,
+            "daily_variety_sum": 4,
+            "total_noodles": 10,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000670,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:series-few",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 1,
+            "daily_variety_sum": 1,
+            "total_noodles": 13,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000822,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 1,
+            "daily_variety_sum": 1,
+            "total_noodles": 13,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000874,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 1,
+            "daily_variety_sum": 1,
+            "total_noodles": 13,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000762,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 1,
+            "daily_variety_sum": 1,
+            "total_noodles": 13,
+            "total_response_time_ms": 10000
+          },
+          "response_time_us": 10000853,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 5,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 1,
+            "daily_variety_sum": 1,
+            "total_noodles": 13,
+            "total_response_time_ms": 10001
+          },
+          "response_time_us": 10001419,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 5,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 1,
+            "daily_variety_sum": 1,
+            "total_noodles": 13,
+            "total_response_time_ms": 10001
+          },
+          "response_time_us": 10001220,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    },
+    {
+      "case_id": "fixture:hard-16-a3-d9-short-s9003",
+      "entries": [
+        {
+          "rank": 1,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+          "score": {
+            "variety": 13,
+            "daily_variety_sum": 106,
+            "total_noodles": 113,
+            "total_response_time_ms": 90012
+          },
+          "response_time_us": 90012362,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 2,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 13,
+            "daily_variety_sum": 105,
+            "total_noodles": 115,
+            "total_response_time_ms": 92055
+          },
+          "response_time_us": 92055966,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 3,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+          "score": {
+            "variety": 13,
+            "daily_variety_sum": 105,
+            "total_noodles": 114,
+            "total_response_time_ms": 91912
+          },
+          "response_time_us": 91912537,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 4,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+          "score": {
+            "variety": 13,
+            "daily_variety_sum": 105,
+            "total_noodles": 113,
+            "total_response_time_ms": 91783
+          },
+          "response_time_us": 91783836,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 5,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+          "score": {
+            "variety": 13,
+            "daily_variety_sum": 104,
+            "total_noodles": 114,
+            "total_response_time_ms": 91700
+          },
+          "response_time_us": 91700044,
+          "status": "success",
+          "scored": true
+        },
+        {
+          "rank": 6,
+          "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+          "score": {
+            "variety": 13,
+            "daily_variety_sum": 104,
+            "total_noodles": 114,
+            "total_response_time_ms": 91731
+          },
+          "response_time_us": 91731886,
+          "status": "success",
+          "scored": true
+        }
+      ]
+    }
+  ],
+  "per_candidate": [
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "runs": 10,
+      "scored": 10,
+      "wins": 0,
+      "draws": 0,
+      "losses": 0,
+      "not_compared": 10,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 1,
+          "max": 13,
+          "mean": 3.7,
+          "n": 10
+        },
+        "daily_variety_sum": {
+          "min": 1,
+          "max": 106,
+          "mean": 13.6,
+          "n": 10
+        },
+        "total_balls": {
+          "min": 5,
+          "max": 113,
+          "mean": 23.5,
+          "n": 10
+        },
+        "response_time_us": {
+          "min": 10000275,
+          "max": 90012362,
+          "mean": 20001856.9,
+          "n": 10
+        },
+        "elapsed_us": {
+          "min": 10001431,
+          "max": 90015489,
+          "mean": 20003644.9,
+          "n": 10
+        }
+      }
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "runs": 10,
+      "scored": 10,
+      "wins": 0,
+      "draws": 0,
+      "losses": 0,
+      "not_compared": 10,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 1,
+          "max": 13,
+          "mean": 3.7,
+          "n": 10
+        },
+        "daily_variety_sum": {
+          "min": 1,
+          "max": 105,
+          "mean": 13.5,
+          "n": 10
+        },
+        "total_balls": {
+          "min": 5,
+          "max": 114,
+          "mean": 23.3,
+          "n": 10
+        },
+        "response_time_us": {
+          "min": 10000253,
+          "max": 91912537,
+          "mean": 20191893.4,
+          "n": 10
+        },
+        "elapsed_us": {
+          "min": 10001583,
+          "max": 91922406,
+          "mean": 20194402.1,
+          "n": 10
+        }
+      }
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "runs": 10,
+      "scored": 10,
+      "wins": 0,
+      "draws": 0,
+      "losses": 0,
+      "not_compared": 10,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 1,
+          "max": 13,
+          "mean": 3.7,
+          "n": 10
+        },
+        "daily_variety_sum": {
+          "min": 1,
+          "max": 105,
+          "mean": 13.5,
+          "n": 10
+        },
+        "total_balls": {
+          "min": 5,
+          "max": 115,
+          "mean": 23.6,
+          "n": 10
+        },
+        "response_time_us": {
+          "min": 10000287,
+          "max": 92055966,
+          "mean": 20206384.9,
+          "n": 10
+        },
+        "elapsed_us": {
+          "min": 10001747,
+          "max": 92088179,
+          "mean": 20211130.9,
+          "n": 10
+        }
+      }
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "runs": 10,
+      "scored": 10,
+      "wins": 0,
+      "draws": 0,
+      "losses": 0,
+      "not_compared": 10,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 1,
+          "max": 13,
+          "mean": 3.7,
+          "n": 10
+        },
+        "daily_variety_sum": {
+          "min": 1,
+          "max": 104,
+          "mean": 13.4,
+          "n": 10
+        },
+        "total_balls": {
+          "min": 5,
+          "max": 114,
+          "mean": 23.5,
+          "n": 10
+        },
+        "response_time_us": {
+          "min": 10000271,
+          "max": 91700044,
+          "mean": 20170786.1,
+          "n": 10
+        },
+        "elapsed_us": {
+          "min": 10001729,
+          "max": 91724044,
+          "mean": 20174762.1,
+          "n": 10
+        }
+      }
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "runs": 10,
+      "scored": 10,
+      "wins": 0,
+      "draws": 0,
+      "losses": 0,
+      "not_compared": 10,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 1,
+          "max": 13,
+          "mean": 3.7,
+          "n": 10
+        },
+        "daily_variety_sum": {
+          "min": 1,
+          "max": 105,
+          "mean": 13.5,
+          "n": 10
+        },
+        "total_balls": {
+          "min": 5,
+          "max": 113,
+          "mean": 23.4,
+          "n": 10
+        },
+        "response_time_us": {
+          "min": 10000296,
+          "max": 91783836,
+          "mean": 20179135.6,
+          "n": 10
+        },
+        "elapsed_us": {
+          "min": 10001892,
+          "max": 91827606,
+          "mean": 20185142.0,
+          "n": 10
+        }
+      }
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "runs": 10,
+      "scored": 10,
+      "wins": 0,
+      "draws": 0,
+      "losses": 0,
+      "not_compared": 10,
+      "timeouts": 0,
+      "invalids": 0,
+      "panics": 0,
+      "score_summary": {
+        "variety": {
+          "min": 1,
+          "max": 13,
+          "mean": 3.7,
+          "n": 10
+        },
+        "daily_variety_sum": {
+          "min": 1,
+          "max": 104,
+          "mean": 13.4,
+          "n": 10
+        },
+        "total_balls": {
+          "min": 5,
+          "max": 114,
+          "mean": 23.4,
+          "n": 10
+        },
+        "response_time_us": {
+          "min": 10000290,
+          "max": 91731886,
+          "mean": 20173807.1,
+          "n": 10
+        },
+        "elapsed_us": {
+          "min": 10001869,
+          "max": 91767979,
+          "mean": 20179016.0,
+          "n": 10
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:openapi-sample",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000353,
+      "elapsed_us": 10001431,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        4
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000353
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        2,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:openapi-sample",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000253,
+      "elapsed_us": 10001920,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        4
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000253
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        2,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:openapi-sample",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000327,
+      "elapsed_us": 10001806,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        4
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000327
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        2,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:openapi-sample",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000271,
+      "elapsed_us": 10001729,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        4
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000271
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        2,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:openapi-sample",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000326,
+      "elapsed_us": 10001901,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        4
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000326
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        2,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:openapi-sample",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000290,
+      "elapsed_us": 10001952,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        4
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000290
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        2,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 10000275,
+      "elapsed_us": 10001847,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        9
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000275
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 10000288,
+      "elapsed_us": 10001583,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        9
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000288
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 10000287,
+      "elapsed_us": 10001747,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        9
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000287
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 10000407,
+      "elapsed_us": 10001972,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        9
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000407
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 10000296,
+      "elapsed_us": 10001892,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        9
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000296
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:small-8x8",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 7,
+      "response_time_us": 10000406,
+      "elapsed_us": 10001869,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        9
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000406
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:medium-16x16",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 14,
+      "response_time_us": 10000318,
+      "elapsed_us": 10001705,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        14
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000318
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        7,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:medium-16x16",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 14,
+      "response_time_us": 10000382,
+      "elapsed_us": 10001857,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        14
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000382
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        7,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:medium-16x16",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 14,
+      "response_time_us": 10000439,
+      "elapsed_us": 10002124,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        14
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000439
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        7,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:medium-16x16",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 14,
+      "response_time_us": 10000408,
+      "elapsed_us": 10002236,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        14
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000408
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        7,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:medium-16x16",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 14,
+      "response_time_us": 10000329,
+      "elapsed_us": 10001972,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        14
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000329
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        7,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:medium-16x16",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 14,
+      "response_time_us": 10000394,
+      "elapsed_us": 10001969,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        14
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000394
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        7,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:large-32x32",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 23,
+      "response_time_us": 10000740,
+      "elapsed_us": 10002555,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000740
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        5,
+        0,
+        5,
+        3,
+        4,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:large-32x32",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 23,
+      "response_time_us": 10000712,
+      "elapsed_us": 10002442,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000712
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        5,
+        0,
+        5,
+        2,
+        5,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:large-32x32",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 23,
+      "response_time_us": 10000810,
+      "elapsed_us": 10002571,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000810
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        5,
+        0,
+        5,
+        2,
+        5,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:large-32x32",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 23,
+      "response_time_us": 10000643,
+      "elapsed_us": 10002405,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000643
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        5,
+        0,
+        5,
+        3,
+        4,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:large-32x32",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 23,
+      "response_time_us": 10000560,
+      "elapsed_us": 10002366,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000560
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        5,
+        0,
+        5,
+        3,
+        4,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:large-32x32",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 23,
+      "response_time_us": 10000813,
+      "elapsed_us": 10002520,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000813
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        5,
+        0,
+        5,
+        3,
+        4,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:road-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000999,
+      "elapsed_us": 10002940,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000999
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        1,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:road-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000960,
+      "elapsed_us": 10002746,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000960
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        1,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:road-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000987,
+      "elapsed_us": 10002736,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000987
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        1,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:road-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000965,
+      "elapsed_us": 10002632,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000965
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        1,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:road-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10001169,
+      "elapsed_us": 10002870,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10001169
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        1,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:road-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 5,
+      "response_time_us": 10000755,
+      "elapsed_us": 10002506,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000755
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        1,
+        2,
+        1
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:road-heavy-v2",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 3,
+      "daily_variety_sum": 9,
+      "total_balls": 35,
+      "response_time_us": 30001859,
+      "elapsed_us": 30003722,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        12
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000676,
+        10000749,
+        10000434
+      ],
+      "daily_varieties": [
+        3,
+        3,
+        3
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        10,
+        8,
+        6,
+        11
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:road-heavy-v2",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 3,
+      "daily_variety_sum": 9,
+      "total_balls": 32,
+      "response_time_us": 30001741,
+      "elapsed_us": 30003622,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        4
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000705,
+        10000534,
+        10000502
+      ],
+      "daily_varieties": [
+        3,
+        3,
+        3
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        7,
+        6,
+        10,
+        9
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:road-heavy-v2",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 3,
+      "daily_variety_sum": 9,
+      "total_balls": 34,
+      "response_time_us": 30001661,
+      "elapsed_us": 30003234,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        12
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000775,
+        10000478,
+        10000408
+      ],
+      "daily_varieties": [
+        3,
+        3,
+        3
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        10,
+        7,
+        6,
+        11
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:road-heavy-v2",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 3,
+      "daily_variety_sum": 9,
+      "total_balls": 34,
+      "response_time_us": 30002897,
+      "elapsed_us": 30004508,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        4
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000766,
+        10001752,
+        10000379
+      ],
+      "daily_varieties": [
+        3,
+        3,
+        3
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        8,
+        7,
+        10,
+        9
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:road-heavy-v2",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 3,
+      "daily_variety_sum": 9,
+      "total_balls": 34,
+      "response_time_us": 30001982,
+      "elapsed_us": 30003607,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        11
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000979,
+        10000561,
+        10000442
+      ],
+      "daily_varieties": [
+        3,
+        3,
+        3
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        9,
+        10,
+        6,
+        9
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:road-heavy-v2",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 3,
+      "daily_variety_sum": 9,
+      "total_balls": 33,
+      "response_time_us": 30001511,
+      "elapsed_us": 30003210,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        4
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000732,
+        10000407,
+        10000372
+      ],
+      "daily_varieties": [
+        3,
+        3,
+        3
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        11,
+        7,
+        5,
+        10
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:mountain-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 10,
+      "response_time_us": 10000353,
+      "elapsed_us": 10001745,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000353
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        2,
+        1,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:mountain-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 10,
+      "response_time_us": 10000372,
+      "elapsed_us": 10002110,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000372
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        2,
+        1,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:mountain-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 10,
+      "response_time_us": 10001285,
+      "elapsed_us": 10003128,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10001285
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        2,
+        1,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:mountain-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 10,
+      "response_time_us": 10000545,
+      "elapsed_us": 10002620,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000545
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        2,
+        1,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:mountain-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 10,
+      "response_time_us": 10000795,
+      "elapsed_us": 10002487,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000795
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        2,
+        1,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:mountain-heavy",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 2,
+      "daily_variety_sum": 2,
+      "total_balls": 10,
+      "response_time_us": 10000493,
+      "elapsed_us": 10002261,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        3
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000493
+      ],
+      "daily_varieties": [
+        2
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        1,
+        2,
+        1,
+        3,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:series-many",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 10,
+      "response_time_us": 10000488,
+      "elapsed_us": 10002125,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000488
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        0,
+        6,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:series-many",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 10,
+      "response_time_us": 10000815,
+      "elapsed_us": 10002552,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000815
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        0,
+        6,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:series-many",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 10,
+      "response_time_us": 10000668,
+      "elapsed_us": 10002285,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000668
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        0,
+        6,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:series-many",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 10,
+      "response_time_us": 10000919,
+      "elapsed_us": 10002561,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000919
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        0,
+        6,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:series-many",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 10,
+      "response_time_us": 10000843,
+      "elapsed_us": 10002809,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000843
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        0,
+        6,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:series-many",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 4,
+      "daily_variety_sum": 4,
+      "total_balls": 10,
+      "response_time_us": 10000670,
+      "elapsed_us": 10002326,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        16
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000670
+      ],
+      "daily_varieties": [
+        4
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        0,
+        6,
+        4
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:series-few",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 1,
+      "daily_variety_sum": 1,
+      "total_balls": 13,
+      "response_time_us": 10000822,
+      "elapsed_us": 10002890,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000822
+      ],
+      "daily_varieties": [
+        1
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        3,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:series-few",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 1,
+      "daily_variety_sum": 1,
+      "total_balls": 13,
+      "response_time_us": 10000874,
+      "elapsed_us": 10002783,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000874
+      ],
+      "daily_varieties": [
+        1
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        3,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:series-few",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 1,
+      "daily_variety_sum": 1,
+      "total_balls": 13,
+      "response_time_us": 10001419,
+      "elapsed_us": 10003499,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10001419
+      ],
+      "daily_varieties": [
+        1
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        3,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:series-few",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 1,
+      "daily_variety_sum": 1,
+      "total_balls": 13,
+      "response_time_us": 10000762,
+      "elapsed_us": 10002914,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000762
+      ],
+      "daily_varieties": [
+        1
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        3,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:series-few",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 1,
+      "daily_variety_sum": 1,
+      "total_balls": 13,
+      "response_time_us": 10001220,
+      "elapsed_us": 10003910,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10001220
+      ],
+      "daily_varieties": [
+        1
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        3,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:series-few",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 1,
+      "daily_variety_sum": 1,
+      "total_balls": 13,
+      "response_time_us": 10000853,
+      "elapsed_us": 10003568,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        0,
+        2
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10000853
+      ],
+      "daily_varieties": [
+        1
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        3,
+        3,
+        4,
+        3
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:chains=8",
+      "case_id": "fixture:hard-16-a3-d9-short-s9003",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 13,
+      "daily_variety_sum": 106,
+      "total_balls": 113,
+      "response_time_us": 90012362,
+      "elapsed_us": 90015489,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        1,
+        30
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10001470,
+        10001302,
+        10001712,
+        10001635,
+        10001433,
+        10001167,
+        10002109,
+        10000924,
+        10000610
+      ],
+      "daily_varieties": [
+        10,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        54,
+        59
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:chains=8",
+      "case_id": "fixture:hard-16-a3-d9-short-s9003",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 13,
+      "daily_variety_sum": 105,
+      "total_balls": 114,
+      "response_time_us": 91912537,
+      "elapsed_us": 91922406,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        1,
+        30
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10001873,
+        10274512,
+        10196216,
+        10216347,
+        10235876,
+        10255738,
+        10306633,
+        10185310,
+        10240032
+      ],
+      "daily_varieties": [
+        10,
+        12,
+        12,
+        12,
+        11,
+        12,
+        12,
+        12,
+        12
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        56,
+        58
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=42:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:hard-16-a3-d9-short-s9003",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 13,
+      "daily_variety_sum": 105,
+      "total_balls": 115,
+      "response_time_us": 92055966,
+      "elapsed_us": 92088179,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        1,
+        34
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10264390,
+        10272216,
+        10152091,
+        10171591,
+        10151554,
+        10432387,
+        10159801,
+        10224045,
+        10227891
+      ],
+      "daily_varieties": [
+        10,
+        12,
+        12,
+        12,
+        11,
+        12,
+        12,
+        12,
+        12
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        57,
+        58
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:chains=8",
+      "case_id": "fixture:hard-16-a3-d9-short-s9003",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 13,
+      "daily_variety_sum": 104,
+      "total_balls": 114,
+      "response_time_us": 91700044,
+      "elapsed_us": 91724044,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        1,
+        33
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10001684,
+        10178949,
+        10263760,
+        10187741,
+        10236468,
+        10195495,
+        10001130,
+        10250755,
+        10384062
+      ],
+      "daily_varieties": [
+        10,
+        11,
+        12,
+        12,
+        12,
+        12,
+        11,
+        12,
+        12
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        57,
+        57
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:chains=8",
+      "case_id": "fixture:hard-16-a3-d9-short-s9003",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 13,
+      "daily_variety_sum": 105,
+      "total_balls": 113,
+      "response_time_us": 91783836,
+      "elapsed_us": 91827606,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        1,
+        33
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10175923,
+        10268353,
+        10223237,
+        10001433,
+        10218783,
+        10248260,
+        10207843,
+        10211977,
+        10228027
+      ],
+      "daily_varieties": [
+        10,
+        12,
+        12,
+        12,
+        12,
+        12,
+        11,
+        12,
+        12
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        52,
+        61
+      ],
+      "oracle_refill": false
+    },
+    {
+      "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off:seed=7:fuel_need=50:fuel_mix=on:chains=8",
+      "case_id": "fixture:hard-16-a3-d9-short-s9003",
+      "seed": null,
+      "generation_parameters": null,
+      "source_commit_sha": "a69412b4f069e8b9ac840293f7c273426664a8a9",
+      "team": "player-a",
+      "variety": 13,
+      "daily_variety_sum": 104,
+      "total_balls": 114,
+      "response_time_us": 91731886,
+      "elapsed_us": 91767979,
+      "timeout": false,
+      "status": "success",
+      "scored": true,
+      "status_detail": null,
+      "last_acquisition_at": [
+        1,
+        33
+      ],
+      "illegal_action_count": 0,
+      "fuel_short_count": 0,
+      "rejected_response_count": 0,
+      "day_budget_exceeded_days": [],
+      "daily_response_us": [
+        10001587,
+        10146422,
+        10276225,
+        10412047,
+        10263743,
+        10152267,
+        10001308,
+        10250192,
+        10228095
+      ],
+      "daily_varieties": [
+        10,
+        11,
+        12,
+        12,
+        12,
+        12,
+        11,
+        12,
+        12
+      ],
+      "agent_kinds": [
+        "Supply",
+        "Patrol",
+        "Patrol"
+      ],
+      "agent_ball_counts": [
+        0,
+        57,
+        57
+      ],
+      "oracle_refill": false
+    }
+  ]
+}

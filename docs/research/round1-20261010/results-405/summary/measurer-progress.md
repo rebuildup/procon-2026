@@ -280,3 +280,7 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   - **F 系列 offline 合計（36 盤面確定・inv 記録値込み）**: fuel-only c4 **+29** / c8 **+25**、mix c4 **+44** / c8 **+39**。D 下落セル 0（offline）
   - Batch A（full 54-run clean 再実行）は不要に: 全セルの決定論値が A-slim の再現一致で妥当性確認済み（scored フラグの inv は wall 時間起因のみ）
   残タスク（次の測定ラウンドへ）: ① F3-clocked 静穏再実行（とくに s9003 dV−1 の再現性確認・seed 反転）② 検証 27 盤面の fuel 確認（`measure-63a7e5e` 進行中）③ convoy depth B の静穏再実行 ④ chains12 clocked（R1 差し替え候補の実時間確認）
+- [06:5x] **Q1（s9003 dV−1 再現確認）完了**: `wsl-10s/q1-s9003-seed-confirm/`（clocked・seed 42/7 × c8 anchor/fuel/mix・jobs 1・静穏ゲート 06:33 通過）:
+  - seed42: anchor (13,106,113) / fuel (13,**105**,114) / mix (13,**105**,115) — **dV−1 再現**
+  - seed7: anchor (13,**104**,114) / fuel (13,**105**,113) / mix (13,**104**,114) — **逆に dV+1**（fuel が勝ち方向）
+  - 判定: s9003 は dV 104/105/106 の境界盤面で、fuel の dV 変動は ±1・seed 依存。**chains8 採用時に既に監視条件としている「盤面別 D ±1」クラスの既存リスクに含まれる**（新規の排除級ブロッカーではない）。offline では dV 変動 0 だった点が clocked との差
