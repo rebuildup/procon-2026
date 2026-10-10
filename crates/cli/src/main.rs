@@ -772,6 +772,12 @@ async fn cmd_coordinator(
         agent_kinds: kinds,
         auto_kinds: kinds_auto,
         secret_redaction: profile.as_ref().map(|p| p.token.clone()),
+        // Issue #385: `PROCON_RESUME_RUNNING_MATCH=1` lets a (re)started
+        // process join a match that is already under way. Set by the
+        // match-day wrapper for the official server only; never in arena
+        // mode, whose lobby publishes `starts_at` before kinds are due.
+        resume_running_match: profile.is_none()
+            && std::env::var_os("PROCON_RESUME_RUNNING_MATCH").is_some_and(|v| v == "1"),
         ..Default::default()
     };
 

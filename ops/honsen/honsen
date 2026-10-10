@@ -1,0 +1,664 @@
+#!/usr/bin/env bash
+# honsen — operate the pinned contest binary on match day.
+#
+#   honsen preflight <profile>    check machine, binary, settings, token, server (sends nothing but GET /setting)
+#   honsen start <profile>        start the pinned solver against the profile's server
+#   honsen status [-w]            what is running, against what, and what the server accepted
+#   honsen stop                   stop the running solver
+#   honsen rollback               switch to the verified backup release
+#
+# Profiles: `official` (the contest server on the venue LAN) and `local` (the
+# organiser's simple server on this machine). The practice Arena is operated
+# with its own runbook and is refused here on purpose.
+#
+# State lives in $HONSEN_HOME (default ~/.procon-honsen), never in the repo:
+#   releases/<name>/{procon,MANIFEST}   prebuilt binaries, one directory each
+#   current, backup                     symlinks into releases/
+#   profiles/<profile>.url              server URL (not a secret)
+#   secrets/<profile>.token             token, mode 0600
+#   runs/<timestamp>-<profile>/         log, state.json and metadata of one start
+#
+# Written for the bash 3.2 that ships with macOS.
+set -u
+set -o pipefail
+
+HONSEN_HOME="${HONSEN_HOME:-$HOME/.procon-honsen}"
+RELEASES="$HONSEN_HOME/releases"
+RUNS="$HONSEN_HOME/runs"
+LOCK="$HONSEN_HOME/run.lock"
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+INFISICAL_ENV="${HONSEN_INFISICAL_ENV:-prod}"
+# The supervisor restarts a dead coordinator for this long after start, then gives up.
+MAX_RUN_MINUTES="${HONSEN_MAX_RUN_MINUTES:-40}"
+
+if [ -t 1 ]; then
+    RED=$'\033[1;41;97m'; GRN=$'\033[1;42;30m'; YEL=$'\033[1;43;30m'; BLD=$'\033[1m'; RST=$'\033[0m'
+else
+    RED=""; GRN=""; YEL=""; BLD=""; RST=""
+fi
+
+die() { echo "${RED} ERROR ${RST} $*" >&2; exit 1; }
+note() { echo "       $*"; }
+
+FAILS=0
+WARNS=0
+ok() { echo "${GRN}  OK  ${RST} $*"; }
+warn() { echo "${YEL} WARN ${RST} $*"; WARNS=$((WARNS + 1)); }
+fail() { echo "${RED} FAIL ${RST} $*"; FAILS=$((FAILS + 1)); }
+
+sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
+
+banner() {
+    case "$1" in
+        official) echo "${RED}                                                      ${RST}"
+                  echo "${RED}   本番  OFFICIAL  — 公式回答サーバーへ送信します     ${RST}"
+                  echo "${RED}                                                      ${RST}" ;;
+        local)    echo "${GRN}   練習  LOCAL  — このPC上の簡易サーバー（本番ではない）   ${RST}" ;;
+        *)        echo "${YEL}   profile: $1   ${RST}" ;;
+    esac
+}
+
+require_profile() {
+    case "${1:-}" in
+        official|local) ;;
+        arena) die "Arena はこのコマンドでは扱いません。Arena 用の手順（Issue #317 / ops/arena-runner）を使ってください。" ;;
+        "") die "profile を指定してください: official（本番） または local（このPCの簡易サーバー）" ;;
+        *) die "未知の profile: $1（official / local のどちらか）" ;;
+    esac
+}
+
+profile_url() {
+    local file="$HONSEN_HOME/profiles/$1.url"
+    [ -s "$file" ] && head -n 1 "$file" | tr -d '[:space:]'
+}
+
+token_file() { echo "$HONSEN_HOME/secrets/$1.token"; }
+
+# Reject a URL that cannot belong to the profile. The whole point is that a
+# typo or a stale setting must not send official answers to a practice server
+# or practice answers to the official one.
+check_url_for_profile() {
+    local profile="$1" url="$2" host
+    case "$url" in
+        http://*|https://*) ;;
+        *) echo "URL は http:// か https:// で始めてください: $url"; return 1 ;;
+    esac
+    host="$(printf '%s' "$url" | sed -E 's#^https?://##; s#[/:].*$##')"
+    case "$profile" in
+        official)
+            case "$host" in
+                *procon37arena*|*arena*) echo "official に Arena のホストは設定できません: $host"; return 1 ;;
+                localhost|127.*|0.0.0.0|::1) echo "official に自分のPC（${host}）は設定できません。練習は local を使ってください"; return 1 ;;
+            esac ;;
+        local)
+            case "$host" in
+                localhost|127.*) ;;
+                *) echo "local は 127.0.0.1 / localhost のみです: $host"; return 1 ;;
+            esac ;;
+    esac
+    return 0
+}
+
+load_release() {
+    # Sets REL_DIR REL_NAME REL_BIN and the MANIFEST variables for a symlink or name.
+    local ref="$1"
+    if [ -L "$HONSEN_HOME/$ref" ] || [ -d "$HONSEN_HOME/$ref" ]; then
+        REL_DIR="$(cd "$HONSEN_HOME/$ref" 2>/dev/null && pwd -P)" || return 1
+    elif [ -d "$RELEASES/$ref" ]; then
+        REL_DIR="$RELEASES/$ref"
+    else
+        return 1
+    fi
+    REL_NAME="$(basename "$REL_DIR")"
+    REL_BIN="$REL_DIR/procon"
+    SOURCE_SHA=""; BINARY_SHA256=""; CANDIDATE=""; KINDS_ARGS=""; DESCRIPTION=""
+    [ -f "$REL_DIR/MANIFEST" ] || return 1
+    # shellcheck disable=SC1090,SC1091
+    . "$REL_DIR/MANIFEST"
+    return 0
+}
+
+verify_release() {
+    # Prints nothing on success; a reason on failure.
+    [ -x "$REL_BIN" ] || { echo "バイナリがありません: $REL_BIN"; return 1; }
+    [ -n "$BINARY_SHA256" ] || { echo "MANIFEST に BINARY_SHA256 がありません"; return 1; }
+    [ -n "$CANDIDATE" ] || { echo "MANIFEST に CANDIDATE がありません"; return 1; }
+    local actual
+    actual="$(sha256_of "$REL_BIN")"
+    [ "$actual" = "$BINARY_SHA256" ] || { echo "sha256 不一致: 実際 $actual / 記録 $BINARY_SHA256"; return 1; }
+    "$REL_BIN" version >/dev/null 2>&1 || { echo "バイナリが起動しません（procon version が失敗）"; return 1; }
+    return 0
+}
+
+running_pid() {
+    # Echoes the supervisor pid when a run holds the lock and is alive.
+    [ -f "$LOCK/pid" ] || return 1
+    local pid
+    pid="$(cat "$LOCK/pid" 2>/dev/null)"
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || return 1
+    echo "$pid"
+}
+
+clear_stale_lock() {
+    if [ -d "$LOCK" ] && ! running_pid >/dev/null; then
+        rm -rf "$LOCK"
+    fi
+}
+
+stray_coordinators() {
+    # Any `procon coordinator` on this machine that is not ours, the practice
+    # Arena ones included: two clients on one token overwrite each other.
+    pgrep -fl 'procon.* coordinator' 2>/dev/null | grep -v 'honsen' || true
+}
+
+latest_run() {
+    [ -d "$RUNS" ] || return 1
+    local last
+    last="$(ls -1 "$RUNS" 2>/dev/null | sort | tail -n 1)"
+    [ -n "$last" ] && echo "$RUNS/$last"
+}
+
+json_field() {
+    # json_field <file> <python expression over d>
+    python3 -I -c '
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(eval(sys.argv[2]))
+except Exception:
+    print("")
+' "$1" "$2" 2>/dev/null
+}
+
+# GET /setting with the token on stdin (never in argv, never in the log).
+probe_setting() {
+    # probe_setting <url> <token-file> ; prints "<http_code> <server Date header>"
+    local url="$1" file="$2" headers code
+    headers="$(mktemp -t honsen-probe)" || return 1
+    code="$(printf 'header = "Procon-Token: %s"\n' "$(cat "$file")" |
+        curl -sS -K - -o /dev/null -D "$headers" -m 5 -w '%{http_code}' "$url/setting" 2>/dev/null)"
+    code="${code:-000}"
+    local date_header
+    date_header="$(grep -i '^date:' "$headers" | head -n 1 | sed -E 's/^[Dd]ate: *//' | tr -d '\r')"
+    rm -f "$headers"
+    echo "$code $date_header"
+}
+
+cmd_preflight() {
+    local profile="${1:-}"
+    require_profile "$profile"
+    banner "$profile"
+    echo "${BLD}preflight — 何も送信しません（GET /setting の読み取りだけ行います）${RST}"
+
+    # machine
+    ok "端末: $(uname -sm) / $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo '?') / $(sysctl -n hw.ncpu 2>/dev/null || echo '?') cores"
+    if command -v pmset >/dev/null 2>&1; then
+        if pmset -g batt | grep -q "AC Power"; then ok "電源: AC 接続"; else warn "電源: バッテリー駆動です。AC につないでください"; fi
+    fi
+    local free_kb
+    free_kb="$(df -k "$HONSEN_HOME" | awk 'NR==2 {print $4}')"
+    if [ "${free_kb:-0}" -gt 1048576 ]; then ok "空きディスク: $((free_kb / 1048576)) GB"; else warn "空きディスクが 1GB 未満です"; fi
+
+    # release
+    if load_release current; then
+        local reason
+        if reason="$(verify_release)"; then
+            ok "使用バイナリ: $REL_NAME  (source ${SOURCE_SHA:0:12} / sha256 ${BINARY_SHA256:0:16}…)"
+            note "candidate: $CANDIDATE ${KINDS_ARGS}"
+        else
+            fail "使用バイナリ $REL_NAME: $reason"
+        fi
+    else
+        fail "current リリースが未設定です（honsen use <name>）"
+    fi
+    if load_release backup; then
+        local reason
+        if reason="$(verify_release)"; then ok "バックアップ: $REL_NAME  (sha256 ${BINARY_SHA256:0:16}…)"; else fail "バックアップ $REL_NAME: $reason"; fi
+    else
+        warn "backup リリースが未設定です（rollback できません）"
+    fi
+
+    # double start
+    clear_stale_lock
+    local pid
+    if pid="$(running_pid)"; then
+        warn "すでに起動中です (pid $pid)。honsen status で確認してください"
+    else
+        ok "honsen 経由の実行中プロセスなし"
+    fi
+    local strays
+    strays="$(stray_coordinators)"
+    if [ -n "$strays" ] && ! running_pid >/dev/null; then
+        fail "別の coordinator が動いています（同じトークンだと回答を上書きし合います）:"
+        echo "$strays" | sed 's/^/         /'
+    fi
+
+    # settings
+    local url file
+    url="$(profile_url "$profile")"
+    file="$(token_file "$profile")"
+    if [ -z "$url" ]; then
+        fail "接続先が未設定です: honsen set-server $profile http://<host>:<port>"
+    else
+        local reason
+        if reason="$(check_url_for_profile "$profile" "$url")"; then ok "接続先: $url"; else fail "$reason"; url=""; fi
+    fi
+    if [ ! -s "$file" ]; then
+        fail "トークンが未設定です: honsen set-token $profile  （または honsen pull-token ${profile}）"
+    else
+        local mode
+        mode="$(stat -f '%Lp' "$file" 2>/dev/null || stat -c '%a' "$file" 2>/dev/null)"
+        if [ "$mode" = "600" ]; then ok "トークン: 設定済み（$(wc -c <"$file" | tr -d ' ') bytes, mode 600）"; else fail "トークンファイルの権限が $mode です（600 にしてください）"; fi
+        if [ "$profile" = "official" ] && [ -s "$(token_file local)" ] && cmp -s "$file" "$(token_file local)"; then
+            fail "official と local のトークンが同じです。本番トークンを入れ直してください"
+        fi
+    fi
+
+    # server
+    if [ -n "$url" ] && [ -s "$file" ]; then
+        local probe code server_date
+        probe="$(probe_setting "$url" "$file")"
+        code="${probe%% *}"
+        server_date="${probe#* }"
+        case "$code" in
+            200) ok "サーバー応答: 200（認証OK・試合設定を取得できる状態）" ;;
+            403) ok "サーバー応答: 403 AccessTimeError（認証OK・試合がまだ設定されていない／終了後）" ;;
+            401) fail "サーバー応答: 401 AuthError — トークンが違います" ;;
+            000) fail "サーバーに接続できません（LANケーブル・IP・ポートを確認）: $url" ;;
+            *)   warn "サーバー応答: HTTP ${code}（想定外。運営に確認）" ;;
+        esac
+        if [ -n "$server_date" ] && [ "$code" != "000" ]; then
+            local skew
+            skew="$(python3 -I -c '
+import sys, time
+from email.utils import parsedate_to_datetime
+try:
+    print(round(time.time() - parsedate_to_datetime(sys.argv[1]).timestamp()))
+except Exception:
+    print("")
+' "$server_date")"
+            if [ -z "$skew" ]; then
+                warn "サーバー時刻を読めませんでした"
+            elif [ "${skew#-}" -le 2 ]; then
+                ok "時計のずれ: ${skew}s（サーバー基準。±2s 以内）"
+            else
+                fail "時計がサーバーと ${skew}s ずれています。締切計算が狂うので時刻を合わせてください（システム設定→日付と時刻）"
+            fi
+        fi
+    fi
+
+    echo
+    if [ "$FAILS" -gt 0 ]; then
+        echo "${RED} PREFLIGHT NG ${RST} FAIL $FAILS 件 / WARN $WARNS 件 — FAIL を解消してから start してください"
+        return 1
+    fi
+    echo "${GRN} PREFLIGHT OK ${RST} WARN $WARNS 件 — honsen start $profile で起動できます"
+}
+
+cmd_start() {
+    local profile="${1:-}" assume_yes=""
+    require_profile "$profile"
+    [ "${2:-}" = "--yes" ] && assume_yes=1
+    mkdir -p "$RUNS"
+
+    clear_stale_lock
+    local pid
+    if pid="$(running_pid)"; then
+        die "すでに起動中です (pid $pid)。二重起動はできません。honsen status / honsen stop"
+    fi
+    local strays
+    strays="$(stray_coordinators)"
+    [ -z "$strays" ] || die "別の coordinator が動いています。止めてから start してください:
+$strays"
+
+    load_release current || die "current リリースが未設定です"
+    local reason
+    reason="$(verify_release)" || die "使用バイナリ $REL_NAME: $reason"
+    local url file
+    url="$(profile_url "$profile")"
+    [ -n "$url" ] || die "接続先が未設定です: honsen set-server $profile http://<host>:<port>"
+    reason="$(check_url_for_profile "$profile" "$url")" || die "$reason"
+    file="$(token_file "$profile")"
+    [ -s "$file" ] || die "トークンが未設定です: honsen set-token $profile"
+
+    banner "$profile"
+    echo "  接続先   : $url"
+    echo "  バイナリ : $REL_NAME  (source ${SOURCE_SHA:0:12} / sha256 ${BINARY_SHA256:0:16}…)"
+    echo "  candidate: $CANDIDATE ${KINDS_ARGS}"
+    if [ "$profile" = "official" ] && [ -z "$assume_yes" ]; then
+        printf '%s' "本番サーバーへ回答を送信します。開始するには OFFICIAL と入力: "
+        local answer
+        read -r answer
+        [ "$answer" = "OFFICIAL" ] || die "中止しました（何も送信していません）"
+    fi
+
+    # mkdir is atomic: two simultaneous starts cannot both pass here.
+    mkdir "$LOCK" 2>/dev/null || die "ロックを取得できません（同時に start された可能性）: $LOCK"
+    local run_dir
+    run_dir="$RUNS/$(date +%Y%m%d-%H%M%S)-$profile"
+    mkdir -p "$run_dir"
+    {
+        echo "PROFILE=$profile"
+        echo "SERVER_URL=$url"
+        echo "RELEASE=$REL_NAME"
+        echo "SOURCE_SHA=$SOURCE_SHA"
+        echo "BINARY_SHA256=$BINARY_SHA256"
+        echo "CANDIDATE='$CANDIDATE'"
+        echo "KINDS_ARGS='$KINDS_ARGS'"
+        echo "STARTED_AT='$(date '+%Y-%m-%d %H:%M:%S %z')'"
+    } >"$run_dir/meta"
+    echo "$run_dir" >"$LOCK/run_dir"
+
+    local keep_awake=""
+    command -v caffeinate >/dev/null 2>&1 && keep_awake="caffeinate -i"
+    # The token travels in the environment of our own processes only.
+    PROCON_TOKEN="$(cat "$file")" HONSEN_HOME="$HONSEN_HOME" \
+        nohup $keep_awake "$SELF" _supervise "$run_dir" >>"$run_dir/supervisor.log" 2>&1 &
+    local supervisor=$!
+    echo "$supervisor" >"$LOCK/pid"
+    sleep 1
+    if ! kill -0 "$supervisor" 2>/dev/null; then
+        rm -rf "$LOCK"
+        die "起動直後に終了しました。ログ: $run_dir/supervisor.log"
+    fi
+    echo "${GRN} 起動しました ${RST} pid $supervisor / ログ $run_dir/coordinator.log"
+    echo "次: honsen status -w  （回答の受理状況を表示）"
+}
+
+# Internal: runs under nohup, owns the coordinator process for one match.
+cmd_supervise() {
+    local run_dir="$1"
+    # shellcheck disable=SC1090,SC1091
+    . "$run_dir/meta"
+    load_release "$RELEASE" || { echo "release $RELEASE not found"; exit 1; }
+    local child=0 restarts=0 code=0 began
+    began="$(date +%s)"
+    trap 'echo "$(date +%T) supervisor: stop requested"; [ "$child" -gt 0 ] && kill -TERM "$child" 2>/dev/null; echo stopped >"$run_dir/result"; exit 0' TERM INT
+    while :; do
+        echo "$(date +%T) supervisor: starting coordinator (restart #$restarts)"
+        # shellcheck disable=SC2086
+        RUST_LOG="${RUST_LOG:-info}" RUST_BACKTRACE=1 NO_COLOR=1 \
+        PROCON_SOURCE_COMMIT_SHA="$SOURCE_SHA" \
+        PROCON_RESUME_RUNNING_MATCH=1 \
+            "$REL_BIN" coordinator --server "$SERVER_URL" --exit-after-match \
+            --candidate "$CANDIDATE" $KINDS_ARGS \
+            --state-output "$run_dir/state.json" >>"$run_dir/coordinator.log" 2>&1 &
+        child=$!
+        echo "$child" >"$run_dir/coordinator.pid"
+        wait "$child"
+        code=$?
+        child=0
+        echo "$(date +%T) supervisor: coordinator exited with $code"
+        if [ "$code" -eq 0 ]; then
+            echo completed >"$run_dir/result"
+            break
+        fi
+        restarts=$((restarts + 1))
+        echo "$restarts" >"$run_dir/restarts"
+        if [ "$(( $(date +%s) - began ))" -ge "$(( MAX_RUN_MINUTES * 60 ))" ]; then
+            echo "failed" >"$run_dir/result"
+            break
+        fi
+        # A rejection is only reported once the match has been played to the end.
+        if [ "$(json_field "$run_dir/state.json" 'd.get("status")')" = "rejected" ]; then
+            echo "failed" >"$run_dir/result"
+            break
+        fi
+        sleep 1
+    done
+    rm -rf "$LOCK"
+}
+
+show_status() {
+    local run_dir
+    run_dir="$(latest_run)" || { echo "まだ一度も start していません"; return 0; }
+    # shellcheck disable=SC1090,SC1091
+    . "$run_dir/meta"
+    banner "$PROFILE"
+    local pid state="停止"
+    if pid="$(running_pid)" && [ "$(cat "$LOCK/run_dir" 2>/dev/null)" = "$run_dir" ]; then
+        state="${GRN} 実行中 ${RST} (pid $pid)"
+    else
+        case "$(cat "$run_dir/result" 2>/dev/null)" in
+            completed) state="${GRN} 試合完了（正常終了） ${RST}" ;;
+            stopped)   state="${YEL} 手動停止 ${RST}" ;;
+            failed)    state="${RED} 異常終了（ログを確認） ${RST}" ;;
+            *)         state="${RED} 停止（結果不明・プロセスなし） ${RST}" ;;
+        esac
+    fi
+    echo "  状態     : $state"
+    echo "  接続先   : $SERVER_URL"
+    echo "  バイナリ : $RELEASE  (source ${SOURCE_SHA:0:12} / sha256 ${BINARY_SHA256:0:16}…)"
+    echo "  candidate: $CANDIDATE $KINDS_ARGS"
+    echo "  開始     : $STARTED_AT   再起動回数: $(cat "$run_dir/restarts" 2>/dev/null || echo 0)"
+    if [ -f "$run_dir/state.json" ]; then
+        local st day total revs err
+        st="$(json_field "$run_dir/state.json" 'd.get("status")')"
+        day="$(json_field "$run_dir/state.json" 'd.get("day")')"
+        total="$(json_field "$run_dir/state.json" 'd.get("daysTotal", d.get("days_total"))')"
+        revs="$(json_field "$run_dir/state.json" 'd.get("revisions")')"
+        err="$(json_field "$run_dir/state.json" 'd.get("error") or ""')"
+        local accepted
+        accepted="$(json_field "$run_dir/state.json" 'len(d.get("revisions") or [])')"
+        echo "  試合状態 : ${BLD}$st${RST}   最後に受理された日: day=$day   受理 ${BLD}${accepted:-0}${RST} / 全 ${total:-?} 日"
+        echo "  revision : $revs  （サーバーが返した受理番号。0以上=受理）"
+        [ -z "$err" ] || echo "  ${RED} エラー ${RST} $err"
+    else
+        echo "  試合状態 : （まだ state.json がありません — サーバー応答待ち）"
+    fi
+    local log="$run_dir/coordinator.log"
+    if [ -f "$log" ]; then
+        # state.json starts over when the coordinator is restarted; the log keeps the whole match.
+        local days_ok
+        days_ok="$(grep -o 'plan accepted by server day=[0-9]*' "$log" 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+        [ "${days_ok:-0}" -eq 0 ] || echo "  受理済みの日数（ログ集計・再起動をまたぐ）: ${BLD}${days_ok}${RST}"
+        local lost
+        lost="$(grep -cE 'leaving it unanswered|continuing with the next day' "$log" 2>/dev/null | head -n 1)"
+        [ "${lost:-0}" -eq 0 ] || echo "  ${RED} 未回答の日 ${RST} ${lost} 日（ログの ERROR 行を確認）"
+        local problems
+        problems="$(grep -cE ' (WARN|ERROR) |panicked' "$log" 2>/dev/null | head -n 1)"
+        echo "  ログ     : $log  （WARN/ERROR ${problems:-0} 行）"
+        echo "  --- 最新ログ ---"
+        tail -n 6 "$log" | cut -c 1-200 | sed 's/^/  /'
+    fi
+}
+
+cmd_status() {
+    if [ "${1:-}" = "-w" ]; then
+        while :; do
+            clear
+            date '+%H:%M:%S'
+            show_status
+            sleep 1
+        done
+    else
+        show_status
+    fi
+}
+
+cmd_stop() {
+    local pid
+    clear_stale_lock
+    if ! pid="$(running_pid)"; then
+        echo "実行中のプロセスはありません"
+        return 0
+    fi
+    local run_dir
+    run_dir="$(cat "$LOCK/run_dir" 2>/dev/null)"
+    if [ "${1:-}" != "--yes" ] && [ -f "$run_dir/state.json" ] &&
+        [ "$(json_field "$run_dir/state.json" 'd.get("status")')" = "running" ]; then
+        printf '%s' "試合の途中です。止めると以降の日の回答は送られません。止めるには STOP と入力: "
+        local answer
+        read -r answer
+        [ "$answer" = "STOP" ] || die "中止しました（プロセスは動いたままです）"
+    fi
+    kill -TERM "$pid" 2>/dev/null
+    local i=0
+    while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null
+    local child
+    child="$(cat "$run_dir/coordinator.pid" 2>/dev/null)"
+    [ -n "$child" ] && kill -0 "$child" 2>/dev/null && kill -KILL "$child" 2>/dev/null
+    rm -rf "$LOCK"
+    echo "停止しました"
+}
+
+switch_current() {
+    local name="$1"
+    load_release "$name" || die "リリースがありません: ${name}（honsen releases で一覧）"
+    local reason
+    reason="$(verify_release)" || die "$name は使えません: $reason"
+    ln -sfn "$RELEASES/$REL_NAME" "$HONSEN_HOME/current"
+    echo "${GRN} current ${RST} → $REL_NAME  (source ${SOURCE_SHA:0:12} / sha256 ${BINARY_SHA256:0:16}…)"
+    note "candidate: $CANDIDATE ${KINDS_ARGS}"
+}
+
+cmd_use() {
+    [ -n "${1:-}" ] || die "使い方: honsen use <release名>"
+    running_pid >/dev/null && die "実行中は切り替えできません。先に honsen stop"
+    switch_current "$1"
+}
+
+cmd_rollback() {
+    running_pid >/dev/null && die "実行中は切り替えできません。先に honsen stop（試合の合間に行ってください）"
+    load_release backup || die "backup リリースが未設定です"
+    local target="$REL_NAME"
+    switch_current "$target"
+    echo "バックアップ版に切り替えました。honsen preflight <profile> → honsen start <profile>"
+}
+
+cmd_releases() {
+    local current="" backup="" dir name mark
+    load_release current && current="$REL_NAME"
+    load_release backup && backup="$REL_NAME"
+    for dir in "$RELEASES"/*/; do
+        [ -d "$dir" ] || continue
+        name="$(basename "$dir")"
+        mark=""
+        [ "$name" = "$current" ] && mark="$mark [current]"
+        [ "$name" = "$backup" ] && mark="$mark [backup]"
+        if load_release "$name"; then
+            local reason state
+            if reason="$(verify_release)"; then state="OK"; else state="NG: $reason"; fi
+            echo "${BLD}$name${RST}$mark  $state"
+            echo "    source $SOURCE_SHA"
+            echo "    sha256 $BINARY_SHA256"
+            echo "    $CANDIDATE $KINDS_ARGS"
+            [ -z "$DESCRIPTION" ] || echo "    $DESCRIPTION"
+        else
+            echo "$name  NG: MANIFEST なし"
+        fi
+    done
+}
+
+cmd_set_server() {
+    local profile="${1:-}" url="${2:-}"
+    require_profile "$profile"
+    [ -n "$url" ] || die "使い方: honsen set-server $profile http://<host>:<port>"
+    url="${url%/}"
+    local reason
+    reason="$(check_url_for_profile "$profile" "$url")" || die "$reason"
+    mkdir -p "$HONSEN_HOME/profiles"
+    echo "$url" >"$HONSEN_HOME/profiles/$profile.url"
+    echo "接続先を保存しました: [$profile] $url"
+}
+
+store_token() {
+    local profile="$1" token="$2" file
+    token="$(printf '%s' "$token" | tr -d '[:space:]')"
+    [ -n "$token" ] || die "トークンが空です"
+    mkdir -p "$HONSEN_HOME/secrets"
+    chmod 700 "$HONSEN_HOME" "$HONSEN_HOME/secrets"
+    file="$(token_file "$profile")"
+    (umask 077 && printf '%s' "$token" >"$file")
+    chmod 600 "$file"
+    echo "トークンを保存しました: [$profile] ${#token} 文字（値は表示しません）"
+}
+
+cmd_set_token() {
+    local profile="${1:-}" token=""
+    require_profile "$profile"
+    if [ -t 0 ]; then
+        printf '%s' "[$profile] トークンを貼り付けて Enter（画面には表示されません）: "
+        read -rs token
+        echo
+    else
+        read -r token
+    fi
+    store_token "$profile" "$token"
+}
+
+cmd_pull_token() {
+    local profile="${1:-}" key token
+    require_profile "$profile"
+    [ "$profile" = "official" ] || die "pull-token は official 専用です"
+    command -v infisical >/dev/null 2>&1 || die "infisical CLI がありません。honsen set-token official で手入力してください"
+    [ -f .infisical.json ] || die "このディレクトリに .infisical.json がありません。個人リポジトリのルートで実行してください"
+    key="PROCON_OFFICIAL_TOKEN"
+    token="$(infisical export --env="$INFISICAL_ENV" --format=json 2>/dev/null | python3 -I -c '
+import json, sys
+try:
+    for s in json.load(sys.stdin):
+        if s.get("key") == sys.argv[1]:
+            print(s.get("value", ""))
+except Exception:
+    pass
+' "$key")"
+    [ -n "$token" ] || die "Infisical ($INFISICAL_ENV) に $key がありません。登録するか honsen set-token official を使ってください"
+    store_token official "$token"
+}
+
+cmd_logs() {
+    local run_dir
+    run_dir="$(latest_run)" || die "ログがありません"
+    tail -n "${1:-40}" -f "$run_dir/coordinator.log"
+}
+
+cmd_collect() {
+    local out
+    out="$HOME/procon-honsen-logs-$(date +%Y%m%d-%H%M%S).tgz"
+    # Run directories hold logs, state and metadata; secrets/ is not included.
+    tar -czf "$out" -C "$HONSEN_HOME" runs
+    echo "保存しました: $out"
+    local file leaked=""
+    for file in "$HONSEN_HOME"/secrets/*.token; do
+        [ -s "$file" ] || continue
+        if grep -rqF "$(cat "$file")" "$RUNS" 2>/dev/null; then leaked=1; fi
+    done
+    if [ -n "$leaked" ]; then
+        echo "${RED} 注意 ${RST} ログにトークン文字列が含まれています。この tgz を共有しないでください"
+    else
+        echo "ログにトークン文字列は含まれていません"
+    fi
+}
+
+usage() {
+    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+    echo
+    echo "  honsen releases                     ビルド済みリリース一覧"
+    echo "  honsen use <release>                使用リリースを切り替え"
+    echo "  honsen set-server <profile> <url>   接続先を保存"
+    echo "  honsen set-token <profile>          トークンを保存（画面・履歴に残さない）"
+    echo "  honsen pull-token official          Infisical からトークンを取得して保存"
+    echo "  honsen logs                         ログを追尾"
+    echo "  honsen collect                      ログを tgz にまとめる"
+}
+
+mkdir -p "$HONSEN_HOME" "$RELEASES"
+case "${1:-}" in
+    preflight) shift; cmd_preflight "$@" ;;
+    start) shift; cmd_start "$@" ;;
+    status) shift; cmd_status "$@" ;;
+    stop) shift; cmd_stop "$@" ;;
+    rollback) shift; cmd_rollback "$@" ;;
+    use) shift; cmd_use "$@" ;;
+    releases) shift; cmd_releases "$@" ;;
+    set-server) shift; cmd_set_server "$@" ;;
+    set-token) shift; cmd_set_token "$@" ;;
+    pull-token) shift; cmd_pull_token "$@" ;;
+    logs) shift; cmd_logs "$@" ;;
+    collect) shift; cmd_collect "$@" ;;
+    _supervise) shift; cmd_supervise "$@" ;;
+    ""|-h|--help|help) usage ;;
+    *) die "未知のコマンド: $1（honsen help）" ;;
+esac

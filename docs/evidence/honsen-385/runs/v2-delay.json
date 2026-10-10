@@ -1,0 +1,98 @@
+{
+  "case": "hard-16-a4-d10-short-s9001.json",
+  "size": "16x16",
+  "agents": 4,
+  "days_total": 4,
+  "source_sha": "78292abcc1f51c2bc1b4e1cf5c5d6d33fbbcb8ac",
+  "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cli_sha256": "9b62675346fad3508d901397b58712d6c0add0d845df29e0fd89b675d5d4a5ec",
+  "candidate": "fleet:budget=official:budget_ms=10000",
+  "kinds_flag": "auto",
+  "kinds_accepted": [
+    1,
+    0,
+    0,
+    0
+  ],
+  "faults": [
+    {
+      "method": "POST",
+      "path": "/",
+      "day": 1,
+      "action": "delay",
+      "delay_ms": 3000,
+      "times": 1,
+      "fired": 1
+    },
+    {
+      "method": "POST",
+      "path": "/",
+      "day": 2,
+      "action": "delay",
+      "delay_ms": 7000,
+      "times": 1,
+      "fired": 1
+    }
+  ],
+  "kill_day": -1,
+  "kill_after_post": false,
+  "exit_codes": [
+    [
+      "exit",
+      0
+    ]
+  ],
+  "token_header_on_every_request": true,
+  "token_in_cli_log": false,
+  "days": [
+    {
+      "day": 0,
+      "day_seconds": 14,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        1
+      ],
+      "answer_seconds": 0.591,
+      "margin_seconds": 13.253
+    },
+    {
+      "day": 1,
+      "day_seconds": 14,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        2
+      ],
+      "answer_seconds": 0.591,
+      "margin_seconds": 12.657
+    },
+    {
+      "day": 2,
+      "day_seconds": 14,
+      "post_attempts": 2,
+      "accepted": 2,
+      "revisions": [
+        3,
+        4
+      ],
+      "answer_seconds": 5.796,
+      "margin_seconds": 7.854
+    },
+    {
+      "day": 3,
+      "day_seconds": 14,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        5
+      ],
+      "answer_seconds": 0.593,
+      "margin_seconds": 13.256
+    }
+  ],
+  "missed_days": [],
+  "wall_seconds": 52.5,
+  "limitation": "Official simple server on localhost, idle opponents; proves protocol acceptance, not score.",
+  "verdict": "PASS"
+}
