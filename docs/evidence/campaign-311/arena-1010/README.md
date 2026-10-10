@@ -20,3 +20,16 @@
 ## ソース SHA
 
 `source-sha.txt` 参照。ベースラインは `13a0106`（v0.4.0 系・`fleet:budget=official:budget_ms=59000:adapt=off` + `--kinds-auto`）。
+
+## 2026-10-11 追記（sized 標準化〜凍結まで）
+
+- `runs-sized.jsonl` — sized candidate 標準化後（00:15-08:00 JST 窓・lobby 2012-2107）の全実行。**全試合 D 上限**。
+- `runs-freeze.jsonl` — 凍結バイナリ `f7b785c`（#442 修正込み・sha256 `65eeb7cc…`）の E2E 確認 3 戦 3 勝。`--record-dir` 有効。
+- `api/` — 公式 `/api/matches/<id>` の収集拡張（2012-2107）。
+- `casespec-official-2071…2098` — 24×24 公式盤 10 盤面の追加。
+- `friction-eval/` — 24×24 12 盤面の offline 再生（同一 candidate・1 補給・seed42・59s/日）。
+  **摩擦（live − replay）は −6.4%〜−28.7%・平均 −11.9%**。乖離の正体は他チーム道路滞在
+  （busy/jam）でありシミュレータ誤差ではない（match 2052 で計画=実績が完全一致の実証済み）。
+  offline 評価値は live の上限推定として扱うこと。
+- 最終棄却済み施策: fuel_need=50 / seed 変更 / 補給スロット / second_share / 40s 短縮 / chains8（live A/B 有意差なし）。
+- 照合規律: lobby/table id は +0..2 ずれ可変・表示名流用あり → **daySteps+departure+回答時間シグネチャで照合**。

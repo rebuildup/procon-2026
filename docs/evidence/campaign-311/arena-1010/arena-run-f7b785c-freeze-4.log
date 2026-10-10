@@ -1,0 +1,10 @@
+[2m2026-10-10T23:10:18.054848Z[0m [32m INFO[0m match recording enabled [3mrun_id[0m[2m=[0m"20261010T231018Z-p321701" [3mdir[0m[2m=[0mtarget/arena/records/20261010T231018Z-p321701
+[2m2026-10-10T23:10:18.054936Z[0m [32m INFO[0m agent kind composition selected [3mkinds[0m[2m=[0mP,S
+[2m2026-10-10T23:10:18.054956Z[0m [33m WARN[0m HTTP log is OFF: request and response bodies will not be saved (set --http-log-dir <DIR> or PROCON_HTTP_LOG_DIR)
+[2m2026-10-10T23:10:18.055253Z[0m [32m INFO[0m offline candidate selected for the live run [3mcandidate[0m[2m=[0msized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0
+[2m2026-10-10T23:10:18.055269Z[0m [32m INFO[0m coordinator loop strategy selected [3msolver[0m[2m=[0m"candidate"
+[2m2026-10-10T23:10:18.056513Z[0m [32m INFO[0m waiting for the arena pre-match window [3mseconds[0m[2m=[0m101 [3mopens_at[0m[2m=[0m2026-10-10 23:12:00 UTC [3mstarts_at[0m[2m=[0m2026-10-10 23:15:00 UTC
+[2m2026-10-10T23:12:00.000493Z[0m [32m INFO[0m registering for the arena match [3mpath[0m[2m=[0m"/setting" [3mattempts_budget[0m[2m=[0m18
+[2m2026-10-10T23:12:01.773718Z[0m [31mERROR[0m arena registration failed [3merror[0m[2m=[0marena request failed: HTTP 503: {"code":"Paused","message":"練習場は停止中です(再開は 14:10 頃、日本時間)。本番の回答システムに接続するつもりなら、接続先の URL を確認してください。","resumes_at":1791695400}
+[2m2026-10-10T23:12:01.773808Z[0m [32m INFO[0m arena run recorded [3mstatus[0m[2m=[0mregistration_failed [3mpath[0m[2m=[0mtarget/arena/runs.jsonl [3mcandidate[0m[2m=[0m"sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0"
+error: arena request failed: HTTP 503: {"code":"Paused","message":"練習場は停止中です(再開は 14:10 頃、日本時間)。本番の回答システムに接続するつもりなら、接続先の URL を確認してください。","resumes_at":1791695400}
