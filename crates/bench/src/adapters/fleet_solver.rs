@@ -58,6 +58,18 @@ const PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "seed", required: false, doc: "search seed (default 42)" },
     ParamSpec {
+        key: "fuel_need",
+        required: false,
+        doc: "percent of a patrol's daily balls that a day-end tank covering tomorrow's \
+              burn is worth, 0..=300 (default 0: off)",
+    },
+    ParamSpec {
+        key: "fuel_mix",
+        required: false,
+        doc: "off (default) | on: with 2+ chains only every other chain uses fuel_need, and \
+              tomorrow's replay always picks between them",
+    },
+    ParamSpec {
         key: "chains",
         required: false,
         doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
@@ -110,7 +122,14 @@ impl CandidateFactory for FleetFactory {
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
+        let fuel_need = parse(spec, "fuel_need", 0u32)?;
+        if fuel_need > 300 {
+            return Err(CandidateError::Build(format!(
+                "fuel_need must be 0..=300, got {fuel_need}"
+            )));
+        }
+        let fuel_mix = spec.param("fuel_mix") == Some("on");
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, fuel_need, fuel_mix }))
     }
 }
 
@@ -122,6 +141,11 @@ pub struct FleetCandidate {
     pub chains: u32,
     /// Live: shrink the window on boards whose search converges sooner.
     pub adapt: bool,
+    /// Percent of a patrol's daily balls that ending the day with tomorrow's
+    /// fuel is worth in the search score (0: only the small full-tank term).
+    pub fuel_need: u32,
+    /// Only every other chain values the fuel; tomorrow's replay picks.
+    pub fuel_mix: bool,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -199,6 +223,8 @@ struct World {
     supplies: Vec<SupplyInfo>,
     new_series: Vec<bool>,
     series_slots: usize,
+    /// `(fuel a patrol burns tomorrow, score of ending the day with it)`.
+    need: Option<(i64, i64)>,
 }
 
 fn cell_index(width: usize, col: i32, row: i32) -> usize {
@@ -208,7 +234,7 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
 
 impl World {
     #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
-    fn new(state: &MatchState, steps: u32, later: &[u32]) -> Self {
+    fn new(state: &MatchState, steps: u32, later: &[u32], fuel_need: u32) -> Self {
         let tomorrow = later.first().copied();
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
@@ -300,11 +326,36 @@ impl World {
             supplies,
             new_series,
             series_slots,
+            need: None,
         };
         for m in 0..NM {
             for u in 0..nn {
                 world.tree(m, u);
             }
+        }
+        if let (Some(tomorrow), true) = (tomorrow, fuel_need > 0 && !world.supplies.is_empty()) {
+            // What a patrol with fuel to spare does in a day like today, by
+            // the greedy start: balls per patrol, and fuel per tick from the
+            // board's mean move (a patrol is on the move most of the day).
+            let np = world.patrols.len().max(1);
+            let starts: Vec<Start> = world
+                .patrols
+                .iter()
+                .map(|p| Start { node: p.start, offset: 0, fuel: p.cap, escorted: true })
+                .collect();
+            let (_, balls) = world.greedy(&starts, steps, None);
+            let (mut burn, mut ticks) = (0u64, 0u64);
+            for (t, f) in world.time_cost.iter().zip(&world.fuel_cost) {
+                if *t != NONE {
+                    burn += u64::from(*f);
+                    ticks += u64::from(*t);
+                }
+            }
+            let cap = world.patrols.iter().map(|p| p.cap).max().unwrap_or(0);
+            let need = (u64::from(tomorrow) * burn / ticks.max(1)).min(u64::from(cap)).max(1);
+            let worth =
+                balls * W_BALL * i64::from(fuel_need) / 100 / i64::try_from(np).unwrap_or(i64::MAX);
+            world.need = Some((i64::try_from(need).unwrap_or(i64::MAX), worth));
         }
         world
     }
@@ -659,6 +710,11 @@ impl World {
                 let full = i64::from(self.patrols[p].cap.min(tomorrow));
                 let have = if start.escorted { full } else { i64::from(start.fuel).min(full) };
                 score += 150 * have / full.max(1);
+                if let Some((need, worth)) = self.need {
+                    let covered =
+                        if start.escorted { need } else { i64::from(start.fuel).min(need) };
+                    score += worth * covered / need;
+                }
             }
         }
         Evaluation { score, today: (series, balls), tomorrow_series, lines, supplies }
@@ -1172,7 +1228,7 @@ impl Solver for FleetCandidate {
         }
         let later: Vec<u32> =
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
-        let world = World::new(state, ctx.day_steps, &later);
+        let world = World::new(state, ctx.day_steps, &later, self.fuel_need);
         let window = (self.budget_ms > 0).then(|| {
             // Balls stop improving once the search has converged, and from
             // there a longer answer only costs the fourth ranking axis. The
@@ -1208,8 +1264,12 @@ impl Solver for FleetCandidate {
         let second = chains > 1;
         let plan_until = window.map(|w| started + if second { w * 7 / 10 } else { w });
         let until = window.map(|w| started + w);
+        // `fuel_mix`: the odd chains plan without the fuel term.
+        let mixed = self.fuel_mix && self.fuel_need > 0 && second;
+        let plain = mixed.then(|| World::new(state, ctx.day_steps, &later, 0));
+        let world_of = |k: usize| plain.as_ref().filter(|_| k % 2 == 1).unwrap_or(&world);
         let first = per_chain(chains, live, |k| {
-            world.search(self.iters, plan_until, self.seed(ctx, k), CHAIN_T0[k % 4], None)
+            world_of(k).search(self.iters, plan_until, self.seed(ctx, k), CHAIN_T0[k % 4], None)
         });
         // Is tomorrow's variety at stake? If every chain covers every series
         // today and the mere greedy estimate covers them all tomorrow, the
@@ -1219,25 +1279,28 @@ impl Solver for FleetCandidate {
             i64::try_from(world.series.iter().collect::<std::collections::BTreeSet<_>>().len())
                 .unwrap_or(i64::MAX);
         let settled = later.is_empty()
-            || first
-                .iter()
-                .all(|(_, e)| e.today.0 == all_series && e.tomorrow_series == all_series);
+            || !mixed
+                && first
+                    .iter()
+                    .all(|(_, e)| e.today.0 == all_series && e.tomorrow_series == all_series);
         let candidates: Vec<Candidate> = per_chain(first.len(), live, |k| {
             let (sol, eval) = &first[k];
             if !second {
-                let (plan, check) = Self::finish(ctx, &world, sol, eval);
+                let (plan, check) = Self::finish(ctx, world_of(k), sol, eval);
                 return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
             }
             let seed = self.seed(ctx, k) ^ 0x5bd1_e995;
+            let world = world_of(k);
             if settled {
                 let (sol, eval) = world.search(self.iters / 3, until, seed, 5.0, Some(sol.clone()));
-                let (plan, check) = Self::finish(ctx, &world, &sol, &eval);
+                let (plan, check) = Self::finish(ctx, world, &sol, &eval);
                 return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
             }
-            let (plan, check) = Self::finish(ctx, &world, sol, eval);
+            let (plan, check) = Self::finish(ctx, world, sol, eval);
             let tomorrow = match later.split_first() {
                 Some((&steps, rest)) if check.clean => {
-                    let next = World::new(&check.state, steps, rest);
+                    let need = if mixed { 0 } else { self.fuel_need };
+                    let next = World::new(&check.state, steps, rest, need);
                     next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
                 }
                 _ => (0, 0),
@@ -1329,6 +1392,8 @@ pub fn choose_kinds(
                 seed: 42,
                 chains: 1,
                 adapt: true,
+                fuel_need: 0,
+                fuel_mix: false,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
@@ -1440,6 +1505,8 @@ pub fn choose_supply_slot(
                     seed: 42 + round as u64,
                     chains: 1,
                     adapt: true,
+                    fuel_need: 0,
+                    fuel_mix: false,
                 };
                 let score = MatchSim::new(config)
                     .run(settings[slot].clone(), &solver)

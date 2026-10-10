@@ -214,3 +214,31 @@ fn choose_supply_slot_gives_no_answer_when_out_of_time() {
     let (slot, trials) = choose_supply_slot(&case.setting, &team, std::time::Duration::ZERO);
     assert_eq!((slot, trials.len()), (None, 0));
 }
+
+/// The fuel term and its mixed mode are opt-in and must keep every day legal,
+/// with and without a Supply to make the fuel matter.
+#[test]
+fn fleet_fuel_need_stays_legal_and_keeps_variety() {
+    let (base, _) = play_701("fleet:budget=official:iters=600:seed=3:chains=2", "S,P,P,P,P");
+    let (plain, _) =
+        play_701("fleet:budget=official:iters=600:seed=3:chains=2:fuel_need=50", "S,P,P,P,P");
+    let (mixed, _) = play_701(
+        "fleet:budget=official:iters=600:seed=3:chains=2:fuel_need=50:fuel_mix=on",
+        "S,P,P,P,P",
+    );
+    assert!(plain + 4 >= base && mixed + 4 >= base, "daily variety {base} -> {plain} / {mixed}");
+    play_701(
+        "fleet:budget=official:iters=300:seed=3:chains=2:fuel_need=50:fuel_mix=on",
+        "P,P,P,P,P",
+    );
+}
+
+#[test]
+fn fleet_rejects_an_out_of_range_fuel_need() {
+    assert!(
+        CandidateRegistry::builtin()
+            .build("fleet:budget=official:fuel_need=301")
+            .and_then(|c| c.build_solver())
+            .is_err()
+    );
+}

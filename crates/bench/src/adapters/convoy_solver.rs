@@ -64,6 +64,16 @@ const PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "seed", required: false, doc: "seed of the embedded fleet plan (default 42)" },
     ParamSpec {
+        key: "fuel_need",
+        required: false,
+        doc: "fleet's fuel_need for today's embedded plan, 0..=300 (default 0: off)",
+    },
+    ParamSpec {
+        key: "fuel_mix",
+        required: false,
+        doc: "fleet's fuel_mix for today's embedded plan: off (default) | on",
+    },
+    ParamSpec {
         key: "depth",
         required: false,
         doc: "days played ahead when comparing day plans (default 8; 0 = today only)",
@@ -131,8 +141,18 @@ impl CandidateFactory for ConvoyFactory {
                 seed,
                 chains,
                 adapt: false,
+                fuel_need: parse(spec, "fuel_need", 0u32)?.min(300),
+                fuel_mix: spec.param("fuel_mix") == Some("on"),
             },
-            ahead: FleetCandidate { iters: 20_000, budget_ms: 0, seed, chains: 1, adapt: true },
+            ahead: FleetCandidate {
+                iters: 20_000,
+                budget_ms: 0,
+                seed,
+                chains: 1,
+                adapt: true,
+                fuel_need: 0,
+                fuel_mix: false,
+            },
             budget_ms,
             scenarios: match spec.param("forecast") {
                 None | Some("both") => vec![false, true],
