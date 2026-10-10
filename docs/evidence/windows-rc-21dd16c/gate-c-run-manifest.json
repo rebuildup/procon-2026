@@ -1,0 +1,72 @@
+{
+  "agent_kinds": {
+    "kinds": [
+      1,
+      0,
+      0,
+      0
+    ],
+    "pattern": "S,P,P,P",
+    "source": "auto"
+  },
+  "arch": "x86_64",
+  "arena": false,
+  "binary": {
+    "path": "C:\\Users\\rebui\\AppData\\Local\\Temp\\opencode\\rc-21dd16c\\target\\release\\procon.exe",
+    "sha256": "23a7b97e2fa677983cd1796da2e4c4baedfff3d24df68112cd3b345042d2d342",
+    "size_bytes": 6179328
+  },
+  "files": {
+    "events": "events.jsonl",
+    "log": "coordinator.log",
+    "setting": "setting.json",
+    "state": "state.json"
+  },
+  "http_log": "C:\\Users\\rebui\\AppData\\Local\\Temp\\opencode\\rc-21dd16c\\logs\\20261010T160833Z-p20828\\http.jsonl",
+  "match": {
+    "agents": 4,
+    "days": 3,
+    "map_height": 16,
+    "map_width": 16,
+    "players": 2,
+    "starts_at": 1791648515
+  },
+  "match_identity": {
+    "note": "the official API publishes no match id; run_id is ours",
+    "official_match_id": null
+  },
+  "os": "windows",
+  "package_version": "0.5.1",
+  "pid": 20828,
+  "recorder": {
+    "dropped": 0,
+    "events_numbered": 17,
+    "write_errors": 0
+  },
+  "result": {
+    "days_completed": 3,
+    "error": null,
+    "revisions": [
+      1,
+      2,
+      3
+    ],
+    "status": "completed"
+  },
+  "run_id": "20261010T160833Z-p20828",
+  "schema_version": 1,
+  "server": "http://127.0.0.1:18440",
+  "solver": {
+    "candidate_id": "sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42",
+    "kinds_auto": true,
+    "kinds_flag": null,
+    "label": "candidate:sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42",
+    "loop_initial_strategy": "greedy",
+    "loop_iterations": 32,
+    "solver_flag": "loop"
+  },
+  "source_commit_sha": "21dd16c25a99ba6c8c4c36ed6e61f8ae130f9640",
+  "source_commit_sha_from": "build-env",
+  "started_at": "2026-10-10T16:08:33.627Z",
+  "started_unix_ms": 1791648513627
+}

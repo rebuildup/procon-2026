@@ -20,7 +20,12 @@
 //!    solvers (`"loop"`, `"mcts"`, anything other than the debug-only
 //!    `"wait"`) alternate `KIND_0` / `KIND_1` so half the agents
 //!    patrol and half supply, which gives a richer test of the full
-//!    protocol than the MVP's all-`KIND_0` placeholder.
+//!    protocol than the MVP's all-`KIND_0` placeholder. An answer
+//!    that never arrives (transport failure) is **not** resolved by
+//!    re-posting: the composition is read back from the server's own
+//!    state instead, and only an outcome that stays unknown after
+//!    [`CoordinatorLoopConfig::submit_readback_patience`] ends the run
+//!    (Issue #442).
 //! 3. **Wire -> engine.** Convert the setting, build team + match ids.
 //!    With an explicit `--kinds` the composition that was just posted is
 //!    handed to `protocol_setting_to_engine_with_kinds`, so the planning
@@ -37,7 +42,8 @@
 //!
 //! A process started while a match is already running (`starts_at > 0` and
 //! `GET /` answers) skips phases 2 and 4 and joins at the server's day with
-//! the composition the server reports.
+//! the composition the server reports — the same read-back that settles an
+//! unanswered kind submission.
 //!
 //! ## Order rationale (issue #156)
 //!
@@ -215,6 +221,16 @@ pub struct CoordinatorLoopConfig {
     /// deadline); a server that announces `starts_at` early and still expects
     /// `POST /agent` would be left without our kinds.
     pub resume_running_match: bool,
+    /// How long the loop lets the server's own state settle an unanswered
+    /// `POST /agent` (Issue #442): when the acknowledgement is lost, the
+    /// submission is never re-posted (that cannot distinguish "accepted"
+    /// from "never arrived") — instead the composition is read back from
+    /// `GET /`, which only answers once the match runs. This bounds that
+    /// wait; it shares the reasoning of [`SLOT_READBACK_PATIENCE`] (the
+    /// match has to start first). When it runs out the outcome is
+    /// genuinely unknown and the run ends with
+    /// [`CoordinatorLoopError::AgentSubmitUnconfirmed`].
+    pub submit_readback_patience: Duration,
     /// Durable match record (`--record-dir`, Issue #394). Disabled by
     /// default, in which case every call on it is a no-op; when enabled the
     /// loop only ever hands it records through a non-blocking queue.
@@ -241,6 +257,7 @@ impl Default for CoordinatorLoopConfig {
             live_state_slot: None,
             secret_redaction: None,
             resume_running_match: false,
+            submit_readback_patience: SLOT_READBACK_PATIENCE,
             recorder: MatchRecorder::disabled(),
         }
     }
@@ -298,6 +315,7 @@ impl CoordinatorLoopConfig {
             live_state_slot: None,
             secret_redaction: None,
             resume_running_match: false,
+            submit_readback_patience: SLOT_READBACK_PATIENCE,
             recorder: MatchRecorder::disabled(),
         })
     }
@@ -579,6 +597,20 @@ pub enum CoordinatorLoopError {
     /// `POST /agent` failed.
     #[error("POST /agent failed: {0}")]
     AgentSubmit(protocol::HttpClientError),
+    /// `POST /agent`'s outcome never became known (Issue #442): the answer
+    /// was lost AND the server's own state never revealed the composition
+    /// within the read-back patience, so the loop cannot tell an accepted
+    /// submission from one that never arrived and ends instead of guessing.
+    #[error(
+        "POST /agent outcome unconfirmed: {detail}; the server state did not \
+         reveal the composition within {patience_secs}s of read-back"
+    )]
+    AgentSubmitUnconfirmed {
+        /// The transport error of the unanswered `POST /agent`.
+        detail: String,
+        /// Read-back patience that ran out, in whole seconds.
+        patience_secs: u64,
+    },
     /// `GET /` failed.
     #[error("GET / failed: {0}")]
     State(protocol::HttpClientError),
@@ -790,7 +822,10 @@ where
     };
     let resumed = resumed_state.is_some();
     let simulated_kinds = cfg.auto_kinds && cfg.agent_kinds.is_none();
-    let submitted_kinds = if let Some(state) = resumed_state.as_ref() {
+    // `mut` because an unanswered `POST /agent` is settled by reading the
+    // composition back from the server (Issue #442), and the supply-slot
+    // refinement below may hand the day to a different slot.
+    let mut submitted_kinds = if let Some(state) = resumed_state.as_ref() {
         let kinds: Vec<EngineAgentKind> = state
             .agents
             .iter()
@@ -865,14 +900,76 @@ where
             elapsed_ms: elapsed_ms(agent_submit_began),
             error: submitted.as_ref().err().map(ToString::to_string),
         });
-        submitted?;
+        match submitted {
+            Ok(_) => {}
+            // Issue #442: the POST never answered. Whether the server took
+            // the composition is unknown — the acknowledgement may simply
+            // have been lost. Repeating the POST cannot distinguish the two
+            // cases (an accepted submission could only ever answer 403 once
+            // the window shuts), so the server's own published state is the
+            // arbiter: once the match runs, `GET /` reports the composition
+            // in play. Whatever it shows is adopted; if it never shows one,
+            // the outcome stays unknown and the run ends classified as such
+            // instead of failing a match that may already be under way.
+            Err(CoordinatorLoopError::AgentSubmit(protocol::HttpClientError::Transport(
+                transport,
+            ))) => {
+                tracing::warn!(
+                    error = %transport,
+                    "POST /agent answer never arrived; reading the composition \
+                     back from the server instead of re-submitting"
+                );
+                match readback_kinds_in_play(
+                    &client,
+                    n_agents,
+                    cfg.submit_readback_patience,
+                    SUBMIT_READBACK_POLL,
+                    &cfg.recorder,
+                )
+                .await
+                {
+                    Ok(Some(server_kinds)) => {
+                        if server_kinds == submitted_kinds {
+                            tracing::info!(
+                                kinds = %bench::kinds::render_kinds(&server_kinds),
+                                "the submitted composition is confirmed in play despite \
+                                 the lost answer; continuing the match"
+                            );
+                        } else {
+                            tracing::warn!(
+                                sent = %bench::kinds::render_kinds(&submitted_kinds),
+                                in_play = %bench::kinds::render_kinds(&server_kinds),
+                                "the server holds a different composition than the one \
+                                 submitted; planning against the server's"
+                            );
+                        }
+                        cfg.recorder.event_with(|| RecordEvent::Kinds {
+                            source: "server".to_owned(),
+                            kinds: to_wire_kinds(&server_kinds).iter().map(|k| k.value()).collect(),
+                            pattern: bench::kinds::render_kinds(&server_kinds),
+                        });
+                        submitted_kinds = server_kinds;
+                    }
+                    Ok(None) => {
+                        return Err(CoordinatorLoopError::AgentSubmitUnconfirmed {
+                            detail: transport.to_string(),
+                            patience_secs: cfg.submit_readback_patience.as_secs(),
+                        });
+                    }
+                    // The read-back cannot talk to this server at all (auth,
+                    // malformed URL): that is fatal on its own, surfaced with
+                    // its own endpoint classification.
+                    Err(e) => return Err(CoordinatorLoopError::State(e)),
+                }
+            }
+            Err(e) => return Err(e),
+        }
     }
     // Which start becomes the one Supply (Issue #428), opt-in. The composition
     // above is already accepted, so this can only improve on it: the trials
     // run after that first `POST /agent`, and a better slot is sent as a
     // second one (the server keeps the last submission). If the kind window
     // has closed by then, the first composition simply stands.
-    let mut submitted_kinds = submitted_kinds;
     let one_supply = submitted_kinds.iter().filter(|&&k| k == EngineAgentKind::Supply).count() == 1;
     if let Some(window) = supply_slot_window(wire_setting.starts_at)
         .filter(|_| !resumed && simulated_kinds && one_supply)
@@ -926,28 +1023,35 @@ where
                 }
             };
             if verify {
-                let patience = std::time::Instant::now() + SLOT_READBACK_PATIENCE;
-                let mut confirmed = false;
-                while std::time::Instant::now() < patience {
-                    match client.get_match_state().await {
-                        Ok(state) if state.agents.len() == n_agents => {
-                            submitted_kinds = state
-                                .agents
-                                .iter()
-                                .map(|a| {
-                                    if a.kind == AgentKind::KIND_1 {
-                                        EngineAgentKind::Supply
-                                    } else {
-                                        EngineAgentKind::Patrol
-                                    }
-                                })
-                                .collect();
-                            confirmed = true;
-                            break;
-                        }
-                        _ => tokio::time::sleep(Duration::from_millis(250)).await,
+                let confirmed = match readback_kinds_in_play(
+                    &client,
+                    n_agents,
+                    SLOT_READBACK_PATIENCE,
+                    SUBMIT_READBACK_POLL,
+                    &cfg.recorder,
+                )
+                .await
+                {
+                    // The server's agent list settles which composition is in
+                    // play, whatever the second POST did.
+                    Ok(Some(server_kinds)) => {
+                        submitted_kinds = server_kinds;
+                        true
                     }
-                }
+                    Ok(None) => false,
+                    // The read-back cannot settle the question (auth, a URL
+                    // that never parsed): keep the first accepted composition
+                    // rather than failing a match the first POST already set
+                    // in motion.
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "composition read-back failed; keeping the first accepted \
+                             composition"
+                        );
+                        false
+                    }
+                };
                 tracing::info!(
                     confirmed,
                     kinds = %bench::kinds::render_kinds(&submitted_kinds),
@@ -1631,6 +1735,86 @@ const AUTO_KINDS_WINDOW: Duration = Duration::from_millis(1500);
 /// How long the composition is polled for after a second `POST /agent`
 /// (the match has to start before `GET /` answers).
 const SLOT_READBACK_PATIENCE: Duration = Duration::from_secs(600);
+
+/// Sleep between `GET /` polls while reading the composition back from the
+/// server's own state (Issue #442 and the supply-slot refinement): fast
+/// enough to notice the match starting within a beat, rare enough not to
+/// lean on a server that is still finding its feet.
+const SUBMIT_READBACK_POLL: Duration = Duration::from_millis(250);
+
+/// Read the composition the server actually holds, by polling `GET /` until
+/// the match runs and the agent list carries kinds (Issue #442).
+///
+/// `GET /` only answers once the match has started, so the poll rides out
+/// `403 AccessTimeError`, transport failures and `5xx` answers for up to
+/// `patience` — the same obstacles [`fetch_state_with_retry`] rides out.
+/// The first state that names exactly `n_agents` agents settles the
+/// question: those kinds are what the server holds, whether that means the
+/// lost submission was accepted or the server started with something else.
+///
+/// Authentication failures and malformed URLs are *not* ridden out: they
+/// say this client cannot talk to this server at all, so they surface
+/// immediately as `Err`. `Ok(None)` means the patience ran out without a
+/// usable state — the submission's outcome is genuinely unknown. The caller
+/// decides between adopting the read-back kinds, keeping its own, or
+/// failing the run.
+async fn readback_kinds_in_play(
+    client: &protocol::MatchClient,
+    n_agents: usize,
+    patience: Duration,
+    poll_interval: Duration,
+    recorder: &MatchRecorder,
+) -> Result<Option<Vec<EngineAgentKind>>, protocol::HttpClientError> {
+    let began = tokio::time::Instant::now();
+    loop {
+        match client.get_match_state().await {
+            Ok(state) if state.agents.len() == n_agents => {
+                let kinds = state
+                    .agents
+                    .iter()
+                    .map(|a| {
+                        if a.kind == AgentKind::KIND_1 {
+                            EngineAgentKind::Supply
+                        } else {
+                            EngineAgentKind::Patrol
+                        }
+                    })
+                    .collect();
+                return Ok(Some(kinds));
+            }
+            // The match may not have started yet, or the server reported an
+            // agent count nobody expected. Both are waited out: the server's
+            // next answer, not a guess, settles the composition.
+            Ok(state) => {
+                tracing::debug!(
+                    agents = state.agents.len(),
+                    n_agents,
+                    "GET / answered without the expected agent list; waiting for the \
+                     composition to become readable"
+                );
+            }
+            Err(
+                e @ (protocol::HttpClientError::Auth { .. }
+                | protocol::HttpClientError::InvalidUrl(_)),
+            ) => return Err(e),
+            Err(e) => {
+                tracing::debug!(
+                    error = %e,
+                    "GET / did not answer yet; waiting for the match to start"
+                );
+                recorder.event_with(|| RecordEvent::RequestFailed {
+                    endpoint: "GET /".to_owned(),
+                    day: None,
+                    error: e.to_string(),
+                });
+            }
+        }
+        if began.elapsed() >= patience {
+            return Ok(None);
+        }
+        tokio::time::sleep(poll_interval).await;
+    }
+}
 
 /// `PROCON_SUPPLY_SLOT_WINDOW_MS`: time spent after the first accepted
 /// `POST /agent` on choosing which agent is the Supply. Unset, empty or `0`
