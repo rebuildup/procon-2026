@@ -41,7 +41,8 @@ p.add_argument('--kind-deadline', default='5s')
 p.add_argument('--match-start-delay', default='5s')
 p.add_argument('--fault', action='append', default=[],
                help='JSON fault, e.g. \'{"method":"POST","path":"/","day":2,"action":"drop_after","times":1}\'. '
-                    'actions: drop_before, drop_after, status (with "status"), badjson, delay (with "delay_ms")')
+                    'actions: drop_before, drop_after, status (with "status"), badjson, delay (with "delay_ms"). '
+                    '"skip": N lets the first N matching requests through')
 p.add_argument('--kill-day', type=int, default=-1,
                help='kill -9 the coordinator once, when it fetches this day, then start it again')
 p.add_argument('--kill-after-post', action='store_true',
@@ -89,6 +90,9 @@ def pick_fault(method, path):
         if fault.get('method', method) != method or fault.get('path', path) != path:
             continue
         if 'day' in fault and fault['day'] != current_day['value']:
+            continue
+        fault['seen'] = fault.get('seen', 0) + 1
+        if fault['seen'] <= fault.get('skip', 0):
             continue
         if fault['fired'] >= fault.get('times', 1):
             continue
