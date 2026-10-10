@@ -55,13 +55,24 @@ const PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "fleet_iters",
         required: false,
-        doc: "search length of the embedded fleet plan (default 20000)",
+        doc: "search length of the embedded fleet plan for today (default 60000)",
+    },
+    ParamSpec {
+        key: "fleet_chains",
+        required: false,
+        doc: "chains of the embedded fleet plan for today, 1..8 (default 4)",
     },
     ParamSpec { key: "seed", required: false, doc: "seed of the embedded fleet plan (default 42)" },
     ParamSpec {
         key: "depth",
         required: false,
         doc: "days played ahead when comparing day plans (default 8; 0 = today only)",
+    },
+    ParamSpec {
+        key: "forecast",
+        required: false,
+        doc: "road state assumed for later days: persist (today's) | busy (today's, with \
+              every smooth road busy) | both (default: summed over the two)",
     },
     ParamSpec {
         key: "width",
@@ -107,15 +118,30 @@ impl CandidateFactory for ConvoyFactory {
                 "budget_ms must be 0..=59000, got {budget_ms}"
             )));
         }
+        let seed = parse(spec, "seed", 42u64)?;
+        let chains = parse(spec, "fleet_chains", 4u32)?;
+        if !(1..=8).contains(&chains) {
+            return Err(CandidateError::Build(format!("fleet_chains must be 1..=8, got {chains}")));
+        }
         Ok(Box::new(ConvoyCandidate {
             fleet: FleetCandidate {
-                iters: parse(spec, "fleet_iters", 20_000u32)?,
-                budget_ms: 0,
-                seed: parse(spec, "seed", 42u64)?,
-                chains: 1,
-                adapt: true,
+                iters: parse(spec, "fleet_iters", 60_000u32)?,
+                // Live: a quarter of the window, at most four seconds.
+                budget_ms: (budget_ms / 4).min(4_000),
+                seed,
+                chains,
+                adapt: false,
             },
+            ahead: FleetCandidate { iters: 20_000, budget_ms: 0, seed, chains: 1, adapt: true },
             budget_ms,
+            scenarios: match spec.param("forecast") {
+                None | Some("both") => vec![false, true],
+                Some("persist") => vec![false],
+                Some("busy") => vec![true],
+                Some(other) => {
+                    return Err(CandidateError::Build(format!("unknown forecast {other:?}")));
+                }
+            },
             depth: parse(spec, "depth", 8u32)?,
             width: parse(spec, "width", 24usize)?.max(1),
             labels: parse(spec, "labels", 1_500_000usize)?,
@@ -124,8 +150,14 @@ impl CandidateFactory for ConvoyFactory {
 }
 
 pub struct ConvoyCandidate {
+    /// `fleet` as it plans today; its plan is the one to beat.
     pub fleet: FleetCandidate,
+    /// A cheap `fleet` for the days played ahead.
+    pub ahead: FleetCandidate,
     pub budget_ms: u32,
+    /// Road forecasts the days ahead are played under: `false` keeps
+    /// today's state, `true` also turns every smooth road busy.
+    pub scenarios: Vec<bool>,
     pub depth: u32,
     pub width: usize,
     pub labels: usize,
@@ -336,7 +368,13 @@ struct PatrolDay {
 impl Board {
     /// Label search for one patrol. Returns `None` when the label cap is hit.
     #[allow(clippy::too_many_lines, reason = "one label-setting loop: waits, moves, options")]
-    fn patrol_day(&self, unit: Unit, mode: Supplied<'_>, cap_labels: usize) -> Option<PatrolDay> {
+    fn patrol_day(
+        &self,
+        unit: Unit,
+        mode: Supplied<'_>,
+        last_day: bool,
+        (cap_labels, deadline): (usize, Option<Instant>),
+    ) -> Option<PatrolDay> {
         let steps = u16::try_from(self.steps).ok()?;
         let (supply_at, touch) = match mode {
             Supplied::Tank => (None, false),
@@ -353,7 +391,20 @@ impl Board {
         let mut labels: Vec<Label> = Vec::new();
         let mut front: KeyMap<Vec<u32>> = KeyMap::default();
         let mut buckets: Vec<Vec<u32>> = vec![Vec::new(); usize::from(steps) + 1];
+        // Per `(cell, touched)`: a few labels with the most spots, to drop
+        // arrivals that are no earlier, no fuller and hold a strict subset.
+        let mut champions: Vec<Vec<u32>> = vec![Vec::new(); self.time.len() * 2];
         let mut push = |labels: &mut Vec<Label>, buckets: &mut Vec<Vec<u32>>, new: Label| {
+            let slot = usize::from(new.cell) * 2 + usize::from(new.touched);
+            if champions[slot].iter().any(|&i| {
+                let l = &labels[i as usize];
+                l.mask != new.mask
+                    && l.mask & new.mask == new.mask
+                    && l.tick <= new.tick
+                    && l.fuel >= new.fuel
+            }) {
+                return;
+            }
             let entry = front.entry(key(&new)).or_default();
             if entry.iter().any(|&i| {
                 let l = &labels[i as usize];
@@ -371,6 +422,15 @@ impl Board {
             entry.push(index);
             buckets[usize::from(new.tick)].push(index);
             labels.push(new);
+            let list = &mut champions[slot];
+            let size = |i: u32| labels[i as usize].mask.count_ones();
+            if list.len() < 8 {
+                list.push(index);
+            } else if let Some(weakest) = (0..list.len()).min_by_key(|&k| size(list[k])) {
+                if size(list[weakest]) < new.mask.count_ones() {
+                    list[weakest] = index;
+                }
+            }
         };
         let start = u16::try_from(unit.cell).ok()?;
         let start_mask =
@@ -398,7 +458,9 @@ impl Board {
                 if label.dead {
                     continue;
                 }
-                if labels.len() > cap_labels {
+                if labels.len() > cap_labels
+                    || (labels.len() % 8192 == 0 && deadline.is_some_and(|d| Instant::now() >= d))
+                {
                     return None;
                 }
                 let cell = usize::from(label.cell);
@@ -470,27 +532,36 @@ impl Board {
                 }
             }
         }
-        let mut best: KeyMap<u32> = KeyMap::default();
+        // Per `(touched, mask)` only the end state each end-state variant
+        // would pick can ever be chosen by the team step.
+        let mut best: KeyMap<[u32; VARIANTS.len()]> = KeyMap::default();
+        let worth = |l: &Label, variant: (i64, i64)| {
+            let opt = Opt { mask: l.mask, cell: l.cell, fuel: l.fuel, label: 0 };
+            (self.end_value(opt, unit.cap, last_day, variant), l.fuel, std::cmp::Reverse(l.tick))
+        };
         for (i, l) in labels.iter().enumerate() {
             if l.dead {
                 continue;
             }
-            let slot = best.entry(key(l)).or_insert(NONE);
-            if *slot == NONE || {
-                let old = &labels[*slot as usize];
-                (l.fuel, std::cmp::Reverse(l.tick)) > (old.fuel, std::cmp::Reverse(old.tick))
-            } {
-                *slot = u32::try_from(i).expect("label index");
+            let slots = best
+                .entry((u64::from(l.touched) << 48) | u64::from(l.mask))
+                .or_insert([NONE; VARIANTS.len()]);
+            for (slot, &variant) in slots.iter_mut().zip(&VARIANTS) {
+                if *slot == NONE || worth(l, variant) > worth(&labels[*slot as usize], variant) {
+                    *slot = u32::try_from(i).expect("label index");
+                }
             }
         }
-        let mut options: Vec<Opt> = best
-            .into_values()
+        let mut picked: Vec<u32> = best.into_values().flatten().collect();
+        picked.sort_unstable();
+        picked.dedup();
+        let options: Vec<Opt> = picked
+            .into_iter()
             .map(|i| {
                 let l = &labels[i as usize];
                 Opt { mask: l.mask, cell: l.cell, fuel: l.fuel, label: i }
             })
             .collect();
-        options.sort_unstable_by_key(|o| (o.mask, o.cell, o.label));
         Some(PatrolDay { labels, options })
     }
 
@@ -718,12 +789,8 @@ impl ConvoyCandidate {
     /// end-state variant (`variants` of them), plus `fleet`'s plan. Empty
     /// when nothing replays clean.
     #[allow(clippy::too_many_lines, reason = "one pass: searches, pairings, emission, replay")]
-    fn day_plans(
-        &self,
-        state: &MatchState,
-        variants: usize,
-        deadline: Option<Instant>,
-    ) -> Vec<Played> {
+    fn day_plans(&self, state: &MatchState, root: bool, deadline: Option<Instant>) -> Vec<Played> {
+        let variants = if root { VARIANTS.len() } else { 1 };
         let mut out: Vec<Played> = Vec::new();
         let keep = |out: &mut Vec<Played>, plan: AgentActions| {
             if let Some(played) = play(state, plan) {
@@ -732,7 +799,14 @@ impl ConvoyCandidate {
                 }
             }
         };
-        keep(&mut out, self.fleet.decide(&SolverContext::from_state(state)));
+        let fleet = if root { &self.fleet } else { &self.ahead };
+        let mut ctx = SolverContext::from_state(state);
+        if let Some(d) = deadline {
+            let left = d.saturating_duration_since(Instant::now()).as_millis();
+            ctx.remaining_ms = u32::try_from(left).unwrap_or(u32::MAX);
+        }
+        keep(&mut out, fleet.decide(&ctx));
+        let limits = (self.labels, deadline);
         let steps = state.day_steps();
         let Some(board) = Board::new(state, steps) else { return out };
         let np = board.patrols.len();
@@ -748,7 +822,9 @@ impl ConvoyCandidate {
             if late() {
                 return out;
             }
-            let Some(day) = board.patrol_day(unit, Supplied::Tank, self.labels) else { return out };
+            let Some(day) = board.patrol_day(unit, Supplied::Tank, last_day, limits) else {
+                return out;
+            };
             tank.push(day);
         }
         let order: Vec<usize> = (0..np).collect();
@@ -788,8 +864,8 @@ impl ConvoyCandidate {
             if late() {
                 return out;
             }
-            escort.push(board.patrol_day(unit, Supplied::Escort(&lead_at), self.labels));
-            touch.push(board.patrol_day(unit, Supplied::Touch(&lead_at), self.labels));
+            escort.push(board.patrol_day(unit, Supplied::Escort(&lead_at), last_day, limits));
+            touch.push(board.patrol_day(unit, Supplied::Touch(&lead_at), last_day, limits));
         }
         let extra: Vec<(Unit, Vec<u32>, Tree)> = board.supplies[1..]
             .iter()
@@ -798,6 +874,9 @@ impl ConvoyCandidate {
                 (s, at, prev)
             })
             .collect();
+        // Escort searches that start after a touch, by `(patrol, cell, tick)`.
+        let mut after_touch: HashMap<(usize, usize, u32), Option<std::rc::Rc<PatrolDay>>> =
+            HashMap::new();
         for b in 0..np {
             let Some(escort_b) = escort[b].as_ref() else { continue };
             // Further supplies ride with the next patrols after `b`.
@@ -808,7 +887,12 @@ impl ConvoyCandidate {
                     let p = (b + 1 + k) % np;
                     (p != b && k + 1 < np)
                         .then(|| {
-                            board.patrol_day(board.patrols[p], Supplied::Escort(at), self.labels)
+                            board.patrol_day(
+                                board.patrols[p],
+                                Supplied::Escort(at),
+                                last_day,
+                                limits,
+                            )
                         })
                         .flatten()
                         .map(|day| (p, day))
@@ -844,15 +928,22 @@ impl ConvoyCandidate {
                                 .iter()
                                 .map(|&d| if d == NONE { NONE } else { d + tick })
                                 .collect();
-                            let Some(day) = board.patrol_day(
-                                board.patrols[b],
-                                Supplied::Escort(&at),
-                                self.labels,
-                            ) else {
-                                continue;
-                            };
+                            let day = after_touch
+                                .entry((b, cell, tick))
+                                .or_insert_with(|| {
+                                    board
+                                        .patrol_day(
+                                            board.patrols[b],
+                                            Supplied::Escort(&at),
+                                            last_day,
+                                            limits,
+                                        )
+                                        .map(std::rc::Rc::new)
+                                })
+                                .clone();
+                            let Some(day) = day else { continue };
                             late_escort = day;
-                            days[b] = &late_escort;
+                            days[b] = &*late_escort;
                             chosen =
                                 board.team(&days, last_day, variant, order, Some((a, chosen[a])));
                             from = (cell, tick, prev);
@@ -903,7 +994,6 @@ impl ConvoyCandidate {
 struct Node {
     root: usize,
     state: MatchState,
-    today: (usize, usize, u32, u32),
 }
 
 fn rank(node: &Node) -> ((usize, u32, u32), u32) {
@@ -917,33 +1007,29 @@ fn rank(node: &Node) -> ((usize, u32, u32), u32) {
     (total(&node.state), fuel)
 }
 
-impl Solver for ConvoyCandidate {
-    fn name(&self) -> &'static str {
-        "convoy"
-    }
-    fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
-        let started = Instant::now();
-        let window = (self.budget_ms > 0).then(|| {
-            let cap = Duration::from_millis(u64::from(self.budget_ms));
-            if ctx.remaining_ms == u32::MAX {
-                cap
-            } else {
-                cap.min(Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(300))))
-            }
-        });
-        let until = window.map(|w| started + w);
-        let mut pool = self.day_plans(ctx.state, VARIANTS.len(), window.map(|w| started + w / 3));
-        if pool.is_empty() {
-            return self.fleet.decide(ctx);
+/// The pessimistic road forecast: every smooth road busy.
+fn congest(state: &mut MatchState) {
+    for cell in state.setting.map.cells_mut() {
+        if cell.terrain == Terrain::Road(TrafficState::Smooth) {
+            cell.terrain = Terrain::Road(TrafficState::Busy);
         }
-        let remaining = ctx.state.setting.num_days.saturating_sub(ctx.day + 1);
-        let depth = self.depth.min(remaining);
+    }
+}
+
+type Total = (usize, u32, u32);
+
+impl ConvoyCandidate {
+    /// Beam over day-end states from `nodes`, `depth` days ahead: the best
+    /// whole-match score reached from each root (`None`: fell out of the
+    /// beam), and how many days were completed before the deadline.
+    fn ahead(
+        &self,
+        mut nodes: Vec<Node>,
+        roots: usize,
+        depth: u32,
+        until: Option<Instant>,
+    ) -> (Vec<Option<Total>>, u32) {
         let threads = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 8);
-        let mut nodes: Vec<Node> = pool
-            .iter()
-            .enumerate()
-            .map(|(root, p)| Node { root, state: p.state.clone(), today: p.today() })
-            .collect();
         let mut reached = 0;
         for _ in 0..depth {
             nodes.sort_by_key(|n| std::cmp::Reverse((rank(n), std::cmp::Reverse(n.root))));
@@ -958,6 +1044,11 @@ impl Solver for ConvoyCandidate {
                     total(&n.state),
                 ))
             });
+            // The best path from `fleet`'s plan always stays in the beam, so
+            // the final comparison against it is like for like.
+            if let Some(k) = nodes.iter().position(|n| n.root == 0).filter(|&k| k >= self.width) {
+                nodes.swap(self.width - 1, k);
+            }
             nodes.truncate(self.width);
             let next = std::sync::atomic::AtomicUsize::new(0);
             let nodes_ref = &nodes;
@@ -972,16 +1063,12 @@ impl Solver for ConvoyCandidate {
                                     return mine;
                                 }
                                 let node = &nodes_ref[k];
-                                let plans = self.day_plans(&node.state, 1, until);
+                                let plans = self.day_plans(&node.state, false, until);
                                 mine.push((
                                     k,
                                     plans
                                         .into_iter()
-                                        .map(|p| Node {
-                                            root: node.root,
-                                            state: p.state,
-                                            today: node.today,
-                                        })
+                                        .map(|p| Node { root: node.root, state: p.state })
                                         .collect(),
                                 ));
                             }
@@ -1003,15 +1090,75 @@ impl Solver for ConvoyCandidate {
             nodes = grown;
             reached += 1;
         }
-        let best = nodes
-            .iter()
-            .max_by_key(|n| (rank(n), n.today, std::cmp::Reverse(n.root)))
-            .map_or(0, |n| n.root);
+        let mut best = vec![None; roots];
+        for node in &nodes {
+            let score = total(&node.state);
+            if best[node.root].is_none_or(|b| score > b) {
+                best[node.root] = Some(score);
+            }
+        }
+        (best, reached)
+    }
+}
+
+impl Solver for ConvoyCandidate {
+    fn name(&self) -> &'static str {
+        "convoy"
+    }
+    fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
+        let started = Instant::now();
+        let window = (self.budget_ms > 0).then(|| {
+            let cap = Duration::from_millis(u64::from(self.budget_ms));
+            if ctx.remaining_ms == u32::MAX {
+                cap
+            } else {
+                cap.min(Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(300))))
+            }
+        });
+        // `fleet`'s plan comes first in the pool: it is the plan to beat.
+        let mut pool = self.day_plans(ctx.state, true, window.map(|w| started + w / 3));
+        if pool.is_empty() {
+            return self.fleet.decide(ctx);
+        }
+        let remaining = ctx.state.setting.num_days.saturating_sub(ctx.day + 1);
+        let depth = self.depth.min(remaining);
+        // Each road forecast gets an equal share of what is left.
+        let mut sums: Vec<Option<Total>> = vec![Some((0, 0, 0)); pool.len()];
+        let mut complete = true;
+        for (k, &busy) in self.scenarios.iter().enumerate() {
+            let until = window.map(|w| {
+                let now = Instant::now();
+                let left = (started + w).saturating_duration_since(now);
+                now + left / u32::try_from(self.scenarios.len() - k).unwrap_or(1)
+            });
+            let nodes: Vec<Node> = pool
+                .iter()
+                .enumerate()
+                .map(|(root, p)| {
+                    let mut state = p.state.clone();
+                    if busy {
+                        congest(&mut state);
+                    }
+                    Node { root, state }
+                })
+                .collect();
+            let (best, reached) = self.ahead(nodes, pool.len(), depth, until);
+            complete &= reached == depth;
+            for (sum, got) in sums.iter_mut().zip(best) {
+                *sum = sum.zip(got).map(|(a, b)| (a.0 + b.0, a.1 + b.1, a.2 + b.2));
+            }
+        }
+        // Leave `fleet`'s plan only for a strictly better whole-match score,
+        // and only when every forecast was played to the same depth.
+        let best = (1..pool.len())
+            .filter(|&k| complete && sums[k].is_some() && sums[k] > sums[0])
+            .max_by_key(|&k| (sums[k], pool[k].today(), std::cmp::Reverse(k)))
+            .unwrap_or(0);
         tracing::info!(
             day = ctx.day,
             pool = pool.len(),
             depth,
-            reached,
+            complete,
             chosen = best,
             elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
             "convoy day plan"

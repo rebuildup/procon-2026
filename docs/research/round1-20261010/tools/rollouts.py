@@ -88,6 +88,35 @@ def experiments() -> dict[str, list[dict]]:
                         ("60k4", "fleet:budget=official:iters=60000:chains=4"),
                         ("240k4", "fleet:budget=official:iters=240000:chains=4"))
     ]
+    # Issue #405: the convoy candidate on the same board.
+    def convoy(**kw: object) -> str:
+        return "convoy:budget=official" + "".join(f":{k}={v}" for k, v in kw.items())
+
+    exp["convoy-seeds"] = [
+        {"label": f"convoy-seed{s}-{tr}", "mode": "solo", "traffic": tr, "candidate": convoy(seed=s)}
+        for tr in ("observed", "smooth")
+        for s in MORE_SEEDS
+    ]
+    exp["convoy-shape"] = [
+        {"label": f"convoy-w{w}-d{d}-{tr}", "mode": "solo", "traffic": tr,
+         "candidate": convoy(width=w, depth=d)}
+        for tr in ("observed", "smooth")
+        for w, d in ((24, 0), (24, 1), (24, 2), (24, 3), (1, 8), (4, 8), (8, 8), (48, 8), (96, 8))
+    ]
+    exp["convoy-kinds"] = [
+        {"label": f"convoy-{k}-{tr}-seed{s}", "mode": "solo", "traffic": tr, "kinds": k,
+         "candidate": convoy(seed=s)}
+        for k in ("P,S,P,P", "P,P,S,P", "P,P,P,S", "P,P,P,P", "S,S,P,P")
+        for tr in ("observed", "smooth")
+        for s in SEEDS[:4]
+    ]
+    exp["convoy-live"] = [
+        {"label": f"convoy-{ms}ms-{tr}-{i}", "mode": "solo", "traffic": tr,
+         "candidate": convoy(budget_ms=ms)}
+        for ms in (2000, 5000, 10000, 20000)
+        for tr in ("observed", "smooth")
+        for i in range(3)
+    ]
     return exp
 
 
