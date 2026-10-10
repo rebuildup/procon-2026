@@ -380,6 +380,8 @@ cmd_supervise() {
         RUST_LOG="${RUST_LOG:-info}" RUST_BACKTRACE=1 NO_COLOR=1 \
         PROCON_SOURCE_COMMIT_SHA="$SOURCE_SHA" \
         PROCON_RESUME_RUNNING_MATCH=1 \
+        PROCON_RECORD_DIR="${PROCON_RECORD_DIR:-$HONSEN_HOME/records}" \
+        PROCON_HTTP_LOG_DIR="${PROCON_HTTP_LOG_DIR:-$HONSEN_HOME/logs}" \
             "$REL_BIN" coordinator --server "$SERVER_URL" --exit-after-match \
             --candidate "$CANDIDATE" $KINDS_ARGS \
             --state-output "$run_dir/state.json" >>"$run_dir/coordinator.log" 2>&1 &

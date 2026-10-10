@@ -1,0 +1,124 @@
+{
+  "case": "hold-24-a5-d9-short-s5014.json",
+  "size": "24x24",
+  "agents": 5,
+  "days_total": 5,
+  "source_sha": "f9759fd33da2f7b1b6eaaa298ab7ff23b408bca0",
+  "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cli_sha256": "7218745892ad273ea19bca9c197d3a1d38c90bb46b31a64b1555be3a6bac4f90",
+  "candidate": "fleet:budget=official:budget_ms=10000",
+  "kinds_flag": "auto",
+  "kinds_accepted": [
+    1,
+    0,
+    0,
+    0,
+    0
+  ],
+  "faults": [
+    {
+      "method": "POST",
+      "path": "/",
+      "day": 2,
+      "action": "status",
+      "status": 503,
+      "times": 2,
+      "fired": 2
+    }
+  ],
+  "kill_day": -1,
+  "kill_after_post": false,
+  "exit_codes": [
+    [
+      "exit",
+      0
+    ]
+  ],
+  "token_header_on_every_request": true,
+  "token_in_cli_log": false,
+  "days": [
+    {
+      "day": 0,
+      "day_seconds": 14,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        1
+      ],
+      "answer_seconds": 2.589,
+      "margin_seconds": 11.035
+    },
+    {
+      "day": 1,
+      "day_seconds": 14,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        2
+      ],
+      "answer_seconds": 2.599,
+      "margin_seconds": 10.427
+    },
+    {
+      "day": 2,
+      "day_seconds": 14,
+      "post_attempts": 3,
+      "accepted": 1,
+      "revisions": [
+        3
+      ],
+      "answer_seconds": 3.001,
+      "margin_seconds": 10.417
+    },
+    {
+      "day": 3,
+      "day_seconds": 14,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        4
+      ],
+      "answer_seconds": 2.587,
+      "margin_seconds": 10.825
+    },
+    {
+      "day": 4,
+      "day_seconds": 14,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        5
+      ],
+      "answer_seconds": 2.59,
+      "margin_seconds": 11.231
+    }
+  ],
+  "missed_days": [],
+  "wall_seconds": 69.0,
+  "limitation": "Official simple server on localhost, idle opponents; proves protocol acceptance, not score.",
+  "record": {
+    "runs": [
+      "20261010T021711Z-p57687"
+    ],
+    "event_lines": 27,
+    "days_with_plan": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "days_observed": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "continues": [
+      null
+    ],
+    "problems": []
+  },
+  "verdict": "PASS"
+}
