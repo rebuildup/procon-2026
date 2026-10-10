@@ -7,19 +7,44 @@
   "result": {
     "rank": {
       "value": 3,
-      "provenance": "user_report",
-      "confirmed_by_official_record": false
+      "provenance": "event_display_screenshot",
+      "team": "宇部",
+      "match": 3,
+      "source": "screenshots/match-3-results.webp"
     },
     "official_score": {
-      "V": null,
-      "D": null,
-      "B": null,
-      "T": null,
-      "provenance": "not_available"
+      "V": 10,
+      "D": 44,
+      "B": 51,
+      "T": "00:54",
+      "provenance": "event_display_screenshot",
+      "source": "docs/research/round1-20261010/scoreboards.json",
+      "note": "大会の順位発表画像からの転記。公式API原本ではない"
     },
     "status": {
       "value": "completed",
       "provenance": "manifest"
+    },
+    "competition_gaps": {
+      "ahead": [
+        {
+          "rank": 1,
+          "team": "ハノイ国家大",
+          "V": 10,
+          "D": 44,
+          "B": 57,
+          "T": "04:31"
+        },
+        {
+          "rank": 2,
+          "team": "新居浜",
+          "V": 10,
+          "D": 44,
+          "B": 55,
+          "T": "01:50"
+        }
+      ],
+      "interpretation": "V,Dが同点。Bを現状+4で55とすると2位とB同点だが回答時間00:54<01:50により2位相当。B+6で57とすると1位とB同点だが回答時間00:54<04:31により1位相当。D+1=45ならBが51のままでも1位相当（対戦他チームの記録を固定する反実仮想）。"
     }
   },
   "execution": {
@@ -112,13 +137,18 @@
     "state.json": "536759361c5b4db38875f7dcc644d7a0c8c7c939e59eb760d6b596645304e2bc"
   },
   "missing_evidence": [
-    "official_final_scoreboard",
-    "per_team_final_V_D_B_and_rank",
-    "full_http_log"
+    "official_api_or_machine_readable_final_scoreboard",
+    "other_teams_not_shown_in_top_six",
+    "full_http_log",
+    "complete_opponent_action_trace"
   ],
   "notes": [
-    "Live observations do not establish total official V/D/B.",
     "Planner model/replay/tomorrow estimates are not official scoring.",
-    "A single-team offline replay cannot fully reproduce ten-player traffic."
-  ]
+    "A single-team offline replay cannot fully reproduce ten-player traffic.",
+    "Final V/D/B/T are transcribed from the event display screenshot for match 3 (not extracted from coordinator/events).",
+    "Screenshots for match 1 and match 2 are separate comparisons, not score records of the linked run.",
+    "Top-six standings screenshots do not include all ten participants, and map screenshots show an intermediate phase, not official settings.",
+    "Displayed response time 00:54 is cumulative event-display value, not interchangeable with answer_ms of each daily submission."
+  ],
+  "linked_match": 3
 }
