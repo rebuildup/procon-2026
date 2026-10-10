@@ -22,6 +22,7 @@ mod fixtures;
 mod initial_strategy;
 mod loop_runner;
 mod match_config;
+mod match_record;
 mod openapi_fixture;
 mod protocol_to_engine;
 mod solver_adapter;
@@ -40,13 +41,16 @@ use engine::{EngineServer, EngineServerConfig};
 use protocol::{HttpClientError, MatchClient, RetryPolicy};
 use serde_json::json;
 use solver_loop::InitialStrategy;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::coordinator_loop::{CoordinatorLoopConfig, run_coordinator_loop};
 use crate::loop_runner::{
     DayAction, DayPlan, DaySignal, LoopConfig, LoopError, MatchSetting, Solver, Submission,
     SubmissionAck, Transport, run_match_loop,
 };
+use crate::match_record::MatchRecorder;
 use crate::solver_adapter::{EngineLoopAdapter, WaitSolver};
 
 #[derive(Debug, Parser)]
@@ -202,7 +206,22 @@ enum Cmd {
         /// Default: `target/arena/runs.jsonl`.
         #[arg(long, value_name = "PATH")]
         arena_evidence: Option<PathBuf>,
+
+        /// Keep a full record of the match under `<DIR>/<run-id>/`
+        /// (Issue #394): `manifest.json`, `setting.json` (the map and match
+        /// setting as served), `events.jsonl` (every day's observed state,
+        /// the complete submitted plan, each `POST /` attempt and its
+        /// verdict), `coordinator.log` and `state.json`. Written by a
+        /// background thread; a full queue or a failing disk loses records,
+        /// never a day. Off when omitted. `--dry-run` checks that the
+        /// directory is writable. `PROCON_RECORD_LOG_LEVEL` (default
+        /// `info`) sets the level of `coordinator.log`.
+        #[arg(long, value_name = "DIR", env = "PROCON_RECORD_DIR")]
+        record_dir: Option<PathBuf>,
     },
+    /// Read back a match record written by `coordinator --record-dir`.
+    #[command(subcommand)]
+    Record(RecordCmd),
     /// Arena utilities that do not touch the network.
     #[command(subcommand)]
     Arena(ArenaCmd),
@@ -302,6 +321,19 @@ enum MatchConfigCmd {
     },
 }
 
+/// Subcommands under `procon record` (offline — no network).
+#[derive(Debug, Subcommand)]
+enum RecordCmd {
+    /// Parse one run directory and print what it holds: map size, and per
+    /// day whether the state was observed, how many actions were submitted
+    /// and what the server answered. Exits non-zero if the directory cannot
+    /// be read.
+    Show {
+        /// A `<record-dir>/<run-id>` directory.
+        dir: PathBuf,
+    },
+}
+
 /// Subcommands under `procon arena` (offline helpers — no network).
 #[derive(Debug, Subcommand)]
 enum ArenaCmd {
@@ -324,15 +356,40 @@ enum ArenaCmd {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_target(false)
-        .init();
-
     let cli = Cli::parse();
-    match run(cli).await {
+
+    // The recorder exists before the logger so `coordinator.log` holds the
+    // run from its first line; its own start-up failure is reported right
+    // after the logger is up. A failed start never stops the run.
+    let (recorder, record_error) = start_recorder(&cli);
+    let console = tracing_subscriber::fmt::layer()
+        .with_target(false)
+        .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")));
+    let file = recorder.is_enabled().then(|| {
+        let level = std::env::var("PROCON_RECORD_LOG_LEVEL").unwrap_or_default();
+        tracing_subscriber::fmt::layer()
+            .with_target(false)
+            .with_ansi(false)
+            .with_writer(recorder.log_writer())
+            .with_filter(EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info")))
+    });
+    tracing_subscriber::registry().with(console).with(file).init();
+    if let Some((root, error)) = record_error {
+        tracing::error!(
+            dir = %root.display(),
+            error = %error,
+            "match recording could NOT start; the run continues without a record"
+        );
+    }
+    if let (Some(run_id), Some(dir)) = (recorder.run_id(), recorder.dir()) {
+        tracing::info!(run_id, dir = %dir.display(), "match recording enabled");
+    }
+
+    let result = run(cli, recorder.clone()).await;
+    if !recorder.flush(std::time::Duration::from_secs(5)) {
+        eprintln!("match-record: not everything was written before exit");
+    }
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: {err:#}");
@@ -341,9 +398,38 @@ async fn main() -> ExitCode {
     }
 }
 
+/// Start the match recorder for a real `coordinator` run with
+/// `--record-dir` (Issue #394). Every other invocation — other subcommands,
+/// `--dry-run`, no flag — gets the disabled recorder.
+fn start_recorder(cli: &Cli) -> (MatchRecorder, Option<(PathBuf, std::io::Error)>) {
+    let Cmd::Coordinator { record_dir: Some(root), dry_run: false, token, .. } = &cli.cmd else {
+        return (MatchRecorder::disabled(), None);
+    };
+    // Every token this process could be holding, whichever profile is used.
+    let secrets = token
+        .clone()
+        .into_iter()
+        .chain(std::env::var("PROCON_TOKEN").ok())
+        .chain(std::env::var("PROCON_ARENA_TOKEN").ok())
+        .filter(|t| !t.is_empty())
+        .map(arena::Secret::new)
+        .collect();
+    let mut manifest = serde_json::Map::new();
+    manifest.insert("source_commit_sha".to_owned(), json!(arena::source_commit_sha()));
+    let options = match_record::RecorderOptions {
+        manifest,
+        secrets,
+        binary_path: std::env::current_exe().ok(),
+    };
+    match MatchRecorder::start(root, options) {
+        Ok(recorder) => (recorder, None),
+        Err(error) => (MatchRecorder::disabled(), Some((root.clone(), error))),
+    }
+}
+
 // One arm per `Cmd` variant: subcommand dispatch, not a single logic block.
 #[allow(clippy::too_many_lines, reason = "one arm per Cmd variant")]
-async fn run(cli: Cli) -> Result<()> {
+async fn run(cli: Cli, recorder: MatchRecorder) -> Result<()> {
     let server = EngineServer::new(EngineServerConfig::default());
     match cli.cmd {
         Cmd::Hello => {
@@ -398,6 +484,7 @@ async fn run(cli: Cli) -> Result<()> {
             next,
             candidate,
             arena_evidence,
+            record_dir,
         } => {
             cmd_coordinator(
                 server,
@@ -410,8 +497,14 @@ async fn run(cli: Cli) -> Result<()> {
                 state_output,
                 exit_after_match,
                 ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto },
+                RecordFlags { record_dir, recorder },
             )
             .await?;
+        }
+        Cmd::Record(RecordCmd::Show { dir }) => {
+            let record = match_record::load_record(&dir)
+                .with_context(|| format!("read match record {}", dir.display()))?;
+            println!("{}", serde_json::to_string_pretty(&record.summary())?);
         }
         Cmd::Arena(sub) => cmd_arena(sub)?,
         Cmd::MatchConfig(sub) => cmd_match_config(sub)?,
@@ -499,6 +592,14 @@ struct ArenaFlags {
     arena_evidence: Option<PathBuf>,
     /// `--kinds-auto` — simulate the match to choose the composition.
     kinds_auto: bool,
+}
+
+/// Match-record inputs for [`cmd_coordinator`] (Issue #394).
+struct RecordFlags {
+    /// `--record-dir` as given (used by `--dry-run` to check the directory).
+    record_dir: Option<PathBuf>,
+    /// The recorder `main` started; disabled without `--record-dir`.
+    recorder: MatchRecorder,
 }
 
 /// One `--kinds` pattern, parsed once by [`parse_kinds_pattern`] while clap
@@ -598,8 +699,10 @@ async fn cmd_coordinator(
     state_output: Option<PathBuf>,
     exit_after_match: bool,
     arena_flags: ArenaFlags,
+    record_flags: RecordFlags,
 ) -> Result<()> {
     let ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto } = arena_flags;
+    let RecordFlags { record_dir, recorder } = record_flags;
     if next && !arena {
         anyhow::bail!(
             "--next requires --arena: the :00/:15/:30/:45 cadence and the \
@@ -681,6 +784,23 @@ async fn cmd_coordinator(
         // boolean precisely so the token itself can never be printed.
         let base_url = effective_server.expect("checked above");
         let token = effective_token.unwrap_or_default();
+        // Pre-match check of the record directory (Issue #394): a run that
+        // would play unrecorded, or whose directory is not writable, is
+        // visible here — before the match, when it can still be fixed.
+        let record = record_dir.as_deref().map_or_else(
+            || json!({ "enabled": false }),
+            |root| match match_record::probe_record_root(root) {
+                Ok(()) => {
+                    json!({ "enabled": true, "dir": root.display().to_string(), "writable": true })
+                }
+                Err(e) => json!({
+                    "enabled": true,
+                    "dir": root.display().to_string(),
+                    "writable": false,
+                    "error": e.to_string(),
+                }),
+            },
+        );
         println!(
             "{}",
             json!({
@@ -688,6 +808,7 @@ async fn cmd_coordinator(
                 "has_token": !token.is_empty(),
                 "dry_run": true,
                 "arena": profile.is_some(),
+                "record": record,
             })
         );
         return Ok(());
@@ -753,6 +874,25 @@ async fn cmd_coordinator(
         }
     };
     tracing::info!(solver = solver.name(), "coordinator loop strategy selected");
+    if !recorder.is_enabled() {
+        tracing::warn!(
+            "match recording is OFF: no map, plan or verdict will be saved \
+             (set --record-dir <DIR> or PROCON_RECORD_DIR)"
+        );
+    }
+    recorder.update_manifest(json!({
+        "server": base_url,
+        "arena": profile.is_some(),
+        "solver": {
+            "label": solver_label,
+            "candidate_id": candidate_id,
+            "solver_flag": solver_strategy,
+            "loop_initial_strategy": initial_strategy::initial_strategy_label(loop_initial_strategy),
+            "loop_iterations": loop_iterations,
+            "kinds_flag": kinds.as_deref().map(bench::kinds::render_kinds),
+            "kinds_auto": kinds_auto,
+        },
+    }));
 
     let loop_cfg = CoordinatorLoopConfig {
         solver_name: solver_label.clone(),
@@ -778,6 +918,7 @@ async fn cmd_coordinator(
         // mode, whose lobby publishes `starts_at` before kinds are due.
         resume_running_match: profile.is_none()
             && std::env::var_os("PROCON_RESUME_RUNNING_MATCH").is_some_and(|v| v == "1"),
+        recorder,
         ..Default::default()
     };
 

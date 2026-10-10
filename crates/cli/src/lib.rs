@@ -19,6 +19,7 @@ pub mod arena_import;
 pub mod candidate_bridge;
 pub mod coordinator_loop;
 pub mod initial_strategy;
+pub mod match_record;
 pub mod openapi_fixture;
 pub mod protocol_to_engine;
 pub mod solver_adapter;
