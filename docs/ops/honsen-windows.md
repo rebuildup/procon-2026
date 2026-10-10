@@ -110,7 +110,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\ops\honsen\verify-offline-
 | 項目 | 動作 |
 |---|---|
 | 新しい推奨コマンド | honsen.ps1 preflight / start / show （.env 自動読込） |
-| start の既定候補 | fleet:budget=official:budget_ms=59000:adapt=off |
+| start の既定候補 | sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0 |
 | 車種 | --kinds-auto |
 | 終了・復帰 | --exit-after-match、PROCON_RESUME_RUNNING_MATCH=1 |
 | 記録保存 | --record-dir または PROCON_RECORD_DIR |
@@ -147,7 +147,7 @@ foreach ($line in (Get-Content -LiteralPath "$HOME\procon-honsen\.env" -Encoding
 }
 if (-not $env:PROCON_SERVER -or -not $env:PROCON_TOKEN) { throw '.env に本選接続情報が不足しています' }
 $env:PROCON_RESUME_RUNNING_MATCH = '1'
-.\procon.exe coordinator --exit-after-match --candidate 'fleet:budget=official:budget_ms=59000:adapt=off' --kinds-auto --record-dir "$HOME\procon-honsen\records" --http-log-dir "$HOME\procon-honsen\logs"
+.\procon.exe coordinator --exit-after-match --candidate 'sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0' --kinds-auto --record-dir "$HOME\procon-honsen\records" --http-log-dir "$HOME\procon-honsen\logs"
 Remove-Item Env:PROCON_TOKEN -ErrorAction SilentlyContinue
 ```
 
