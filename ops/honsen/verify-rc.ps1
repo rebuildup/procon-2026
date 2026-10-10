@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Windows 実機リリース候補（RC）検証のワンコマンド化（PR #438 添付シート準拠）。
 
@@ -38,7 +38,8 @@ param(
     # cargo build を省略してこの既成バイナリを検証するときに指定。
     [string]$Exe = '',
     # e2e.py に渡す公式簡易サーバー バイナリ。省略時は ~/.procon-honsen/official-server を探す。
-    # 見つからなければ e2e-official フェーズは SKIP になる（Windows 実機には配布されない）。
+    # 自動探索で見つからなければ e2e-official フェーズは SKIP になる（Windows 実機には配布されない）。
+    # -ServerBinary を明示してそのパスが無い場合は SKIP ではなく FAIL になる。
     [string]$ServerBinary = '',
     # 模擬サーバーのポート起点。0 = エフェメラル自動割当。
     [int]$Port = 0
@@ -103,7 +104,18 @@ function Invoke-Phase {
     $logPath = Join-Path $script:OutDir ($Name + '.log')
     $script:PhaseDetail = ''
     $skip = ''
-    if ($null -ne $When) { $skip = [string](& $When) }
+    if ($null -ne $When) {
+        # 前提判定（When）自体の失敗は、未実施の SKIP やスクリプト全体の中断（サマリ不出力）
+        # にせず、そのフェーズの FAIL として記録する。
+        try { $skip = [string](& $When) }
+        catch {
+            $message = '前提判定（When）で例外: ' + $_.Exception.Message
+            Add-Content -LiteralPath $logPath -Value ('ERROR: ' + $message) -Encoding UTF8
+            Add-Content -LiteralPath $logPath -Value 'RESULT: FAIL' -Encoding UTF8
+            Add-Result $Name 'FAIL' $message
+            return
+        }
+    }
     if ($skip.Trim() -ne '') {
         Add-Content -LiteralPath $logPath -Value ('SKIP: ' + $skip) -Encoding UTF8
         Add-Result $Name 'SKIP' $skip
@@ -421,7 +433,9 @@ Invoke-Phase -Name 'e2e-official' -When {
             $script:ServerBinaryPath = (Resolve-Path -LiteralPath $ServerBinary -ErrorAction Stop).Path
             return ''
         }
-        return '-ServerBinary で指定されたサーバー バイナリが見つかりません: ' + $ServerBinary
+        # 明示指定のバイナリが無いのは指定ミスであり、SKIP に隠さず FAIL にする。
+        # ここでは空を返してフェーズを実行させ、Body 冒頭で throw させる。
+        return ''
     }
     $officialDir = Join-Path (Join-Path $HOME '.procon-honsen') 'official-server'
     $found = @(Get-ChildItem -LiteralPath $officialDir -File -ErrorAction SilentlyContinue |
@@ -432,6 +446,9 @@ Invoke-Phase -Name 'e2e-official' -When {
     $script:ServerBinaryPath = $found[0].FullName
     return ''
 } -Body {
+    if ($ServerBinary -and -not $script:ServerBinaryPath) {
+        throw ('-ServerBinary で指定されたサーバー バイナリが見つかりません: ' + $ServerBinary)
+    }
     Write-Output ('e2e.py: 公式簡易サーバー ' + $script:ServerBinaryPath + ' に対して 3 日模擬試合（プロキシ記録・record 照合つき）')
     $outDir = Join-Path $script:OutDir 'e2e-official'
     if (Test-Path -LiteralPath $outDir) { Remove-Item -LiteralPath $outDir -Recurse -Force }
