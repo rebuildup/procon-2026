@@ -1,0 +1,82 @@
+{
+  "case": "hard-16-a4-d10-short-s9001.json",
+  "size": "16x16",
+  "agents": 4,
+  "days_total": 4,
+  "source_sha": "78292abcc1f51c2bc1b4e1cf5c5d6d33fbbcb8ac",
+  "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cli_sha256": "10172dc74ba13cae47ffc458967b7ebd552f99c1dc74b4d522b7f90b81feb8a2",
+  "candidate": "fleet:budget=official:budget_ms=10000",
+  "kinds_flag": "auto",
+  "kinds_accepted": [
+    1,
+    0,
+    0,
+    0
+  ],
+  "faults": [
+    {
+      "method": "POST",
+      "path": "/",
+      "day": 1,
+      "action": "drop_after",
+      "times": 1,
+      "fired": 1
+    }
+  ],
+  "kill_day": -1,
+  "kill_after_post": false,
+  "exit_codes": [
+    [
+      "exit",
+      1
+    ]
+  ],
+  "token_header_on_every_request": true,
+  "token_in_cli_log": false,
+  "days": [
+    {
+      "day": 0,
+      "day_seconds": 10,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        1
+      ],
+      "answer_seconds": 0.593,
+      "margin_seconds": 9.203
+    },
+    {
+      "day": 1,
+      "day_seconds": 10,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        2
+      ],
+      "answer_seconds": 0.593,
+      "margin_seconds": 8.605
+    },
+    {
+      "day": 2,
+      "day_seconds": 10,
+      "post_attempts": 0,
+      "accepted": 0,
+      "revisions": []
+    },
+    {
+      "day": 3,
+      "day_seconds": 10,
+      "post_attempts": 0,
+      "accepted": 0,
+      "revisions": []
+    }
+  ],
+  "missed_days": [
+    2,
+    3
+  ],
+  "wall_seconds": 21.2,
+  "limitation": "Official simple server on localhost, idle opponents; proves protocol acceptance, not score.",
+  "verdict": "FAIL"
+}

@@ -1,0 +1,71 @@
+{
+  "case": "hold-32-a8-d10-short-s5020.json",
+  "size": "32x32",
+  "agents": 8,
+  "days_total": 3,
+  "source_sha": "78292abcc1f51c2bc1b4e1cf5c5d6d33fbbcb8ac",
+  "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cli_sha256": "9b62675346fad3508d901397b58712d6c0add0d845df29e0fd89b675d5d4a5ec",
+  "candidate": "fleet:budget=official:budget_ms=10000",
+  "kinds_flag": "auto",
+  "kinds_accepted": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "faults": [],
+  "kill_day": -1,
+  "kill_after_post": false,
+  "exit_codes": [
+    [
+      "exit",
+      0
+    ]
+  ],
+  "token_header_on_every_request": true,
+  "token_in_cli_log": false,
+  "days": [
+    {
+      "day": 0,
+      "day_seconds": 20,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        1
+      ],
+      "answer_seconds": 10.005,
+      "margin_seconds": 9.893
+    },
+    {
+      "day": 1,
+      "day_seconds": 20,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        2
+      ],
+      "answer_seconds": 10.007,
+      "margin_seconds": 9.881
+    },
+    {
+      "day": 2,
+      "day_seconds": 20,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        3
+      ],
+      "answer_seconds": 10.005,
+      "margin_seconds": 9.873
+    }
+  ],
+  "missed_days": [],
+  "wall_seconds": 60.1,
+  "limitation": "Official simple server on localhost, idle opponents; proves protocol acceptance, not score.",
+  "verdict": "PASS"
+}

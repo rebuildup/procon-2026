@@ -28,7 +28,8 @@ RUNS="$HONSEN_HOME/runs"
 LOCK="$HONSEN_HOME/run.lock"
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 INFISICAL_ENV="${HONSEN_INFISICAL_ENV:-prod}"
-MAX_RESTARTS="${HONSEN_MAX_RESTARTS:-400}"
+# The supervisor restarts a dead coordinator for this long after start, then gives up.
+MAX_RUN_MINUTES="${HONSEN_MAX_RUN_MINUTES:-40}"
 
 if [ -t 1 ]; then
     RED=$'\033[1;41;97m'; GRN=$'\033[1;42;30m'; YEL=$'\033[1;43;30m'; BLD=$'\033[1m'; RST=$'\033[0m'
@@ -370,7 +371,8 @@ cmd_supervise() {
     # shellcheck disable=SC1090,SC1091
     . "$run_dir/meta"
     load_release "$RELEASE" || { echo "release $RELEASE not found"; exit 1; }
-    local child=0 restarts=0 code=0
+    local child=0 restarts=0 code=0 began
+    began="$(date +%s)"
     trap 'echo "$(date +%T) supervisor: stop requested"; [ "$child" -gt 0 ] && kill -TERM "$child" 2>/dev/null; echo stopped >"$run_dir/result"; exit 0' TERM INT
     while :; do
         echo "$(date +%T) supervisor: starting coordinator (restart #$restarts)"
@@ -393,7 +395,12 @@ cmd_supervise() {
         fi
         restarts=$((restarts + 1))
         echo "$restarts" >"$run_dir/restarts"
-        if [ "$restarts" -ge "$MAX_RESTARTS" ]; then
+        if [ "$(( $(date +%s) - began ))" -ge "$(( MAX_RUN_MINUTES * 60 ))" ]; then
+            echo "failed" >"$run_dir/result"
+            break
+        fi
+        # A rejection is only reported once the match has been played to the end.
+        if [ "$(json_field "$run_dir/state.json" 'd.get("status")')" = "rejected" ]; then
             echo "failed" >"$run_dir/result"
             break
         fi
@@ -415,7 +422,7 @@ show_status() {
         case "$(cat "$run_dir/result" 2>/dev/null)" in
             completed) state="${GRN} 試合完了（正常終了） ${RST}" ;;
             stopped)   state="${YEL} 手動停止 ${RST}" ;;
-            failed)    state="${RED} 異常終了（再起動上限） ${RST}" ;;
+            failed)    state="${RED} 異常終了（ログを確認） ${RST}" ;;
             *)         state="${RED} 停止（結果不明・プロセスなし） ${RST}" ;;
         esac
     fi
@@ -441,6 +448,13 @@ show_status() {
     fi
     local log="$run_dir/coordinator.log"
     if [ -f "$log" ]; then
+        # state.json starts over when the coordinator is restarted; the log keeps the whole match.
+        local days_ok
+        days_ok="$(grep -o 'plan accepted by server day=[0-9]*' "$log" 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+        [ "${days_ok:-0}" -eq 0 ] || echo "  受理済みの日数（ログ集計・再起動をまたぐ）: ${BLD}${days_ok}${RST}"
+        local lost
+        lost="$(grep -cE 'leaving it unanswered|continuing with the next day' "$log" 2>/dev/null | head -n 1)"
+        [ "${lost:-0}" -eq 0 ] || echo "  ${RED} 未回答の日 ${RST} ${lost} 日（ログの ERROR 行を確認）"
         local problems
         problems="$(grep -cE ' (WARN|ERROR) |panicked' "$log" 2>/dev/null | head -n 1)"
         echo "  ログ     : $log  （WARN/ERROR ${problems:-0} 行）"
