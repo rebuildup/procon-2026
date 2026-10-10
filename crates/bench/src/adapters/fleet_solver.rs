@@ -63,6 +63,13 @@ const PARAMS: &[ParamSpec] = &[
         doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
               by planning tomorrow from each chain's end. Live uses the spare cores",
     },
+    ParamSpec {
+        key: "tail",
+        required: false,
+        doc: "off (default) | last | <n>: extend idle patrols to more balls after the day \
+              plan is chosen; `last` on the last day only, <n> = 1..40 also on other days \
+              while an extension burns at most n fuel per ball",
+    },
 ];
 
 fn parse<T: std::str::FromStr>(
@@ -110,7 +117,15 @@ impl CandidateFactory for FleetFactory {
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
+        let tail = match spec.param("tail") {
+            None | Some("off") => None,
+            Some("last") => Some(0),
+            Some(n) => match n.parse::<u32>() {
+                Ok(n) if (1..=40).contains(&n) => Some(n),
+                _ => return Err(CandidateError::Build(format!("unknown tail mode {n:?}"))),
+            },
+        };
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, tail }))
     }
 }
 
@@ -122,6 +137,9 @@ pub struct FleetCandidate {
     pub chains: u32,
     /// Live: shrink the window on boards whose search converges sooner.
     pub adapt: bool,
+    /// Idle-tail extension (Issue #406): `None` off, `Some(n)` on with at
+    /// most `n` fuel per ball on days other than the last.
+    pub tail: Option<u32>,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -1264,7 +1282,13 @@ impl Solver for FleetCandidate {
             predicted_ends = ?best.check.ends,
             "fleet day plan"
         );
-        if best.check.clean { best.plan } else { fallback() }
+        if !best.check.clean {
+            return fallback();
+        }
+        match self.tail {
+            Some(fuel_per_ball) => super::fleet_tail::extend(ctx, best.plan, fuel_per_ball),
+            None => best.plan,
+        }
     }
 }
 
@@ -1329,6 +1353,7 @@ pub fn choose_kinds(
                 seed: 42,
                 chains: 1,
                 adapt: true,
+                tail: None,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {

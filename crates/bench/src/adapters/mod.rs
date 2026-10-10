@@ -19,6 +19,7 @@ pub mod astar_walk;
 pub mod context;
 pub mod coverage_solver;
 pub mod fleet_solver;
+pub mod fleet_tail;
 pub use anytime_solver::AnytimeFactory;
 pub use coverage_solver::CoverageFactory;
 pub use fleet_solver::FleetFactory;

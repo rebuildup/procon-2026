@@ -439,6 +439,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let elapsed = started.elapsed().as_millis();
         day_ms.push(elapsed);
+        // `tailprobe=<fuel per ball>` (#406): what the idle-tail extension
+        // would add to today's plan from today's real start. The plan that
+        // is played stays the original one, so later days are unaffected.
+        let probe = args.values.get("tailprobe").map(|cap| {
+            let ctx = SolverContext::from_state(&state);
+            let began = Instant::now();
+            let extended =
+                bench::adapters::fleet_tail::extend(&ctx, plan.clone(), cap.parse().unwrap_or(0));
+            let ms = began.elapsed().as_millis();
+            let mut trial = state.clone();
+            let refused = (trial.illegal_action_count, trial.rejected_response_count);
+            play_day(&sim, &mut trial, &extended);
+            let series = trial.series_acquired_by_day.get(&day).map_or(0, |s| s.len());
+            let balls: u32 = trial.agents.iter().map(engine::Agent::total_inventory).sum::<u32>()
+                - state.agents.iter().map(engine::Agent::total_inventory).sum::<u32>();
+            json!({"D": series, "B": balls, "ms": u64::try_from(ms).unwrap_or(u64::MAX),
+                "clean": (trial.illegal_action_count, trial.rejected_response_count) == refused,
+                "fuel_end": trial.agents.iter().map(|a| a.fuel).collect::<Vec<_>>(),
+                "end": (0..trial.agents.len()).map(|i| cell_of(&trial, i)).collect::<Vec<_>>(),
+                "wire": plan_to_wire(&state, &extended)})
+        });
         let wire = plan_to_wire(&state, &plan);
         play_day(&sim, &mut state, &plan);
         let acquired: Vec<u32> = state
@@ -469,7 +490,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "{}",
             json!({"kind": "day", "day": day, "series": acquired, "D": acquired.len(), "B": balls,
                 "agents": agents, "decide_ms": u64::try_from(elapsed).unwrap_or(u64::MAX),
-                "options": option_log, "wire": wire,
+                "options": option_log, "wire": wire, "tailprobe": probe,
                 "busy_roads": today.values().filter(|s| **s == TrafficState::Busy).count(),
                 "jammed_roads": today.values().filter(|s| **s == TrafficState::Jammed).count()})
         );
