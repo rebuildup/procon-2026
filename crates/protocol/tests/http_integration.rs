@@ -160,6 +160,81 @@ async fn get_retries_on_5xx_then_succeeds() {
     m3.assert_async().await;
 }
 
+/// Issue #442, HTTP-level: a `GET /setting` attempt that outlasts the
+/// per-request timeout is a transient read failure — the client repeats the
+/// read and recovers. Reads may be replayed; the POST-ambiguity rule that
+/// never repeats an unanswered POST is pinned by
+/// [`accepted_posts_with_lost_acknowledgements_are_not_replayed`] below.
+///
+/// The first connection is answered with silence (the server reads the
+/// request and holds it, as a stalled peer would); every later connection
+/// gets a real `200` with a `MatchSetting` body.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_match_setting_retries_a_timed_out_attempt_then_succeeds() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let connections = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&connections);
+    let body = serde_json::to_string(&sample_match_setting()).unwrap();
+    let server = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let nth = seen.fetch_add(1, Ordering::SeqCst);
+            let body = body.clone();
+            tokio::spawn(async move {
+                let mut buf = [0; 4096];
+                let _ = stream.read(&mut buf).await;
+                if nth == 0 {
+                    // Hold the first request past the client's timeout.
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    return;
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            });
+        }
+    });
+
+    let client = MatchClient::builder(format!("http://{addr}"), "tok")
+        .retry_policy(fast_retry_policy())
+        .request_timeout(Duration::from_millis(100))
+        .build()
+        .unwrap();
+
+    let setting = client.get_match_setting().await.expect("the timed-out read is retried");
+    assert_eq!(setting, sample_match_setting());
+    assert!(connections.load(Ordering::SeqCst) >= 2, "the read was repeated");
+    server.abort();
+}
+
+/// A `MatchSetting` fixture for the `/setting` tests.
+fn sample_match_setting() -> protocol::match_config::MatchSetting {
+    protocol::match_config::MatchSetting {
+        starts_at: 1_700_000_000,
+        day_seconds: vec![60],
+        day_steps: vec![10],
+        map: Map { height: 8, width: 8, cells: vec![vec![CellType::TYPE_0; 8]; 8] },
+        spots: vec![],
+        agents: vec![0],
+        fuel_limits: 30,
+        players: 2,
+        busy_threshold: 3,
+        jammed_threshold: 5,
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn protocol_version_constant_is_stable() {
     // Smoke check: the protocol version constant is exported and equal to
