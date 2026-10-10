@@ -131,7 +131,24 @@ pool 生成予算は w/3 = 3.3s で、そのうち embedded fleet が 2.5s 消�
 
 ---
 
-## 5. 引用データの所在
+## 5. 検証結果の追記（2026-10-10 後半・P1/P3 実測による結論修正）
+
+§4 の検証条件が実測された（`wsl-10s/p1-embed-rung/`・`p3-persist-s9012/`、solver コードは本書と同一系譜 — commit 640e728/812290b は記録コミットのみで solver 変更なし）:
+
+| 実測（s9012 seed42, V27/dV189 共通） | B |
+|---|---|
+| **fleet @2.5s（embedded と同一予算・chains=1）** | **416** |
+| fleet @5s | 408 |
+| fleet @10s（b10s/b3/c2 を通じて） | 406 / 407 / 411 |
+| convoy @10s（both） | 369 |
+| **convoy @10s forecast=persist（P3）** | **407** |
+
+- **(a)「embedded fleet 予算不足」は主因説として反証された**。§1 の予測分岐（P1: convoy@10s が fleet@2.5s より明確に下回る >15 balls → (b) 系寄与が実在）が +47 で発火。2.5s の standalone fleet は既に fleet@10s 同水準であり、予算を (budget/4) から引き上げるだけの修正（S2/P2 単独）では s9012 の差は埋まらない。
+- **P3 は +38 回復**（369 → 407 ≈ fleet@10s）。beam に時間が戻ると deviation が正の価値を持つことの裏付け。ただし both モードで incomplete 日の出力が pool[0]（= fleet@2.5s ≈ 416 相当のはず）であることと実測 369 の齟齬は残る — pool 生成の実効予算か、完走日の浅い deviation での予測誤差かの分解には P0 tracing（`convoy day plan` の pool/complete/chosen 日別実測）が依然必須。§2 の機構表の行はコード上の事実として正しいが、§1 の確信度配分は「(a) dominant ≈80–85%」から「beam/pool 側の時間配分・選択が主因」へ修正する。
+- fleet 収束コメント（`fleet_solver.rs:1249-1253` の 32×32 は 4s でも伸びる）は s9012/chains1/seed42 の実測（2.5s=416, 5s=408, 10s=406–411）とは整合しない。収束スケール式の当てはめは boards 間でばらつくため、§1.1 の budget_ms 感度行に実測上書き済み。
+- @20s（embedded 5s）: b3-20s で s9012 convoy 412/407 vs fleet@10s 407/411 — 差はノイズ以下。@20s では convoy は 32×32 でも fleet に並ぶ。
+
+## 6. 引用データの所在
 
 - `docs/research/round1-20261010/results-405/wsl-10s/b10s-seed42/runs.jsonl`、`b10s-seed7/runs.jsonl`（9 盤面 × convoy/fleet/chains8 @10s）
 - `docs/research/round1-20261010/results-405/wsl-10s/b2-20s-s9012/runs.jsonl`（convoy@20s / fleet@10s / chains8 同一実行）

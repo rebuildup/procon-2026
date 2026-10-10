@@ -137,6 +137,8 @@
 - convoy forecast/width（corpus @10s）: `wsl-10s/d-forecast=busy|persist/`、`d-width=12|48/`、再測定 `d2-busy|d2-persist/`
 - clocked 予算: `wsl-10s/b10s-seed42|seed7/`、`b2-20s-s9012/`
 - fuel 比の算出元盤面: `docs/evidence/campaign-311/fleet-371/corpus-hard|corpus-holdout/*.json`（fuelLimits・daySteps から §6 の比を算出、2026-10-10 実行）
+- P1/P3 検証バッチ: `wsl-10s/p1-embed-rung/`（fleet@2.5s/5s — convoy@10s 369 に対し 416/408、(a) 予算不足説の反証）、`wsl-10s/p3-persist-s9012/`（persist 407、+38 回復）。経過は `analysis/convoy-clocked-degradation.md` §5
+- @20s 9 盤面・2 補給: `wsl-10s/b3-20s-seed42/`（convoy@20s vs fleet@10s vs chains8 同一実行、全セル差 ≤13・dV 同点）、`c2-20s-s2/`（2-Supply kinds、convoy@20s vs fleet@10s 差 ≤4）、`b3-20s-s9012-s7/`（convoy@20s seed7 = 397）
 - 関連: `summary/conditional-selection.md`（R1/R2）、`analysis/convoy-clocked-degradation.md`（S2/S3 の機構分析）
 
 ## 6. F 系列の分析枠（fuel_need / fuel_mix / 補給スロット選択 — PR #430・Issue #428）
