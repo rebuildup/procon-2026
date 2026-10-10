@@ -131,3 +131,34 @@ D 飽和の判定は実測値で行った: `dV == V × 日数` を満たす盤�
 2. 補給 2 台での chains8（§2 の 32×32 判定に必要）。
 3. clocked 24×24 の convoy vs fleet vs chains8 の seed 反転再測定（s9005 −10 / s9008 +28 がノイズか構造かの判定。±20 基準では両方とも境界上）。
 4. 32×32 での clocked convoy 改善版（pool[0] 予算強化、`analysis/convoy-clocked-degradation.md` §4 P2）が規則 R1 の分岐を不要にするか。
+
+## 7. 2026-10-11 追補（バッチ 1・F 系列測定確定分）
+
+本節は測定確定分の追補。§1–6 の再集計には手を入れない。
+
+### 7.1 chains ラダー（offline・E1、`wsl-corpus/param-chains{8,12,16}/`）
+
+- 決定論 offline `iters=60000` の chains ラダー（gen36 B 合計）: chains4 = 11745 → chains8 = 11813 → **chains12 = 11863（ピーク）** → chains16 = 11858。
+- **D-loss は chains8 の s9008（dV 179→175 決定論）のみ**。chains12/16 では出ず。chains12 vs chains8 は 10 win / 32 draw / 2 LOSE（B-only 微減 −3/−2）。
+- **R1（clocked 32×32 → chains8）への影響**: chains12 は offline で chains8 の上位互換候補（D 非劣化・B +50）。ただし **clocked `budget_ms` モードでの chains12 は未測定**であり、R1 の確定枠を差し替えるには clocked での s9008 dV 推移（基準 180）と 32×32 セルの再確認が要る。
+
+### 7.2 seed 魯棒性（E2、`wsl-corpus/param-chains8-seed{7,123}/`）
+
+- seed7: D-loss なし・B −12（holdout24）、maxday ≤19.0s で時間安全。
+- **seed123: 9/24 盤面が invalid/timeout（maxday 188–253s）— 探索時間が seed で支配的に爆発**。seed 選定は「実行時間安全性」を辞書順と同時に評価する必要あり（live 投入候補の seed 変更は maxday 監査が必須）。
+
+### 7.3 fuel 軸（F3-offline、`wsl-corpus/f3-offline-fuel/runs.jsonl`）
+
+§3 fuel 軸の追加候補（仮枠）への最初の一次データ。**clockless `iters=60000`・seed42・スクリーニング 9 + fixture 9・chains4/8 × fuel_need=50 ± fuel_mix**。
+
+- **完了セル 34 対で dV 下落 = 0**（fuel 系は辞書順 D を落とさない）。B 合計利得: fuel-only +29(c4)/+26(c8)、mix +44(c4)/+50(c8)。**mix > fuel-only が両 chain で成立**（§6.2 分解式: 重複なし・独立・希釈なし）。
+- **chains8 offline の唯一の D-loss（s9008 dV−4 決定論）が fuel_need=50 で回復**（`(20,175,226)` → `(20,180,263)`・D+5/B+37）。
+- 比仮説（§6.1）は部分整合: 比 2.7–3.0 の s5013/s5016/s5020 は利得 ≈0〜微減の一方、**比 1.38 の s5023 で fuel-only B −29**（D 同点）。比 ≤1.5 → 有効という仮枠はこのまま確定できない。
+- s5020 c8 fuel/mix の 2 セルは負荷 timeout で欠落（静穏時 Batch A で補完予定）。検証 27 盤面での F 系確認は並走セッション（`measure-63a7e5e`・holdout 24+32・fuel_mix=on・2 seed）が進行中、clocked 分解（バッチ B）は未実施。
+
+### 7.4 convoy bail=on（PR #435、`bail-435-verify`・`eval-bail-435/runs.jsonl`）
+
+- ラベル爆発盤面 4 枚（s5016/s5020/s5023/s9012）・`convoy:budget_ms=20000:seed=42` parent vs bail 同一実行（load 9–13・B は ±20 ノイズ含む）。
+- **axis-4 と期限安全性は構造的に確定**: parent maxday 33–50s（60s 日窓に接近）→ bail 全盤面 ≤8.9s。
+- B: 爆発盤面で **s5023 +39 / s5020 +57**、s9012 −23（ノイズ境界）/ s5016 −7。fixture 9 盤面は 8 draw + 1 の B−1。静穏時 B 確認再実行が判定条件。
+- R1 の「32×32 では convoy を外す」根拠の 1 つ（convoy の大盤面劣化・期限リスク）は bail=on で縮む可能性がある。cluster=on 未実装のため bail 単独での判断。
