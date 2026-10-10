@@ -3,9 +3,9 @@
   "size": "16x16",
   "agents": 4,
   "days_total": 4,
-  "source_sha": "2df0a3452b86277d69f87d2ff483e8886d2e99c3",
+  "source_sha": "321d390850f6576be43d30488eb7904ea768b6ab",
   "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
-  "cli_sha256": "ec87c3d37ce0167229211d65b826ab6a5cf656260afa7b1a682219c6194d86ff",
+  "cli_sha256": "538c383da14ed384ddff0a5e11ae2b2622c523840be9c6c48de4a49d1f040045",
   "candidate": "fleet:budget=official:budget_ms=10000",
   "kinds_flag": "auto",
   "kinds_accepted": [
@@ -34,8 +34,8 @@
       "revisions": [
         1
       ],
-      "answer_seconds": 0.594,
-      "margin_seconds": 11.319
+      "answer_seconds": 0.596,
+      "margin_seconds": 11.247
     },
     {
       "day": 1,
@@ -45,8 +45,8 @@
       "revisions": [
         2
       ],
-      "answer_seconds": 0.595,
-      "margin_seconds": 10.718
+      "answer_seconds": 0.596,
+      "margin_seconds": 10.648
     },
     {
       "day": 2,
@@ -56,8 +56,8 @@
       "revisions": [
         3
       ],
-      "answer_seconds": 0.594,
-      "margin_seconds": 11.115
+      "answer_seconds": 0.596,
+      "margin_seconds": 11.042
     },
     {
       "day": 3,
@@ -67,16 +67,16 @@
       "revisions": [
         4
       ],
-      "answer_seconds": 0.597,
-      "margin_seconds": 10.509
+      "answer_seconds": 0.593,
+      "margin_seconds": 10.439
     }
   ],
   "missed_days": [],
-  "wall_seconds": 47.4,
+  "wall_seconds": 47.5,
   "limitation": "Official simple server on localhost, idle opponents; proves protocol acceptance, not score.",
   "record": {
     "runs": [
-      "20261010T030750Z-p94784"
+      "20261010T024815Z-p83933"
     ],
     "event_lines": 21,
     "days_with_plan": [
