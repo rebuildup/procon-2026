@@ -64,8 +64,9 @@ foreach ($File in 'procon.exe', 'honsen.ps1', 'OFFLINE-RUNBOOK.md') {
         throw "ZIP配布物に $File がありません"
     }
 }
-if ((Get-FileHash (Join-Path $SmokeBin 'procon.exe') -Algorithm SHA256).Hash -ne
-    (Get-FileHash (Join-Path $Dest 'procon.exe') -Algorithm SHA256).Hash) {
+$UnpackedHash = (Get-FileHash -LiteralPath (Join-Path $SmokeBin 'procon.exe') -Algorithm SHA256).Hash
+$OriginalHash = (Get-FileHash -LiteralPath (Join-Path $Dest 'procon.exe') -Algorithm SHA256).Hash
+if ($UnpackedHash -ne $OriginalHash) {
     throw 'ZIP展開後exeのSHA256が一致しません'
 }
 # ローカル模擬サーバーでの試合完走は別途必須（本番サーバーへ検証POSTしない）。
