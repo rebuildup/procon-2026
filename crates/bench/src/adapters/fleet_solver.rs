@@ -58,6 +58,11 @@ const PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "seed", required: false, doc: "search seed (default 42)" },
     ParamSpec {
+        key: "rarity",
+        required: false,
+        doc: "EXPERIMENT: favor scarce-series spots in greedy seeding (0..4; default 0)",
+    },
+    ParamSpec {
         key: "chains",
         required: false,
         doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
@@ -99,6 +104,12 @@ impl CandidateFactory for FleetFactory {
             )));
         }
         let seed = parse(spec, "seed", 42u64)?;
+        let rarity = parse(spec, "rarity", 0u32)?;
+        if rarity > 4 {
+            return Err(CandidateError::Build(format!(
+                "rarity must be 0..=4, got {rarity}"
+            )));
+        }
         let adapt = match spec.param("adapt") {
             None | Some("on") => true,
             Some("off") => false,
@@ -110,7 +121,7 @@ impl CandidateFactory for FleetFactory {
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, rarity }))
     }
 }
 
@@ -122,6 +133,8 @@ pub struct FleetCandidate {
     pub chains: u32,
     /// Live: shrink the window on boards whose search converges sooner.
     pub adapt: bool,
+    /// Optional scarcity-biased greedy seed (0 = byte-for-byte legacy order).
+    pub rarity: u32,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -199,6 +212,9 @@ struct World {
     supplies: Vec<SupplyInfo>,
     new_series: Vec<bool>,
     series_slots: usize,
+    /// Number of spot nodes for each series. Used only with rarity > 0.
+    series_counts: Vec<u32>,
+    rarity: u32,
 }
 
 fn cell_index(width: usize, col: i32, row: i32) -> usize {
@@ -208,7 +224,7 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
 
 impl World {
     #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
-    fn new(state: &MatchState, steps: u32, later: &[u32]) -> Self {
+    fn new(state: &MatchState, steps: u32, later: &[u32], rarity: u32) -> Self {
         let tomorrow = later.first().copied();
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
@@ -273,6 +289,10 @@ impl World {
             }
         }
         let series_slots = series.iter().copied().max().map_or(0, |m| m as usize + 1);
+        let mut series_counts = vec![0u32; series_slots];
+        for &brand in &series {
+            series_counts[brand as usize] += 1;
+        }
         let mut new_series = vec![true; series_slots];
         for &s in &state.series_taken {
             if let Some(slot) = new_series.get_mut(s as usize) {
@@ -300,6 +320,8 @@ impl World {
             supplies,
             new_series,
             series_slots,
+            series_counts,
+            rarity,
         };
         for m in 0..NM {
             for u in 0..nn {
@@ -716,7 +738,7 @@ impl World {
         }
         while let Some(p) = (0..np).filter(|&p| !done[p]).min_by_key(|&p| (tick[p], p)) {
             let m = if starts[p].escorted { FAST } else { BAL };
-            let mut best: Option<(bool, u32, usize)> = None;
+            let mut best: Option<(bool, u32, u32, usize)> = None;
             for node in 0..self.spots {
                 if stock[node] == 0 || picked[p * self.spots + node] {
                     continue;
@@ -728,12 +750,22 @@ impl World {
                 if !starts[p].escorted && self.f(m, at[p], node) > fuel[p] {
                     continue;
                 }
-                let key = (covered[self.series[node] as usize], t, node);
+                let brand = self.series[node] as usize;
+                // Team v5-inspired experiment: prioritize hard-to-substitute
+                // series in the greedy seed. The official score is unchanged.
+                // rarity=0 preserves the old (covered, travel-time, node) order.
+                let count = self.series_counts[brand].max(1);
+                let ranked_time = if self.rarity == 0 || covered[brand] {
+                    t
+                } else {
+                    t.saturating_mul(count) / (count + self.rarity)
+                };
+                let key = (covered[brand], ranked_time, t, node);
                 if best.is_none_or(|b| key < b) {
                     best = Some(key);
                 }
             }
-            let Some((_, t, node)) = best else {
+            let Some((_, _, t, node)) = best else {
                 done[p] = true;
                 continue;
             };
@@ -1172,7 +1204,7 @@ impl Solver for FleetCandidate {
         }
         let later: Vec<u32> =
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
-        let world = World::new(state, ctx.day_steps, &later);
+        let world = World::new(state, ctx.day_steps, &later, self.rarity);
         let window = (self.budget_ms > 0).then(|| {
             // Balls stop improving once the search has converged, and from
             // there a longer answer only costs the fourth ranking axis. The
@@ -1237,7 +1269,7 @@ impl Solver for FleetCandidate {
             let (plan, check) = Self::finish(ctx, &world, sol, eval);
             let tomorrow = match later.split_first() {
                 Some((&steps, rest)) if check.clean => {
-                    let next = World::new(&check.state, steps, rest);
+                    let next = World::new(&check.state, steps, rest, self.rarity);
                     next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
                 }
                 _ => (0, 0),
