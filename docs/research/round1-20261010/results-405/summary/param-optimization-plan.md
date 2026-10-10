@@ -116,6 +116,8 @@
 
 条件変数の事前観測可能性は R1/R2 と同一（patrols×spots と budget_ms はソルバが計算可能）。D 飽和は事前観測不能なため、領域分割には使わない。
 
+**fuel 軸の追加候補（草案・F1/F3 確認前）**: `fuel/day0-step 比 ≥ 2 → fuel_need を使わない`（比 ≤1.5 → fuel_need 有効）を第 3 の条件軸に加える案。§6.1 の機構分析による仮説で、F3（holdout 32×32 が比 1.0–3.0 を同時に含む）が一次検証になる。比・平均 burn/tick・補給 spot 有無はすべて事前観測可能。F 結果で利得分布が仮説どおりになるまで確定枠にしない。
+
 ## 4. バッチ結果の分析プロトコル（measurer2 の param-* 着信後、順次実行）
 
 各 `param-*` バッチごとに以下を実施し team-lead へ報告:
@@ -134,4 +136,46 @@
 - convoy depth/width（match3）: `wsl-10s/round1-solo.jsonl`、`convoy-shape.jsonl`、`convoy-seeds.jsonl`
 - convoy forecast/width（corpus @10s）: `wsl-10s/d-forecast=busy|persist/`、`d-width=12|48/`、再測定 `d2-busy|d2-persist/`
 - clocked 予算: `wsl-10s/b10s-seed42|seed7/`、`b2-20s-s9012/`
+- fuel 比の算出元盤面: `docs/evidence/campaign-311/fleet-371/corpus-hard|corpus-holdout/*.json`（fuelLimits・daySteps から §6 の比を算出、2026-10-10 実行）
 - 関連: `summary/conditional-selection.md`（R1/R2）、`analysis/convoy-clocked-degradation.md`（S2/S3 の機構分析）
+
+## 6. F 系列の分析枠（fuel_need / fuel_mix / 補給スロット選択 — PR #430・Issue #428）
+
+F1（tight-like-32 ×8 × seed 42/7）・F2（tight-like-24）・F3（既存 holdout 32×32）はいずれも clocked `budget_ms=10000`・同一実行内アンカー（現行 fleet chains4 と chains8 を同時実行）。測定は measurer2、本節は分析の受け皿。
+
+### 6.1 条件付き選択の観測可能特徴量 — fuel 効果の予測変数
+
+機構（コード確認済み）: fuel_need のボーナスは「開局時 fuel 被覆率 / 翌日 burn 需要」比例（`fleet_solver.rs:352-374, 729-732`）。需要 `need = 翌日 steps × 盤面平均 burn/tick` は cap で打ち止め。**燃料が実際に拘束する盤面でしか項が差分を持たない**。fuel cap ≫ 翌日全日 burn の盤面では全計画の被覆率が ≈1 に飽和し、項はほぼ定数（全計画に等しく加算）になって中性に落ちるはず。
+
+事前観測可能な予測変数（ソルバが setting から計算可能・D 飽和と違い R2 と同格の枠に置ける）:
+
+1. **fuel / 初日 step 比**（主変数）: fleet-371 corpus で実測した値 —
+   - hard 12 盤面: **すべて比 1.0**（fuel = day0 steps、short 型）
+   - hold 24 盤面: **1.0–3.0**（mixed 型は 1.0 が 3 件: s5001/s5009/s5017、short 型は 1.27–3.0）
+   - スクリーニング 9 のうち: s9003/s9005/s9008/s9012/s5001 = 1.0、s5023 = 1.38、s5016 = 2.72、s5013 = 2.78、s5020 = 3.0
+   - tight-like = 1.25×（F1/F2 の新形状。既存 holdout の 1.27 と同域）
+2. **平均 burn/tick**（道路密度の代理）: need の計算に直接入る。road sparse 盤面ほど need が増え、同しきい値比でも利得が大きくなる方向。
+3. **補給 spot の有無**: `!world.supplies.is_empty()`（`fleet_solver.rs:352`）が false の盤面では fuel_need は原理的に no-op。ソルバは観測可能。
+4. 盤面サイズ・日数: 収束スケール（R2 の `(patrols×spots)²/3`）と日数（need は翌日 steps 基準なので日別に変動）。
+
+**利得予測の仮説（F1/F3 で検証する判定式）**:
+- `gain(fuel_need)` は比 ≲1.5 に集中し、比 ≥2.0 の盤面では ≈0（被覆飽和）。F3 の holdout 32×32（s5023 比 1.38 / s5016 2.72 / s5020 3.0 が同シリーズにある）で「比 ≥2 セルの利得 ≈0・比 1.0–1.4 セルに集中」が確認できるかが一次判定。
+- F1/F2（tight-like 1.25×）は利得が最大化される側の代表。F1 の ×8 盤面での利得分布（盤面内分散）が大きい場合は burn/tick・補給配置の二次効果が効いている → 変数 2/3 の重みを推定する。
+- dV への影響は符号未定: 被覆優先の計画選択は variety 配分を後倒しにする可能性（S1 の chains と同型の D リスク）→ §4 プロトコル item 1 の mode (b) 判定をそのまま適用。
+
+### 6.2 chains8 × fuel_mix の組合せ効果（F1 で分解する項目）
+
+PR #430 では組合せ未計測。F1 の同一実行内アンカー（chains4・chains8 同時）で次を分解する:
+
+- **比較式**: `gain(chains=c, fuel_mix=on) − gain(chains=c, fuel_mix=off)` を c=4 と c=8 の両方で取る。
+  - c=4 と c=8 で利得が同幅 → **重複なし・独立**（chains 数と fuel 軸は別軸として加算扱い）
+  - c=8 で利得が拡大 → **相乗**（chain 多様性 × fuel 軸多様性が計画空間被覆を広げる。S1 の温度多様性仮説の裏取りにもなる）
+  - c=8 で利得が縮小 → **希釈**（fuel_mix=off 時の chains8 利得そのものが fuel 非依存だとすれば、fuel_steered 計画が `Candidate::key`（燃料 end-state 非含む, `fleet_solver.rs:1121-1128`）の比較で負けている兆候）
+- 注意: fuel_mix は 2+ chains で奇数 chain のみ fuel 項を外す（`fleet_solver.rs:1287-1288`）。chains4 では 2+2、chains8 では 4+4。tight 盤面で fuel 項が強いほど mix なし（全 chain fuel_steered）との差が出る。
+- D 監視: mix は fuel 項あり/なし計画の競合選択を増やすため、dV 下落セルの有無を chains4/chains8 別々に確認する（mode (b) 判定・統合しない）。
+
+### 6.3 補給スロット選択の評価上の扱い（S5 連動）
+
+- F 系の補給スロット関連測定は players=1 solo 前提（`team_count=1` trial、road-side start 価値の過大評価は `fleet_solver.rs:1480-1483` の doc コメント自認）。実戦乖離 5–25% は PR #430 の注意書きどおり**逆転（road-side が実戦では不利になる）方向も含む**。
+- 分析上の扱い: F 系でスロット別利得が出ても「solo 上限値」としてのみ記録し、採用推薦には進めない。採否は S5 の検証条件（Arena 検証ゲート必須）に一本化。
+- 観測項目: `supply slot trial` tracing（`coordinator_loop.rs:832-841`）のスロット別 (V, dV, B) で、選択変更が起きた盤面と起きなかった盤面の盤面条件（road-side spot の存在・距離）を分類しておく → Arena 検証時の反証リストに使う。
