@@ -419,7 +419,19 @@ fn start_recorder(cli: &Cli) -> (MatchRecorder, Option<(PathBuf, std::io::Error)
         .map(arena::Secret::new)
         .collect();
     let mut manifest = serde_json::Map::new();
-    manifest.insert("source_commit_sha".to_owned(), json!(arena::source_commit_sha()));
+    // Which commit this binary is: the runtime env (the wrappers set it),
+    // else the value baked in at build time (`PROCON_SOURCE_COMMIT_SHA` in
+    // the build environment — a venue machine has no git checkout to ask),
+    // else `git rev-parse HEAD` of the working directory, else "unknown".
+    let runtime = std::env::var("PROCON_SOURCE_COMMIT_SHA").ok().filter(|v| !v.trim().is_empty());
+    let built = option_env!("PROCON_SOURCE_COMMIT_SHA").filter(|v| !v.trim().is_empty());
+    let (sha, sha_from) = match (runtime, built) {
+        (Some(sha), _) => (sha.trim().to_owned(), "runtime-env"),
+        (None, Some(sha)) => (sha.trim().to_owned(), "build-env"),
+        (None, None) => (arena::source_commit_sha(), "git-working-directory"),
+    };
+    manifest.insert("source_commit_sha".to_owned(), json!(sha));
+    manifest.insert("source_commit_sha_from".to_owned(), json!(sha_from));
     let options = match_record::RecorderOptions {
         manifest,
         secrets,
