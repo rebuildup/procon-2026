@@ -43,6 +43,17 @@ candidate はどちらも `fleet:budget=official:budget_ms=10000` と `--kinds-a
 
 再送 0 回・未回答日 0・終了コード 0（[`runs/full-v2-32-59s.json`](runs/full-v2-32-59s.json)）。同じ Mac で別セッションの計測が 6 コア前後を使っている最中の実行で、余裕は日によらず一定だった。探索は締切の 5 秒前（＋300ms の控え）で打ち切られるので、余裕は負荷ではなくこの予約で決まる。16×16 と 24×24 はこの設定では流していない。
 
+### sized（2026-10-11 の本番候補）での全日完走（03:0x JST 追記・Issue #459）
+
+本番候補が `sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0` に変わった（#317）。release @ `8b7324b` から `build-release.sh` で作った `v3-8b7324b-sized`（sha256 `f3c8e84857cef2c83ad047a97ac6a1e8f2997ffc2ded615cb5089f2c442357e2`）を同じ簡易サーバーで流した。
+
+| バイナリ | 盤面 | 脚 | 台数 | 日数 | 受理 | 回答までの時間 | 締切までの余裕 | 車種 |
+|---|---|---|---:|---:|---:|---|---|---|
+| v3 | 16×16 `hard-16-a4-d10-short-s9001` | convoy 20 秒 | 4 | 10 | 10/10 | 4.09〜8.18 s | 51.5〜55.1 s | S,P,P,P |
+| v3 | 24×24 `hold-24-a5-d9-short-s5014` | fleet 59 秒 | 5 | 9 | 9/9 | 53.95〜54.32 s | 5.25〜5.30 s | S,P,P,P,P |
+
+再送 0 回・未回答日 0・終了コード 0（[`runs/full-v3-16-sized.json`](runs/full-v3-16-sized.json)、[`runs/full-v3-24-sized.json`](runs/full-v3-24-sized.json)）。32×32 は v3 では流していない。障害試験（上の表）も v3 では再実施していない。
+
 ## 障害試験（v2、1 日 10〜14 秒に短縮）
 
 | 試験 | 注入した障害 | 結果 |
