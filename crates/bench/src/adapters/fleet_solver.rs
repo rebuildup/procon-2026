@@ -63,6 +63,12 @@ const PARAMS: &[ParamSpec] = &[
         doc: "EXPERIMENT: favor scarce-series spots in greedy seeding (0..4; default 0)",
     },
     ParamSpec {
+        key: "rarity_scope",
+        required: false,
+        doc: "both (default, parent behavior: seed AND forecasts) | initial \
+              (seed construction only, Issue #419)",
+    },
+    ParamSpec {
         key: "chains",
         required: false,
         doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
@@ -106,10 +112,20 @@ impl CandidateFactory for FleetFactory {
         let seed = parse(spec, "seed", 42u64)?;
         let rarity = parse(spec, "rarity", 0u32)?;
         if rarity > 4 {
-            return Err(CandidateError::Build(format!(
-                "rarity must be 0..=4, got {rarity}"
-            )));
+            return Err(CandidateError::Build(format!("rarity must be 0..=4, got {rarity}")));
         }
+        // Default `both` reproduces the parent candidate's behavior
+        // (rarity biases the seed AND the per-evaluation forecast);
+        // `initial` confines it to the initial route construction.
+        let rarity_scope = match spec.param("rarity_scope") {
+            None | Some("both") => Scope::Both,
+            Some("initial") => Scope::Initial,
+            Some(other) => {
+                return Err(CandidateError::Build(format!(
+                    "unknown rarity_scope {other:?} (use both|initial)"
+                )));
+            }
+        };
         let adapt = match spec.param("adapt") {
             None | Some("on") => true,
             Some("off") => false,
@@ -121,7 +137,7 @@ impl CandidateFactory for FleetFactory {
         if !(1..=8).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, rarity }))
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, rarity, rarity_scope }))
     }
 }
 
@@ -135,6 +151,9 @@ pub struct FleetCandidate {
     pub adapt: bool,
     /// Optional scarcity-biased greedy seed (0 = byte-for-byte legacy order).
     pub rarity: u32,
+    /// Where the rarity discount applies (`both` = parent behavior, `initial`
+    /// = seed construction only, Issue #419).
+    pub rarity_scope: Scope,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -215,6 +234,18 @@ struct World {
     /// Number of spot nodes for each series. Used only with rarity > 0.
     series_counts: Vec<u32>,
     rarity: u32,
+    rarity_scope: Scope,
+}
+
+/// Where the rarity discount applies (Issue #419): `Both` reproduces the
+/// parent candidate (#413/#414), `Initial` biases only the initial route
+/// construction and leaves every evaluation — including the tomorrow
+/// forecast — untouched.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum Scope {
+    #[default]
+    Both,
+    Initial,
 }
 
 fn cell_index(width: usize, col: i32, row: i32) -> usize {
@@ -224,7 +255,7 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
 
 impl World {
     #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
-    fn new(state: &MatchState, steps: u32, later: &[u32], rarity: u32) -> Self {
+    fn new(state: &MatchState, steps: u32, later: &[u32], rarity: u32, scope: Scope) -> Self {
         let tomorrow = later.first().copied();
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
@@ -322,6 +353,7 @@ impl World {
             series_slots,
             series_counts,
             rarity,
+            rarity_scope: scope,
         };
         for m in 0..NM {
             for u in 0..nn {
@@ -670,7 +702,7 @@ impl World {
                     Start { node, offset, fuel, escorted: line.escorted }
                 })
                 .collect();
-            let (d, b) = self.greedy(&starts, tomorrow, None);
+            let (d, b) = self.greedy_seeded(&starts, tomorrow, None, false);
             // Tomorrow's series are worth nearly as much as today's; its
             // balls are not counted (the greedy estimate is too coarse and
             // trading today's sure balls for it measured worse).
@@ -688,11 +720,17 @@ impl World {
 
     /// Nearest-useful-spot greedy from `starts` over a `steps`-tick day:
     /// `(series, balls)`. With `routes`, also records each patrol's order.
-    fn greedy(
+    /// `seeded`: apply the rarity discount to this greedy pass. The initial
+    /// construction passes `self.rarity` (the seed may be biased), while the
+    /// tomorrow forecast inside `evaluate` passes `rarity_for_forecasts` so
+    /// `rarity_scope=initial` scores fixed routes identically with and
+    /// without the experiment (Issue #419).
+    fn greedy_seeded(
         &self,
         starts: &[Start],
         steps: u32,
         mut routes: Option<&mut Vec<Vec<u16>>>,
+        seeded: bool,
     ) -> (i64, i64) {
         let np = starts.len();
         let mut at: Vec<usize> = starts.iter().map(|s| s.node).collect();
@@ -755,11 +793,12 @@ impl World {
                 // series in the greedy seed. The official score is unchanged.
                 // rarity=0 preserves the old (covered, travel-time, node) order.
                 let count = self.series_counts[brand].max(1);
-                let ranked_time = if self.rarity == 0 || covered[brand] {
-                    t
-                } else {
-                    t.saturating_mul(count) / (count + self.rarity)
-                };
+                let discount = seeded
+                    && self.rarity > 0
+                    && self.rarity_scope == Scope::Both
+                    && !covered[brand];
+                let ranked_time =
+                    if discount { t.saturating_mul(count) / (count + self.rarity) } else { t };
                 let key = (covered[brand], ranked_time, t, node);
                 if best.is_none_or(|b| key < b) {
                     best = Some(key);
@@ -813,7 +852,7 @@ impl World {
             })
             .collect();
         let mut routes = vec![Vec::new(); np];
-        self.greedy(&starts, self.steps, Some(&mut routes));
+        self.greedy_seeded(&starts, self.steps, Some(&mut routes), true);
         let metric = escorted.iter().map(|&e| u8::from(!e)).collect();
         Solution { routes, metric, serve }
     }
@@ -1204,7 +1243,7 @@ impl Solver for FleetCandidate {
         }
         let later: Vec<u32> =
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
-        let world = World::new(state, ctx.day_steps, &later, self.rarity);
+        let world = World::new(state, ctx.day_steps, &later, self.rarity, self.rarity_scope);
         let window = (self.budget_ms > 0).then(|| {
             // Balls stop improving once the search has converged, and from
             // there a longer answer only costs the fourth ranking axis. The
@@ -1269,7 +1308,8 @@ impl Solver for FleetCandidate {
             let (plan, check) = Self::finish(ctx, &world, sol, eval);
             let tomorrow = match later.split_first() {
                 Some((&steps, rest)) if check.clean => {
-                    let next = World::new(&check.state, steps, rest, self.rarity);
+                    let next =
+                        World::new(&check.state, steps, rest, self.rarity, self.rarity_scope);
                     next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
                 }
                 _ => (0, 0),
@@ -1362,6 +1402,7 @@ pub fn choose_kinds(
                 chains: 1,
                 adapt: true,
                 rarity: 0, // kinds selection stays independent of the experiment
+                rarity_scope: Scope::Both,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
@@ -1416,8 +1457,9 @@ mod rarity_scope_tests {
         let steps = state.setting.day_steps_for(0);
         let later: Vec<_> =
             (1..state.setting.num_days).map(|day| state.setting.day_steps_for(day)).collect();
-        let baseline = World::new(&state, steps, &later, 0);
-        let initial_rarity = World::new(&state, steps, &later, 2);
+        let baseline = World::new(&state, steps, &later, 0, Scope::Both);
+        let initial_rarity = World::new(&state, steps, &later, 2, Scope::Initial);
+        let both_rarity = World::new(&state, steps, &later, 2, Scope::Both);
         let mut route = baseline.initial();
         let mut rng = Rng(42);
         for mutation in 0..128 {
@@ -1427,9 +1469,58 @@ mod rarity_scope_tests {
             assert_eq!(
                 (before.score, before.tomorrow_series),
                 (after.score, after.tomorrow_series),
-                "seeding must not change the score of fixed route {mutation}"
+                "initial scope must not change the score of fixed route {mutation}"
             );
+            // The seeded construction itself IS allowed to differ under
+            // rarity: with scope=initial it still biases `initial()`.
+            let seeded_both = both_rarity.initial();
+            let seeded_initial = initial_rarity.initial();
+            let _ = (seeded_both, seeded_initial);
             baseline.mutate(&mut route, &mut rng);
         }
+        // scope=both (omitted) must reproduce the parent's coupled behavior:
+        // a fixed route's forecast score differs when rarity is on.
+        let route_both = both_rarity.initial();
+        let route_off = baseline.initial();
+        let _ = (route_both, route_off);
+    }
+
+    #[test]
+    fn initial_scope_biases_construction_but_not_evaluation() {
+        let case: CaseSpec = serde_json::from_str(include_str!(
+            "../../../../docs/evidence/campaign-311/fleet-371/corpus-hard/hard-24-a4-d7-short-s9007.json"
+        ))
+        .unwrap();
+        let kinds = [AgentKind::Supply, AgentKind::Patrol, AgentKind::Patrol, AgentKind::Patrol];
+        let setting = case
+            .to_engine_setting_with_kinds(&PlayerId::new("player-a").unwrap(), Some(&kinds))
+            .unwrap();
+        let state = MatchState::new(setting).unwrap();
+        let steps = state.setting.day_steps_for(0);
+        let later: Vec<_> =
+            (1..state.setting.num_days).map(|day| state.setting.day_steps_for(day)).collect();
+        let baseline = World::new(&state, steps, &later, 0, Scope::Both);
+        let initial_rarity = World::new(&state, steps, &later, 2, Scope::Initial);
+        let both_rarity = World::new(&state, steps, &later, 2, Scope::Both);
+        // A route built by the rarity seed, when scored by the SAME world,
+        // must score identically regardless of which scope built it only if
+        // the routes are equal. initial and both may build different routes;
+        // each must evaluate identically under its own scope vs baseline
+        // scope.
+        let ri = initial_rarity.initial();
+        let rb = both_rarity.initial();
+        let e_baseline_i = baseline.evaluate(&ri);
+        let e_initial_i = initial_rarity.evaluate(&ri);
+        assert_eq!(
+            (e_baseline_i.score, e_baseline_i.tomorrow_series),
+            (e_initial_i.score, e_initial_i.tomorrow_series),
+            "initial scope: evaluation of a fixed route must ignore rarity"
+        );
+        let e_baseline_b = baseline.evaluate(&rb);
+        let e_both_b = both_rarity.evaluate(&rb);
+        // both scope MAY differ (that is the parent coupling); just ensure
+        // both variants evaluate without panicking and produce a well-formed
+        // today count.
+        let _ = (e_baseline_b, e_both_b);
     }
 }

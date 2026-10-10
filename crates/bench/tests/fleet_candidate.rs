@@ -69,7 +69,6 @@ fn fleet_requires_official_budget_and_rejects_bad_values() {
     assert!(build("fleet:budget=official:adapt=sometimes").is_err());
 }
 
-
 #[test]
 fn fleet_rarity_is_explicit_and_preserves_legacy_default() {
     let registry = CandidateRegistry::builtin();
@@ -82,10 +81,7 @@ fn fleet_rarity_is_explicit_and_preserves_legacy_default() {
     ] {
         assert!(build(id).is_ok(), "{id}");
     }
-    for id in [
-        "fleet:budget=official:rarity=5",
-        "fleet:budget=official:rarity=unknown",
-    ] {
+    for id in ["fleet:budget=official:rarity=5", "fleet:budget=official:rarity=unknown"] {
         assert!(build(id).is_err(), "{id}");
     }
 
