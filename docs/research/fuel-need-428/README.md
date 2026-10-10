@@ -33,6 +33,18 @@ Arena match 2001（32×32・`terrain: official`・7 台・8 日・燃料 80）�
 - `fuel_need` の値：25 は +32 / +61、50 は +83 / +57、75 は +86 / +22（D −1）、100 は +53、200 は +12（seed 42 / 7、tight-32 の 9 盤面）。
 - wall-clock の経路（`budget_ms=5000:adapt=off`）と `convoy` 経由でも違法・燃料不足 0 で完走（tight-like-32r-s301：211 → 217 / convoy 223）。
 
+## 追試（調整に使っていない盤面）
+
+`fuel_need=50:fuel_mix=on` を決めたあとに生成・取得した 32×32 本選型の盤面。
+
+| 盤面 | 探索 | n | 勝 / 分 / 敗 | ΔD | ΔB |
+|---|---|---:|---|---:|---:|
+| tight-like-32 seed 500〜（16 盤面）× seed 42・7（`holdout32-seeds42-7.jsonl`） | `iters=60000:chains=4` | 32 | 24 / 1 / 7 | +3 | +165（+2.5%） |
+| 上の先頭 8 盤面 + Arena 2001・2004（`holdout32-wallclock-6s.jsonl`） | `budget_ms=6000:adapt=off`（実戦と同じ wall-clock 経路、chain 4 本） | 10 | 8 / 0 / 2 | 0 | +51（+2.3%） |
+| Arena 2004（32×32 official・9 日）× seed 42・7・9 | `iters=60000:chains=4` | 3 | 3 / 0 / 0 | 0 | 430 → 446 平均（+3.8%） |
+
+違法・燃料不足・拒否は全 run で 0。Arena 2004 では日境界で満タンにする反実仮想（445〜450）と同じ水準（452）まで届く。
+
 ## 未検証
 
 - 実戦。
