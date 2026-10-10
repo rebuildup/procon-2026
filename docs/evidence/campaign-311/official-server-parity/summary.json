@@ -1,0 +1,173 @@
+{
+  "binary_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cases": [
+    {
+      "case": "A_plain1_to_mountain",
+      "note": "DECISIVE: fuel=1, 平地->山地. spec-text ACCEPT / conservative REJECT.",
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 1,
+          "kind": 0
+        }
+      ],
+      "day0-answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 1,
+          "fuel": 0,
+          "kind": 0
+        }
+      ],
+      "day1-answer": {
+        "revision": 2
+      }
+    },
+    {
+      "case": "B_mountain1_to_plain",
+      "note": "control: fuel=1, 山地->平地. Departure cost 2 > 1 -> REJECT under both surviving rules.",
+      "day0-start": [
+        {
+          "pos": 1,
+          "fuel": 1,
+          "kind": 0
+        }
+      ],
+      "day0-answer": {
+        "revision": -1
+      },
+      "day1-start": [
+        {
+          "pos": 1,
+          "fuel": 1,
+          "kind": 0
+        }
+      ],
+      "day1-answer": {
+        "revision": 1
+      }
+    },
+    {
+      "case": "C_plain2_to_mountain",
+      "note": "fuel=2, 平地->山地. ACCEPT everywhere; fuel after (1 vs 0) settles the CHARGE rule.",
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 2,
+          "kind": 0
+        }
+      ],
+      "day0-answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 1,
+          "fuel": 1,
+          "kind": 0
+        }
+      ],
+      "day1-answer": {
+        "revision": 2
+      }
+    },
+    {
+      "case": "D_plain1_to_plain",
+      "note": "fuel=1, 平地->平地. ACCEPT everywhere (LowerRight from (0,0) even row -> (1,1)).",
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 1,
+          "kind": 0
+        }
+      ],
+      "day0-answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 9,
+          "fuel": 0,
+          "kind": 0
+        }
+      ],
+      "day1-answer": {
+        "revision": 2
+      }
+    },
+    {
+      "case": "A2_plain0_to_mountain",
+      "note": "fuel=0, 平地->山地. REJECT: cannot pay even the departure cost.",
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 0,
+          "kind": 0
+        }
+      ],
+      "day0-answer": {
+        "revision": -1
+      },
+      "day1-start": [
+        {
+          "pos": 0,
+          "fuel": 0,
+          "kind": 0
+        }
+      ],
+      "day1-answer": {
+        "revision": 1
+      }
+    },
+    {
+      "case": "E_step_mismatch",
+      "note": "invalid-response: Σ weighted 2 != daySteps 16 -> whole response REJECT.",
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 10,
+          "kind": 0
+        }
+      ],
+      "day0-answer": {
+        "revision": -1
+      },
+      "day1-start": [
+        {
+          "pos": 0,
+          "fuel": 10,
+          "kind": 0
+        }
+      ],
+      "day1-answer": {
+        "revision": 1
+      }
+    },
+    {
+      "case": "F_wait_only",
+      "note": "wait control: [-16] ACCEPT.",
+      "day0-start": [
+        {
+          "pos": 0,
+          "fuel": 10,
+          "kind": 0
+        }
+      ],
+      "day0-answer": {
+        "revision": 1
+      },
+      "day1-start": [
+        {
+          "pos": 0,
+          "fuel": 10,
+          "kind": 0
+        }
+      ],
+      "day1-answer": {
+        "revision": 2
+      }
+    }
+  ]
+}

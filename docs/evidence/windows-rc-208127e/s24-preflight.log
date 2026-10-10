@@ -1,0 +1,9 @@
+== preflight: http://127.0.0.1:18772
+OK    バイナリ: C:\Users\rebui\Desktop\procon-wt\out\s-24\bin\procon.exe  {"package":"0.5.1","protocol":{"major":1,"minor":0},"rustc":"1.85"}
+OK    sha256: c562487d2c1ad90a3e07fa47820f057b69daed905e3ff58069511ee4ee21356b
+OK    トークン: 設定済み
+OK    試合記録: C:\Users\rebui\Desktop\procon-wt\out\s-24\records
+OK    HTTP 通信ログ: C:\Users\rebui\Desktop\procon-wt\out\s-24\logs
+OK    空き容量: 61 GB
+OK    サーバー応答: 200（認証 OK、試合設定が出ている）
+PREFLIGHT OK

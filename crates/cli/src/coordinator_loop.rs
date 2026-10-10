@@ -20,7 +20,12 @@
 //!    solvers (`"loop"`, `"mcts"`, anything other than the debug-only
 //!    `"wait"`) alternate `KIND_0` / `KIND_1` so half the agents
 //!    patrol and half supply, which gives a richer test of the full
-//!    protocol than the MVP's all-`KIND_0` placeholder.
+//!    protocol than the MVP's all-`KIND_0` placeholder. An answer
+//!    that never arrives (transport failure) is **not** resolved by
+//!    re-posting: the composition is read back from the server's own
+//!    state instead, and only an outcome that stays unknown after
+//!    [`CoordinatorLoopConfig::submit_readback_patience`] ends the run
+//!    (Issue #442).
 //! 3. **Wire -> engine.** Convert the setting, build team + match ids.
 //!    With an explicit `--kinds` the composition that was just posted is
 //!    handed to `protocol_setting_to_engine_with_kinds`, so the planning
@@ -28,8 +33,17 @@
 //!    told about; without the flag the historical conversion is unchanged.
 //! 4. **Start wait.** Re-poll `GET /setting` until `starts_at > 0`.
 //! 5. **Per-day loop.** `GET /` -> `solver.decide(&ctx)` -> adapter ->
-//!    `POST /`. If `revision < 0`, return [`CoordinatorLoopError::Rejected`]
-//!    without retrying. Otherwise sleep until `ends_at` and continue.
+//!    `POST /`, then sleep until `ends_at`. The loop follows the day the
+//!    server reports and keeps going when a day is lost (Issue #385): a plan
+//!    with no verdict is sent again while the answer window is open, a
+//!    rejected plan (`revision < 0`) or a solver that misses the window costs
+//!    that day only, and [`CoordinatorLoopError::Rejected`] is returned after
+//!    the last day rather than at the first rejection.
+//!
+//! A process started while a match is already running (`starts_at > 0` and
+//! `GET /` answers) skips phases 2 and 4 and joins at the server's day with
+//! the composition the server reports — the same read-back that settles an
+//! unanswered kind submission.
 //!
 //! ## Order rationale (issue #156)
 //!
@@ -60,9 +74,10 @@ use protocol::match_config::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::action_adapter::{AdapterError, decision_to_actions};
+use crate::action_adapter::decision_to_actions;
 use crate::arena::Secret;
 use crate::candidate_bridge::{apply_live_agents, apply_live_traffic};
+use crate::match_record::{DayStatus, MatchRecorder, RecordEvent, SubmitOutcome};
 use crate::protocol_to_engine::{
     protocol_setting_to_engine, protocol_setting_to_engine_with_kinds,
 };
@@ -114,6 +129,11 @@ pub struct CoordinatorLoopConfig {
     /// so the live flag and the offline `procon-eval --kinds` axis share
     /// one grammar and one rejection set.
     pub agent_kinds: Option<Vec<EngineAgentKind>>,
+    /// Choose the composition by simulating the match before `POST /agent`
+    /// (live `--kinds-auto`, Issue #371): one Supply (slot 0), or no Supply
+    /// when the simulation says the tanks last. Ignored when
+    /// [`agent_kinds`](Self::agent_kinds) is `Some`.
+    pub auto_kinds: bool,
     /// Maximum number of `POST /agent` attempts before giving up. Each
     /// attempt that returns `403 AccessTimeError` (kind window not yet
     /// open, or already closed) is retried up to this many times before
@@ -190,6 +210,31 @@ pub struct CoordinatorLoopConfig {
     /// [`Secret`]'s redacted `Debug` keeps the token out of any render of
     /// this config either way.
     pub secret_redaction: Option<Secret>,
+    /// Join a match that is already running instead of declaring kinds
+    /// (Issue #385): when `GET /setting` shows `starts_at > 0` and `GET /`
+    /// answers with a day, skip `POST /agent`, take the composition from the
+    /// server's agent list and continue from the server's day.
+    ///
+    /// Off by default because it trusts one thing about the server: that a
+    /// positive `starts_at` means the kind window is shut. The official
+    /// server works that way (it publishes `starts_at` only after the kind
+    /// deadline); a server that announces `starts_at` early and still expects
+    /// `POST /agent` would be left without our kinds.
+    pub resume_running_match: bool,
+    /// How long the loop lets the server's own state settle an unanswered
+    /// `POST /agent` (Issue #442): when the acknowledgement is lost, the
+    /// submission is never re-posted (that cannot distinguish "accepted"
+    /// from "never arrived") — instead the composition is read back from
+    /// `GET /`, which only answers once the match runs. This bounds that
+    /// wait; it shares the reasoning of [`SLOT_READBACK_PATIENCE`] (the
+    /// match has to start first). When it runs out the outcome is
+    /// genuinely unknown and the run ends with
+    /// [`CoordinatorLoopError::AgentSubmitUnconfirmed`].
+    pub submit_readback_patience: Duration,
+    /// Durable match record (`--record-dir`, Issue #394). Disabled by
+    /// default, in which case every call on it is a no-op; when enabled the
+    /// loop only ever hands it records through a non-blocking queue.
+    pub recorder: MatchRecorder,
 }
 
 impl Default for CoordinatorLoopConfig {
@@ -200,6 +245,7 @@ impl Default for CoordinatorLoopConfig {
             setting_poll_max_attempts: 300,
             solver_name: "loop".to_owned(),
             agent_kinds: None,
+            auto_kinds: false,
             kind_submit_max_attempts: 30,
             kind_submit_backoff: Duration::from_millis(500),
             match_state_max_attempts: 30,
@@ -210,6 +256,9 @@ impl Default for CoordinatorLoopConfig {
             engine_setting_slot: None,
             live_state_slot: None,
             secret_redaction: None,
+            resume_running_match: false,
+            submit_readback_patience: SLOT_READBACK_PATIENCE,
+            recorder: MatchRecorder::disabled(),
         }
     }
 }
@@ -245,6 +294,7 @@ impl CoordinatorLoopConfig {
             // No env override for the composition: `--kinds` is a CLI flag
             // so an invocation records exactly what it asked for.
             agent_kinds: None,
+            auto_kinds: false,
             // Use the documented defaults: 30 attempts × 500ms = 15s of
             // retry budget on `POST /agent`, which covers the official
             // 5s/60s `kind-deadline` plus poll jitter. Tweakable later via
@@ -264,6 +314,9 @@ impl CoordinatorLoopConfig {
             engine_setting_slot: None,
             live_state_slot: None,
             secret_redaction: None,
+            resume_running_match: false,
+            submit_readback_patience: SLOT_READBACK_PATIENCE,
+            recorder: MatchRecorder::disabled(),
         })
     }
 }
@@ -492,6 +545,13 @@ fn unix_now() -> i64 {
 /// is logged via `tracing::warn!` and never propagated. The match loop
 /// continues whether or not the snapshot was successfully written.
 fn write_snapshot(cfg: &CoordinatorLoopConfig, snap: &MatchStateSnapshot) {
+    // The run directory keeps its own copy of the snapshot (Issue #394),
+    // written by the recorder thread; `--state-output` below is unchanged.
+    if cfg.recorder.is_enabled() {
+        if let Ok(json) = serde_json::to_vec_pretty(snap) {
+            cfg.recorder.state_snapshot(json);
+        }
+    }
     let Some(path) = cfg.state_output_path.as_ref() else {
         return;
     };
@@ -537,6 +597,20 @@ pub enum CoordinatorLoopError {
     /// `POST /agent` failed.
     #[error("POST /agent failed: {0}")]
     AgentSubmit(protocol::HttpClientError),
+    /// `POST /agent`'s outcome never became known (Issue #442): the answer
+    /// was lost AND the server's own state never revealed the composition
+    /// within the read-back patience, so the loop cannot tell an accepted
+    /// submission from one that never arrived and ends instead of guessing.
+    #[error(
+        "POST /agent outcome unconfirmed: {detail}; the server state did not \
+         reveal the composition within {patience_secs}s of read-back"
+    )]
+    AgentSubmitUnconfirmed {
+        /// The transport error of the unanswered `POST /agent`.
+        detail: String,
+        /// Read-back patience that ran out, in whole seconds.
+        patience_secs: u64,
+    },
     /// `GET /` failed.
     #[error("GET / failed: {0}")]
     State(protocol::HttpClientError),
@@ -558,13 +632,6 @@ pub enum CoordinatorLoopError {
     /// Protocol <-> engine conversion produced a malformed value.
     #[error("protocol/engine conversion failed: {0}")]
     Conversion(String),
-    /// The decision <-> action adapter produced a malformed value.
-    #[error("action adapter failed on day {day}: {source}")]
-    Adapter {
-        day: u32,
-        #[source]
-        source: AdapterError,
-    },
 }
 
 /// Drive one match end-to-end against `client` and `solver`.
@@ -614,6 +681,26 @@ pub async fn run_coordinator_loop(
     let result =
         run_coordinator_loop_inner(client, solver, cfg.clone(), &mut snap, on_day_accepted).await;
 
+    cfg.recorder.event_with(|| match &result {
+        Ok(outcome) => RecordEvent::MatchEnd {
+            status: "completed".to_owned(),
+            days_completed: outcome.days_completed,
+            revisions: outcome.revisions.clone(),
+            error: None,
+        },
+        Err(e) => RecordEvent::MatchEnd {
+            status: if matches!(e, CoordinatorLoopError::Rejected { .. }) {
+                "rejected".to_owned()
+            } else {
+                "error".to_owned()
+            },
+            days_completed: snap.revisions.len(),
+            revisions: snap.revisions.clone(),
+            error: Some(e.to_string()),
+        },
+    });
+    cfg.recorder.report_health();
+
     // Final snapshot: terminal status (Completed / Rejected / Error).
     match &result {
         Ok(outcome) => {
@@ -632,6 +719,7 @@ pub async fn run_coordinator_loop(
             snap.revisions.push(*revision);
             snap.last_update_unix = unix_now();
             snap.error = Some(format!("rejected day={day} revision={revision}"));
+            tracing::error!(day, revision, "plan rejected by server");
             write_snapshot(&cfg, &snap);
         }
         Err(e) => {
@@ -668,7 +756,12 @@ where
     let mut setting_polls = 0_u32;
     let wire_setting = loop {
         match client.get_match_setting().await {
-            Ok(s) => break s,
+            Ok(s) => {
+                cfg.recorder.setting(&s);
+                cfg.recorder
+                    .event(RecordEvent::Setting { starts_at: s.starts_at, polls: setting_polls });
+                break s;
+            }
             Err(protocol::HttpClientError::AccessTime { .. }) => {
                 // Pre-start window: server returns 403 before the first
                 // setting snapshot exists. Back off and retry — but not
@@ -713,24 +806,262 @@ where
     // window between "server became responsive" and "server flipped
     // starts_at", which is exactly the open kind window.
     let n_agents = wire_setting.agents.len();
-    let submitted_kinds = agent_kinds_for(n_agents, &cfg.solver_name, cfg.agent_kinds.as_deref());
-    // Evidence (Issue #243): log the composition being declared in the same
-    // `P,S,…` spelling `--kinds` takes, so a run log and the flag that
-    // produced it read the same words. Agent kinds are game state, never
-    // secrets — no token material reaches this line.
-    tracing::info!(
-        n_agents,
-        kinds = %bench::kinds::render_kinds(&submitted_kinds),
-        solver = %cfg.solver_name,
-        "agent kinds selected for POST /agent"
-    );
-    submit_agent_with_retry(
-        &client,
-        to_wire_kinds(&submitted_kinds),
-        cfg.kind_submit_max_attempts,
-        cfg.kind_submit_backoff,
-    )
-    .await?;
+    // Resume (Issue #385): a positive `starts_at` means the kind window is
+    // shut, so if `GET /` already answers with a day, this process was started
+    // (or restarted after a crash) in the middle of a match. `POST /agent`
+    // can only answer 403 from here on, and the server's own agent list says
+    // which composition is in play — pick the match up at the day it is on
+    // instead of dying on the kind submission.
+    let mut resumed_state = if cfg.resume_running_match && wire_setting.starts_at > 0 {
+        match client.get_match_state().await {
+            Ok(state) if state.agents.len() == n_agents => Some(state),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let resumed = resumed_state.is_some();
+    let simulated_kinds = cfg.auto_kinds && cfg.agent_kinds.is_none();
+    // `mut` because an unanswered `POST /agent` is settled by reading the
+    // composition back from the server (Issue #442), and the supply-slot
+    // refinement below may hand the day to a different slot.
+    let mut submitted_kinds = if let Some(state) = resumed_state.as_ref() {
+        let kinds: Vec<EngineAgentKind> = state
+            .agents
+            .iter()
+            .map(|a| {
+                if a.kind == AgentKind::KIND_1 {
+                    EngineAgentKind::Supply
+                } else {
+                    EngineAgentKind::Patrol
+                }
+            })
+            .collect();
+        tracing::warn!(
+            day = state.day,
+            kinds = %bench::kinds::render_kinds(&kinds),
+            "match already in progress: resuming with the composition the server reports"
+        );
+        cfg.recorder.event(RecordEvent::Resume { day: state.day });
+        kinds
+    } else if simulated_kinds {
+        let team = PlayerId::new(&cfg.team_id)
+            .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
+        let (kinds, trials) =
+            bench::adapters::fleet_solver::choose_kinds(&wire_setting, &team, AUTO_KINDS_WINDOW);
+        for trial in &trials {
+            tracing::info!(
+                kinds = %bench::kinds::render_kinds(&trial.kinds),
+                variety = trial.score.0,
+                daily_variety = trial.score.1,
+                balls = trial.score.2,
+                "agent kinds trial"
+            );
+        }
+        kinds
+    } else {
+        agent_kinds_for(n_agents, &cfg.solver_name, cfg.agent_kinds.as_deref())
+    };
+    cfg.recorder.event_with(|| RecordEvent::Kinds {
+        source: if resumed {
+            "server"
+        } else if cfg.agent_kinds.is_some() {
+            "explicit"
+        } else if simulated_kinds {
+            "auto"
+        } else {
+            "default"
+        }
+        .to_owned(),
+        kinds: to_wire_kinds(&submitted_kinds).iter().map(|k| k.value()).collect(),
+        pattern: bench::kinds::render_kinds(&submitted_kinds),
+    });
+    if !resumed {
+        // Evidence (Issue #243): log the composition being declared in the same
+        // `P,S,…` spelling `--kinds` takes, so a run log and the flag that
+        // produced it read the same words. Agent kinds are game state, never
+        // secrets — no token material reaches this line.
+        tracing::info!(
+            n_agents,
+            kinds = %bench::kinds::render_kinds(&submitted_kinds),
+            solver = %cfg.solver_name,
+            "agent kinds selected for POST /agent"
+        );
+        let agent_submit_began = std::time::Instant::now();
+        let submitted = submit_agent_with_retry(
+            &client,
+            to_wire_kinds(&submitted_kinds),
+            cfg.kind_submit_max_attempts,
+            cfg.kind_submit_backoff,
+        )
+        .await;
+        cfg.recorder.event_with(|| RecordEvent::AgentSubmit {
+            ok: submitted.is_ok(),
+            elapsed_ms: elapsed_ms(agent_submit_began),
+            error: submitted.as_ref().err().map(ToString::to_string),
+        });
+        match submitted {
+            Ok(_) => {}
+            // Issue #442: the POST never answered. Whether the server took
+            // the composition is unknown — the acknowledgement may simply
+            // have been lost. Repeating the POST cannot distinguish the two
+            // cases (an accepted submission could only ever answer 403 once
+            // the window shuts), so the server's own published state is the
+            // arbiter: once the match runs, `GET /` reports the composition
+            // in play. Whatever it shows is adopted; if it never shows one,
+            // the outcome stays unknown and the run ends classified as such
+            // instead of failing a match that may already be under way.
+            Err(CoordinatorLoopError::AgentSubmit(protocol::HttpClientError::Transport(
+                transport,
+            ))) => {
+                tracing::warn!(
+                    error = %transport,
+                    "POST /agent answer never arrived; reading the composition \
+                     back from the server instead of re-submitting"
+                );
+                match readback_kinds_in_play(
+                    &client,
+                    n_agents,
+                    cfg.submit_readback_patience,
+                    SUBMIT_READBACK_POLL,
+                    &cfg.recorder,
+                )
+                .await
+                {
+                    Ok(Some(server_kinds)) => {
+                        if server_kinds == submitted_kinds {
+                            tracing::info!(
+                                kinds = %bench::kinds::render_kinds(&server_kinds),
+                                "the submitted composition is confirmed in play despite \
+                                 the lost answer; continuing the match"
+                            );
+                        } else {
+                            tracing::warn!(
+                                sent = %bench::kinds::render_kinds(&submitted_kinds),
+                                in_play = %bench::kinds::render_kinds(&server_kinds),
+                                "the server holds a different composition than the one \
+                                 submitted; planning against the server's"
+                            );
+                        }
+                        cfg.recorder.event_with(|| RecordEvent::Kinds {
+                            source: "server".to_owned(),
+                            kinds: to_wire_kinds(&server_kinds).iter().map(|k| k.value()).collect(),
+                            pattern: bench::kinds::render_kinds(&server_kinds),
+                        });
+                        submitted_kinds = server_kinds;
+                    }
+                    Ok(None) => {
+                        return Err(CoordinatorLoopError::AgentSubmitUnconfirmed {
+                            detail: transport.to_string(),
+                            patience_secs: cfg.submit_readback_patience.as_secs(),
+                        });
+                    }
+                    // The read-back cannot talk to this server at all (auth,
+                    // malformed URL): that is fatal on its own, surfaced with
+                    // its own endpoint classification.
+                    Err(e) => return Err(CoordinatorLoopError::State(e)),
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    // Which start becomes the one Supply (Issue #428), opt-in. The composition
+    // above is already accepted, so this can only improve on it: the trials
+    // run after that first `POST /agent`, and a better slot is sent as a
+    // second one (the server keeps the last submission). If the kind window
+    // has closed by then, the first composition simply stands.
+    let one_supply = submitted_kinds.iter().filter(|&&k| k == EngineAgentKind::Supply).count() == 1;
+    if let Some(window) = supply_slot_window(wire_setting.starts_at)
+        .filter(|_| !resumed && simulated_kinds && one_supply)
+    {
+        let team = PlayerId::new(&cfg.team_id)
+            .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
+        let (slot, slot_trials) =
+            bench::adapters::fleet_solver::choose_supply_slot(&wire_setting, &team, window);
+        for trial in &slot_trials {
+            tracing::info!(
+                slot = trial.slot,
+                matches = trial.matches,
+                variety = trial.total.0,
+                daily_variety = trial.total.1,
+                balls = trial.total.2,
+                "supply slot trial"
+            );
+        }
+        let refined: Option<Vec<EngineAgentKind>> =
+            slot.filter(|&s| submitted_kinds.get(s) == Some(&EngineAgentKind::Patrol)).map(|s| {
+                (0..n_agents)
+                    .map(|i| if i == s { EngineAgentKind::Supply } else { EngineAgentKind::Patrol })
+                    .collect()
+            });
+        if let Some(refined) = refined {
+            // 403: the window is shut and nothing changed. Anything else —
+            // accepted, or an answer that never arrived — is settled by the
+            // server's own agent list once the match has started, so the
+            // plans are always made for the composition the server holds.
+            let verify = match client.submit_agent(to_wire_kinds(&refined)).await {
+                Ok(_) => {
+                    tracing::info!(
+                        kinds = %bench::kinds::render_kinds(&refined),
+                        "supply slot resubmitted and accepted"
+                    );
+                    submitted_kinds = refined;
+                    true
+                }
+                Err(protocol::HttpClientError::AccessTime { message }) => {
+                    tracing::warn!(
+                        kinds = %bench::kinds::render_kinds(&submitted_kinds),
+                        message = %message,
+                        "kind window closed before the supply slot was resubmitted; \
+                         the first composition stands"
+                    );
+                    false
+                }
+                Err(error) => {
+                    tracing::warn!(error = %error, "supply slot resubmission unconfirmed");
+                    true
+                }
+            };
+            if verify {
+                let confirmed = match readback_kinds_in_play(
+                    &client,
+                    n_agents,
+                    SLOT_READBACK_PATIENCE,
+                    SUBMIT_READBACK_POLL,
+                    &cfg.recorder,
+                )
+                .await
+                {
+                    // The server's agent list settles which composition is in
+                    // play, whatever the second POST did.
+                    Ok(Some(server_kinds)) => {
+                        submitted_kinds = server_kinds;
+                        true
+                    }
+                    Ok(None) => false,
+                    // The read-back cannot settle the question (auth, a URL
+                    // that never parsed): keep the first accepted composition
+                    // rather than failing a match the first POST already set
+                    // in motion.
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "composition read-back failed; keeping the first accepted \
+                             composition"
+                        );
+                        false
+                    }
+                };
+                tracing::info!(
+                    confirmed,
+                    kinds = %bench::kinds::render_kinds(&submitted_kinds),
+                    "composition in play after the supply slot resubmission"
+                );
+            }
+        } else {
+            tracing::info!(slot = ?slot, "supply slot unchanged");
+        }
+    }
 
     // Kinds accepted -> Running snapshot. `day` stays `None` because
     // we have not yet entered the per-day driver.
@@ -747,10 +1078,11 @@ where
     // `POST /agent` and the solver's world together. Without the flag this
     // is the historical call, verbatim — including its `wait` quirk, where
     // `POST /agent` sends all patrol while the local model keeps the
-    // alternation; `WaitSolver` never plans against that model.
+    // alternation; `WaitSolver` never plans against that model. A resumed
+    // match always plans against the composition the server reported.
     let team = PlayerId::new(&cfg.team_id)
         .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
-    let engine_setting = if cfg.agent_kinds.is_some() {
+    let engine_setting = if cfg.agent_kinds.is_some() || simulated_kinds || resumed {
         protocol_setting_to_engine_with_kinds(
             &wire_setting,
             team.clone(),
@@ -784,11 +1116,17 @@ where
     // re-poll here until the server announces the start. The rest of
     // the setting (map / day_steps / day_seconds / agents) is static so
     // the snapshot from Phase 1 stays valid.
+    if wire_setting.starts_at > 0 {
+        cfg.recorder.event(RecordEvent::MatchStart { starts_at: wire_setting.starts_at });
+    }
     if wire_setting.starts_at == 0 {
         let mut start_polls = 0_u32;
         loop {
             match client.get_match_setting().await {
-                Ok(s) if s.starts_at > 0 => break,
+                Ok(s) if s.starts_at > 0 => {
+                    cfg.recorder.event(RecordEvent::MatchStart { starts_at: s.starts_at });
+                    break;
+                }
                 Ok(_) | Err(protocol::HttpClientError::AccessTime { .. }) => {
                     // Kinds are registered but the match has not announced a
                     // start yet. Bounded, and visible: a cancelled match or a
@@ -817,26 +1155,65 @@ where
     // the very same `GET /` state and submitted plan the loop already has.
     let mut day_summaries: Vec<DaySummary> = Vec::with_capacity(total_days);
     let mut days_completed = 0_usize;
+    // Days that ended without an accepted plan, and the first rejection the
+    // server reported. Neither ends the match (Issue #385): one lost day
+    // costs that day's harvest, abandoning the loop costs every later day.
+    let mut unanswered_days: Vec<u32> = Vec::new();
+    let mut first_rejection: Option<(u32, i32)> = None;
+    let solver: Arc<dyn engine::solver::Solver> = Arc::from(solver);
+    let total_days_i32 = i32::try_from(total_days).unwrap_or(i32::MAX);
 
-    // Phase 5: per-day loop.
-    for day_idx in 0..total_days {
-        let day = u32::try_from(day_idx).unwrap_or(0);
+    // Phase 5: per-day loop, driven by the day the server reports.
+    let mut expected_day = resumed_state.as_ref().map_or(0, |s| s.day.max(0));
+    while expected_day < total_days_i32 {
+        let fetch_began = std::time::Instant::now();
+        let state = if let Some(state) = resumed_state.take() {
+            state
+        } else {
+            // Keep asking for as long as the match can still be running:
+            // a cable that is back two days later still gets the rest of
+            // the match answered.
+            let remaining_seconds: i64 = wire_setting
+                .day_seconds
+                .iter()
+                .skip(usize::try_from(expected_day).unwrap_or(0))
+                .map(|s| i64::from(*s))
+                .sum();
+            let patience = Duration::from_secs(u64::try_from(remaining_seconds).unwrap_or(0))
+                + cfg.match_state_backoff * cfg.match_state_max_attempts.max(1);
+            fetch_state_with_retry(
+                &client,
+                patience,
+                cfg.match_state_backoff,
+                expected_day,
+                &cfg.recorder,
+            )
+            .await?
+        };
+        if state.day >= total_days_i32 {
+            break;
+        }
+        cfg.recorder.event_with(|| RecordEvent::DayState {
+            expected_day,
+            fetch_ms: elapsed_ms(fetch_began),
+            observed: state.clone(),
+        });
+        if state.day > expected_day {
+            tracing::error!(
+                expected_day,
+                server_day = state.day,
+                "the server is ahead of us: the days in between went unanswered"
+            );
+            unanswered_days.extend((expected_day..state.day).filter_map(|d| u32::try_from(d).ok()));
+            cfg.recorder.event_with(|| RecordEvent::DaysSkipped {
+                days: (expected_day..state.day).filter_map(|d| u32::try_from(d).ok()).collect(),
+            });
+        }
+        let day_idx = usize::try_from(state.day).unwrap_or(0);
+        let day = u32::try_from(state.day).unwrap_or(0);
         let day_steps = u32::try_from(wire_setting.day_steps[day_idx])
             .map_err(|e| CoordinatorLoopError::Conversion(format!("day_steps[{day_idx}]={e}")))?;
-
-        let state = fetch_state_with_retry(
-            &client,
-            cfg.match_state_max_attempts,
-            cfg.match_state_backoff,
-            i32::try_from(day).unwrap_or(i32::MAX),
-        )
-        .await?;
-        if state.day != i32::try_from(day).unwrap_or(i32::MAX) {
-            return Err(CoordinatorLoopError::Conversion(format!(
-                "server reported day {} while we expected {day}",
-                state.day
-            )));
-        }
+        expected_day = state.day + 1;
 
         // Hand the live wire state to solvers that registered a slot
         // (candidate bridge). Default path: no slot, nothing happens.
@@ -849,7 +1226,8 @@ where
 
         let snapshot =
             match_state_to_snapshot(&state, &match_id, &team).unwrap_or_else(dummy_match_snapshot);
-        let remaining_ms = solver_budget_ms(state.ends_at, Utc::now().timestamp_millis());
+        let now_ms = Utc::now().timestamp_millis();
+        let remaining_ms = solver_budget_ms(state.ends_at, now_ms);
         let ctx = engine::solver::SolverContext::new(
             snapshot,
             team.clone(),
@@ -859,25 +1237,80 @@ where
             remaining_ms,
         );
 
-        let decision = solver.decide(&ctx);
-        let actions = decision_to_actions(&decision, &ctx)
-            .map_err(|source| CoordinatorLoopError::Adapter { day, source })?;
-
-        // Issue #226 — official conformance at the submission boundary.
-        // The server judges a *terrain-weighted* step sum
-        // (Σ origin-cell costs + waits == daySteps, see `engine::wire_plan`),
-        // while candidates and `decision_to_actions` speak the engine's
-        // element clock. Normalize here: both solver paths (CandidateBridge
-        // and EngineLoopAdapter) funnel through this single point, so the
-        // body we actually POST always fits the official budget — candidate
-        // output and offline scoring are untouched.
-        let actions = normalize_submission(&engine_setting, &state, day_steps, &actions)
-            .map_err(CoordinatorLoopError::Conversion)?;
+        // The solver runs off the async thread under a watchdog that fires
+        // `SUBMIT_RESERVE_MS` before the server's deadline: a plan that is not
+        // ready by then could only arrive after the day has rolled over, where
+        // it would be judged against the next day's positions.
+        let watchdog = Duration::from_millis(
+            u64::try_from(
+                state.ends_at.saturating_mul(1000).saturating_sub(now_ms) - SUBMIT_RESERVE_MS,
+            )
+            .unwrap_or(0)
+            .max(MIN_SOLVER_WINDOW_MS),
+        );
+        let planned = {
+            let solver = Arc::clone(&solver);
+            let engine_setting = engine_setting.clone();
+            let state = state.clone();
+            let task = tokio::task::spawn_blocking(move || {
+                let decision = solver.decide(&ctx);
+                let actions = decision_to_actions(&decision, &ctx)
+                    .map_err(|e| format!("action adapter: {e}"))?;
+                // Issue #226 — official conformance at the submission boundary.
+                // The server judges a *terrain-weighted* step sum
+                // (Σ origin-cell costs + waits == daySteps, see
+                // `engine::wire_plan`), while candidates and
+                // `decision_to_actions` speak the engine's element clock.
+                // Normalize here: both solver paths (CandidateBridge and
+                // EngineLoopAdapter) funnel through this single point, so the
+                // body we actually POST always fits the official budget.
+                normalize_submission(&engine_setting, &state, day_steps, &actions)
+            });
+            match tokio::time::timeout(watchdog, task).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(join)) => Err(format!("solver task failed: {join}")),
+                Err(_) => Err(format!("no plan within {watchdog:?} of the answer window")),
+            }
+        };
+        let actions = match planned {
+            Ok(actions) => actions,
+            Err(reason) => {
+                tracing::error!(day, reason = %reason, "no plan for this day; leaving it unanswered");
+                cfg.recorder.event_with(|| RecordEvent::PlanFailed {
+                    day,
+                    solve_ms: millis_since(now_ms),
+                    reason: reason.clone(),
+                });
+                cfg.recorder.event_with(|| RecordEvent::DayResult {
+                    day,
+                    status: DayStatus::Unanswered,
+                    revision: None,
+                    attempts: 0,
+                    answer_ms: Utc::now().timestamp_millis() - now_ms,
+                    margin_ms: state.ends_at.saturating_mul(1000) - Utc::now().timestamp_millis(),
+                    reason: Some(reason.clone()),
+                });
+                cfg.recorder.report_health();
+                unanswered_days.push(day);
+                sleep_until_day_end(&state, expected_day < total_days_i32).await;
+                continue;
+            }
+        };
 
         // Issue #236 — summarise the day *before* `actions` is moved into
         // the submit call: day-start agent state (kind / pos / fuel) plus
         // the movement shape of the normalized plan we are about to send.
         let summary = DaySummary::new(day, &state.agents, &actions);
+        // Issue #394 — the full body, not a summary: this is the one record
+        // a route can be redrawn from. Queued before the POST so a crash
+        // during delivery still leaves what was about to be sent.
+        cfg.recorder.event_with(|| RecordEvent::Plan {
+            day,
+            day_steps,
+            budget_ms: remaining_ms,
+            solve_ms: millis_since(now_ms),
+            actions: actions.clone(),
+        });
 
         // Operator visibility: when DEBUG logging is on, dump the
         // exact wire payload we are about to send. Gated by the
@@ -906,35 +1339,73 @@ where
             );
         }
 
-        let accepted = match client.submit_actions(actions).await {
-            Ok(a) => a,
-            Err(protocol::HttpClientError::Http { status: 200, message })
-                if message.starts_with("rejected: revision=") =>
-            {
-                let revision =
-                    message.trim_start_matches("rejected: revision=").parse::<i32>().unwrap_or(-1);
-                return Err(CoordinatorLoopError::Rejected { day, revision });
+        let submitted_at_ms = Utc::now().timestamp_millis();
+        let (submission, attempts) =
+            submit_plan_until_deadline(&client, &actions, state.ends_at, day, &cfg.recorder)
+                .await?;
+        cfg.recorder.event_with(|| {
+            let (status, revision, reason) = match &submission {
+                DaySubmission::Accepted(revision) => (DayStatus::Accepted, Some(*revision), None),
+                DaySubmission::Rejected(revision) => (DayStatus::Rejected, Some(*revision), None),
+                DaySubmission::Unanswered(reason) => {
+                    (DayStatus::Unanswered, None, Some(reason.clone()))
+                }
+            };
+            RecordEvent::DayResult {
+                day,
+                status,
+                revision,
+                attempts,
+                answer_ms: Utc::now().timestamp_millis() - now_ms,
+                margin_ms: state.ends_at.saturating_mul(1000) - Utc::now().timestamp_millis(),
+                reason,
             }
-            Err(e) => return Err(CoordinatorLoopError::ActionSubmit(e)),
-        };
-        // submit_actions returns Err on revision<0, so reaching here means
-        // the revision is non-negative. Store it and continue.
-        revisions.push(accepted.revision);
-        day_summaries.push(summary);
-        days_completed += 1;
-
-        // Per-day Running snapshot. The closure mutates `snap` and
-        // calls `write_snapshot` so the frontend sees incremental
-        // progress after each accepted day.
-        on_day_accepted(day, accepted.revision, snap);
-
-        if day + 1 < u32::try_from(total_days).unwrap_or(u32::MAX) {
-            let now = Utc::now().timestamp();
-            let diff = state.ends_at - now;
-            if diff > 0 {
-                tokio::time::sleep(Duration::from_secs(u64::try_from(diff).unwrap_or(0))).await;
+        });
+        cfg.recorder.report_health();
+        match submission {
+            DaySubmission::Accepted(revision) => {
+                tracing::info!(
+                    day,
+                    revision,
+                    answer_ms = Utc::now().timestamp_millis() - now_ms,
+                    submit_ms = Utc::now().timestamp_millis() - submitted_at_ms,
+                    margin_ms = state.ends_at.saturating_mul(1000) - Utc::now().timestamp_millis(),
+                    "plan accepted by server"
+                );
+                revisions.push(revision);
+                day_summaries.push(summary);
+                days_completed += 1;
+                // Per-day Running snapshot. The closure mutates `snap` and
+                // calls `write_snapshot` so the frontend sees incremental
+                // progress after each accepted day.
+                on_day_accepted(day, revision, snap);
+            }
+            DaySubmission::Rejected(revision) => {
+                tracing::error!(
+                    day,
+                    revision,
+                    "plan rejected by server; continuing with the next day"
+                );
+                first_rejection.get_or_insert((day, revision));
+                unanswered_days.push(day);
+            }
+            DaySubmission::Unanswered(reason) => {
+                tracing::error!(day, reason = %reason, "plan not delivered; continuing with the next day");
+                unanswered_days.push(day);
             }
         }
+
+        sleep_until_day_end(&state, expected_day < total_days_i32).await;
+    }
+
+    if !unanswered_days.is_empty() {
+        tracing::error!(
+            days = ?unanswered_days,
+            "match finished with days that have no accepted plan"
+        );
+    }
+    if let Some((day, revision)) = first_rejection {
+        return Err(CoordinatorLoopError::Rejected { day, revision });
     }
 
     Ok(CoordinatorOutcome {
@@ -945,6 +1416,129 @@ where
         days: day_summaries,
         kinds: submitted_kinds,
     })
+}
+
+/// Time kept back from the answer window for delivering the plan: the solver
+/// watchdog fires this long before the server's deadline.
+const SUBMIT_RESERVE_MS: i64 = 2500;
+
+/// The watchdog never gives the solver less than this, however little of the
+/// day is left (a late resume still gets one honest attempt).
+const MIN_SOLVER_WINDOW_MS: u64 = 500;
+
+/// Pause between `POST /` attempts while a plan is not through yet.
+const SUBMIT_RETRY_PAUSE: Duration = Duration::from_millis(200);
+
+/// What became of one day's plan.
+enum DaySubmission {
+    /// The server answered `revision >= 0`.
+    Accepted(i32),
+    /// The server answered `revision < 0`: the plan is illegal.
+    Rejected(i32),
+    /// No verdict before the day ended.
+    Unanswered(String),
+}
+
+/// Sleep to the day's deadline, unless this was the last day.
+async fn sleep_until_day_end(state: &WireMatchState, more_days: bool) {
+    if more_days {
+        let diff = state.ends_at - Utc::now().timestamp();
+        if diff > 0 {
+            tokio::time::sleep(Duration::from_secs(u64::try_from(diff).unwrap_or(0))).await;
+        }
+    }
+}
+
+/// `POST /` one day's plan until the server gives a verdict or the day ends.
+///
+/// Sending the same plan again is safe by the official contract: within a day
+/// the submission with the highest revision stands, so a repeat can only
+/// replace the plan with itself. That makes "the connection dropped, was it
+/// accepted?" answerable the simple way — ask again — while the answer window
+/// is still open. The window is the limit: a repeat that lands after the day
+/// has rolled over would be read as the *next* day's plan, so nothing is sent
+/// once the local clock passes `ends_at`.
+///
+/// A rejection (`revision < 0`) is a verdict on the plan, not a delivery
+/// problem, and is returned at once without another attempt.
+///
+/// # Errors
+/// Only an authentication failure — the one error no later attempt and no
+/// later day can recover from.
+async fn submit_plan_until_deadline(
+    client: &protocol::MatchClient,
+    actions: &ActionPlanBody,
+    ends_at: i64,
+    day: u32,
+    recorder: &MatchRecorder,
+) -> Result<(DaySubmission, u32), CoordinatorLoopError> {
+    let deadline_ms = ends_at.saturating_mul(1000);
+    let mut attempt = 0_u32;
+    loop {
+        attempt += 1;
+        let began = std::time::Instant::now();
+        let response = client.submit_actions(actions.clone()).await;
+        let attempted = |outcome: SubmitOutcome, revision: Option<i32>, error: Option<String>| {
+            recorder.event_with(|| RecordEvent::SubmitAttempt {
+                day,
+                attempt,
+                elapsed_ms: elapsed_ms(began),
+                outcome,
+                revision,
+                error,
+            });
+        };
+        let error = match response {
+            Ok(accepted) => {
+                attempted(SubmitOutcome::Accepted, Some(accepted.revision), None);
+                return Ok((DaySubmission::Accepted(accepted.revision), attempt));
+            }
+            Err(protocol::HttpClientError::Http { status: 200, message })
+                if message.starts_with("rejected: revision=") =>
+            {
+                let revision =
+                    message.trim_start_matches("rejected: revision=").parse::<i32>().unwrap_or(-1);
+                attempted(SubmitOutcome::Rejected, Some(revision), Some(message));
+                return Ok((DaySubmission::Rejected(revision), attempt));
+            }
+            Err(
+                e @ (protocol::HttpClientError::Auth { .. }
+                | protocol::HttpClientError::InvalidUrl(_)),
+            ) => {
+                attempted(SubmitOutcome::Fatal, None, Some(e.to_string()));
+                return Err(CoordinatorLoopError::ActionSubmit(e));
+            }
+            Err(protocol::HttpClientError::AccessTime { message }) => {
+                attempted(SubmitOutcome::WindowClosed, None, Some(message.clone()));
+                return Ok((
+                    DaySubmission::Unanswered(format!("answer window closed: {message}")),
+                    attempt,
+                ));
+            }
+            Err(protocol::HttpClientError::Http { status, message })
+                if (400..500).contains(&status) && !matches!(status, 408 | 425 | 429) =>
+            {
+                let reason = format!("HTTP {status}: {message}");
+                attempted(SubmitOutcome::ClientError, None, Some(reason.clone()));
+                return Ok((DaySubmission::Unanswered(reason), attempt));
+            }
+            Err(e) => {
+                attempted(SubmitOutcome::NoVerdict, None, Some(e.to_string()));
+                e
+            }
+        };
+        let left_ms = deadline_ms - Utc::now().timestamp_millis();
+        if left_ms <= i64::try_from(SUBMIT_RETRY_PAUSE.as_millis()).unwrap_or(i64::MAX) {
+            return Ok((
+                DaySubmission::Unanswered(format!(
+                    "no verdict after {attempt} attempt(s): {error}"
+                )),
+                attempt,
+            ));
+        }
+        tracing::warn!(day, attempt, left_ms, error = %error, "POST / got no verdict; sending the same plan again");
+        tokio::time::sleep(SUBMIT_RETRY_PAUSE).await;
+    }
 }
 
 /// Normalize one day's answer body to the official terrain-weighted step
@@ -1066,41 +1660,178 @@ where
     })
 }
 
-/// Retry `GET /` while the server is still in the pre-start window
-/// (`-match-start-delay` may cause a brief `403 AccessTimeError` between
-/// `starts_at` flipping positive in `GET /setting` and the actual match
-/// start, see issue #164). All other errors propagate immediately.
+/// Poll `GET /` until the server reports `expected_day` or a later one.
 ///
-/// `max_attempts` × `backoff` covers the 1s default and 5s worst case
-/// of `-match-start-delay` with comfortable headroom (e.g. 30 × 500ms
-/// = 15s budget).
+/// Everything short of a verdict on our credentials is waited out, for up to
+/// `patience`: the `403 AccessTimeError` of the `-match-start-delay` gap
+/// (issue #164), a server still on the previous day because its clock runs
+/// behind ours, and — Issue #385 — transport failures, 5xx answers and bodies
+/// that do not parse. A venue switch that drops for ten seconds must cost at
+/// most the day it dropped in, not the match.
+///
+/// The caller sizes `patience` to the time the match can still be running.
+///
+/// # Errors
+/// An authentication failure at once; otherwise a `Conversion` error naming
+/// the last obstacle when `patience` runs out.
 async fn fetch_state_with_retry(
     client: &protocol::MatchClient,
-    max_attempts: u32,
+    patience: Duration,
     backoff: Duration,
     expected_day: i32,
+    recorder: &MatchRecorder,
 ) -> Result<protocol::match_config::MatchState, CoordinatorLoopError> {
-    for attempt in 0..max_attempts.max(1) {
-        match client.get_match_state().await {
+    let started = tokio::time::Instant::now();
+    loop {
+        let obstacle = match client.get_match_state().await {
             Ok(state) if state.day >= expected_day => return Ok(state),
-            Ok(_) => {}
-            Err(protocol::HttpClientError::AccessTime { .. })
-                if attempt + 1 < max_attempts.max(1) => {}
-            Err(err) => return Err(CoordinatorLoopError::State(err)),
+            Ok(state) => format!("server is still on day {}", state.day),
+            Err(
+                e @ (protocol::HttpClientError::Auth { .. }
+                | protocol::HttpClientError::InvalidUrl(_)),
+            ) => return Err(CoordinatorLoopError::State(e)),
+            Err(protocol::HttpClientError::AccessTime { message }) => message,
+            Err(e) => {
+                tracing::warn!(expected_day, error = %e, "GET / failed; asking again");
+                recorder.event_with(|| RecordEvent::RequestFailed {
+                    endpoint: "GET /".to_owned(),
+                    day: Some(expected_day),
+                    error: e.to_string(),
+                });
+                e.to_string()
+            }
+        };
+        if started.elapsed() >= patience {
+            return Err(CoordinatorLoopError::Conversion(format!(
+                "server did not advance to day {expected_day} within polling budget ({obstacle})"
+            )));
         }
-        if attempt + 1 < max_attempts.max(1) {
-            tokio::time::sleep(backoff).await;
-        }
+        tokio::time::sleep(backoff).await;
     }
-    Err(CoordinatorLoopError::Conversion(format!(
-        "server did not advance to day {expected_day} within polling budget"
-    )))
+}
+
+/// Milliseconds since `began`, for the match record.
+fn elapsed_ms(began: std::time::Instant) -> u64 {
+    u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// Milliseconds of wall clock since `then_ms` (UNIX milliseconds).
+fn millis_since(then_ms: i64) -> u64 {
+    u64::try_from(Utc::now().timestamp_millis().saturating_sub(then_ms)).unwrap_or(0)
 }
 
 /// Reserve one request timeout for submission after the solver finishes.
 fn solver_budget_ms(ends_at: i64, now_ms: i64) -> u64 {
     let deadline_ms = ends_at.saturating_mul(1000);
     u64::try_from(deadline_ms.saturating_sub(now_ms).saturating_sub(5000)).unwrap_or(0)
+}
+
+/// How long `--kinds-auto` may simulate before `POST /agent`. A missed kind
+/// deadline ends the run (`POST /agent` only ever answers 403 afterwards), and
+/// the official server's default window is 5 s from its start, so this stays
+/// far inside it; trials that are not done by then fall back to one Supply.
+const AUTO_KINDS_WINDOW: Duration = Duration::from_millis(1500);
+
+/// How long the composition is polled for after a second `POST /agent`
+/// (the match has to start before `GET /` answers).
+const SLOT_READBACK_PATIENCE: Duration = Duration::from_secs(600);
+
+/// Sleep between `GET /` polls while reading the composition back from the
+/// server's own state (Issue #442 and the supply-slot refinement): fast
+/// enough to notice the match starting within a beat, rare enough not to
+/// lean on a server that is still finding its feet.
+const SUBMIT_READBACK_POLL: Duration = Duration::from_millis(250);
+
+/// Read the composition the server actually holds, by polling `GET /` until
+/// the match runs and the agent list carries kinds (Issue #442).
+///
+/// `GET /` only answers once the match has started, so the poll rides out
+/// `403 AccessTimeError`, transport failures and `5xx` answers for up to
+/// `patience` — the same obstacles [`fetch_state_with_retry`] rides out.
+/// The first state that names exactly `n_agents` agents settles the
+/// question: those kinds are what the server holds, whether that means the
+/// lost submission was accepted or the server started with something else.
+///
+/// Authentication failures and malformed URLs are *not* ridden out: they
+/// say this client cannot talk to this server at all, so they surface
+/// immediately as `Err`. `Ok(None)` means the patience ran out without a
+/// usable state — the submission's outcome is genuinely unknown. The caller
+/// decides between adopting the read-back kinds, keeping its own, or
+/// failing the run.
+async fn readback_kinds_in_play(
+    client: &protocol::MatchClient,
+    n_agents: usize,
+    patience: Duration,
+    poll_interval: Duration,
+    recorder: &MatchRecorder,
+) -> Result<Option<Vec<EngineAgentKind>>, protocol::HttpClientError> {
+    let began = tokio::time::Instant::now();
+    loop {
+        match client.get_match_state().await {
+            Ok(state) if state.agents.len() == n_agents => {
+                let kinds = state
+                    .agents
+                    .iter()
+                    .map(|a| {
+                        if a.kind == AgentKind::KIND_1 {
+                            EngineAgentKind::Supply
+                        } else {
+                            EngineAgentKind::Patrol
+                        }
+                    })
+                    .collect();
+                return Ok(Some(kinds));
+            }
+            // The match may not have started yet, or the server reported an
+            // agent count nobody expected. Both are waited out: the server's
+            // next answer, not a guess, settles the composition.
+            Ok(state) => {
+                tracing::debug!(
+                    agents = state.agents.len(),
+                    n_agents,
+                    "GET / answered without the expected agent list; waiting for the \
+                     composition to become readable"
+                );
+            }
+            Err(
+                e @ (protocol::HttpClientError::Auth { .. }
+                | protocol::HttpClientError::InvalidUrl(_)),
+            ) => return Err(e),
+            Err(e) => {
+                tracing::debug!(
+                    error = %e,
+                    "GET / did not answer yet; waiting for the match to start"
+                );
+                recorder.event_with(|| RecordEvent::RequestFailed {
+                    endpoint: "GET /".to_owned(),
+                    day: None,
+                    error: e.to_string(),
+                });
+            }
+        }
+        if began.elapsed() >= patience {
+            return Ok(None);
+        }
+        tokio::time::sleep(poll_interval).await;
+    }
+}
+
+/// `PROCON_SUPPLY_SLOT_WINDOW_MS`: time spent after the first accepted
+/// `POST /agent` on choosing which agent is the Supply. Unset, empty or `0`
+/// keeps the Supply where the composition trial put it. Capped at 30 s and,
+/// when the setting already names the start, at three seconds before it, so
+/// the trials never run into the first day.
+fn supply_slot_window(starts_at: i64) -> Option<Duration> {
+    let ms: u64 = std::env::var("PROCON_SUPPLY_SLOT_WINDOW_MS").ok()?.trim().parse().ok()?;
+    let mut ms = ms.min(30_000);
+    if starts_at > 0 {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+        let left = starts_at.saturating_mul(1000).saturating_sub(now_ms).saturating_sub(3000);
+        ms = ms.min(u64::try_from(left).unwrap_or(0));
+    }
+    (ms > 0).then(|| Duration::from_millis(ms))
 }
 
 /// Resolve the `POST /agent` composition for a team of `n_agents`.
@@ -1200,7 +1931,15 @@ mod tests {
             .create_async()
             .await;
         let client = protocol::MatchClient::new(server.url(), "test").unwrap();
-        let state = fetch_state_with_retry(&client, 3, Duration::ZERO, 1).await.unwrap();
+        let state = fetch_state_with_retry(
+            &client,
+            Duration::from_secs(5),
+            Duration::ZERO,
+            1,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap();
         assert_eq!(state.day, 1);
         old.assert_async().await;
         new.assert_async().await;
@@ -1208,7 +1947,7 @@ mod tests {
 
     #[tokio::test]
     async fn previous_day_polling_is_bounded_and_future_days_are_not_retried() {
-        for (reported, succeeds, requests) in [(0, false, 2), (2, true, 1)] {
+        for (reported, succeeds) in [(0, false), (2, true)] {
             let mut server = mockito::Server::new_async().await;
             let mock = server
                 .mock("GET", "/")
@@ -1216,17 +1955,173 @@ mod tests {
                 .with_body(format!(
                     r#"{{"endsAt":200,"day":{reported},"agents":[],"others":[],"traffics":[]}}"#
                 ))
-                .expect(requests)
+                .expect(1)
                 .create_async()
                 .await;
             let client = protocol::MatchClient::new(server.url(), "test").unwrap();
-            let result = fetch_state_with_retry(&client, 2, Duration::ZERO, 1).await;
+            let result = fetch_state_with_retry(
+                &client,
+                Duration::ZERO,
+                Duration::ZERO,
+                1,
+                &MatchRecorder::disabled(),
+            )
+            .await;
             assert_eq!(result.is_ok(), succeeds);
             if let Ok(state) = result {
-                assert!(state.day > 1, "caller must reject the missed day");
+                assert!(state.day > 1, "the caller follows the server to the later day");
             }
             mock.assert_async().await;
         }
+    }
+
+    /// Issue #385: a body that does not parse and a 503 are waited out like a
+    /// 403, so a flaky venue link costs polls, not the match.
+    #[tokio::test]
+    async fn state_polling_outlasts_garbage_and_server_errors() {
+        let mut server = mockito::Server::new_async().await;
+        let garbage = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body("<html>502 Bad Gateway</html>")
+            .expect(1)
+            .create_async()
+            .await;
+        let good = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body(r#"{"endsAt":200,"day":1,"agents":[],"others":[],"traffics":[]}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let state = fetch_state_with_retry(
+            &client,
+            Duration::from_secs(5),
+            Duration::ZERO,
+            1,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(state.day, 1);
+        garbage.assert_async().await;
+        good.assert_async().await;
+    }
+
+    /// Issue #385: bad credentials are the one thing no later poll can fix.
+    #[tokio::test]
+    async fn state_polling_stops_at_once_on_bad_credentials() {
+        let mut server = mockito::Server::new_async().await;
+        let denied = server
+            .mock("GET", "/")
+            .with_status(401)
+            .with_body(r#"{"code":"AuthError","message":"no"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let result = fetch_state_with_retry(
+            &client,
+            Duration::from_secs(5),
+            Duration::ZERO,
+            0,
+            &MatchRecorder::disabled(),
+        )
+        .await;
+        assert!(matches!(result, Err(CoordinatorLoopError::State(_))), "{result:?}");
+        denied.assert_async().await;
+    }
+
+    fn far_deadline() -> i64 {
+        Utc::now().timestamp() + 30
+    }
+
+    /// Issue #385: a `POST /` that dies without a verdict is sent again while
+    /// the window is open, and the verdict of the repeat is what counts.
+    #[tokio::test]
+    async fn plan_without_a_verdict_is_sent_again_until_accepted() {
+        let mut server = mockito::Server::new_async().await;
+        let broken = server.mock("POST", "/").with_status(503).expect(1).create_async().await;
+        let unreadable = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_body("<html>")
+            .expect(1)
+            .create_async()
+            .await;
+        let accepted = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_body(r#"{"revision":7}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let plan: ActionPlanBody = vec![vec![-3]];
+        let verdict = submit_plan_until_deadline(
+            &client,
+            &plan,
+            far_deadline(),
+            0,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert!(matches!(verdict, DaySubmission::Accepted(7)));
+        broken.assert_async().await;
+        unreadable.assert_async().await;
+        accepted.assert_async().await;
+    }
+
+    /// A rejection is a verdict on the plan: the same body is never repeated.
+    #[tokio::test]
+    async fn rejected_plan_is_not_sent_again() {
+        let mut server = mockito::Server::new_async().await;
+        let rejected = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_body(r#"{"revision":-1}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let plan: ActionPlanBody = vec![vec![-3]];
+        let verdict = submit_plan_until_deadline(
+            &client,
+            &plan,
+            far_deadline(),
+            0,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert!(matches!(verdict, DaySubmission::Rejected(-1)));
+        rejected.assert_async().await;
+    }
+
+    /// Past the local deadline nothing is repeated: a late copy would be read
+    /// as the next day's plan.
+    #[tokio::test]
+    async fn plan_is_not_repeated_after_the_answer_window() {
+        let mut server = mockito::Server::new_async().await;
+        let broken = server.mock("POST", "/").with_status(503).expect(1).create_async().await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let plan: ActionPlanBody = vec![vec![-3]];
+        let verdict = submit_plan_until_deadline(
+            &client,
+            &plan,
+            Utc::now().timestamp() - 1,
+            0,
+            &MatchRecorder::disabled(),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert!(matches!(verdict, DaySubmission::Unanswered(_)));
+        broken.assert_async().await;
     }
 
     #[test]

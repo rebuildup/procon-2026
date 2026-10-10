@@ -1,0 +1,6 @@
+2026-10-10T03:39:33.867021Z  INFO agent kinds selected for POST /agent n_agents=4 kinds=S,P,P,P solver=candidate:fleet:budget=official:budget_ms=5000:adapt=off
+2026-10-10T03:39:48.406531Z  INFO fleet day plan day=0 clean=true chains=4 model_series=9 model_balls=13 replay_series=9 replay_balls=13 tomorrow_series=10 tomorrow_balls=18 predicted_ends=[(11, 40), (11, 40), (240, 27), (254, 34)]
+2026-10-10T03:40:48.413165Z  INFO fleet day plan day=1 clean=true chains=4 model_series=10 model_balls=21 replay_series=10 replay_balls=21 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(85, 40), (17, 27), (251, 26), (85, 40)]
+2026-10-10T03:41:48.418789Z  INFO fleet day plan day=2 clean=true chains=4 model_series=10 model_balls=22 replay_series=10 replay_balls=22 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(240, 40), (240, 40), (9, 24), (254, 12)]
+2026-10-10T03:42:48.427253Z  INFO fleet day plan day=3 clean=true chains=4 model_series=10 model_balls=20 replay_series=10 replay_balls=20 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(11, 40), (17, 20), (251, 21), (11, 40)]
+2026-10-10T03:43:48.435555Z  INFO fleet day plan day=4 clean=true chains=4 model_series=10 model_balls=24 replay_series=10 replay_balls=24 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(9, 40), (9, 40), (240, 13), (254, 10)]

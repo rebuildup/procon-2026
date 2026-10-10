@@ -19,9 +19,11 @@ mod bundle;
 mod candidate_bridge;
 mod coordinator_loop;
 mod fixtures;
+mod http_log;
 mod initial_strategy;
 mod loop_runner;
 mod match_config;
+mod match_record;
 mod openapi_fixture;
 mod protocol_to_engine;
 mod solver_adapter;
@@ -40,13 +42,16 @@ use engine::{EngineServer, EngineServerConfig};
 use protocol::{HttpClientError, MatchClient, RetryPolicy};
 use serde_json::json;
 use solver_loop::InitialStrategy;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::coordinator_loop::{CoordinatorLoopConfig, run_coordinator_loop};
 use crate::loop_runner::{
     DayAction, DayPlan, DaySignal, LoopConfig, LoopError, MatchSetting, Solver, Submission,
     SubmissionAck, Transport, run_match_loop,
 };
+use crate::match_record::MatchRecorder;
 use crate::solver_adapter::{EngineLoopAdapter, WaitSolver};
 
 #[derive(Debug, Parser)]
@@ -141,6 +146,13 @@ enum Cmd {
         #[arg(long, value_name = "PATTERN", value_parser = parse_kinds_pattern)]
         kinds: Option<KindsPattern>,
 
+        /// Choose the composition by simulating the match with the `fleet`
+        /// planner before `POST /agent` (Issue #371): one Supply (slot 0), or
+        /// no Supply when the tanks last the whole match. Meant for
+        /// `--candidate fleet:…`; an explicit `--kinds` wins.
+        #[arg(long, conflicts_with = "kinds")]
+        kinds_auto: bool,
+
         /// Only resolve config + print it. Do not actually start the loop.
         #[arg(long)]
         dry_run: bool,
@@ -195,7 +207,32 @@ enum Cmd {
         /// Default: `target/arena/runs.jsonl`.
         #[arg(long, value_name = "PATH")]
         arena_evidence: Option<PathBuf>,
+
+        /// Keep a full record of the match under `<DIR>/<run-id>/`
+        /// (Issue #394): `manifest.json`, `setting.json` (the map and match
+        /// setting in the wire shape), `events.jsonl` (every day's observed state,
+        /// the complete submitted plan, each `POST /` attempt and its
+        /// verdict), `coordinator.log` and `state.json`. Written by a
+        /// background thread; a full queue or a failing disk loses records,
+        /// never a day. Off when omitted. `--dry-run` checks that the
+        /// directory is writable. `PROCON_RECORD_LOG_LEVEL` (default
+        /// `info`) sets the level of `coordinator.log`.
+        #[arg(long, value_name = "DIR", env = "PROCON_RECORD_DIR")]
+        record_dir: Option<PathBuf>,
+
+        /// Log every HTTP request and response (Issue #396): a readable
+        /// block per request on stderr — number, time, method, URL, status
+        /// (`200 OK`, `401 Unauthorized`, …) or failure (timeout, connect),
+        /// duration, headers and the complete bodies — and the same content
+        /// as one JSON object per request in `<DIR>/<run-id>/http.jsonl`.
+        /// Retries are logged one by one. Tokens are masked. Printing and
+        /// writing happen on a background thread. Off when omitted.
+        #[arg(long, value_name = "DIR", env = "PROCON_HTTP_LOG_DIR")]
+        http_log_dir: Option<PathBuf>,
     },
+    /// Read back a match record written by `coordinator --record-dir`.
+    #[command(subcommand)]
+    Record(RecordCmd),
     /// Arena utilities that do not touch the network.
     #[command(subcommand)]
     Arena(ArenaCmd),
@@ -295,6 +332,19 @@ enum MatchConfigCmd {
     },
 }
 
+/// Subcommands under `procon record` (offline — no network).
+#[derive(Debug, Subcommand)]
+enum RecordCmd {
+    /// Parse one run directory and print what it holds: map size, and per
+    /// day whether the state was observed, how many actions were submitted
+    /// and what the server answered. Exits non-zero if the directory cannot
+    /// be read.
+    Show {
+        /// A `<record-dir>/<run-id>` directory.
+        dir: PathBuf,
+    },
+}
+
 /// Subcommands under `procon arena` (offline helpers — no network).
 #[derive(Debug, Subcommand)]
 enum ArenaCmd {
@@ -317,15 +367,55 @@ enum ArenaCmd {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_target(false)
-        .init();
-
     let cli = Cli::parse();
-    match run(cli).await {
+
+    // The recorder exists before the logger so `coordinator.log` holds the
+    // run from its first line; its own start-up failure is reported right
+    // after the logger is up. A failed start never stops the run.
+    let (recorder, record_error) = start_recorder(&cli);
+    let console = tracing_subscriber::fmt::layer()
+        .with_target(false)
+        .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")));
+    let file = recorder.is_enabled().then(|| {
+        // An empty filter would mean "errors only": fall back to `info`.
+        let level = std::env::var("PROCON_RECORD_LOG_LEVEL")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| "info".to_owned());
+        tracing_subscriber::fmt::layer()
+            .with_target(false)
+            .with_ansi(false)
+            .with_writer(recorder.log_writer())
+            .with_filter(EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info")))
+    });
+    tracing_subscriber::registry().with(console).with(file).init();
+    if let Some((root, error)) = record_error {
+        tracing::error!(
+            dir = %root.display(),
+            error = %error,
+            "match recording could NOT start; the run continues without a record"
+        );
+    }
+    if let (Some(run_id), Some(dir)) = (recorder.run_id(), recorder.dir()) {
+        tracing::info!(run_id, dir = %dir.display(), "match recording enabled");
+    }
+
+    let http_log = start_http_log(&cli, &recorder);
+
+    let result = run(cli, recorder.clone(), http_log.clone()).await;
+    if !recorder.flush(std::time::Duration::from_secs(5)) {
+        eprintln!("match-record: not everything was written before exit");
+    }
+    if let Some(log) = http_log.as_ref() {
+        let flushed = log.flush(std::time::Duration::from_secs(5));
+        let (dropped, write_errors) = log.lost();
+        if !flushed || dropped > 0 || write_errors > 0 {
+            eprintln!(
+                "http-log: incomplete (flushed={flushed}, dropped={dropped}, failed writes={write_errors})"
+            );
+        }
+    }
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: {err:#}");
@@ -334,9 +424,91 @@ async fn main() -> ExitCode {
     }
 }
 
+/// Every token this process could be holding, whichever profile is used.
+fn known_secrets(token: Option<&String>) -> Vec<arena::Secret> {
+    token
+        .cloned()
+        .into_iter()
+        .chain(std::env::var("PROCON_TOKEN").ok())
+        .chain(std::env::var("PROCON_ARENA_TOKEN").ok())
+        .filter(|t| !t.is_empty())
+        .map(arena::Secret::new)
+        .collect()
+}
+
+/// Start the HTTP log for a real `coordinator` run with `--http-log-dir`
+/// (Issue #396). It shares the match record's run id when both are on. A
+/// failed start is reported and the run continues without the log.
+fn start_http_log(
+    cli: &Cli,
+    recorder: &MatchRecorder,
+) -> Option<std::sync::Arc<http_log::HttpLog>> {
+    let Cmd::Coordinator { http_log_dir: Some(root), dry_run: false, token, .. } = &cli.cmd else {
+        return None;
+    };
+    let run_id = recorder.run_id().map_or_else(http_log::new_run_id, str::to_owned);
+    match http_log::HttpLog::start(
+        root,
+        &run_id,
+        known_secrets(token.as_ref()),
+        Box::new(std::io::stderr()),
+    ) {
+        Ok(log) => {
+            tracing::info!(run_id, path = %log.path().display(), "HTTP log enabled");
+            recorder.update_manifest(json!({ "http_log": log.path().display().to_string() }));
+            Some(log)
+        }
+        Err(error) => {
+            tracing::error!(
+                dir = %root.display(),
+                error = %error,
+                "HTTP log could NOT start; the run continues without it"
+            );
+            None
+        }
+    }
+}
+
+/// Start the match recorder for a real `coordinator` run with
+/// `--record-dir` (Issue #394). Every other invocation — other subcommands,
+/// `--dry-run`, no flag — gets the disabled recorder.
+fn start_recorder(cli: &Cli) -> (MatchRecorder, Option<(PathBuf, std::io::Error)>) {
+    let Cmd::Coordinator { record_dir: Some(root), dry_run: false, token, .. } = &cli.cmd else {
+        return (MatchRecorder::disabled(), None);
+    };
+    let secrets = known_secrets(token.as_ref());
+    let mut manifest = serde_json::Map::new();
+    // Which commit this binary is: the runtime env (the wrappers set it),
+    // else the value baked in at build time (`PROCON_SOURCE_COMMIT_SHA` in
+    // the build environment — a venue machine has no git checkout to ask),
+    // else `git rev-parse HEAD` of the working directory, else "unknown".
+    let runtime = std::env::var("PROCON_SOURCE_COMMIT_SHA").ok().filter(|v| !v.trim().is_empty());
+    let built = option_env!("PROCON_SOURCE_COMMIT_SHA").filter(|v| !v.trim().is_empty());
+    let (sha, sha_from) = match (runtime, built) {
+        (Some(sha), _) => (sha.trim().to_owned(), "runtime-env"),
+        (None, Some(sha)) => (sha.trim().to_owned(), "build-env"),
+        (None, None) => (arena::source_commit_sha(), "git-working-directory"),
+    };
+    manifest.insert("source_commit_sha".to_owned(), json!(sha));
+    manifest.insert("source_commit_sha_from".to_owned(), json!(sha_from));
+    let options = match_record::RecorderOptions {
+        manifest,
+        secrets,
+        binary_path: std::env::current_exe().ok(),
+    };
+    match MatchRecorder::start(root, options) {
+        Ok(recorder) => (recorder, None),
+        Err(error) => (MatchRecorder::disabled(), Some((root.clone(), error))),
+    }
+}
+
 // One arm per `Cmd` variant: subcommand dispatch, not a single logic block.
 #[allow(clippy::too_many_lines, reason = "one arm per Cmd variant")]
-async fn run(cli: Cli) -> Result<()> {
+async fn run(
+    cli: Cli,
+    recorder: MatchRecorder,
+    http_log: Option<std::sync::Arc<http_log::HttpLog>>,
+) -> Result<()> {
     let server = EngineServer::new(EngineServerConfig::default());
     match cli.cmd {
         Cmd::Hello => {
@@ -383,6 +555,7 @@ async fn run(cli: Cli) -> Result<()> {
             loop_initial_strategy,
             loop_iterations,
             kinds,
+            kinds_auto,
             dry_run,
             state_output,
             exit_after_match,
@@ -390,6 +563,8 @@ async fn run(cli: Cli) -> Result<()> {
             next,
             candidate,
             arena_evidence,
+            record_dir,
+            http_log_dir,
         } => {
             cmd_coordinator(
                 server,
@@ -401,9 +576,15 @@ async fn run(cli: Cli) -> Result<()> {
                 dry_run,
                 state_output,
                 exit_after_match,
-                ArenaFlags { arena, next, candidate, arena_evidence },
+                ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto },
+                RecordFlags { record_dir, recorder, http_log_dir, http_log },
             )
             .await?;
+        }
+        Cmd::Record(RecordCmd::Show { dir }) => {
+            let record = match_record::load_record(&dir)
+                .with_context(|| format!("read match record {}", dir.display()))?;
+            println!("{}", serde_json::to_string_pretty(&record.summary())?);
         }
         Cmd::Arena(sub) => cmd_arena(sub)?,
         Cmd::MatchConfig(sub) => cmd_match_config(sub)?,
@@ -489,6 +670,20 @@ struct ArenaFlags {
     candidate: Option<String>,
     /// `--arena-evidence` — evidence JSONL path override.
     arena_evidence: Option<PathBuf>,
+    /// `--kinds-auto` — simulate the match to choose the composition.
+    kinds_auto: bool,
+}
+
+/// Match-record inputs for [`cmd_coordinator`] (Issue #394).
+struct RecordFlags {
+    /// `--record-dir` as given (used by `--dry-run` to check the directory).
+    record_dir: Option<PathBuf>,
+    /// The recorder `main` started; disabled without `--record-dir`.
+    recorder: MatchRecorder,
+    /// `--http-log-dir` as given (checked by `--dry-run`).
+    http_log_dir: Option<PathBuf>,
+    /// The HTTP log `main` started (Issue #396); `None` without the flag.
+    http_log: Option<std::sync::Arc<http_log::HttpLog>>,
 }
 
 /// One `--kinds` pattern, parsed once by [`parse_kinds_pattern`] while clap
@@ -588,8 +783,10 @@ async fn cmd_coordinator(
     state_output: Option<PathBuf>,
     exit_after_match: bool,
     arena_flags: ArenaFlags,
+    record_flags: RecordFlags,
 ) -> Result<()> {
-    let ArenaFlags { arena, next, candidate, arena_evidence } = arena_flags;
+    let ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto } = arena_flags;
+    let RecordFlags { record_dir, recorder, http_log_dir, http_log } = record_flags;
     if next && !arena {
         anyhow::bail!(
             "--next requires --arena: the :00/:15/:30/:45 cadence and the \
@@ -671,6 +868,29 @@ async fn cmd_coordinator(
         // boolean precisely so the token itself can never be printed.
         let base_url = effective_server.expect("checked above");
         let token = effective_token.unwrap_or_default();
+        // Pre-match check of the record directory (Issue #394): a run that
+        // would play unrecorded, or whose directory is not writable, is
+        // visible here — before the match, when it can still be fixed.
+        let probe = |dir: Option<&std::path::Path>| {
+            dir.map_or_else(
+                || json!({ "enabled": false }),
+                |root| match match_record::probe_record_root(root) {
+                    Ok(()) => json!({
+                        "enabled": true,
+                        "dir": root.display().to_string(),
+                        "writable": true,
+                    }),
+                    Err(e) => json!({
+                        "enabled": true,
+                        "dir": root.display().to_string(),
+                        "writable": false,
+                        "error": e.to_string(),
+                    }),
+                },
+            )
+        };
+        let record = probe(record_dir.as_deref());
+        let http_log = probe(http_log_dir.as_deref());
         println!(
             "{}",
             json!({
@@ -678,6 +898,8 @@ async fn cmd_coordinator(
                 "has_token": !token.is_empty(),
                 "dry_run": true,
                 "arena": profile.is_some(),
+                "record": record,
+                "http_log": http_log,
             })
         );
         return Ok(());
@@ -687,9 +909,18 @@ async fn cmd_coordinator(
     let base_url = effective_server
         .ok_or_else(|| anyhow::anyhow!("PROCON_SERVER (or --server) must be set"))?;
     let token = effective_token.unwrap_or_default();
-    let client = MatchClient::builder(base_url.clone(), token)
+    let mut client_builder = MatchClient::builder(base_url.clone(), token)
         .retry_policy(RetryPolicy::default())
-        .request_timeout(std::time::Duration::from_secs(5))
+        .request_timeout(std::time::Duration::from_secs(5));
+    if let Some(log) = http_log {
+        client_builder = client_builder.observer(log);
+    } else {
+        tracing::warn!(
+            "HTTP log is OFF: request and response bodies will not be saved \
+             (set --http-log-dir <DIR> or PROCON_HTTP_LOG_DIR)"
+        );
+    }
+    let client = client_builder
         .build()
         .map_err(|e: HttpClientError| anyhow::anyhow!("match client: {e}"))?;
 
@@ -743,6 +974,25 @@ async fn cmd_coordinator(
         }
     };
     tracing::info!(solver = solver.name(), "coordinator loop strategy selected");
+    if !recorder.is_enabled() {
+        tracing::warn!(
+            "match recording is OFF: no map, plan or verdict will be saved \
+             (set --record-dir <DIR> or PROCON_RECORD_DIR)"
+        );
+    }
+    recorder.update_manifest(json!({
+        "server": base_url,
+        "arena": profile.is_some(),
+        "solver": {
+            "label": solver_label,
+            "candidate_id": candidate_id,
+            "solver_flag": solver_strategy,
+            "loop_initial_strategy": initial_strategy::initial_strategy_label(loop_initial_strategy),
+            "loop_iterations": loop_iterations,
+            "kinds_flag": kinds.as_deref().map(bench::kinds::render_kinds),
+            "kinds_auto": kinds_auto,
+        },
+    }));
 
     let loop_cfg = CoordinatorLoopConfig {
         solver_name: solver_label.clone(),
@@ -760,7 +1010,15 @@ async fn cmd_coordinator(
         // planning model (patrol fuel caps) matches the team the server
         // was told about.
         agent_kinds: kinds,
+        auto_kinds: kinds_auto,
         secret_redaction: profile.as_ref().map(|p| p.token.clone()),
+        // Issue #385: `PROCON_RESUME_RUNNING_MATCH=1` lets a (re)started
+        // process join a match that is already under way. Set by the
+        // match-day wrapper for the official server only; never in arena
+        // mode, whose lobby publishes `starts_at` before kinds are due.
+        resume_running_match: profile.is_none()
+            && std::env::var_os("PROCON_RESUME_RUNNING_MATCH").is_some_and(|v| v == "1"),
+        recorder,
         ..Default::default()
     };
 

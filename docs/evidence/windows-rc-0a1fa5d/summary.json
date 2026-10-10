@@ -1,0 +1,61 @@
+{
+  "generated_at": "2026-10-11T02:12:43.5467474+09:00",
+  "head_sha": "0a1fa5d1bc6cbdce4b477224aebcb81ff70f4e72",
+  "expected_sha": "0a1fa5d1bc6cbdce4b477224aebcb81ff70f4e72",
+  "exe_path": "C:\\Users\\rebui\\Desktop\\procon-wt\\rc\\target\\release\\procon.exe",
+  "exe_sha256": "E53E2F91CC2466A009CB495094B6D8EF15B16940B0A47202FB1B1ED3837D0A0D",
+  "ps_version": "7.6.6",
+  "os": "Windows_NT",
+  "is_windows": true,
+  "pass": 7,
+  "fail": 0,
+  "skip": 2,
+  "exit_code": 0,
+  "phases": [
+    {
+      "phase": "prereq",
+      "status": "PASS",
+      "detail": "git / cargo / Python 3（python3）を確認"
+    },
+    {
+      "phase": "build-release",
+      "status": "PASS",
+      "detail": "exe: C:\\Users\\rebui\\Desktop\\procon-wt\\rc\\target\\release\\procon.exe"
+    },
+    {
+      "phase": "sha-check",
+      "status": "PASS",
+      "detail": "exe sha256 E53E2F91CC24...（HEAD と version JSON を記録済み）"
+    },
+    {
+      "phase": "tournament-basics",
+      "status": "PASS",
+      "detail": "ok. 6 passed; 0 failed"
+    },
+    {
+      "phase": "bundle-e2e",
+      "status": "PASS",
+      "detail": "verify-offline-bundle.ps1 が PASS（ZIP→展開→preflight/start/show→3 日受理→manifest SHA）"
+    },
+    {
+      "phase": "e2e-mock",
+      "status": "PASS",
+      "detail": "3 日受理・記録一式・HTTP ログ・show/record show 欠損 0・manifest SHA 照合・ロック解除"
+    },
+    {
+      "phase": "e2e-official",
+      "status": "SKIP",
+      "detail": "公式簡易サーバー バイナリ（procon-server-*）が見つかりません。Windows 実機には配布されないため、実機では SKIP になります"
+    },
+    {
+      "phase": "double-start",
+      "status": "PASS",
+      "detail": "二重起動拒否 / kill 後のロック残骸 / ロック引継ぎで復帰 / 復帰試合 2 日受理"
+    },
+    {
+      "phase": "telemetry",
+      "status": "SKIP",
+      "detail": "このバイナリは PROCON_TELEMETRY / --telemetry 非対応です（PR #436 / branch 429 が未 merge）。merge 後に再実施してください"
+    }
+  ]
+}

@@ -351,7 +351,11 @@ impl CandidateRegistry {
         r.register(Arc::new(crate::adapters::GreedyFactory));
         r.register(Arc::new(crate::adapters::NearestFactory));
         r.register(Arc::new(crate::adapters::AstarFactory));
+        r.register(Arc::new(crate::adapters::AnytimeFactory));
         r.register(Arc::new(crate::adapters::CoverageFactory));
+        r.register(Arc::new(crate::adapters::FleetFactory));
+        r.register(Arc::new(crate::adapters::ConvoyFactory));
+        r.register(Arc::new(crate::adapters::SizedFactory));
         r.register(Arc::new(crate::adapters::SearchFactory));
         r
     }

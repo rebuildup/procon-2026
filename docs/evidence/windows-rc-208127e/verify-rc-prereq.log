@@ -1,0 +1,9 @@
+phase: prereq  started: 2026-10-11T06:40:10.8832308+09:00
+PowerShell: 7.6.6 (Core)
+OS: Windows_NT  Microsoft Windows NT 10.0.29683.0
+git: git version 2.55.0.windows.5
+cargo: cargo 1.99.0 (5f94df478 2026-08-27)
+python: Python 3.14.8
+リポジトリ: C:\Users\rebui\Desktop\procon-wt\rc
+模擬試合ケース: C:\Users\rebui\Desktop\procon-wt\rc\docs\evidence\campaign-311\fleet-371\corpus-hard\hard-16-a4-d10-short-s9001.json
+RESULT: PASS

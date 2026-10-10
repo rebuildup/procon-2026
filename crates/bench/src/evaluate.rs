@@ -69,10 +69,13 @@ pub enum RunStatus {
     /// The match ran to completion and the candidate produced well-shaped
     /// plans for every day. The score is authoritative.
     Success,
-    /// The evaluation ran to completion but the candidate violated the plan
-    /// contract on at least one day (or the engine could not score the run).
-    /// The score is still recorded — `engine::MatchSim` degrades a malformed
-    /// plan to all-wait rather than aborting — but the candidate is flagged.
+    /// The evaluation ran to completion but the answer the candidate produced
+    /// is one the official server would refuse: a plan-contract violation, an
+    /// illegal / fuel-short action, or a whole-response rejection (Q&A Q6 —
+    /// one bad action rejects the whole day's answer). The score is still
+    /// recorded — `engine::MatchSim` demotes the offending actions to `Wait`
+    /// so the match completes and reports the official verdict in
+    /// `RunResult::rejected_response_count` — but the run is **not** ranked.
     Invalid,
     /// The run exceeded the configured wall deadline. No score is available.
     Timeout,
@@ -171,12 +174,27 @@ pub struct RunRecord {
     ///
     /// The official rules reject an answer containing an invalid action
     /// (Q&A Q6), so a run with a non-zero count is recorded as
-    /// [`RunStatus::Invalid`] and is **not** ranked — `MatchSim` degrades such
+    /// [`RunStatus::Invalid`] and is **not** ranked — `MatchSim` demotes such
     /// an action to `Wait` so the match completes, but completing is not the
-    /// same as being legal.
+    /// same as being accepted. See [`Self::rejected_response_count`] for the
+    /// per-response verdict.
     pub illegal_action_count: u32,
     /// The subset of [`Self::illegal_action_count`] caused by fuel exhaustion.
     pub fuel_short_count: u32,
+    /// Daily responses the official server would have rejected **whole**
+    /// (Q&A Q6: one illegal / fuel-short / step-mismatched action rejects the
+    /// entire day's answer), as reported by
+    /// `engine::model::RunResult::rejected_response_count`.
+    ///
+    /// Non-zero makes the run [`RunStatus::Invalid`] and unrankable: the
+    /// demoted score `MatchSim` produced is what *would* have happened had
+    /// the server accepted the answer, which it would not have. This is the
+    /// authoritative whole-response flag — `illegal_action_count` only counts
+    /// the individual bad actions.
+    // `#[serde(default)]` so JSONL written before this axis existed still
+    // deserializes under the new binary (pre-#342 evidence re-aggregates).
+    #[serde(default)]
+    pub rejected_response_count: u32,
     /// Days (zero-based) whose measured answer time exceeded that day's
     /// official budget — the per-day `daySeconds` window (Q&A Q3).
     ///
@@ -294,6 +312,7 @@ impl RunRecord {
             last_acquisition_at: None,
             illegal_action_count: 0,
             fuel_short_count: 0,
+            rejected_response_count: 0,
             day_budget_exceeded_days: Vec::new(),
             daily_response_us: Vec::new(),
             daily_varieties: Vec::new(),
@@ -334,6 +353,16 @@ pub struct EvalConfig {
     /// is a *pattern* expanded per case with [`crate::kinds::resolve_kinds`],
     /// because the corpus fields teams of 3, 4, 5, 6 and 8 agents.
     pub kinds: Option<Vec<engine::model::AgentKind>>,
+    /// Maximum number of `(candidate, case)` evaluations running concurrently.
+    /// `1` (default) preserves the historical sequential behaviour and is the
+    /// regression baseline. `0` is auto: [`std::thread::available_parallelism`]
+    /// (see [`Self::resolved_jobs`]). Values > 1 use a bounded worker pool.
+    ///
+    /// **Response-time fairness**: when `jobs > 1`, CPU contention inflates
+    /// `response_time_us`. Axes 1–3 (variety, `daily_variety_sum`, `total_balls`)
+    /// are unaffected; axis 4 must be re-measured sequentially for final
+    /// ranking (Issue #331).
+    pub jobs: usize,
     /// Counterfactual: top every Patrol tank up to `fuel_cap` at each day
     /// boundary (Issue #243's `oracle_refill`).
     ///
@@ -419,6 +448,7 @@ impl EvalConfig {
             isolation: Isolation::Thread,
             kinds: None,
             oracle_refill: false,
+            jobs: 1,
         }
     }
 
@@ -452,6 +482,21 @@ impl EvalConfig {
     pub fn with_process_isolation(mut self, worker_exe: impl Into<std::path::PathBuf>) -> Self {
         self.isolation = Isolation::Process { worker_exe: worker_exe.into() };
         self
+    }
+
+    /// Resolve [`Self::jobs`] to a concrete worker count.
+    ///
+    /// `0` is auto and maps to [`std::thread::available_parallelism`]
+    /// (falling back to `1` if the OS will not say). Every other value is
+    /// taken as written; the parallel path then clamps it to the number of
+    /// pending `(case, candidate)` pairs. Never returns `0`.
+    #[must_use]
+    pub fn resolved_jobs(&self) -> usize {
+        if self.jobs == 0 {
+            std::thread::available_parallelism().map_or(1, usize::from)
+        } else {
+            self.jobs
+        }
     }
 }
 
@@ -733,11 +778,77 @@ impl Evaluator {
     /// given input order. Every pair yields a record — a failure in one never
     /// short-circuits the rest.
     pub fn evaluate_all(&self, candidates: &[Candidate], cases: &[CaseSpec]) -> Vec<RunRecord> {
-        let mut out = Vec::with_capacity(candidates.len().saturating_mul(cases.len()));
-        for case in cases {
-            for candidate in candidates {
-                out.push(self.evaluate_one(candidate, case));
+        let jobs = self.config.resolved_jobs();
+        if jobs == 1 {
+            // Sequential: historical order (case-major, then candidate).
+            let mut out = Vec::with_capacity(candidates.len().saturating_mul(cases.len()));
+            for case in cases {
+                for candidate in candidates {
+                    out.push(self.evaluate_one(candidate, case));
+                }
             }
+            return out;
+        }
+        self.evaluate_all_parallel(candidates, cases, jobs)
+    }
+
+    /// Parallel evaluation with a bounded worker pool (Issue #331).
+    ///
+    /// Jobs are `(case_idx, candidate_idx)` pairs. Workers pull from a shared
+    /// queue via a mutex. Results are stored in a pre-allocated slice indexed
+    /// by `case_idx * n_candidates + candidate_idx`, so the output order is
+    /// deterministic regardless of completion order.
+    ///
+    /// **Axis-4 caveat**: `response_time_us` is measured under CPU contention
+    /// and must NOT be used for final ranking. Re-measure sequentially.
+    fn evaluate_all_parallel(
+        &self,
+        candidates: &[Candidate],
+        cases: &[CaseSpec],
+        jobs: usize,
+    ) -> Vec<RunRecord> {
+        let n_candidates = candidates.len();
+        let n_cases = cases.len();
+        let total = n_candidates * n_cases;
+        let jobs = jobs.min(total).max(1);
+
+        // Shared job queue: (case_idx, candidate_idx).
+        let queue: std::sync::Arc<std::sync::Mutex<Vec<(usize, usize)>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                (0..n_cases).flat_map(|ci| (0..n_candidates).map(move |ki| (ci, ki))).collect(),
+            ));
+
+        // Pre-allocated result slots (None until filled).
+        let results: std::sync::Arc<std::sync::Mutex<Vec<Option<RunRecord>>>> =
+            std::sync::Arc::new(std::sync::Mutex::new((0..total).map(|_| None).collect()));
+
+        std::thread::scope(|scope| {
+            for _ in 0..jobs {
+                let queue = std::sync::Arc::clone(&queue);
+                let results = std::sync::Arc::clone(&results);
+                scope.spawn(move || {
+                    loop {
+                        let job = {
+                            let mut q =
+                                queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            q.pop()
+                        };
+                        let Some((ci, ki)) = job else { break };
+                        let record = self.evaluate_one(&candidates[ki], &cases[ci]);
+                        let slot = ci * n_candidates + ki;
+                        let mut r =
+                            results.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        r[slot] = Some(record);
+                    }
+                });
+            }
+        });
+
+        // Collect and unwrap: every slot must be filled.
+        let mut out = Vec::with_capacity(total);
+        let mut r = results.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        for slot in r.iter_mut() {
+            out.push(slot.take().expect("every (case, candidate) slot filled"));
         }
         out
     }
@@ -837,12 +948,16 @@ impl Evaluator {
         let daily_varieties = run.final_state.daily_varieties();
         let response_time_us: u64 = timings.daily_response_us.iter().sum();
 
-        // A run is only a *clean* success if the plan was well-shaped AND
-        // every action the solver asked for was legal. `MatchSim` downgrades
-        // illegal actions to `Wait` so the match still completes, but under
-        // the official rules an answer containing an invalid action is
-        // rejected outright — so the run is `Invalid`, recorded with its
-        // observed numbers but excluded from ranking.
+        // A run is only a *clean* success if the plan was well-shaped, every
+        // action the solver asked for was legal, and no day's answer was one
+        // the official server would reject whole. `MatchSim` demotes illegal
+        // actions to `Wait` so the match still completes and reports the
+        // official per-response verdict in `rejected_response_count`, but
+        // under the official rules (Q&A Q6) an answer containing an invalid
+        // action is rejected outright — so the run is `Invalid`, recorded
+        // with its observed numbers but excluded from ranking. This is a
+        // validity judgment about official-server *acceptance*, not a claim
+        // that `MatchSim`'s internal scoring of the demoted plan is wrong.
         let mut reasons: Vec<String> = Vec::new();
         if timings.malformed_plan {
             reasons.push("returned a malformed day plan on at least one day".to_owned());
@@ -851,6 +966,17 @@ impl Evaluator {
             reasons.push(format!(
                 "emitted {} non-legal action(s) ({} from fuel exhaustion);                  the official rules reject such an answer",
                 run.illegal_action_count, run.fuel_short_count
+            ));
+        }
+        // Whole-response rejection (Q&A Q6): one illegal / fuel-short /
+        // step-mismatched action rejects the *entire* daily answer. This is
+        // the per-response verdict; `illegal_action_count` above only counts
+        // the individual bad actions.
+        if run.rejected_response_count > 0 {
+            reasons.push(format!(
+                "{} daily response(s) would be rejected whole by the official server (Q&A Q6); \
+                 the demoted score is not an accepted score",
+                run.rejected_response_count
             ));
         }
         // Official per-day answer window: day i's answer must fit inside
@@ -904,6 +1030,7 @@ impl Evaluator {
             last_acquisition_at: run.last_acquisition_at,
             illegal_action_count: run.illegal_action_count,
             fuel_short_count: run.fuel_short_count,
+            rejected_response_count: run.rejected_response_count,
             day_budget_exceeded_days,
             daily_response_us: timings.daily_response_us,
             daily_varieties,
@@ -1095,6 +1222,7 @@ mod tests {
             isolation: Isolation::Thread,
             kinds: None,
             oracle_refill: false,
+            jobs: 1,
         });
 
         // Pretend a worker came back with its own (wrong) identity.
@@ -1136,6 +1264,7 @@ mod tests {
             isolation: Isolation::Thread,
             kinds: None,
             oracle_refill: false,
+            jobs: 1,
         });
 
         // Pretend a worker came back spelling the id its own way.
@@ -1272,6 +1401,40 @@ mod tests {
         let candidates = vec![reg.build("wait").unwrap(), reg.build("loop:iterations=2").unwrap()];
         let corpus = Corpus::bundled_subset(&["small-8x8", "series-few"]).unwrap();
         let records = Evaluator::new(config()).evaluate_all(&candidates, &corpus.cases);
+        assert_eq!(records.len(), 4);
+        for r in &records {
+            assert!(r.is_scored(), "{} on {}: {}", r.candidate_id, r.case_id, r.status);
+        }
+    }
+
+    /// Issue #335 — `jobs = 0` is auto, not "clamp to 1". The resolution is
+    /// exactly [`std::thread::available_parallelism`], and an explicit `1`
+    /// stays sequential.
+    #[test]
+    fn jobs_zero_resolves_to_available_parallelism() {
+        let auto = std::thread::available_parallelism().map_or(1, usize::from);
+
+        let mut cfg = config();
+        cfg.jobs = 0;
+        assert_eq!(cfg.resolved_jobs(), auto, "0 must mean auto");
+        assert!(cfg.resolved_jobs() >= 1, "auto is never zero");
+
+        cfg.jobs = 1;
+        assert_eq!(cfg.resolved_jobs(), 1, "explicit 1 is preserved");
+        cfg.jobs = 4;
+        assert_eq!(cfg.resolved_jobs(), 4, "an explicit count is preserved");
+    }
+
+    /// Issue #335 — `jobs = 0` evaluates the same cross product as the
+    /// sequential baseline (the auto pool is still order-stable).
+    #[test]
+    fn jobs_zero_evaluates_the_full_cross_product() {
+        let reg = registry();
+        let candidates = vec![reg.build("wait").unwrap(), reg.build("loop:iterations=2").unwrap()];
+        let corpus = Corpus::bundled_subset(&["small-8x8", "series-few"]).unwrap();
+        let mut cfg = config();
+        cfg.jobs = 0;
+        let records = Evaluator::new(cfg).evaluate_all(&candidates, &corpus.cases);
         assert_eq!(records.len(), 4);
         for r in &records {
             assert!(r.is_scored(), "{} on {}: {}", r.candidate_id, r.case_id, r.status);

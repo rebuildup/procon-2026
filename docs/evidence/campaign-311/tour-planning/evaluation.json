@@ -1,0 +1,640 @@
+{
+  "source_commit_sha": "0ee22c497b2348041e502da2ecaab2e9551b47d9",
+  "issue": "#333",
+  "suite": "32x32 evaluation suite (9 cases x 3 candidates)",
+  "command": "PROCON_SOURCE_COMMIT_SHA=0ee22c497b2348041e502da2ecaab2e9551b47d9 cargo test -p bench --release --test large32_evaluation --offline --locked -- --nocapture",
+  "environment": {
+    "profile": "release",
+    "isolation": "thread (in-process Evaluator::evaluate_one)",
+    "kinds_pattern": "P,S,P,S,P,S,P",
+    "os": "Darwin 27.0.0",
+    "rust_toolchain": "stable (edition 2024)",
+    "measured_note": "response_time_us is a wall-clock measurement and varies run to run; V/D/B tiers are deterministic for a given commit."
+  },
+  "candidates": [
+    "coverage:budget=official:park=none",
+    "coverage:budget=official:park=far",
+    "tour:budget=official"
+  ],
+  "kinds_pattern": "P,S,P,S,P,S,P",
+  "supersedes": {
+    "file": "evaluation-pre-generator-fix.json",
+    "reason": "SeriesPattern placement was a no-op before 0ee22c4; cases 0-2 were identical. Re-ran the same 9x3 suite at 0ee22c4.",
+    "pre_fix_commit": "8f4cc89bdbcacc461584fba807f461d5ecec5e09"
+  },
+  "generator_fix_verification": {
+    "commit": "0ee22c497b2348041e502da2ecaab2e9551b47d9",
+    "claim": "Uniform/Central/Peripheral now produce distinct spot layouts",
+    "check": "suite asserts pairwise-distinct spot position sets and central avg-manhattan < peripheral avg-manhattan",
+    "result": "PASS — cases 0-2 V/D/B rows are now pairwise different (pre-fix they were identical)"
+  },
+  "invalid_case_policy": "valid = RunRecord.scored (no illegal actions, no fuel shorts, no day-budget overruns, no malformed plan). Invalid runs are recorded with their observed numbers but excluded from valid-only tallies; all-case tallies include them and are labelled as such. Additionally: a per-case valid_all_candidates flag states whether every candidate scored; per_candidate_valid states each run independently.",
+  "results": [
+    {
+      "candidates": [
+        {
+          "candidate_id": "coverage:budget=official:park=none",
+          "daily_variety_sum": 161,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 171965,
+          "status": "success",
+          "total_balls": 177,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "coverage:budget=official:park=far",
+          "daily_variety_sum": 168,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 166347,
+          "status": "success",
+          "total_balls": 181,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "tour:budget=official",
+          "daily_variety_sum": 123,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 1,
+          "illegal_action_count": 1,
+          "response_time_us": 11232,
+          "status": "invalid",
+          "total_balls": 123,
+          "valid": false,
+          "variety": 27
+        }
+      ],
+      "case": 0,
+      "pattern": "Uniform",
+      "valid": false
+    },
+    {
+      "candidates": [
+        {
+          "candidate_id": "coverage:budget=official:park=none",
+          "daily_variety_sum": 189,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 174211,
+          "status": "success",
+          "total_balls": 402,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "coverage:budget=official:park=far",
+          "daily_variety_sum": 189,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 173131,
+          "status": "success",
+          "total_balls": 340,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "tour:budget=official",
+          "daily_variety_sum": 169,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 5219,
+          "status": "success",
+          "total_balls": 169,
+          "valid": true,
+          "variety": 27
+        }
+      ],
+      "case": 1,
+      "pattern": "Central",
+      "valid": true
+    },
+    {
+      "candidates": [
+        {
+          "candidate_id": "coverage:budget=official:park=none",
+          "daily_variety_sum": 168,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 157485,
+          "status": "success",
+          "total_balls": 193,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "coverage:budget=official:park=far",
+          "daily_variety_sum": 152,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 160441,
+          "status": "success",
+          "total_balls": 168,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "tour:budget=official",
+          "daily_variety_sum": 93,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 11942,
+          "status": "success",
+          "total_balls": 93,
+          "valid": true,
+          "variety": 26
+        }
+      ],
+      "case": 2,
+      "pattern": "Peripheral",
+      "valid": true
+    },
+    {
+      "candidates": [
+        {
+          "candidate_id": "coverage:budget=official:park=none",
+          "daily_variety_sum": 179,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 194918,
+          "status": "success",
+          "total_balls": 216,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "coverage:budget=official:park=far",
+          "daily_variety_sum": 176,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 187421,
+          "status": "success",
+          "total_balls": 207,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "tour:budget=official",
+          "daily_variety_sum": 149,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 2,
+          "illegal_action_count": 2,
+          "response_time_us": 10560,
+          "status": "invalid",
+          "total_balls": 149,
+          "valid": false,
+          "variety": 27
+        }
+      ],
+      "case": 3,
+      "pattern": "Uniform+road-heavy",
+      "valid": false
+    },
+    {
+      "candidates": [
+        {
+          "candidate_id": "coverage:budget=official:park=none",
+          "daily_variety_sum": 160,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 148378,
+          "status": "success",
+          "total_balls": 180,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "coverage:budget=official:park=far",
+          "daily_variety_sum": 157,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 144248,
+          "status": "success",
+          "total_balls": 168,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "tour:budget=official",
+          "daily_variety_sum": 129,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 1,
+          "illegal_action_count": 1,
+          "response_time_us": 15481,
+          "status": "invalid",
+          "total_balls": 129,
+          "valid": false,
+          "variety": 27
+        }
+      ],
+      "case": 4,
+      "pattern": "Uniform+mountain-heavy",
+      "valid": false
+    },
+    {
+      "candidates": [
+        {
+          "candidate_id": "coverage:budget=official:park=none",
+          "daily_variety_sum": 169,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 163009,
+          "status": "success",
+          "total_balls": 190,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "coverage:budget=official:park=far",
+          "daily_variety_sum": 168,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 150786,
+          "status": "success",
+          "total_balls": 185,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "tour:budget=official",
+          "daily_variety_sum": 59,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 3,
+          "illegal_action_count": 3,
+          "response_time_us": 11146,
+          "status": "invalid",
+          "total_balls": 59,
+          "valid": false,
+          "variety": 26
+        }
+      ],
+      "case": 5,
+      "pattern": "Uniform+fuel-tight",
+      "valid": false
+    },
+    {
+      "candidates": [
+        {
+          "candidate_id": "coverage:budget=official:park=none",
+          "daily_variety_sum": 128,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 97672,
+          "status": "success",
+          "total_balls": 137,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "coverage:budget=official:park=far",
+          "daily_variety_sum": 128,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 95716,
+          "status": "success",
+          "total_balls": 137,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "tour:budget=official",
+          "daily_variety_sum": 104,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 1,
+          "illegal_action_count": 1,
+          "response_time_us": 7329,
+          "status": "invalid",
+          "total_balls": 104,
+          "valid": false,
+          "variety": 27
+        }
+      ],
+      "case": 6,
+      "pattern": "Uniform+short-day",
+      "valid": false
+    },
+    {
+      "candidates": [
+        {
+          "candidate_id": "coverage:budget=official:park=none",
+          "daily_variety_sum": 152,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 112223,
+          "status": "success",
+          "total_balls": 156,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "coverage:budget=official:park=far",
+          "daily_variety_sum": 141,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 113611,
+          "status": "success",
+          "total_balls": 143,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "tour:budget=official",
+          "daily_variety_sum": 111,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 4,
+          "illegal_action_count": 4,
+          "response_time_us": 10712,
+          "status": "invalid",
+          "total_balls": 111,
+          "valid": false,
+          "variety": 27
+        }
+      ],
+      "case": 7,
+      "pattern": "Uniform+few-agents",
+      "valid": false
+    },
+    {
+      "candidates": [
+        {
+          "candidate_id": "coverage:budget=official:park=none",
+          "daily_variety_sum": 232,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 228596,
+          "status": "success",
+          "total_balls": 254,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "coverage:budget=official:park=far",
+          "daily_variety_sum": 232,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 0,
+          "illegal_action_count": 0,
+          "response_time_us": 225067,
+          "status": "success",
+          "total_balls": 250,
+          "valid": true,
+          "variety": 27
+        },
+        {
+          "candidate_id": "tour:budget=official",
+          "daily_variety_sum": 169,
+          "day_budget_exceeded_days": [],
+          "fuel_short_count": 1,
+          "illegal_action_count": 1,
+          "response_time_us": 14565,
+          "status": "invalid",
+          "total_balls": 169,
+          "valid": false,
+          "variety": 27
+        }
+      ],
+      "case": 8,
+      "pattern": "Uniform+more-days",
+      "valid": false
+    }
+  ],
+  "per_case_judgment": [
+    {
+      "case": 0,
+      "pattern": "Uniform",
+      "valid_all_candidates": false,
+      "per_candidate_valid": {
+        "greedy": true,
+        "park=far": true,
+        "tour": false
+      },
+      "axis_best": [
+        27,
+        168,
+        181
+      ],
+      "axis_winners": [
+        "park=far"
+      ],
+      "response_time_tiebreak_winner": null,
+      "note": "park=far D_WIN over greedy (168 vs 161); tour INVALID (1 fuel-short)"
+    },
+    {
+      "case": 1,
+      "pattern": "Central",
+      "valid_all_candidates": true,
+      "per_candidate_valid": {
+        "greedy": true,
+        "park=far": true,
+        "tour": true
+      },
+      "axis_best": [
+        27,
+        189,
+        402
+      ],
+      "axis_winners": [
+        "greedy"
+      ],
+      "response_time_tiebreak_winner": null,
+      "note": "greedy B_WIN over park=far (402 vs 340) with D tied at 189 (=MAX 27*7); all valid"
+    },
+    {
+      "case": 2,
+      "pattern": "Peripheral",
+      "valid_all_candidates": true,
+      "per_candidate_valid": {
+        "greedy": true,
+        "park=far": true,
+        "tour": true
+      },
+      "axis_best": [
+        27,
+        168,
+        193
+      ],
+      "axis_winners": [
+        "greedy"
+      ],
+      "response_time_tiebreak_winner": null,
+      "note": "greedy D_WIN over park=far (168 vs 152) — park=far D_LOSS counterexample; all valid"
+    },
+    {
+      "case": 3,
+      "pattern": "Uniform+road-heavy",
+      "valid_all_candidates": false,
+      "per_candidate_valid": {
+        "greedy": true,
+        "park=far": true,
+        "tour": false
+      },
+      "axis_best": [
+        27,
+        179,
+        216
+      ],
+      "axis_winners": [
+        "greedy"
+      ],
+      "response_time_tiebreak_winner": null,
+      "note": "greedy D_WIN over park=far (179 vs 176); tour INVALID (2 fuel-short)"
+    },
+    {
+      "case": 4,
+      "pattern": "Uniform+mountain-heavy",
+      "valid_all_candidates": false,
+      "per_candidate_valid": {
+        "greedy": true,
+        "park=far": true,
+        "tour": false
+      },
+      "axis_best": [
+        27,
+        160,
+        180
+      ],
+      "axis_winners": [
+        "greedy"
+      ],
+      "response_time_tiebreak_winner": null,
+      "note": "greedy D_WIN over park=far (160 vs 157); park=far V=27 (pre-fix V_LOSS is GONE); tour INVALID"
+    },
+    {
+      "case": 5,
+      "pattern": "Uniform+fuel-tight",
+      "valid_all_candidates": false,
+      "per_candidate_valid": {
+        "greedy": true,
+        "park=far": true,
+        "tour": false
+      },
+      "axis_best": [
+        27,
+        169,
+        190
+      ],
+      "axis_winners": [
+        "greedy"
+      ],
+      "response_time_tiebreak_winner": null,
+      "note": "greedy D_WIN over park=far (169 vs 168); tour V=26 INVALID (3 fuel-short)"
+    },
+    {
+      "case": 6,
+      "pattern": "Uniform+short-day",
+      "valid_all_candidates": false,
+      "per_candidate_valid": {
+        "greedy": true,
+        "park=far": true,
+        "tour": false
+      },
+      "axis_best": [
+        27,
+        128,
+        137
+      ],
+      "axis_winners": [
+        "greedy",
+        "park=far"
+      ],
+      "response_time_tiebreak_winner": "park=far",
+      "note": "greedy/park=far axis TIE (D=128, B=137); RT tie-break favors park=far (95716us < 97672us); tour INVALID"
+    },
+    {
+      "case": 7,
+      "pattern": "Uniform+few-agents",
+      "valid_all_candidates": false,
+      "per_candidate_valid": {
+        "greedy": true,
+        "park=far": true,
+        "tour": false
+      },
+      "axis_best": [
+        27,
+        152,
+        156
+      ],
+      "axis_winners": [
+        "greedy"
+      ],
+      "response_time_tiebreak_winner": null,
+      "note": "greedy D_WIN over park=far (152 vs 141) — park=far D_LOSS counterexample persists; tour INVALID (4 fuel-short)"
+    },
+    {
+      "case": 8,
+      "pattern": "Uniform+more-days",
+      "valid_all_candidates": false,
+      "per_candidate_valid": {
+        "greedy": true,
+        "park=far": true,
+        "tour": false
+      },
+      "axis_best": [
+        27,
+        232,
+        254
+      ],
+      "axis_winners": [
+        "greedy"
+      ],
+      "response_time_tiebreak_winner": null,
+      "note": "greedy B_WIN over park=far (254 vs 250) with D tied at 232; tour INVALID (1 fuel-short)"
+    }
+  ],
+  "summary": {
+    "axis_wins_all_cases": {
+      "greedy": 8,
+      "park_far": 2,
+      "tour": 0
+    },
+    "axis_losses_all_cases": {
+      "greedy": 1,
+      "park_far": 7,
+      "tour": 9
+    },
+    "axis_wins_valid_only": {
+      "greedy": 2,
+      "park_far": 0,
+      "tour": 0
+    },
+    "valid_cases_all_candidates": 2,
+    "per_candidate_valid_runs": {
+      "greedy": 9,
+      "park_far": 9,
+      "tour": 2
+    },
+    "response_time_tiebreak_wins": {
+      "greedy": 0,
+      "park_far": 1,
+      "tour": 0
+    },
+    "official_order": "variety, daily_variety_sum, total_balls, -response_time (lexicographic; lower response_time is better)",
+    "overall_judgment": {
+      "axis": "greedy wins 8/9 cases (7 outright + 1 axis-tie with park=far); park=far wins 1 outright (case 0) + 1 tie (case 6); tour wins 0/9",
+      "valid_only": "On the 2 cases where every candidate scored (1, 2), greedy wins both.",
+      "tour": "NEGATIVE result confirmed and stronger than pre-fix: tour loses all 9 cases on the axis and is INVALID (fuel-short/illegal actions) on 7/9. Its response_time advantage (5-15ms vs 100-230ms) never acts as a tie-break because it never ties on the axis.",
+      "park_far": "Conditional: wins case 0 and ties case 6, but loses the other 7. D_LOSS counterexamples persist (case 2 Peripheral 152 vs 168, case 7 few-agents 141 vs 152). The pre-fix mountain-heavy V_LOSS (case 4) is GONE — park=far now V=27 there.",
+      "no_subset_superiority_claim": "These 9 cases are the issue evaluation suite only. No overall superiority is claimed beyond this bounded suite; full corpora / holdout sweeps belong to the comparison-measurement session."
+    }
+  }
+}

@@ -1,0 +1,33 @@
+[Unit]
+Description=One Arena match for the current 15-minute slot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=proconarena
+Group=proconarena
+WorkingDirectory=/opt/procon-arena
+Environment=TZ=UTC
+Environment=HOME=/var/lib/procon-arena/home
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=ARENA_RUNNER_BINARY=/opt/procon-arena/procon
+Environment=ARENA_RUNNER_STATE_DIR=/var/lib/procon-arena
+Environment=ARENA_RUNNER_OWNERSHIP=/etc/procon-arena/ownership.json
+Environment=ARENA_RUNNER_CONFIG=/etc/procon-arena/runner.json
+Environment=ARENA_RUNNER_BUILD_MANIFEST=/opt/procon-arena/build.json
+EnvironmentFile=/etc/procon-arena/infisical.env
+ExecStart=/usr/bin/python3 /opt/procon-arena/arena_runner.py gated-run
+TimeoutStartSec=infinity
+TimeoutStopSec=infinity
+KillMode=control-group
+StateDirectory=procon-arena
+StateDirectoryMode=0700
+ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/procon-arena/home
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/procon-arena
+ReadOnlyPaths=/opt/procon-arena /etc/procon-arena
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

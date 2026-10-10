@@ -1,0 +1,112 @@
+[
+ {
+  "day": 0,
+  "starts": [
+   59,
+   64,
+   122
+  ],
+  "fuels": [
+   40,
+   40,
+   40
+  ],
+  "free": 9,
+  "tank": 8,
+  "escort": 9,
+  "balls_free_per_patrol": [
+   5,
+   5,
+   5
+  ],
+  "balls_free": 15
+ },
+ {
+  "day": 1,
+  "starts": [
+   15,
+   5,
+   207
+  ],
+  "fuels": [
+   24,
+   26,
+   40
+  ],
+  "free": 10,
+  "tank": 10,
+  "escort": 10,
+  "balls_free_per_patrol": [
+   5,
+   5,
+   5
+  ],
+  "balls_free": 15
+ },
+ {
+  "day": 2,
+  "starts": [
+   143,
+   9,
+   226
+  ],
+  "fuels": [
+   40,
+   40,
+   5
+  ],
+  "free": 9,
+  "tank": 8,
+  "escort": 9,
+  "balls_free_per_patrol": [
+   5,
+   5,
+   5
+  ],
+  "balls_free": 15
+ },
+ {
+  "day": 3,
+  "starts": [
+   207,
+   120,
+   176
+  ],
+  "fuels": [
+   8,
+   40,
+   40
+  ],
+  "free": 9,
+  "tank": 8,
+  "escort": 9,
+  "balls_free_per_patrol": [
+   5,
+   5,
+   5
+  ],
+  "balls_free": 15
+ },
+ {
+  "day": 4,
+  "starts": [
+   246,
+   143,
+   5
+  ],
+  "fuels": [
+   40,
+   6,
+   8
+  ],
+  "free": 10,
+  "tank": 7,
+  "escort": 9,
+  "balls_free_per_patrol": [
+   6,
+   7,
+   6
+  ],
+  "balls_free": 19
+ }
+]

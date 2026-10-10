@@ -44,6 +44,8 @@ jobs:
             crates/protocol -> target
             crates/engine -> target
             crates/cli -> target
+      - name: Arena Runner safety tests
+        run: python3 -m unittest discover -s ops/arena-runner -v
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy

@@ -1,0 +1,179 @@
+== preflight: http://127.0.0.1:18772
+OK    バイナリ: C:\Users\rebui\Desktop\procon-wt\out\s-24\bin\procon.exe  {"package":"0.5.1","protocol":{"major":1,"minor":0},"rustc":"1.85"}
+OK    sha256: c562487d2c1ad90a3e07fa47820f057b69daed905e3ff58069511ee4ee21356b
+OK    トークン: 設定済み
+OK    試合記録: C:\Users\rebui\Desktop\procon-wt\out\s-24\records
+OK    HTTP 通信ログ: C:\Users\rebui\Desktop\procon-wt\out\s-24\logs
+OK    空き容量: 61 GB
+OK    サーバー応答: 200（認証 OK、試合設定が出ている）
+PREFLIGHT OK
+06:44:12 honsen: coordinator を起動します（再起動 0 回目）
+2026-10-10T21:44:12.350081Z  INFO match recording enabled run_id="20261010T214412Z-p34676" dir=C:\Users\rebui\Desktop\procon-wt\out\s-24\records\20261010T214412Z-p34676
+2026-10-10T21:44:12.350742Z  INFO HTTP log enabled run_id="20261010T214412Z-p34676" path=C:\Users\rebui\Desktop\procon-wt\out\s-24\logs\20261010T214412Z-p34676\http.jsonl
+2026-10-10T21:44:12.350853Z  INFO agent kind composition selected kinds=P,S
+2026-10-10T21:44:12.351223Z  INFO offline candidate selected for the live run candidate=sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0
+[HTTP #1] 2026-10-10T21:44:12.351Z GET http://127.0.0.1:18772/setting -> 200 OK (4 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:44:12 GMT
+  < content-type: application/json
+  < content-length: 2866
+  < body: {"startsAt": 0, "daySeconds": [60, 60], "daySteps": [83, 143], "map": {"height": 24, "width": 24, "cells": [[3, 3, 1, 1, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1], [3, 3, 1, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 2, 2, 0, 0, 0, 1, 1, 0, 1, 1, 1], [2, 2, 2, 2, 0, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1], [2, 2, 2, 2, 0, 2, 2, 1, 1, 0, 1, 1, 0, 0, 3, 3, 0, 0, 0, 1, 1, 1, 1, 2], [2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 0, 3, 3, 0, 1, 1, 1, 1, 2, 2, 2], [2, 2, 2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2], [2, 2, 2, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0], [2, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0], [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1], [2, 2, 2, 0, 0, 0, 0, 1, 0, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1], [2, 2, 2, 2, 0, 0, 1, 1, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1], [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 1, 1, 0, 0, 0, 0, 2, 2, 1, 1], [2, 0, 2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 2, 2, 2, 1, 1], [3, 3, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1], [3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 1, 1], [2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0], [2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 0, 0], [0, 0, 2, 2, 2, 2, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0], [0, 0, 2, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 1, 1, 1], [0, 0, 2, 2, 2, 2, 2, 1, 1, 0, 2, 2, 2, 0, 0, 1, 1, 0, 0, 2, 2, 1, 1, 1], [0, 1, 1, 2, 2, 2, 2, 0, 0, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 0, 2, 2, 1, 1], [1, 0, 1, 2, 2, 2, 0, 0, 0, 2, 2, 2, 2, 3, 1, 1, 1, 1, 1, 0, 0, 2, 1, 1], [1, 1, 0, 2, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1], [1, 1, 1, 2, 2, 0, 0, 2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0]]}, "spots": [{"brand": 0, "pos": 362, "stocks": 4}, {"brand": 1, "pos": 81, "stocks": 4}, {"brand": 2, "pos": 473, "stocks": 3}, {"brand": 3, "pos": 193, "stocks": 3}, {"brand": 4, "pos": 561, "stocks": 1}, {"brand": 5, "pos": 44, "stocks": 2}, {"brand": 6, "pos": 535, "stocks": 2}, {"brand": 7, "pos": 187, "stocks": 4}, {"brand": 8, "pos": 52, "stocks": 4}, {"brand": 9, "pos": 480, "stocks": 1}, {"brand": 10, "pos": 222, "stocks": 3}, {"brand": 11, "pos": 465, "stocks": 1}, {"brand": 12, "pos": 317, "stocks": 4}, {"brand": 13, "pos": 296, "stocks": 1}, {"brand": 14, "pos": 13, "stocks": 2}, {"brand": 15, "pos": 541, "stocks": 3}, {"brand": 16, "pos": 76, "stocks": 1}, {"brand": 17, "pos": 530, "stocks": 4}, {"brand": 18, "pos": 34, "stocks": 2}, {"brand": 19, "pos": 548, "stocks": 2}, {"brand": 10, "pos": 207, "stocks": 2}, {"brand": 3, "pos": 178, "stocks": 2}], "agents": [289, 572, 505, 390], "fuelLimits": 240, "players": 2, "busyThreshold": 3, "jammedThreshold": 8}
+2026-10-10T21:44:12.351246Z  INFO coordinator loop strategy selected solver="candidate"
+2026-10-10T21:44:12.444542Z  INFO fleet day plan day=0 clean=true chains=1 model_series=20 model_balls=29 replay_series=20 replay_balls=29 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(178, 4294967295), (52, 198), (178, 240), (561, 205)]
+2026-10-10T21:44:12.446999Z  INFO fleet day plan day=0 clean=true chains=1 model_series=20 model_balls=37 replay_series=20 replay_balls=37 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(44, 170), (13, 166), (193, 174), (44, 163)]
+2026-10-10T21:44:12.465581Z  INFO fleet day plan day=1 clean=true chains=1 model_series=20 model_balls=46 replay_series=20 replay_balls=46 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(222, 4294967295), (222, 240), (473, 128), (362, 93)]
+2026-10-10T21:44:12.473336Z  INFO fleet day plan day=1 clean=true chains=1 model_series=20 model_balls=54 replay_series=20 replay_balls=54 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(52, 65), (441, 51), (541, 57), (548, 39)]
+2026-10-10T21:44:12.473717Z  INFO agent kinds trial kinds=S,P,P,P variety=20 daily_variety=40 balls=75
+2026-10-10T21:44:12.473756Z  INFO agent kinds trial kinds=P,P,P,P variety=20 daily_variety=40 balls=91
+[HTTP #2] 2026-10-10T21:44:12.473Z POST http://127.0.0.1:18772/agent -> 200 OK (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [0,0,0,0]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:44:12 GMT
+  < content-type: application/json
+  < content-length: 2
+  < body: {}
+[HTTP #3] 2026-10-10T21:44:12.475Z GET http://127.0.0.1:18772/setting -> 200 OK (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:44:12 GMT
+  < content-type: application/json
+  < content-length: 2875
+  < body: {"startsAt": 1791668654, "daySeconds": [60, 60], "daySteps": [83, 143], "map": {"height": 24, "width": 24, "cells": [[3, 3, 1, 1, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1], [3, 3, 1, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 2, 2, 0, 0, 0, 1, 1, 0, 1, 1, 1], [2, 2, 2, 2, 0, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1], [2, 2, 2, 2, 0, 2, 2, 1, 1, 0, 1, 1, 0, 0, 3, 3, 0, 0, 0, 1, 1, 1, 1, 2], [2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 0, 3, 3, 0, 1, 1, 1, 1, 2, 2, 2], [2, 2, 2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2], [2, 2, 2, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0], [2, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0], [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1], [2, 2, 2, 0, 0, 0, 0, 1, 0, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1], [2, 2, 2, 2, 0, 0, 1, 1, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1], [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 1, 1, 0, 0, 0, 0, 2, 2, 1, 1], [2, 0, 2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 2, 2, 2, 1, 1], [3, 3, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1], [3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 1, 1], [2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0], [2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 0, 0], [0, 0, 2, 2, 2, 2, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0], [0, 0, 2, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 1, 1, 1], [0, 0, 2, 2, 2, 2, 2, 1, 1, 0, 2, 2, 2, 0, 0, 1, 1, 0, 0, 2, 2, 1, 1, 1], [0, 1, 1, 2, 2, 2, 2, 0, 0, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 0, 2, 2, 1, 1], [1, 0, 1, 2, 2, 2, 0, 0, 0, 2, 2, 2, 2, 3, 1, 1, 1, 1, 1, 0, 0, 2, 1, 1], [1, 1, 0, 2, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1], [1, 1, 1, 2, 2, 0, 0, 2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0]]}, "spots": [{"brand": 0, "pos": 362, "stocks": 4}, {"brand": 1, "pos": 81, "stocks": 4}, {"brand": 2, "pos": 473, "stocks": 3}, {"brand": 3, "pos": 193, "stocks": 3}, {"brand": 4, "pos": 561, "stocks": 1}, {"brand": 5, "pos": 44, "stocks": 2}, {"brand": 6, "pos": 535, "stocks": 2}, {"brand": 7, "pos": 187, "stocks": 4}, {"brand": 8, "pos": 52, "stocks": 4}, {"brand": 9, "pos": 480, "stocks": 1}, {"brand": 10, "pos": 222, "stocks": 3}, {"brand": 11, "pos": 465, "stocks": 1}, {"brand": 12, "pos": 317, "stocks": 4}, {"brand": 13, "pos": 296, "stocks": 1}, {"brand": 14, "pos": 13, "stocks": 2}, {"brand": 15, "pos": 541, "stocks": 3}, {"brand": 16, "pos": 76, "stocks": 1}, {"brand": 17, "pos": 530, "stocks": 4}, {"brand": 18, "pos": 34, "stocks": 2}, {"brand": 19, "pos": 548, "stocks": 2}, {"brand": 10, "pos": 207, "stocks": 2}, {"brand": 3, "pos": 178, "stocks": 2}], "agents": [289, 572, 505, 390], "fuelLimits": 240, "players": 2, "busyThreshold": 3, "jammedThreshold": 8}
+[HTTP #4] 2026-10-10T21:44:12.477Z GET http://127.0.0.1:18772/ -> 403 Forbidden (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:44:12 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #5] 2026-10-10T21:44:12.993Z GET http://127.0.0.1:18772/ -> 403 Forbidden (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:44:12 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #6] 2026-10-10T21:44:13.508Z GET http://127.0.0.1:18772/ -> 403 Forbidden (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:44:13 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #7] 2026-10-10T21:44:14.024Z GET http://127.0.0.1:18772/ -> 200 OK (1 ms) attempt=1 day=0
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:44:14 GMT
+  < content-type: application/json
+  < content-length: 226
+  < body: {"endsAt": 1791668714, "day": 0, "agents": [{"kind": 0, "pos": 289, "fuel": 240}, {"kind": 0, "pos": 572, "fuel": 240}, {"kind": 0, "pos": 505, "fuel": 240}, {"kind": 0, "pos": 390, "fuel": 240}], "others": [], "traffics": []}
+2026-10-10T21:44:12.473789Z  INFO agent kinds selected for POST /agent n_agents=4 kinds=P,P,P,P solver=candidate:sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0
+2026-10-10T21:45:08.702772Z  INFO fleet day plan day=0 clean=true chains=4 model_series=20 model_balls=40 replay_series=20 replay_balls=40 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(52, 173), (52, 161), (52, 164), (187, 179)]
+2026-10-10T21:45:08.702920Z  INFO plan generated candidate=sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0 n_agents=4 day_steps=83 moves=[44, 52, 50, 43] waits=[39, 31, 33, 40]
+[HTTP #8] 2026-10-10T21:45:08.703Z POST http://127.0.0.1:18772/ -> 200 OK (1 ms) attempt=1 day=0
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [[3,4,3,4,4,4,4,3,2,3,3,2,2,2,2,2,1,1,1,1,1,1,0,0,0,0,0,0,0,5,2,1,2,2,1,0,0,0,1,0,5,5,5,5],[1,5,5,5,5,5,5,5,1,1,1,2,2,0,0,0,1,1,0,0,0,0,1,1,1,2,2,2,0,0,1,1,1,1,0,5,5,5,5,5,5,5,5,5,4,4,4,0,5,5,5,5,-2],[2,3,2,2,2,2,2,2,3,2,2,2,2,1,1,1,1,2,2,1,1,1,0,0,0,0,1,1,1,1,1,5,5,5,4,5,5,5,0,5,5,0,0,0,1,0,5,5,5,5,-1],[0,0,0,0,1,1,1,0,5,5,5,5,1,2,1,1,0,1,1,2,2,2,2,3,1,1,2,1,2,2,2,2,2,2,2,2,3,4,4,4,4,3,3,-1]]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:45:08 GMT
+  < content-type: application/json
+  < content-length: 15
+  < body: {"revision": 1}
+[HTTP #9] 2026-10-10T21:45:14.708Z GET http://127.0.0.1:18772/ -> 200 OK (15 ms) attempt=1 day=1
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:45:14 GMT
+  < content-type: application/json
+  < content-length: 226
+  < body: {"endsAt": 1791668774, "day": 1, "agents": [{"kind": 0, "pos": 289, "fuel": 240}, {"kind": 0, "pos": 572, "fuel": 240}, {"kind": 0, "pos": 505, "fuel": 240}, {"kind": 0, "pos": 390, "fuel": 240}], "others": [], "traffics": []}
+2026-10-10T21:45:08.704651Z  INFO plan accepted by server day=0 revision=1 answer_ms=54678 submit_ms=1 margin_ms=5296
+2026-10-10T21:46:08.701708Z  INFO fleet day plan day=1 clean=true chains=4 model_series=20 model_balls=55 replay_series=20 replay_balls=55 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(52, 133), (187, 133), (541, 138), (193, 132)]
+2026-10-10T21:46:08.701915Z  INFO plan generated candidate=sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0 n_agents=4 day_steps=143 moves=[74, 73, 67, 73] waits=[69, 70, 76, 70]
+2026-10-10T21:46:08.728113Z  INFO plan accepted by server day=1 revision=2 answer_ms=54004 submit_ms=26 margin_ms=5272
+2026-10-10T21:46:08.728218Z  WARN coordinator loop wired in #135; full E2E driving comes in #136. outcome: CoordinatorOutcome { days_completed: 2, revisions: [1, 2], day_steps: [83, 143], day_seconds: [60, 60], days: [DaySummary { day: 0, agents: [DayAgentState { kind: AgentKind(0), pos: 289, fuel: 240 }, DayAgentState { kind: AgentKind(0), pos: 572, fuel: 240 }, DayAgentState { kind: AgentKind(0), pos: 505, fuel: 240 }, DayAgentState { kind: AgentKind(0), pos: 390, fuel: 240 }], movement: [DayMovement { moves: 44, waits: 0, runs: 0, dirs: [11, 9, 9, 5, 5, 5] }, DayMovement { moves: 52, waits: 2, runs: 1, dirs: [11, 13, 5, 0, 3, 20] }, DayMovement { moves: 50, waits: 1, runs: 1, dirs: [9, 13, 13, 2, 1, 12] }, DayMovement { moves: 43, waits: 1, runs: 1, dirs: [6, 11, 14, 4, 4, 4] }] }, DaySummary { day: 1, agents: [DayAgentState { kind: AgentKind(0), pos: 289, fuel: 240 }, DayAgentState { kind: AgentKind(0), pos: 572, fuel: 240 }, DayAgentState { kind: AgentKind(0), pos: 505, fuel: 240 }, DayAgentState { kind: AgentKind(0), pos: 390, fuel: 240 }], movement: [DayMovement { moves: 74, waits: 2, runs: 1, dirs: [11, 12, 21, 5, 8, 17] }, DayMovement { moves: 73, waits: 9, runs: 1, dirs: [10, 17, 16, 4, 7, 19] }, DayMovement { moves: 67, waits: 24, runs: 1, dirs: [9, 11, 19, 10, 11, 7] }, DayMovement { moves: 73, waits: 8, runs: 1, dirs: [9, 15, 14, 5, 11, 19] }] }], kinds: [Patrol, Patrol, Patrol, Patrol] }
+[HTTP #10] 2026-10-10T21:46:08.702Z POST http://127.0.0.1:18772/ -> 200 OK (26 ms) attempt=1 day=1
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [[2,2,2,3,5,5,4,4,4,4,4,3,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,5,0,5,0,0,0,0,1,1,1,1,1,1,1,1,0,0,1,1,1,1,0,5,5,5,5,5,5,5,5,4,5,4,4,0,5,5,5,5,-2],[1,0,0,5,5,0,5,5,4,4,4,4,5,5,5,5,0,5,5,5,5,5,5,0,0,5,0,1,1,1,1,1,1,2,2,1,1,1,0,0,5,5,5,5,1,2,1,1,0,1,1,1,2,2,2,2,2,4,4,4,3,3,3,2,2,3,2,2,2,1,2,2,2,-9],[2,3,0,0,0,0,1,1,1,1,1,2,2,1,2,2,2,0,0,0,5,0,5,5,5,5,1,2,1,1,0,1,1,2,2,2,2,3,2,2,3,2,2,3,2,2,2,2,3,3,4,4,4,4,4,3,3,3,3,4,4,4,5,5,4,4,4,-24],[3,3,2,3,5,4,4,5,4,5,5,5,0,0,0,0,1,1,1,1,1,2,2,1,1,1,0,2,1,2,2,1,2,2,3,2,2,2,1,2,2,2,0,0,1,1,1,1,0,5,5,5,5,5,5,5,5,5,4,4,4,0,5,5,5,5,4,4,3,4,4,5,4,-8]]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:46:08 GMT
+  < content-type: application/json
+  < content-length: 15
+  < body: {"revision": 2}
+06:46:08 honsen: coordinator が終了しました（終了コード 0）
+試合完了（正常終了）
+記録: C:\Users\rebui\Desktop\procon-wt\out\s-24\records\20261010T214412Z-p34676
+2026-10-10T21:46:08.728281Z  INFO --exit-after-match: 2 day(s) completed, exiting 0
+{
+  "agent_kinds": "P,P,P,P",
+  "binary_sha256": "c562487d2c1ad90a3e07fa47820f057b69daed905e3ff58069511ee4ee21356b",
+  "continues_run_id": null,
+  "days": [
+    {
+      "agents": 4,
+      "day": 0,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 192,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 1,
+      "status": "accepted",
+      "traffics": 0
+    },
+    {
+      "agents": 4,
+      "day": 1,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 291,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 2,
+      "status": "accepted",
+      "traffics": 0
+    }
+  ],
+  "events": 13,
+  "map": {
+    "agents": 4,
+    "cells": 576,
+    "days": 2,
+    "height": 24,
+    "spots": 22,
+    "width": 24
+  },
+  "missing_seq": 0,
+  "recorder": {
+    "dropped": 0,
+    "events_numbered": 13,
+    "write_errors": 0
+  },
+  "result": {
+    "days_completed": 2,
+    "error": null,
+    "revisions": [
+      1,
+      2
+    ],
+    "status": "completed"
+  },
+  "run_id": "20261010T214412Z-p34676",
+  "schema_version": 1,
+  "solver": {
+    "candidate_id": "sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0",
+    "kinds_auto": true,
+    "kinds_flag": null,
+    "label": "candidate:sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0",
+    "loop_initial_strategy": "greedy",
+    "loop_iterations": 32,
+    "solver_flag": "loop"
+  },
+  "source_commit_sha": "208127e3f9b88bca62e096913ea2fb2e9931d8fa",
+  "started_at": "2026-10-10T21:44:12.346Z",
+  "unparsed_lines": 0
+HTTP 通信ログ: C:\Users\rebui\Desktop\procon-wt\out\s-24\logs
+}

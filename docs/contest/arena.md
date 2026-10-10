@@ -157,6 +157,53 @@ element 数（move = 1 ステップ）基準ではない（localhost probe: `[2,
 `--arena` なしの `procon coordinator` / `procon tournament` は **これまでと一字一句同じ**挙動です
 （arena は純粋に opt-in。`live_state_slot` / `secret_redaction` はデフォルト `None`）。
 
+## WSL2 での運用（Windows 本番との分離・2026-10-10 移管）
+
+練習 Arena 投入の実行環境は **Windows 11 上の WSL2 (Ubuntu)** です。Windows ネイティブ側は
+本番競技専用とし、WSL から `/mnt/c` 側の本番用プロセス・`.env`・トークン・ログには
+一切接触しません。逆方向の分離（本番 token を Arena へ送らない）は次の落とし穴があるため
+起動コマンドの形で強制します。
+
+### 起動コマンド（WSL 検証済み）
+
+```bash
+cd <arena worktree>
+PROCON_ARENA_TOKEN="$(infisical secrets get PROCON_ARENA_TOKEN --env=dev --plain)" \
+PROCON_SOURCE_COMMIT_SHA="$(git rev-parse HEAD)" \
+  target/release/procon coordinator --arena --next --exit-after-match \
+  --candidate '<candidate id>' --kinds-auto >> target/arena-run-<label>.log 2>&1
+```
+
+- 実行検証（2026-10-10）: match 1985 完走（5 日全受理）・match 1986 lobby 登録成功。
+- `just` が無い環境では上記の直接起動でよい（`just arena-next` の等価手順。
+  `cargo run` の代わりに既ビルドの `target/release/procon` を使う）。
+- Linux native Release build は `cargo build --release --locked --bin procon`。
+  binary sha256 を投入記録（Issue #317）に残す。
+
+### `infisical run` を使わない理由
+
+WSL の Infisical `dev` 環境には `PROCON_ARENA_TOKEN` と `PROCON_TOKEN`（本番公式サーバー用）
+が **両方** 存在します。`infisical run --env=dev` は両方注入し、coordinator は仕様どおり
+`PROCON_TOKEN` を優先するため **Arena に本番 token が送信されます**
+（2026-10-10 実測: arena は `unknown token` で拒否し試合不成立。本番 token を arena サーバーへ
+送った事実は Issue #317 に記録済み）。`infisical secrets get PROCON_ARENA_TOKEN --env=dev --plain`
+の値のみを環境変数で渡すこと。
+
+### worktree / evidence / 分離
+
+- 専用 detached worktree（例 `.worktrees/arena-wsl-<sha-short>`）でビルド・実行し、
+  main checkout の `target/` と混ぜない。
+- evidence: worktree 内 `target/arena/runs.jsonl`。ログ: `target/arena-run-<label>.log`。
+- coordinator プロセスの重複起動禁止・投入前の予約コメント（Issue #317）は
+  「投入候補の選抜基準」と共通の規律です。
+
+### 残課題: 無人連続投入
+
+WSL2 は最後のプロセス終了から数秒で VM が停止します。`--next` の放置ループ
+（`ops/arena-runner/` の systemd timer 構成）は WSL の systemd 上でも動作する可能性がありますが
+未検証で、所有権ゲート（Issue #317 / PR #384）も未成立です。無人運用には
+WSL VM を生かしておく仕組みが必要です。
+
 ## token / アカウント規律
 
 - token は **self-hosted Infisical の `PROCON_ARENA_TOKEN` から runtime 注入**します。

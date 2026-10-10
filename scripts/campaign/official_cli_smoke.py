@@ -79,7 +79,7 @@ with (a.output_dir / 'server.log').open('w') as server_log, (a.output_dir / 'cli
         env.update(PROCON_TOKEN='local-test', RUST_LOG='info')
         command = [str(a.cli.resolve()), 'coordinator', '--server',
             f'http://127.0.0.1:{proxy.server_port}', '--candidate', a.candidate,
-            '--kinds', a.kinds, '--exit-after-match']
+            *(['--kinds-auto'] if a.kinds=='auto' else ['--kinds', a.kinds]), '--exit-after-match']
         result = subprocess.run(command, env=env, stdout=cli_log, stderr=subprocess.STDOUT,
             timeout=20 + a.seconds * len(problem['daySteps']))
         code = result.returncode

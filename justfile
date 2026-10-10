@@ -78,6 +78,12 @@ smoke-cli:
     cargo run -q --bin procon -- version
     cargo run -q --bin procon -- hello >/dev/null
 
+# Release smoke: battle-candidate registry resolution + official answer
+# acceptance (Issue #342). Bounded (< ~5 min); writes target/release-smoke/.
+# Pass `--skip-cli` to run only the candidate-resolution half.
+release-smoke *args:
+    python3 scripts/campaign/release_smoke.py {{args}}
+
 # ----------------------------------------------------------------
 # Warmup (pre-match cold/warm/smoke timing) — see crates/cli/src/warmup.rs
 # ----------------------------------------------------------------

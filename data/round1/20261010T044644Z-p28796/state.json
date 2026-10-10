@@ -1,0 +1,18 @@
+{
+  "day": null,
+  "daysTotal": 5,
+  "error": null,
+  "lastUpdateUnix": 1791608418,
+  "revision": 37,
+  "revisions": [
+    3,
+    12,
+    21,
+    30,
+    37
+  ],
+  "schemaVersion": 1,
+  "server": "http://172.28.0.10:8080",
+  "solver": "candidate:fleet:budget=official:budget_ms=10000:adapt=off",
+  "status": "completed"
+}

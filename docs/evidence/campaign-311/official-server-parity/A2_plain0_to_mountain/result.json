@@ -1,0 +1,256 @@
+{
+  "case": "A2_plain0_to_mountain",
+  "note": "fuel=0, 平地->山地. REJECT: cannot pay even the departure cost.",
+  "fuelLimits": 0,
+  "daySteps": [
+    16,
+    16
+  ],
+  "kinds": [
+    0
+  ],
+  "timeline": [
+    {
+      "when": "day0-start",
+      "state": {
+        "endsAt": 1791538310,
+        "day": 0,
+        "agents": [
+          {
+            "kind": 0,
+            "pos": 0,
+            "fuel": 0
+          }
+        ],
+        "others": [],
+        "traffics": []
+      }
+    },
+    {
+      "when": "day0-answer",
+      "plan": [
+        [
+          2,
+          -14
+        ]
+      ],
+      "answer": {
+        "revision": -1
+      }
+    },
+    {
+      "when": "day1-start",
+      "state": {
+        "endsAt": 1791538316,
+        "day": 1,
+        "agents": [
+          {
+            "kind": 0,
+            "pos": 0,
+            "fuel": 0
+          }
+        ],
+        "others": [],
+        "traffics": []
+      }
+    },
+    {
+      "when": "day1-answer",
+      "plan": [
+        [
+          -16
+        ]
+      ],
+      "answer": {
+        "revision": 1
+      }
+    }
+  ],
+  "requests": [
+    {
+      "path": "/setting",
+      "body": null,
+      "status": 200,
+      "response": {
+        "startsAt": 0,
+        "daySeconds": [
+          6,
+          6
+        ],
+        "daySteps": [
+          16,
+          16
+        ],
+        "map": {
+          "height": 8,
+          "width": 8,
+          "cells": [
+            [
+              0,
+              2,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          ]
+        },
+        "spots": [
+          {
+            "brand": 0,
+            "pos": 10,
+            "stocks": 2
+          }
+        ],
+        "agents": [
+          0
+        ],
+        "fuelLimits": 0,
+        "players": 1,
+        "busyThreshold": 2,
+        "jammedThreshold": 5
+      }
+    },
+    {
+      "path": "/agent",
+      "body": [
+        0
+      ],
+      "status": 200,
+      "response": null
+    },
+    {
+      "path": "/",
+      "body": null,
+      "status": 200,
+      "response": {
+        "endsAt": 1791538310,
+        "day": 0,
+        "agents": [
+          {
+            "kind": 0,
+            "pos": 0,
+            "fuel": 0
+          }
+        ],
+        "others": [],
+        "traffics": []
+      }
+    },
+    {
+      "path": "/",
+      "body": [
+        [
+          2,
+          -14
+        ]
+      ],
+      "status": 200,
+      "response": {
+        "revision": -1
+      }
+    },
+    {
+      "path": "/",
+      "body": null,
+      "status": 200,
+      "response": {
+        "endsAt": 1791538316,
+        "day": 1,
+        "agents": [
+          {
+            "kind": 0,
+            "pos": 0,
+            "fuel": 0
+          }
+        ],
+        "others": [],
+        "traffics": []
+      }
+    },
+    {
+      "path": "/",
+      "body": [
+        [
+          -16
+        ]
+      ],
+      "status": 200,
+      "response": {
+        "revision": 1
+      }
+    }
+  ]
+}

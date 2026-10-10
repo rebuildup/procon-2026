@@ -209,22 +209,43 @@ fn fixture_thresholds_flip_corridor_state_across_days() {
         "every corridor cell used once that day is Busy"
     );
 
-    // Day 1: agent 0 walks west back to (1,4), steps off, and steps back on
-    // — two traversals of (1,4) today against yesterday's one.
+    // Day 1: agent 0 walks west back toward (1,4). The official tick clock
+    // (Q10) prices every departure by its cell's step count, so the return
+    // walk does not play out like the pre-#342 immediate-landing element
+    // clock (where the 12 moves landed in 12 steps and produced a second
+    // *entry* of (1,4)):
+    //
+    // * (13,4) was parked on for the rest of day 0 (40 steps) and is now
+    //   **Jammed** — the first hop out costs 4 steps (lands (12,4) at tick 4);
+    // * the Busy corridor hops then cost 2 steps each, so the walk lands
+    //   (6,4) at the day's final reflection (tick 16) and the remaining
+    //   orders are truncated (the same repair `wire_plan::normalize_day_plan`
+    //   applies before submission).
+    // Stay-step counting (Q27) credits the cells the walk *stands on*.
     let day1: Vec<Option<Direction>> = (0..12)
         .map(|_| Some(Direction::Left))
         .chain([Some(Direction::UpperLeft), Some(Direction::LowerRight)])
         .collect();
     drive_day(&mut state, sim, &day1);
 
-    // today=2 + yesterday=1 >= jammedThreshold 2 -> Jammed on day 2.
+    // (6,4) shows the full threshold story: 1 stay-step on day 0 promotes
+    // it to Busy for day 1, and its landing stay on day 1 adds the second
+    // (1 + 1 >= jammedThreshold 2) -> Jammed on day 2.
     assert_eq!(
-        terrain_at(&state.setting.map, 1, 4),
+        terrain_at(&state.setting.map, 6, 4),
         Terrain::Road(EngineTraffic::Jammed),
         "day-1 traffic must jam the corridor cell for day 2"
     );
-    // One traversal on each of two days also reaches the jam threshold.
-    assert_eq!(terrain_at(&state.setting.map, 5, 4), Terrain::Road(EngineTraffic::Jammed));
+    // (5,4) and (1,4) are only counted on day 0 — the day-1 walk never
+    // lands on them — so their 2-day stay-step average stays at 1
+    // (< jammedThreshold 2): Busy.
+    for cell in [(5, 4), (1, 4)] {
+        assert_eq!(
+            terrain_at(&state.setting.map, cell.0, cell.1),
+            Terrain::Road(EngineTraffic::Busy),
+            "{cell:?} keeps exactly one stay-step over the 2-day window"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
