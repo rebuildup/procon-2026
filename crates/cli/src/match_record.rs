@@ -300,7 +300,7 @@ struct Inner {
     tx: SyncSender<Msg>,
     started: Instant,
     seq: Arc<AtomicU64>,
-    dropped: AtomicU64,
+    dropped: Arc<AtomicU64>,
     write_errors: Arc<AtomicU64>,
     reported: AtomicU64,
     /// Messages queued and not yet taken by the writer.
@@ -392,6 +392,7 @@ impl MatchRecorder {
         let write_errors = Arc::new(AtomicU64::new(0));
         let seq = Arc::new(AtomicU64::new(0));
         let depth = Arc::new(AtomicU64::new(0));
+        let dropped = Arc::new(AtomicU64::new(0));
         let writer = Writer {
             dir: dir.clone(),
             root: root.to_path_buf(),
@@ -403,6 +404,7 @@ impl MatchRecorder {
             setting: None,
             seq: Arc::clone(&seq),
             write_errors: Arc::clone(&write_errors),
+            dropped: Arc::clone(&dropped),
             depth: Arc::clone(&depth),
             last_complaint: None,
             started: Instant::now(),
@@ -423,7 +425,7 @@ impl MatchRecorder {
                 tx,
                 started,
                 seq,
-                dropped: AtomicU64::new(0),
+                dropped,
                 write_errors,
                 reported: AtomicU64::new(0),
                 depth,
@@ -457,13 +459,12 @@ impl MatchRecorder {
             inner.dropped.fetch_add(1, Ordering::Relaxed);
             return;
         }
-        match inner.tx.try_send(msg) {
-            Ok(()) => {
-                inner.depth.fetch_add(1, Ordering::Relaxed);
-            }
-            Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
-                inner.dropped.fetch_add(1, Ordering::Relaxed);
-            }
+        // Counted before it is offered: the writer decrements when it takes
+        // a message, and must never see one that has not been counted yet.
+        inner.depth.fetch_add(1, Ordering::Relaxed);
+        if inner.tx.try_send(msg).is_err() {
+            inner.depth.fetch_sub(1, Ordering::Relaxed);
+            inner.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -540,13 +541,15 @@ impl MatchRecorder {
         let (ack_tx, ack_rx) = sync_channel(1);
         let mut msg = Msg::Flush(ack_tx);
         loop {
+            inner.depth.fetch_add(1, Ordering::Relaxed);
             match inner.tx.try_send(msg) {
-                Ok(()) => {
-                    inner.depth.fetch_add(1, Ordering::Relaxed);
-                    break;
+                Ok(()) => break,
+                Err(TrySendError::Disconnected(_)) => {
+                    inner.depth.fetch_sub(1, Ordering::Relaxed);
+                    return false;
                 }
-                Err(TrySendError::Disconnected(_)) => return false,
                 Err(TrySendError::Full(back)) => {
+                    inner.depth.fetch_sub(1, Ordering::Relaxed);
                     if Instant::now() >= deadline {
                         return false;
                     }
@@ -688,6 +691,7 @@ struct Writer {
     setting: Option<Value>,
     seq: Arc<AtomicU64>,
     write_errors: Arc<AtomicU64>,
+    dropped: Arc<AtomicU64>,
     depth: Arc<AtomicU64>,
     last_complaint: Option<Instant>,
     started: Instant,
@@ -752,6 +756,7 @@ impl Writer {
                     let result = file.sync_data();
                     self.check("coordinator.log", result);
                 }
+                self.save_counters();
                 let _ = ack.try_send(());
             }
         }
@@ -856,6 +861,29 @@ impl Writer {
             }
             _ => return,
         }
+        if matches!(event, RecordEvent::MatchEnd { .. }) {
+            self.note_counters();
+        }
+        self.save_manifest();
+    }
+
+    /// Put the recorder's own bookkeeping into the manifest: how many events
+    /// were numbered, and how many records never reached the disk. Without
+    /// it a reader cannot tell that the *last* events are missing — a gap at
+    /// the end of `events.jsonl` looks like the end.
+    fn note_counters(&mut self) {
+        self.manifest.insert(
+            "recorder".to_owned(),
+            json!({
+                "events_numbered": self.seq.load(Ordering::Relaxed),
+                "dropped": self.dropped.load(Ordering::Relaxed),
+                "write_errors": self.write_errors.load(Ordering::Relaxed),
+            }),
+        );
+    }
+
+    fn save_counters(&mut self) {
+        self.note_counters();
         self.save_manifest();
     }
 
@@ -1077,15 +1105,24 @@ impl LoadedRecord {
             .collect()
     }
 
-    /// Sequence numbers missing from the file: records that were dropped or
+    /// Sequence numbers missing from the file: events that were dropped or
     /// failed to reach the disk.
+    ///
+    /// Gaps in the middle show in the file itself. Events lost at the very
+    /// end do not, so the count the recorder saved in the manifest
+    /// (`recorder.events_numbered`, written at match end and at exit) is
+    /// used as the expected total when it is there. A process that was
+    /// killed never wrote it; for such a run only the gaps before the last
+    /// surviving line can be counted.
     #[must_use]
     pub fn missing_seq(&self) -> u64 {
-        let Some(last) = self.lines.iter().map(|l| l.seq).max() else { return 0 };
         let mut seen: Vec<u64> = self.lines.iter().map(|l| l.seq).collect();
         seen.sort_unstable();
         seen.dedup();
-        (last + 1).saturating_sub(u64::try_from(seen.len()).unwrap_or(u64::MAX))
+        let in_file = seen.last().map_or(0, |last| last + 1);
+        let numbered =
+            self.manifest.pointer("/recorder/events_numbered").and_then(Value::as_u64).unwrap_or(0);
+        in_file.max(numbered).saturating_sub(u64::try_from(seen.len()).unwrap_or(u64::MAX))
     }
 
     /// A compact, human-checkable summary (`procon record show`).
@@ -1140,6 +1177,7 @@ impl LoadedRecord {
             "events": self.lines.len(),
             "unparsed_lines": self.unparsed_lines,
             "missing_seq": self.missing_seq(),
+            "recorder": self.manifest.get("recorder"),
             "days": days,
         })
     }
@@ -1525,7 +1563,7 @@ mod tests {
             tx,
             started: Instant::now(),
             seq: Arc::new(AtomicU64::new(0)),
-            dropped: AtomicU64::new(0),
+            dropped: Arc::new(AtomicU64::new(0)),
             write_errors: Arc::new(AtomicU64::new(0)),
             reported: AtomicU64::new(0),
             depth: Arc::new(AtomicU64::new(0)),
@@ -1571,6 +1609,26 @@ mod tests {
     }
 
     #[test]
+    fn events_lost_at_the_end_are_still_counted_as_missing() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let rec = start(root.path(), Vec::new());
+        for day in 0..4 {
+            rec.event(RecordEvent::PlanFailed { day, solve_ms: 0, reason: String::new() });
+        }
+        assert!(rec.flush(FLUSH));
+        let dir = rec.dir().expect("dir");
+        // Cut the last two lines off, as a failing disk would have.
+        let text = std::fs::read_to_string(dir.join("events.jsonl")).expect("events");
+        let kept: Vec<&str> = text.lines().take(2).collect();
+        std::fs::write(dir.join("events.jsonl"), kept.join("\n") + "\n").expect("truncate");
+        let loaded = load_record(dir).expect("load");
+        assert_eq!(loaded.lines.len(), 2);
+        assert_eq!(loaded.missing_seq(), 2, "a gap at the end must not look like the end");
+        assert_eq!(loaded.summary()["recorder"]["events_numbered"], json!(4));
+        assert_eq!(loaded.summary()["recorder"]["dropped"], json!(0));
+    }
+
+    #[test]
     fn a_torn_line_is_skipped_not_fatal() {
         let root = tempfile::tempdir().expect("tempdir");
         let rec = start(root.path(), Vec::new());
@@ -1601,7 +1659,7 @@ mod tests {
             tx,
             started: Instant::now(),
             seq: Arc::new(AtomicU64::new(0)),
-            dropped: AtomicU64::new(0),
+            dropped: Arc::new(AtomicU64::new(0)),
             write_errors: Arc::new(AtomicU64::new(0)),
             reported: AtomicU64::new(0),
             depth: Arc::new(AtomicU64::new(0)),

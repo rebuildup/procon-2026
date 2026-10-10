@@ -51,6 +51,7 @@
 | `match` | `starts_at`、日数、マップの幅と高さ、台数、チーム数 |
 | `resumed_at_day` / `continues_run_id` | 途中参加した日と、前回 run |
 | `result` | `completed` / `rejected` / `error`、受理日数、revision の列 |
+| `recorder` | 採番したイベント数（`events_numbered`）、捨てた件数（`dropped`）、書込み失敗の件数（`write_errors`）。試合終了時とプロセス終了時に書く |
 
 コマンドライン引数は保存しません（`--token` が含まれうるため）。
 
@@ -101,7 +102,7 @@
 procon record show <DIR>/<run-id>
 ```
 
-`manifest.json`・`setting.json`・`events.jsonl` を読み、日ごとの要約を JSON で出します。Rust からは `cli::match_record::load_record` が同じ内容を型つきで返します。
+`manifest.json`・`setting.json`・`events.jsonl` を読み、日ごとの要約を JSON で出します。`missing_seq` は欠けたイベントの数で、ファイルの途中の欠番に加え、`manifest.json` の `recorder.events_numbered` と比べて末尾の欠けも数えます。プロセスが強制終了されて `recorder` が書かれなかった run では、最後に残った行より後の欠けは数えられません。Rust からは `cli::match_record::load_record` が同じ内容を型つきで返します。
 
 ## state.json / coordinator.log
 
