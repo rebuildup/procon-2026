@@ -64,6 +64,12 @@ const PARAMS: &[ParamSpec] = &[
               burn is worth, 0..=300 (default 0: off)",
     },
     ParamSpec {
+        key: "midleg",
+        required: false,
+        doc: "off (default) | on: a supply may also wait on a cell inside a patrol's leg and \
+              refuel it in passing (Issue #457)",
+    },
+    ParamSpec {
         key: "fuel_mix",
         required: false,
         doc: "off (default) | on: with 2+ chains only every other chain uses fuel_need, and \
@@ -132,7 +138,23 @@ impl CandidateFactory for FleetFactory {
             )));
         }
         let fuel_mix = spec.param("fuel_mix") == Some("on");
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, fuel_need, fuel_mix }))
+        let midleg = match spec.param("midleg") {
+            None | Some("off") => false,
+            Some("on") => true,
+            Some(other) => {
+                return Err(CandidateError::Build(format!("unknown midleg mode {other:?}")));
+            }
+        };
+        Ok(Box::new(FleetCandidate {
+            iters,
+            budget_ms,
+            seed,
+            chains,
+            adapt,
+            fuel_need,
+            fuel_mix,
+            midleg,
+        }))
     }
 }
 
@@ -150,6 +172,8 @@ pub struct FleetCandidate {
     pub fuel_need: u32,
     /// Only every other chain values the fuel; tomorrow's replay picks.
     pub fuel_mix: bool,
+    /// Supplies may refuel a patrol on a cell inside one of its legs.
+    pub midleg: bool,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -241,6 +265,35 @@ struct World {
     series_slots: usize,
     /// `(fuel a patrol burns tomorrow, score of ending the day with it)`.
     need: Option<(i64, i64)>,
+    /// Mid-leg refuelling tables (`midleg=on` with a Supply), else `None`.
+    mid: Option<MidTables>,
+}
+
+/// What `midleg=on` adds to the day's static world.
+struct MidTables {
+    /// `cell_time[from * cells + to]`: fastest travel time between cells.
+    cell_time: Vec<u32>,
+    /// `legs[m][u * nn + v]`: cells strictly inside the `u -> v` path with
+    /// the `(cell, time, fuel)` spent from `u` when the patrol lands on it.
+    legs: [Vec<Vec<(u32, u32, u32)>>; NM],
+}
+
+/// A refuel on a cell inside the leg to route node `to`.
+#[derive(Clone, Copy)]
+struct MidLeg {
+    to: usize,
+    cell: usize,
+    /// Time and fuel of the leg already spent on arrival at `cell`.
+    time: u32,
+    fuel: u32,
+}
+
+/// Where a supply meets a patrol timeline.
+enum Meet {
+    /// On visit `k`, at this tick.
+    At(usize, u32),
+    /// In passing after real visit `k`, at this tick.
+    Mid(usize, MidLeg, u32),
 }
 
 fn cell_index(width: usize, col: i32, row: i32) -> usize {
@@ -250,7 +303,7 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
 
 impl World {
     #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
-    fn new(state: &MatchState, steps: u32, later: &[u32], fuel_need: u32) -> Self {
+    fn new(state: &MatchState, steps: u32, later: &[u32], fuel_need: u32, midleg: bool) -> Self {
         let tomorrow = later.first().copied();
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
@@ -343,7 +396,22 @@ impl World {
             new_series,
             series_slots,
             need: None,
+            mid: None,
         };
+        if midleg && !world.supplies.is_empty() {
+            let cells = world.time_cost.len();
+            let mut cell_time = vec![NONE; cells * cells];
+            for from in 0..cells {
+                if world.time_cost[from] != NONE {
+                    let (time, _, _) = world.dijkstra(FAST, from);
+                    cell_time[from * cells..(from + 1) * cells].copy_from_slice(&time);
+                }
+            }
+            world.mid = Some(MidTables {
+                cell_time,
+                legs: std::array::from_fn(|_| vec![Vec::new(); nn * nn]),
+            });
+        }
         for m in 0..NM {
             for u in 0..nn {
                 world.tree(m, u);
@@ -376,14 +444,15 @@ impl World {
         world
     }
 
-    /// Dijkstra from node `u` under metric `m`; fills the matrices and vias.
-    fn tree(&mut self, m: usize, u: usize) {
+    /// Dijkstra from `source` under metric `m`: per cell `(time, fuel)` and
+    /// the tree as `(previous cell, direction index)`.
+    #[allow(clippy::type_complexity, reason = "three parallel per-cell arrays")]
+    fn dijkstra(&self, m: usize, source: usize) -> (Vec<u32>, Vec<u32>, Vec<(u32, u8)>) {
         let n = self.time_cost.len();
         let mut key = vec![u64::MAX; n];
         let mut time = vec![NONE; n];
         let mut fuel = vec![NONE; n];
         let mut prev = vec![(NONE, 0u8); n];
-        let source = self.nodes[u];
         key[source] = 0;
         time[source] = 0;
         fuel[source] = 0;
@@ -413,6 +482,13 @@ impl World {
                 }
             }
         }
+        (time, fuel, prev)
+    }
+
+    /// Dijkstra from node `u` under metric `m`; fills the matrices and vias.
+    fn tree(&mut self, m: usize, u: usize) {
+        let source = self.nodes[u];
+        let (time, fuel, prev) = self.dijkstra(m, source);
         for v in 0..self.nn {
             let target = self.nodes[v];
             self.time[m][u * self.nn + v] = time[target];
@@ -421,15 +497,21 @@ impl World {
                 continue;
             }
             let mut via = Vec::new();
+            let mut inside = Vec::new();
             let mut cell = prev[target].0 as usize;
             while cell != source {
                 if self.spot_at[cell] != NONE {
                     via.push((u16::try_from(self.spot_at[cell]).expect("node"), time[cell]));
                 }
+                inside.push((u32::try_from(cell).expect("cell"), time[cell], fuel[cell]));
                 cell = prev[cell].0 as usize;
             }
             via.reverse();
             self.via[m][u * self.nn + v] = via;
+            if let Some(mid) = &mut self.mid {
+                inside.reverse();
+                mid.legs[m][u * self.nn + v] = inside;
+            }
         }
         self.prev[m].push(prev);
     }
@@ -475,6 +557,9 @@ struct Visit {
     dep: u32,
     /// Route index the patrol travels to after this visit.
     next: usize,
+    /// A refuel in passing: `node` is the leg's origin, the patrol is on
+    /// `mid.cell`, heading for route node `mid.to`. Not a stop.
+    mid: Option<MidLeg>,
 }
 
 #[derive(Clone, Default)]
@@ -493,6 +578,8 @@ struct Timeline {
 struct SupplyLine {
     /// `(node, depart tick)`: go there on the fastest path, leave at `dep`.
     stops: Vec<(usize, u32)>,
+    /// `midleg=on`: the same as `(cell, depart tick)`, used instead of `stops`.
+    cell_stops: Vec<(usize, u32)>,
     /// Escort this patrol from the last stop's departure tick.
     escort: Option<usize>,
 }
@@ -526,10 +613,15 @@ impl World {
         while line.next < route.len() {
             let last = *line.visits.last().expect("timeline starts with the start visit");
             let to = usize::from(route[line.next]);
-            let (t, f) = (self.t(m, last.node, to), self.f(m, last.node, to));
+            let (mut t, mut f) = (self.t(m, last.node, to), self.f(m, last.node, to));
             if t == NONE {
                 line.next += 1;
                 continue;
+            }
+            if let Some(mid) = last.mid.filter(|mid| mid.to == to) {
+                // The rest of the leg it was refuelled on.
+                t -= mid.time;
+                f -= mid.fuel;
             }
             if !line.escorted && line.fuel < f {
                 line.stalled = true;
@@ -548,6 +640,7 @@ impl World {
                 arr: last.dep + t,
                 dep: last.dep + t,
                 next: line.next,
+                mid: None,
             });
         }
     }
@@ -594,12 +687,145 @@ impl World {
         (meet <= self.steps).then_some((k, meet))
     }
 
+    /// `intercept` for `midleg=on`: the supply stands on `cell` at `tick`
+    /// and may also wait on a cell inside one of the patrol's legs, where
+    /// the patrol is refuelled without stopping.
+    fn intercept_mid(
+        &self,
+        mid: &MidTables,
+        line: &Timeline,
+        m: usize,
+        cell: usize,
+        tick: u32,
+        escort: bool,
+    ) -> Option<Meet> {
+        let cells = self.time_cost.len();
+        let reach = |to: usize| mid.cell_time[cell * cells + to];
+        // In passing on the leg `from -> to`, which the patrol leaves at `dep`.
+        let passing = |from: usize, to: usize, dep: u32, limit: u32| {
+            mid.legs[m][from * self.nn + to].iter().find_map(|&(c, time, fuel)| {
+                let at = dep + time;
+                let r = reach(c as usize);
+                (r != NONE && at >= 1 && at <= limit && tick + r <= at)
+                    .then_some((MidLeg { to, cell: c as usize, time, fuel }, at))
+            })
+        };
+        let mut previous: Option<(usize, Visit)> = None;
+        for (k, visit) in line.visits.iter().enumerate() {
+            if visit.mid.is_some() {
+                // Already refuelled on this leg; the next stop is a real one.
+                previous = None;
+                continue;
+            }
+            if let Some((j, from)) = previous {
+                if let Some((leg, at)) = passing(from.node, visit.node, from.dep, visit.arr) {
+                    return Some(Meet::Mid(j, leg, at));
+                }
+            }
+            previous = Some((k, *visit));
+            let r = reach(self.nodes[visit.node]);
+            if r == NONE {
+                continue;
+            }
+            let arrive = tick + r;
+            if k == 0 {
+                let lingers = self.time_cost[self.nodes[visit.node]] >= 2 || visit.dep >= 1;
+                if arrive == 0 && (escort || lingers) {
+                    return Some(Meet::At(0, 0));
+                }
+                continue;
+            }
+            if arrive <= visit.arr {
+                return Some(Meet::At(k, visit.arr));
+            }
+        }
+        if let Some((to, _)) = line.pending {
+            // The leg the day cuts short: only what it covers by the last tick.
+            let (j, from) = previous?;
+            return passing(from.node, to, from.dep, self.steps)
+                .map(|(leg, at)| Meet::Mid(j, leg, at));
+        }
+        let k = line.visits.len() - 1;
+        let last = line.visits[k];
+        if last.mid.is_some() {
+            return None;
+        }
+        let r = reach(self.nodes[last.node]);
+        if r == NONE {
+            return None;
+        }
+        let meet = (tick + r).max(last.arr).max(1);
+        (meet <= self.steps).then_some(Meet::At(k, meet))
+    }
+
+    /// The supplies' day under `midleg=on`; rewrites the patrol timelines.
+    fn serve_mid(
+        &self,
+        mid: &MidTables,
+        sol: &Solution,
+        lines: &mut [Timeline],
+    ) -> Vec<SupplyLine> {
+        let mut supplies = Vec::with_capacity(self.supplies.len());
+        for (s, info) in self.supplies.iter().enumerate() {
+            let (mut cell, mut tick) = (self.nodes[info.start], 0u32);
+            let mut out = SupplyLine::default();
+            let list = &sol.serve[s];
+            for (i, &q) in list.iter().enumerate() {
+                let q = usize::from(q);
+                let escort = i + 1 == list.len();
+                let m = usize::from(sol.metric[q]);
+                let Some(meet) = self.intercept_mid(mid, &lines[q], m, cell, tick, escort) else {
+                    continue;
+                };
+                let line = &mut lines[q];
+                match meet {
+                    Meet::At(k, at) => {
+                        line.visits.truncate(k + 1);
+                        line.visits[k].dep = at;
+                        line.next = line.visits[k].next;
+                        cell = self.nodes[line.visits[k].node];
+                        tick = at;
+                    }
+                    Meet::Mid(k, leg, at) => {
+                        line.visits.truncate(k + 1);
+                        let from = line.visits[k];
+                        line.next = from.next;
+                        line.visits.push(Visit {
+                            node: from.node,
+                            arr: at,
+                            dep: at,
+                            next: from.next,
+                            mid: Some(leg),
+                        });
+                        cell = leg.cell;
+                        tick = at;
+                    }
+                }
+                line.fuel = self.patrols[q].cap;
+                line.escorted = escort;
+                self.advance(sol, q, line);
+                out.cell_stops.push((cell, tick));
+                if escort {
+                    out.escort = Some(q);
+                }
+            }
+            supplies.push(out);
+        }
+        supplies
+    }
+
     #[allow(clippy::too_many_lines, reason = "one pass: timelines, supply meets, picks, score")]
     fn evaluate(&self, sol: &Solution) -> Evaluation {
         let np = self.patrols.len();
         let mut lines: Vec<Timeline> = (0..np)
             .map(|p| Timeline {
-                visits: vec![Visit { node: self.patrols[p].start, arr: 0, dep: 0, next: 0 }],
+                visits: vec![Visit {
+                    node: self.patrols[p].start,
+                    arr: 0,
+                    dep: 0,
+                    next: 0,
+                    mid: None,
+                }],
                 fuel: self.patrols[p].budget,
                 ..Timeline::default()
             })
@@ -608,7 +834,10 @@ impl World {
             self.advance(sol, p, line);
         }
         let mut supplies = Vec::with_capacity(self.supplies.len());
-        for (s, info) in self.supplies.iter().enumerate() {
+        if let Some(mid) = &self.mid {
+            supplies = self.serve_mid(mid, sol, &mut lines);
+        }
+        for (s, info) in self.supplies.iter().enumerate().filter(|_| self.mid.is_none()) {
             let (mut node, mut tick) = (info.start, 0u32);
             let mut out = SupplyLine::default();
             let list = &sol.serve[s];
@@ -649,7 +878,10 @@ impl World {
             {
                 events.push((1, p, self.spot_at[start_cell] as usize));
             }
-            for w in line.visits.windows(2) {
+            // A refuel in passing is not a stop: legs run between real visits.
+            let real: Vec<Visit> =
+                line.visits.iter().filter(|v| v.mid.is_none()).copied().collect();
+            for w in real.windows(2) {
                 for &(node, off) in &self.via[m][w[0].node * self.nn + w[1].node] {
                     events.push((w[0].dep + off, p, usize::from(node)));
                 }
@@ -658,7 +890,7 @@ impl World {
                 }
             }
             if let Some((to, _)) = line.pending {
-                let last = line.visits.last().expect("non-empty timeline");
+                let last = real.last().expect("non-empty timeline");
                 for &(node, off) in &self.via[m][last.node * self.nn + to] {
                     if last.dep + off <= self.steps {
                         events.push((last.dep + off, p, usize::from(node)));
@@ -1056,13 +1288,15 @@ impl World {
             let m = usize::from(sol.metric[p]);
             let mut out = Vec::new();
             let mut tick = 0u32;
+            let real: Vec<Visit> =
+                line.visits.iter().filter(|v| v.mid.is_none()).copied().collect();
             let mut legs: Vec<(usize, usize)> =
-                line.visits.windows(2).map(|w| (w[0].node, w[1].node)).collect();
+                real.windows(2).map(|w| (w[0].node, w[1].node)).collect();
             if let Some((to, _)) = line.pending {
-                legs.push((line.visits.last().expect("non-empty").node, to));
+                legs.push((real.last().expect("non-empty").node, to));
             }
             for (k, &(from, to)) in legs.iter().enumerate() {
-                while tick < line.visits[k].dep {
+                while tick < real[k].dep {
                     out.push((tick, None));
                     tick += 1;
                 }
@@ -1095,6 +1329,25 @@ impl World {
                     tick += 1;
                 }
                 node = stop;
+            }
+            let mut at = self.nodes[self.supplies[s].start];
+            for &(stop, dep) in &line.cell_stops {
+                let prev = self.dijkstra(FAST, at).2;
+                let mut path = Vec::new();
+                let mut cell = stop;
+                while cell != at && prev[cell].0 != NONE {
+                    path.push((prev[cell].0 as usize, Direction::ALL[usize::from(prev[cell].1)]));
+                    cell = prev[cell].0 as usize;
+                }
+                for &(from, dir) in path.iter().rev() {
+                    out.push(action(agent, Some(dir)));
+                    tick += self.time_cost[from];
+                }
+                while tick < dep {
+                    out.push(action(agent, None));
+                    tick += 1;
+                }
+                at = stop;
             }
             if let Some(q) = line.escort {
                 out.extend(
@@ -1244,7 +1497,7 @@ impl Solver for FleetCandidate {
         }
         let later: Vec<u32> =
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
-        let world = World::new(state, ctx.day_steps, &later, self.fuel_need);
+        let world = World::new(state, ctx.day_steps, &later, self.fuel_need, self.midleg);
         let window = (self.budget_ms > 0).then(|| {
             // Balls stop improving once the search has converged, and from
             // there a longer answer only costs the fourth ranking axis. The
@@ -1286,7 +1539,7 @@ impl Solver for FleetCandidate {
         let until = window.map(|w| started + w);
         // `fuel_mix`: the odd chains plan without the fuel term.
         let mixed = self.fuel_mix && self.fuel_need > 0 && second;
-        let plain = mixed.then(|| World::new(state, ctx.day_steps, &later, 0));
+        let plain = mixed.then(|| World::new(state, ctx.day_steps, &later, 0, self.midleg));
         let world_of = |k: usize| plain.as_ref().filter(|_| k % 2 == 1).unwrap_or(&world);
         let first = per_chain(chains, live, |k| {
             world_of(k).search(
@@ -1326,7 +1579,7 @@ impl Solver for FleetCandidate {
             let tomorrow = match later.split_first() {
                 Some((&steps, rest)) if check.clean => {
                     let need = if mixed { 0 } else { self.fuel_need };
-                    let next = World::new(&check.state, steps, rest, need);
+                    let next = World::new(&check.state, steps, rest, need, self.midleg);
                     next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
                 }
                 _ => (0, 0),
@@ -1420,6 +1673,7 @@ pub fn choose_kinds(
                 adapt: true,
                 fuel_need: 0,
                 fuel_mix: false,
+                midleg: false,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
@@ -1533,6 +1787,7 @@ pub fn choose_supply_slot(
                     adapt: true,
                     fuel_need: 0,
                     fuel_mix: false,
+                    midleg: false,
                 };
                 let score = MatchSim::new(config)
                     .run(settings[slot].clone(), &solver)

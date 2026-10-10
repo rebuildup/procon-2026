@@ -243,3 +243,26 @@ fn fleet_rejects_an_out_of_range_fuel_need() {
             .is_err()
     );
 }
+
+/// `midleg=on` lets a supply refuel a patrol in passing on a cell inside a
+/// leg. Every day must still replay clean, with one Supply and with two.
+#[test]
+fn fleet_midleg_stays_legal_and_keeps_variety() {
+    let base = "fleet:budget=official:iters=600:seed=3:chains=2:fuel_need=50:fuel_mix=on";
+    let (plain, _) = play_701(base, "S,P,P,P,P");
+    let (mid, _) = play_701(&format!("{base}:midleg=on"), "S,P,P,P,P");
+    assert!(mid + 4 >= plain, "daily variety {plain} -> {mid}");
+    play_701("fleet:budget=official:iters=400:seed=5:midleg=on", "S,S,P,P,P");
+    // Without a Supply the option has nothing to do and must not disturb.
+    play_701("fleet:budget=official:iters=300:seed=3:midleg=on", "P,P,P,P,P");
+}
+
+#[test]
+fn fleet_rejects_an_unknown_midleg_mode() {
+    assert!(
+        CandidateRegistry::builtin()
+            .build("fleet:budget=official:midleg=maybe")
+            .and_then(|c| c.build_solver())
+            .is_err()
+    );
+}

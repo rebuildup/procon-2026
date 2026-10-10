@@ -90,6 +90,7 @@ fn bare_candidate(bail: bool, labels: usize) -> ConvoyCandidate {
             adapt: false,
             fuel_need: 0,
             fuel_mix: false,
+            midleg: false,
         },
         ahead: FleetCandidate {
             iters: 200,
@@ -99,6 +100,7 @@ fn bare_candidate(bail: bool, labels: usize) -> ConvoyCandidate {
             adapt: true,
             fuel_need: 0,
             fuel_mix: false,
+            midleg: false,
         },
         budget_ms: 0,
         scenarios: vec![false],
@@ -127,6 +129,7 @@ fn bail_on_returns_the_fleet_plan_when_the_label_search_fails() {
         adapt: false,
         fuel_need: 0,
         fuel_mix: false,
+        midleg: false,
     };
     let expected = fleet.decide(&ctx);
     let started = std::time::Instant::now();
