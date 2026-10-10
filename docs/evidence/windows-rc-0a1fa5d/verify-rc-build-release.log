@@ -1,0 +1,6 @@
+phase: build-release  started: 2026-10-11T02:09:59.5741709+09:00
+HEAD: 0a1fa5d1bc6cbdce4b477224aebcb81ff70f4e72
+cargo build --release --locked -p cli
+   Compiling cli v0.5.1 (C:\Users\rebui\Desktop\procon-wt\rc\crates\cli)
+    Finished `release` profile [optimized] target(s) in 50.65s
+RESULT: PASS

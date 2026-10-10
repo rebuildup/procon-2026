@@ -34,6 +34,11 @@ param(
     [int]$MaxRunMinutes = 40
 )
 
+# Windows PowerShell 5.1 started from a shell that inherited PowerShell 7 module paths cannot autoload
+# built-in cmdlets such as Get-FileHash. Drop the PowerShell 7 entries (not WindowsPowerShell) for this process.
+if ($PSVersionTable.PSEdition -eq 'Desktop' -and $env:PSModulePath) {
+    $env:PSModulePath = (($env:PSModulePath -split ';') | Where-Object { $_ -and ($_ -notmatch 'PowerShell' -or $_ -match 'WindowsPowerShell') }) -join ';'
+}
 $ErrorActionPreference = 'Stop'
 
 # Source checkout: <repo>\ops\honsen\honsen.ps1 -> repo root (two levels up).

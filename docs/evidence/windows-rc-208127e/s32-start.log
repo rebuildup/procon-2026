@@ -1,0 +1,179 @@
+== preflight: http://127.0.0.1:18773
+OK    バイナリ: C:\Users\rebui\Desktop\procon-wt\out\s-32\bin\procon.exe  {"package":"0.5.1","protocol":{"major":1,"minor":0},"rustc":"1.85"}
+OK    sha256: c562487d2c1ad90a3e07fa47820f057b69daed905e3ff58069511ee4ee21356b
+OK    トークン: 設定済み
+OK    試合記録: C:\Users\rebui\Desktop\procon-wt\out\s-32\records
+OK    HTTP 通信ログ: C:\Users\rebui\Desktop\procon-wt\out\s-32\logs
+OK    空き容量: 61 GB
+OK    サーバー応答: 200（認証 OK、試合設定が出ている）
+PREFLIGHT OK
+06:46:18 honsen: coordinator を起動します（再起動 0 回目）
+[HTTP #1] 2026-10-10T21:46:18.182Z GET http://127.0.0.1:18773/setting -> 200 OK (4 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:46:18 GMT
+  < content-type: application/json
+  < content-length: 4642
+  < body: {"startsAt": 0, "daySeconds": [60, 60], "daySteps": [216, 217], "map": {"height": 32, "width": 32, "cells": [[0, 0, 0, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0], [0, 0, 0, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 2, 2, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 2, 0, 2, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 1, 1, 0, 0, 0, 0, 0], [0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0], [0, 0, 0, 1, 2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2], [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0, 1, 1, 2, 2, 2, 2, 2, 2], [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 1, 1, 1, 0, 0, 2, 2, 1, 1], [0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 1, 0, 2, 2, 2, 2, 2, 1], [0, 0, 1, 1, 1, 1, 1, 1, 2, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 2, 2, 0, 0, 2, 1, 2, 2, 2], [0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0, 3, 3, 3, 3, 2, 2, 2, 0, 1, 1, 2, 2, 2], [0, 0, 0, 3, 3, 1, 1, 0, 1, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 3, 3, 3, 2, 2, 2, 1, 1, 1, 2, 2, 2], [1, 0, 0, 3, 3, 1, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 2, 0, 1, 1, 2, 2, 2, 2], [2, 2, 2, 3, 3, 0, 1, 1, 1, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 1, 1, 1, 1, 2, 2, 2, 2], [2, 2, 2, 2, 0, 0, 0, 1, 1, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 1, 1, 1, 2, 2, 2, 2], [0, 0, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 2, 3, 1, 1, 1, 2, 2, 2, 2], [0, 0, 0, 0, 1, 1, 3, 3, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 2, 2, 2, 1, 0, 1, 1, 2, 2, 2], [0, 0, 0, 0, 1, 3, 3, 3, 3, 0, 0, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 3, 3, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1], [2, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 0, 0, 2, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0], [1, 3, 3, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1], [1, 1, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1], [1, 1, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 1, 1, 1, 1, 1, 0], [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 1, 1, 1, 2, 0, 0], [1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 0, 1, 1, 2, 2, 2, 2, 2, 0, 0, 1, 1, 2, 2, 0, 0], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 1, 2, 2, 3, 3], [0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 2, 2, 3, 3], [0, 0, 0, 0, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0], [0, 0, 0, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 2, 2, 0, 0, 0], [0, 0, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 2, 2, 0, 0, 0]]}, "spots": [{"brand": 0, "pos": 661, "stocks": 5}, {"brand": 1, "pos": 65, "stocks": 2}, {"brand": 2, "pos": 626, "stocks": 6}, {"brand": 3, "pos": 547, "stocks": 3}, {"brand": 4, "pos": 771, "stocks": 6}, {"brand": 5, "pos": 494, "stocks": 1}, {"brand": 6, "pos": 971, "stocks": 7}, {"brand": 7, "pos": 553, "stocks": 6}, {"brand": 8, "pos": 142, "stocks": 7}, {"brand": 9, "pos": 524, "stocks": 5}, {"brand": 10, "pos": 242, "stocks": 6}, {"brand": 11, "pos": 67, "stocks": 1}, {"brand": 12, "pos": 799, "stocks": 3}, {"brand": 13, "pos": 247, "stocks": 6}, {"brand": 14, "pos": 441, "stocks": 1}, {"brand": 15, "pos": 282, "stocks": 7}, {"brand": 16, "pos": 345, "stocks": 2}, {"brand": 17, "pos": 34, "stocks": 7}, {"brand": 18, "pos": 66, "stocks": 1}, {"brand": 19, "pos": 27, "stocks": 4}, {"brand": 20, "pos": 638, "stocks": 2}, {"brand": 21, "pos": 522, "stocks": 4}, {"brand": 22, "pos": 145, "stocks": 2}, {"brand": 23, "pos": 100, "stocks": 3}, {"brand": 24, "pos": 384, "stocks": 6}, {"brand": 25, "pos": 466, "stocks": 5}, {"brand": 26, "pos": 644, "stocks": 2}, {"brand": 5, "pos": 570, "stocks": 7}, {"brand": 9, "pos": 848, "stocks": 1}, {"brand": 0, "pos": 296, "stocks": 6}, {"brand": 21, "pos": 283, "stocks": 6}, {"brand": 22, "pos": 119, "stocks": 3}], "agents": [457, 1016, 593, 531, 983, 914, 391], "fuelLimits": 216, "players": 2, "busyThreshold": 3, "jammedThreshold": 8}
+2026-10-10T21:46:18.181095Z  INFO match recording enabled run_id="20261010T214618Z-p34256" dir=C:\Users\rebui\Desktop\procon-wt\out\s-32\records\20261010T214618Z-p34256
+2026-10-10T21:46:18.182153Z  INFO HTTP log enabled run_id="20261010T214618Z-p34256" path=C:\Users\rebui\Desktop\procon-wt\out\s-32\logs\20261010T214618Z-p34256\http.jsonl
+2026-10-10T21:46:18.182209Z  INFO agent kind composition selected kinds=P,S
+2026-10-10T21:46:18.182610Z  INFO offline candidate selected for the live run candidate=sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0
+2026-10-10T21:46:18.182633Z  INFO coordinator loop strategy selected solver="candidate"
+2026-10-10T21:46:18.378141Z  INFO fleet day plan day=0 clean=true chains=1 model_series=27 model_balls=117 replay_series=27 replay_balls=117 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(283, 84), (296, 84), (771, 91), (771, 80), (570, 94), (119, 81), (283, 84)]
+2026-10-10T21:46:18.426495Z  INFO fleet day plan day=1 clean=true chains=1 model_series=27 model_balls=92 replay_series=27 replay_balls=92 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(570, 14), (34, 0), (27, 0), (283, 0), (34, 3), (771, 2), (971, 2)]
+2026-10-10T21:46:18.435919Z  INFO fleet day plan day=0 clean=true chains=1 model_series=27 model_balls=121 replay_series=27 replay_balls=121 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(971, 4294967295), (971, 216), (971, 216), (971, 216), (570, 163), (27, 104), (971, 216)]
+2026-10-10T21:46:18.502851Z  INFO fleet day plan day=1 clean=true chains=1 model_series=27 model_balls=119 replay_series=27 replay_balls=119 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(27, 4294967295), (570, 155), (524, 160), (283, 18), (971, 142), (384, 96), (27, 216)]
+2026-10-10T21:46:18.503669Z  INFO agent kinds trial kinds=S,P,P,P,P,P,P variety=27 daily_variety=54 balls=240
+2026-10-10T21:46:18.503699Z  INFO agent kinds trial kinds=P,P,P,P,P,P,P variety=27 daily_variety=54 balls=209
+[HTTP #2] 2026-10-10T21:46:18.503Z POST http://127.0.0.1:18773/agent -> 200 OK (21 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [1,0,0,0,0,0,0]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:46:18 GMT
+  < content-type: application/json
+  < content-length: 2
+  < body: {}
+[HTTP #3] 2026-10-10T21:46:18.525Z GET http://127.0.0.1:18773/setting -> 200 OK (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:46:18 GMT
+  < content-type: application/json
+  < content-length: 4651
+  < body: {"startsAt": 1791668780, "daySeconds": [60, 60], "daySteps": [216, 217], "map": {"height": 32, "width": 32, "cells": [[0, 0, 0, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0], [0, 0, 0, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 2, 2, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 2, 0, 2, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 1, 1, 0, 0, 0, 0, 0], [0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0], [0, 0, 0, 1, 2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2], [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0, 1, 1, 2, 2, 2, 2, 2, 2], [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 1, 1, 1, 0, 0, 2, 2, 1, 1], [0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 1, 0, 2, 2, 2, 2, 2, 1], [0, 0, 1, 1, 1, 1, 1, 1, 2, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 2, 2, 0, 0, 2, 1, 2, 2, 2], [0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0, 3, 3, 3, 3, 2, 2, 2, 0, 1, 1, 2, 2, 2], [0, 0, 0, 3, 3, 1, 1, 0, 1, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 3, 3, 3, 2, 2, 2, 1, 1, 1, 2, 2, 2], [1, 0, 0, 3, 3, 1, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 2, 0, 1, 1, 2, 2, 2, 2], [2, 2, 2, 3, 3, 0, 1, 1, 1, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 1, 1, 1, 1, 2, 2, 2, 2], [2, 2, 2, 2, 0, 0, 0, 1, 1, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 1, 1, 1, 2, 2, 2, 2], [0, 0, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 2, 3, 1, 1, 1, 2, 2, 2, 2], [0, 0, 0, 0, 1, 1, 3, 3, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 2, 2, 2, 1, 0, 1, 1, 2, 2, 2], [0, 0, 0, 0, 1, 3, 3, 3, 3, 0, 0, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 3, 3, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1], [2, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 0, 0, 2, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0], [1, 3, 3, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1], [1, 1, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1], [1, 1, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 1, 1, 1, 1, 1, 0], [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 1, 1, 1, 2, 0, 0], [1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 0, 1, 1, 2, 2, 2, 2, 2, 0, 0, 1, 1, 2, 2, 0, 0], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 1, 2, 2, 3, 3], [0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 2, 2, 3, 3], [0, 0, 0, 0, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0], [0, 0, 0, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 2, 2, 0, 0, 0], [0, 0, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 2, 2, 0, 0, 0]]}, "spots": [{"brand": 0, "pos": 661, "stocks": 5}, {"brand": 1, "pos": 65, "stocks": 2}, {"brand": 2, "pos": 626, "stocks": 6}, {"brand": 3, "pos": 547, "stocks": 3}, {"brand": 4, "pos": 771, "stocks": 6}, {"brand": 5, "pos": 494, "stocks": 1}, {"brand": 6, "pos": 971, "stocks": 7}, {"brand": 7, "pos": 553, "stocks": 6}, {"brand": 8, "pos": 142, "stocks": 7}, {"brand": 9, "pos": 524, "stocks": 5}, {"brand": 10, "pos": 242, "stocks": 6}, {"brand": 11, "pos": 67, "stocks": 1}, {"brand": 12, "pos": 799, "stocks": 3}, {"brand": 13, "pos": 247, "stocks": 6}, {"brand": 14, "pos": 441, "stocks": 1}, {"brand": 15, "pos": 282, "stocks": 7}, {"brand": 16, "pos": 345, "stocks": 2}, {"brand": 17, "pos": 34, "stocks": 7}, {"brand": 18, "pos": 66, "stocks": 1}, {"brand": 19, "pos": 27, "stocks": 4}, {"brand": 20, "pos": 638, "stocks": 2}, {"brand": 21, "pos": 522, "stocks": 4}, {"brand": 22, "pos": 145, "stocks": 2}, {"brand": 23, "pos": 100, "stocks": 3}, {"brand": 24, "pos": 384, "stocks": 6}, {"brand": 25, "pos": 466, "stocks": 5}, {"brand": 26, "pos": 644, "stocks": 2}, {"brand": 5, "pos": 570, "stocks": 7}, {"brand": 9, "pos": 848, "stocks": 1}, {"brand": 0, "pos": 296, "stocks": 6}, {"brand": 21, "pos": 283, "stocks": 6}, {"brand": 22, "pos": 119, "stocks": 3}], "agents": [457, 1016, 593, 531, 983, 914, 391], "fuelLimits": 216, "players": 2, "busyThreshold": 3, "jammedThreshold": 8}
+[HTTP #4] 2026-10-10T21:46:18.527Z GET http://127.0.0.1:18773/ -> 403 Forbidden (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:46:18 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #5] 2026-10-10T21:46:19.041Z GET http://127.0.0.1:18773/ -> 403 Forbidden (16 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:46:19 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #6] 2026-10-10T21:46:19.570Z GET http://127.0.0.1:18773/ -> 403 Forbidden (16 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:46:19 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #7] 2026-10-10T21:46:20.100Z GET http://127.0.0.1:18773/ -> 200 OK (16 ms) attempt=1 day=0
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:46:20 GMT
+  < content-type: application/json
+  < content-length: 341
+  < body: {"endsAt": 1791668840, "day": 0, "agents": [{"kind": 1, "pos": 457, "fuel": 216}, {"kind": 0, "pos": 1016, "fuel": 216}, {"kind": 0, "pos": 593, "fuel": 216}, {"kind": 0, "pos": 531, "fuel": 216}, {"kind": 0, "pos": 983, "fuel": 216}, {"kind": 0, "pos": 914, "fuel": 216}, {"kind": 0, "pos": 391, "fuel": 216}], "others": [], "traffics": []}
+2026-10-10T21:46:18.503728Z  INFO agent kinds selected for POST /agent n_agents=7 kinds=S,P,P,P,P,P,P solver=candidate:sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0
+2026-10-10T21:47:14.709917Z  INFO fleet day plan day=0 clean=true chains=4 model_series=27 model_balls=128 replay_series=27 replay_balls=128 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(34, 216), (34, 216), (34, 216), (971, 94), (34, 216), (34, 216), (34, 216)]
+2026-10-10T21:47:14.710270Z  INFO plan generated candidate=sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0 n_agents=7 day_steps=216 moves=[78, 141, 128, 138, 135, 136, 133] waits=[138, 75, 88, 78, 81, 80, 83]
+[HTTP #8] 2026-10-10T21:47:14.710Z POST http://127.0.0.1:18773/ -> 200 OK (1 ms) attempt=1 day=0
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [[1,1,1,1,1,1,2,2,2,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,-33,4,4,4,4,4,5,4,5,5,5,4,4,5,5,4,4,4,4,4,4,4,5,4,-33,1,2,1,1,1,1,1,1,1,1,-19,4,5,5,5,5,5,5,0,5,0,5,0,0,0,5,5,5,0,5,0,-10],[1,1,1,1,1,0,1,0,1,0,0,0,1,1,0,0,0,1,2,1,1,0,1,1,5,5,0,5,5,1,1,2,1,1,1,1,1,5,5,5,5,4,4,3,0,5,5,5,5,5,5,4,5,4,2,2,3,3,3,4,4,4,3,3,3,3,4,4,4,3,3,4,4,4,4,4,5,5,4,4,4,4,4,3,0,0,0,0,0,5,5,5,5,0,5,2,2,1,1,1,1,1,2,2,1,1,1,2,5,5,5,4,0,0,0,0,0,1,1,1,5,5,5,5,5,4,4,5,4,1,2,1,1,0,0,0,0,0,1,1,1,-3],[3,3,2,2,2,1,2,2,2,1,1,0,0,0,1,1,1,0,2,1,1,5,5,0,5,5,1,1,2,1,1,1,1,1,5,4,5,4,5,4,0,5,5,5,5,4,4,5,5,5,2,2,3,3,3,4,4,4,3,3,3,3,5,5,5,5,4,5,4,5,5,5,4,3,4,4,4,4,3,3,3,3,3,3,3,3,0,0,0,0,0,5,5,5,5,0,5,0,1,1,1,0,0,0,0,0,0,0,0,1,2,1,1,2,2,2,2,2,0,0,0,0,0,0,5,0,5,0,-1],[0,0,4,4,4,3,3,3,2,2,2,1,2,2,2,1,1,2,2,3,2,3,4,3,3,3,3,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1,1,1,4,4,4,4,3,3,3,3,5,5,0,5,5,0,5,5,5,5,4,0,0,0,5,5,4,4,4,4,5,5,5,5,4,0,0,0,0,0,0,5,0,5,0,4,4,4,4,3,4,3,4,3,4,3,1,2,2,2,2,2,3,3,3,3,3,3,3,4,5,4,4,4,4,4,5,5,2,3,2,2,2,2,3,3,3,3,3,-1],[5,5,5,5,5,5,5,5,5,5,5,5,0,0,0,0,0,5,5,5,5,0,5,0,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,2,2,2,2,2,4,4,4,3,3,3,3,3,1,2,2,2,1,2,1,2,2,2,2,4,4,4,3,3,3,2,2,2,2,2,2,2,2,2,2,2,3,3,3,3,0,0,0,0,1,0,5,0,5,5,0,1,1,1,1,1,1,0,0,5,5,0,5,5,0,5,5,5,5,4,0,0,0,5,5,0,0,5,0,5,5,5,5,4,4,5,5,5,0,5,0,-1],[4,4,5,5,5,5,5,5,0,0,0,0,0,5,5,5,5,0,5,0,0,1,0,0,1,1,1,2,1,1,1,1,1,1,1,5,5,5,5,5,4,4,5,4,1,2,2,2,2,2,3,3,3,3,3,3,1,2,2,2,1,2,1,2,2,2,2,4,4,4,3,3,3,2,2,2,2,2,2,2,2,2,2,2,3,3,3,3,0,0,0,0,0,0,0,5,5,0,1,1,1,1,1,1,0,0,5,5,0,5,5,0,5,5,5,5,4,0,0,0,5,5,0,5,5,5,5,5,5,5,5,5,5,0,5,0,-2],[0,1,1,1,2,2,2,2,2,2,2,2,2,1,0,0,0,5,5,2,2,2,1,1,2,2,2,2,3,1,2,1,2,1,2,4,4,4,4,4,5,4,4,2,2,3,2,2,3,3,4,4,4,4,4,4,3,4,4,5,5,5,4,5,5,5,0,4,4,4,4,4,3,3,4,4,5,5,5,4,4,0,0,0,0,0,0,0,1,1,1,1,1,1,1,2,5,5,5,4,3,4,5,4,4,4,4,4,5,5,0,1,1,1,0,0,0,0,0,0,0,0,0,1,0,1,0,1,1,1,1,1,0,-2]]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:47:14 GMT
+  < content-type: application/json
+  < content-length: 15
+  < body: {"revision": 1}
+[HTTP #9] 2026-10-10T21:47:20.714Z GET http://127.0.0.1:18773/ -> 200 OK (1 ms) attempt=1 day=1
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:47:20 GMT
+  < content-type: application/json
+  < content-length: 341
+  < body: {"endsAt": 1791668900, "day": 1, "agents": [{"kind": 1, "pos": 457, "fuel": 216}, {"kind": 0, "pos": 1016, "fuel": 216}, {"kind": 0, "pos": 593, "fuel": 216}, {"kind": 0, "pos": 531, "fuel": 216}, {"kind": 0, "pos": 983, "fuel": 216}, {"kind": 0, "pos": 914, "fuel": 216}, {"kind": 0, "pos": 391, "fuel": 216}], "others": [], "traffics": []}
+2026-10-10T21:47:14.712564Z  INFO plan accepted by server day=0 revision=1 answer_ms=54596 submit_ms=2 margin_ms=5288
+2026-10-10T21:48:14.703134Z  INFO fleet day plan day=1 clean=true chains=4 model_series=27 model_balls=128 replay_series=27 replay_balls=128 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(27, 216), (34, 98), (971, 27), (65, 0), (34, 13), (27, 216), (27, 216)]
+2026-10-10T21:48:14.703629Z  INFO plan generated candidate=sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0 n_agents=7 day_steps=217 moves=[122, 126, 131, 140, 137, 134, 145] waits=[95, 91, 86, 77, 80, 83, 72]
+2026-10-10T21:48:14.705841Z  INFO plan accepted by server day=1 revision=2 answer_ms=53989 submit_ms=2 margin_ms=5295
+2026-10-10T21:48:14.706036Z  WARN coordinator loop wired in #135; full E2E driving comes in #136. outcome: CoordinatorOutcome { days_completed: 2, revisions: [1, 2], day_steps: [216, 217], day_seconds: [60, 60], days: [DaySummary { day: 0, agents: [DayAgentState { kind: AgentKind(1), pos: 457, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 1016, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 593, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 531, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 983, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 914, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 391, fuel: 216 }], movement: [DayMovement { moves: 78, waits: 95, runs: 4, dirs: [7, 23, 12, 0, 17, 19] }, DayMovement { moves: 141, waits: 3, runs: 1, dirs: [27, 38, 10, 11, 24, 31] }, DayMovement { moves: 128, waits: 1, runs: 1, dirs: [29, 21, 16, 18, 15, 29] }, DayMovement { moves: 138, waits: 1, runs: 1, dirs: [31, 12, 19, 30, 27, 19] }, DayMovement { moves: 135, waits: 1, runs: 1, dirs: [34, 16, 25, 12, 9, 39] }, DayMovement { moves: 136, waits: 2, runs: 1, dirs: [28, 21, 25, 13, 9, 40] }, DayMovement { moves: 133, waits: 2, runs: 1, dirs: [25, 26, 24, 8, 32, 18] }] }, DaySummary { day: 1, agents: [DayAgentState { kind: AgentKind(1), pos: 457, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 1016, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 593, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 531, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 983, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 914, fuel: 216 }, DayAgentState { kind: AgentKind(0), pos: 391, fuel: 216 }], movement: [DayMovement { moves: 122, waits: 27, runs: 3, dirs: [14, 26, 32, 17, 9, 24] }, DayMovement { moves: 126, waits: 11, runs: 1, dirs: [35, 25, 13, 8, 22, 23] }, DayMovement { moves: 131, waits: 1, runs: 1, dirs: [27, 11, 19, 32, 18, 24] }, DayMovement { moves: 140, waits: 1, runs: 1, dirs: [33, 20, 15, 26, 13, 33] }, DayMovement { moves: 137, waits: 3, runs: 1, dirs: [24, 25, 24, 8, 12, 44] }, DayMovement { moves: 134, waits: 11, runs: 1, dirs: [24, 28, 31, 15, 9, 27] }, DayMovement { moves: 145, waits: 2, runs: 1, dirs: [21, 30, 35, 20, 19, 20] }] }], kinds: [Supply, Patrol, Patrol, Patrol, Patrol, Patrol, Patrol] }
+[HTTP #10] 2026-10-10T21:48:14.703Z POST http://127.0.0.1:18773/ -> 200 OK (1 ms) attempt=1 day=1
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [[1,1,1,1,1,1,2,2,2,2,2,2,2,1,1,2,2,2,2,3,3,2,2,-2,5,5,0,0,5,5,5,5,5,5,4,-14,4,5,5,5,5,5,5,5,5,5,4,5,5,5,0,0,0,0,0,0,0,1,3,2,3,2,2,2,1,1,2,2,2,2,3,2,3,3,2,2,3,3,3,4,4,4,3,3,3,3,4,4,4,3,3,3,2,2,2,1,2,2,2,1,1,0,0,0,1,2,1,1,0,1,1,5,5,0,5,5,1,1,2,1,1,1,1,1,-11],[2,1,1,1,1,1,1,1,2,2,2,0,0,0,0,0,0,0,5,5,0,1,1,1,1,1,1,0,0,5,5,0,5,5,0,5,5,5,5,4,0,0,0,5,5,4,4,4,4,5,5,5,5,4,4,4,4,3,3,3,3,3,1,2,2,2,1,2,1,2,2,2,2,4,4,4,3,3,4,4,4,4,4,5,5,4,4,4,4,4,3,0,0,0,0,0,5,5,5,5,0,5,0,1,1,1,0,0,0,0,0,0,0,0,1,2,1,1,0,0,0,0,0,1,1,1,-11],[3,3,2,2,2,2,2,2,2,2,2,2,2,3,3,3,3,0,0,0,0,1,0,5,0,5,5,0,0,1,1,1,0,0,2,1,1,5,5,0,5,5,1,1,0,0,0,5,5,5,5,4,4,5,5,5,2,2,3,3,3,4,4,4,3,3,3,3,5,5,5,5,4,5,4,5,5,5,4,0,0,0,0,0,1,1,1,0,0,0,0,0,0,5,0,5,0,4,4,4,4,3,4,3,4,3,4,3,3,3,3,3,3,4,4,3,3,4,3,3,2,3,2,2,2,2,3,3,3,3,3,-1],[0,0,3,3,3,3,3,3,5,5,5,0,3,2,2,1,2,2,2,2,1,1,0,0,0,1,2,1,1,0,1,1,5,5,0,5,5,1,1,2,1,1,1,1,1,5,5,5,5,4,4,3,0,5,5,5,5,5,5,4,5,4,2,2,3,3,3,4,5,5,5,5,5,5,5,5,5,4,5,5,5,5,5,4,4,5,4,3,3,3,3,3,3,3,3,4,4,4,3,2,3,2,2,2,2,3,3,3,3,3,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,4,-1],[5,5,5,5,5,5,5,5,5,5,5,5,0,0,0,0,0,5,5,5,5,0,5,2,2,1,1,1,1,1,2,1,0,1,2,2,2,1,2,1,2,2,2,2,4,4,4,3,3,3,2,2,2,1,2,2,2,1,1,0,0,1,1,1,0,0,0,0,0,5,2,2,3,2,2,0,0,0,0,1,1,1,1,5,5,5,5,4,4,3,0,5,5,5,5,4,4,5,5,5,2,2,3,3,3,4,5,5,5,5,5,5,5,5,5,4,5,5,5,5,5,4,4,5,4,1,2,1,1,0,0,0,0,0,1,1,1,-3],[4,4,5,5,5,5,5,5,0,0,0,0,0,5,5,5,5,0,5,2,2,1,1,1,1,1,2,1,0,1,2,2,2,5,0,0,5,0,5,5,0,0,5,5,5,5,5,4,1,2,1,1,2,2,2,2,2,5,5,5,0,0,0,0,0,0,0,1,3,2,3,2,2,2,1,1,2,2,2,2,3,2,3,3,2,2,3,3,3,4,4,4,3,3,3,3,4,4,4,3,3,3,2,2,2,1,2,2,2,1,1,0,0,0,1,2,1,1,0,1,1,5,5,0,5,5,1,1,2,1,1,1,1,1,-11],[0,1,1,5,5,5,5,5,4,4,5,4,1,2,1,1,0,0,0,0,0,1,1,1,3,2,3,2,2,2,1,1,2,2,2,2,3,2,3,3,2,2,3,3,3,4,4,4,4,4,4,4,4,5,4,5,5,5,4,3,4,5,4,4,4,4,4,5,5,2,3,2,2,2,2,3,3,3,3,3,1,1,2,2,2,1,1,0,0,1,1,1,1,1,3,2,2,2,2,2,2,2,2,2,2,2,3,3,3,3,0,0,0,0,1,0,5,0,5,5,0,1,1,1,1,1,1,0,0,5,5,0,5,5,1,1,0,0,0,1,1,2,2,2,2,-2]]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 21:48:14 GMT
+  < content-type: application/json
+  < content-length: 15
+  < body: {"revision": 2}
+06:48:14 honsen: coordinator が終了しました（終了コード 0）
+試合完了（正常終了）
+記録: C:\Users\rebui\Desktop\procon-wt\out\s-32\records\20261010T214618Z-p34256
+2026-10-10T21:48:14.706119Z  INFO --exit-after-match: 2 day(s) completed, exiting 0
+{
+  "agent_kinds": "S,P,P,P,P,P,P",
+  "binary_sha256": "c562487d2c1ad90a3e07fa47820f057b69daed905e3ff58069511ee4ee21356b",
+  "continues_run_id": null,
+  "days": [
+    {
+      "agents": 7,
+      "day": 0,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 899,
+      "plan_agents": 7,
+      "post_attempts": 1,
+      "revision": 1,
+      "status": "accepted",
+      "traffics": 0
+    },
+    {
+      "agents": 7,
+      "day": 1,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 944,
+      "plan_agents": 7,
+      "post_attempts": 1,
+      "revision": 2,
+      "status": "accepted",
+      "traffics": 0
+    }
+  ],
+  "events": 13,
+  "map": {
+    "agents": 7,
+    "cells": 1024,
+    "days": 2,
+    "height": 32,
+    "spots": 32,
+    "width": 32
+  },
+  "missing_seq": 0,
+  "recorder": {
+    "dropped": 0,
+    "events_numbered": 13,
+    "write_errors": 0
+  },
+  "result": {
+    "days_completed": 2,
+    "error": null,
+    "revisions": [
+      1,
+      2
+    ],
+    "status": "completed"
+  },
+  "run_id": "20261010T214618Z-p34256",
+  "schema_version": 1,
+  "solver": {
+    "candidate_id": "sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0",
+    "kinds_auto": true,
+    "kinds_flag": null,
+    "label": "candidate:sized:budget=official:budget_ms=59000:convoy_ms=20000:seed=42:fuel_need=0",
+    "loop_initial_strategy": "greedy",
+    "loop_iterations": 32,
+    "solver_flag": "loop"
+  },
+  "source_commit_sha": "208127e3f9b88bca62e096913ea2fb2e9931d8fa",
+  "started_at": "2026-10-10T21:46:18.175Z",
+  "unparsed_lines": 0
+HTTP 通信ログ: C:\Users\rebui\Desktop\procon-wt\out\s-32\logs
+}

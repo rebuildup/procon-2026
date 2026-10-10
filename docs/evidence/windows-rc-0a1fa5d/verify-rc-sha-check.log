@@ -1,0 +1,6 @@
+phase: sha-check  started: 2026-10-11T02:10:50.6930589+09:00
+HEAD SHA: 0a1fa5d1bc6cbdce4b477224aebcb81ff70f4e72
+HEAD SHA は期待値（0a1fa5d1bc6cbdce4b477224aebcb81ff70f4e72）と一致しました
+exe SHA256: E53E2F91CC2466A009CB495094B6D8EF15B16940B0A47202FB1B1ED3837D0A0D
+version: {"package":"0.5.1","protocol":{"major":1,"minor":0},"rustc":"1.85"}
+RESULT: PASS
