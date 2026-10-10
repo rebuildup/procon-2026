@@ -227,11 +227,37 @@ async fn tournament_rejects_unknown_solver() {
     assert!(matches, "expected UnknownSolver(\"not-a-solver\"), got {err:?}");
 }
 
+/// Write a restart hook into `dir` and return the command line that runs it:
+/// a `sh` script on Unix, a `cmd.exe` batch file on Windows. The hook creates
+/// `marker` when one is given and exits with `exit_code`.
+fn write_restart_hook(
+    dir: &std::path::Path,
+    name: &str,
+    marker: Option<&std::path::Path>,
+    exit_code: i32,
+) -> String {
+    if cfg!(windows) {
+        let script = dir.join(format!("{name}.cmd"));
+        let touch =
+            marker.map_or_else(String::new, |m| format!("type nul > \"{}\"\r\n", m.display()));
+        std::fs::write(&script, format!("@echo off\r\n{touch}exit /b {exit_code}\r\n"))
+            .expect("write restart hook");
+        // `call` makes `&&` and the shell's exit status see the batch file's `exit /b` code.
+        format!("call \"{}\"", script.display())
+    } else {
+        let script = dir.join(format!("{name}.sh"));
+        let touch = marker.map_or_else(String::new, |m| format!(": > \"{}\"\n", m.display()));
+        std::fs::write(&script, format!("#!/bin/sh\n{touch}exit {exit_code}\n"))
+            .expect("write restart hook");
+        format!("sh \"{}\"", script.display())
+    }
+}
+
 /// `auto_restart_server` is invoked exactly once between two solvers,
 /// proves the marker file appears only after the second solver run, and
-/// both solvers still complete all four days. The hook is a shell script
+/// both solvers still complete all four days. The hook is a script
 /// written into a `tempfile` directory so the test stays hermetic.
-/// The script touches a marker file AND hits the mock server's
+/// The command touches a marker file AND hits the mock server's
 /// `/_test/reset` endpoint to wipe the per-match counters — the real
 /// official binary achieves this by actually restarting, but the in-process
 /// axum mock can't be killed from a shell, hence the explicit reset.
@@ -239,31 +265,18 @@ async fn tournament_rejects_unknown_solver() {
 async fn tournament_with_auto_restart_invokes_hook_between_solvers() {
     let dir = tempfile::tempdir().expect("tempdir");
     let marker = dir.path().join("restarted.marker");
-    let script = dir.path().join("restart.sh");
 
     // Touch the marker on every invocation. Counting invocations via a
     // counter file would also work, but `marker.exists()` is enough to
     // prove the hook ran at least once.
-    std::fs::write(&script, format!("#!/bin/sh\ntouch \"{}\"\n", marker.display()))
-        .expect("write restart script");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&script).expect("stat script").permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&script, perms).expect("chmod script");
-    }
+    let hook = write_restart_hook(dir.path(), "restart", Some(&marker), 0);
 
     let (url, _state) = spawn_test_server().await;
     let cfg = TournamentConfig {
         server: url.clone(),
         token: "test-token".to_owned(),
         solvers: vec!["wait".to_owned(), "wait".to_owned()],
-        auto_restart_server: Some(format!(
-            "sh \"{}\" && curl -fsS -X POST \"{}/_test/reset\"",
-            script.display(),
-            url,
-        )),
+        auto_restart_server: Some(format!("{hook} && curl -fsS -X POST \"{url}/_test/reset\"")),
         ..TournamentConfig::default()
     };
     assert!(!marker.exists(), "marker must not exist before the tournament runs");
@@ -287,23 +300,14 @@ async fn tournament_with_auto_restart_invokes_hook_between_solvers() {
 async fn tournament_with_auto_restart_skips_hook_for_first_solver() {
     let dir = tempfile::tempdir().expect("tempdir");
     let marker = dir.path().join("should-not-exist.marker");
-    let script = dir.path().join("noop.sh");
-    std::fs::write(&script, format!("#!/bin/sh\ntouch \"{}\"\nexit 0\n", marker.display()))
-        .expect("write noop script");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&script).expect("stat script").permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&script, perms).expect("chmod script");
-    }
+    let hook = write_restart_hook(dir.path(), "noop", Some(&marker), 0);
 
     let (url, _state) = spawn_test_server().await;
     let cfg = TournamentConfig {
         server: url,
         token: "test-token".to_owned(),
         solvers: vec!["wait".to_owned()],
-        auto_restart_server: Some(format!("sh \"{}\"", script.display())),
+        auto_restart_server: Some(hook),
         ..TournamentConfig::default()
     };
     let report = run_tournament(cfg).await.expect("single-solver tournament succeeds");
@@ -317,22 +321,14 @@ async fn tournament_with_auto_restart_skips_hook_for_first_solver() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tournament_with_auto_restart_propagates_hook_failure() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let script = dir.path().join("fail.sh");
-    std::fs::write(&script, "#!/bin/sh\necho boom 1>&2\nexit 7\n").expect("write failing script");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&script).expect("stat script").permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&script, perms).expect("chmod script");
-    }
+    let hook = write_restart_hook(dir.path(), "fail", None, 7);
 
     let (url, _state) = spawn_test_server().await;
     let cfg = TournamentConfig {
         server: url,
         token: "test-token".to_owned(),
         solvers: vec!["wait".to_owned(), "wait".to_owned()],
-        auto_restart_server: Some(format!("sh \"{}\"", script.display())),
+        auto_restart_server: Some(hook),
         ..TournamentConfig::default()
     };
     let result = run_tournament(cfg).await;
