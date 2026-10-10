@@ -82,8 +82,24 @@ fn convoy_is_reproducible() {
 
 fn bare_candidate(bail: bool, labels: usize) -> ConvoyCandidate {
     ConvoyCandidate {
-        fleet: FleetCandidate { iters: 300, budget_ms: 0, seed: 42, chains: 1, adapt: false },
-        ahead: FleetCandidate { iters: 200, budget_ms: 0, seed: 42, chains: 1, adapt: true },
+        fleet: FleetCandidate {
+            iters: 300,
+            budget_ms: 0,
+            seed: 42,
+            chains: 1,
+            adapt: false,
+            fuel_need: 0,
+            fuel_mix: false,
+        },
+        ahead: FleetCandidate {
+            iters: 200,
+            budget_ms: 0,
+            seed: 42,
+            chains: 1,
+            adapt: true,
+            fuel_need: 0,
+            fuel_mix: false,
+        },
         budget_ms: 0,
         scenarios: vec![false],
         depth: 1,
@@ -103,7 +119,15 @@ fn bare_candidate(bail: bool, labels: usize) -> ConvoyCandidate {
 fn bail_on_returns_the_fleet_plan_when_the_label_search_fails() {
     let (_, state) = state_701("S,P,P,P,P");
     let ctx = SolverContext::from_state(&state);
-    let fleet = FleetCandidate { iters: 300, budget_ms: 0, seed: 42, chains: 1, adapt: false };
+    let fleet = FleetCandidate {
+        iters: 300,
+        budget_ms: 0,
+        seed: 42,
+        chains: 1,
+        adapt: false,
+        fuel_need: 0,
+        fuel_mix: false,
+    };
     let expected = fleet.decide(&ctx);
     let started = std::time::Instant::now();
     let plan = bare_candidate(true, 1).decide(&ctx);
