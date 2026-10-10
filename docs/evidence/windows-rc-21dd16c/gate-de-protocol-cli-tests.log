@@ -1,0 +1,498 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.50s
+     Running unittests src\lib.rs (target\debug\deps\cli-4dd40cf57b41f7d0.exe)
+
+running 88 tests
+test action_adapter::tests::bad_wire_action_is_rejected ... ok
+test action_adapter::tests::wrong_shape_is_rejected ... ok
+test arena::tests::registration_path_is_the_official_singular_setting ... ok
+test arena::tests::profile_debug_never_shows_the_token ... ok
+test action_adapter::tests::wait_all_round_trips ... ok
+test arena::tests::source_commit_sha_is_unknown_only_when_nothing_is_available ... ok
+test arena::tests::next_match_window_walks_the_quarter_hour_cadence ... ok
+test action_adapter::tests::i32_min_wait_token_is_rejected_without_panicking ... ok
+test arena::tests::registration_budget_is_bounded_by_window_and_cap ... ok
+test action_adapter::tests::oversized_wait_token_is_rejected_before_expansion ... ok
+test arena::tests::resolve_profile_precedence_and_defaults ... ok
+test arena::tests::record_round_trips_without_secret_fields ... ok
+test action_adapter::tests::step_sum_off_by_one_is_rejected ... ok
+test arena::tests::secret_redacts_debug_display_and_text ... ok
+test action_adapter::tests::direction_sequence_round_trips ... ok
+test arena::tests::lobby_registration_messages_parse_only_when_complete ... ok
+test arena::tests::nine_day_record_stays_one_modest_jsonl_line ... ok
+test arena::tests::loop_results_classify_into_arena_statuses ... ok
+test arena::tests::source_commit_sha_prefers_the_env_override ... ok
+test arena_import::tests::html_shell_fails_closed ... ok
+test arena_import::tests::explicit_name_overrides_the_embedded_identifier ... ok
+test arena_import::tests::json_without_a_setting_fails_closed ... ok
+test arena_import::tests::names_are_sanitised ... ok
+test arena_import::tests::emitted_case_deserializes_for_procon_eval_case_files ... ok
+test arena_import::tests::sample_converts_to_a_fixture_shaped_case ... ok
+test arena_import::tests::setting_that_fails_engine_validation_fails_closed ... ok
+test arena_import::tests::wrong_shape_setting_fails_closed ... ok
+test candidate_bridge::tests::agent_count_mismatch_is_rejected_not_guessed ... ok
+test candidate_bridge::tests::bridge_converts_candidate_plan_into_wire_actions ... ok
+test candidate_bridge::tests::cell_index_rejects_out_of_board_positions ... ok
+test candidate_bridge::tests::live_state_overlay_moves_agents_and_traffic ... ok
+test candidate_bridge::tests::malformed_candidate_plan_degrades_to_wait_all ... ok
+test candidate_bridge::tests::missing_setting_degrades_to_wait_all ... ok
+test candidate_bridge::tests::registry_ids_resolve_through_the_bridge ... ok
+test coordinator_loop::tests::an_explicit_pattern_wins_for_every_solver ... ok
+test coordinator_loop::tests::day_movement_is_a_summary_not_the_raw_plan ... ok
+test coordinator_loop::tests::day_movement_skips_illegal_direction_codes_without_panicking ... ok
+test coordinator_loop::tests::day_movement_summarises_moves_waits_runs_and_directions ... ok
+test coordinator_loop::tests::day_summary_records_day_start_kind_pos_and_fuel ... ok
+test coordinator_loop::tests::default_is_the_historical_alternation_for_every_team_size ... ok
+test coordinator_loop::tests::loop_solver_name_alternates_kind_0_and_kind_1 ... ok
+test coordinator_loop::tests::solver_budget_uses_absolute_deadline_and_submission_margin ... ok
+test coordinator_loop::tests::unknown_solver_name_treated_as_real_solver ... ok
+test coordinator_loop::tests::zero_agents_yields_empty_kinds ... ok
+test coordinator_loop::tests::patterns_cycle_over_agent_slots ... ok
+test coordinator_loop::tests::the_live_flag_uses_the_offline_grammar ... ok
+test initial_strategy::tests::every_canonical_label_round_trips ... ok
+test coordinator_loop::tests::wait_solver_name_yields_all_kind_0_without_an_explicit_pattern ... ok
+test initial_strategy::tests::random_label_carries_the_seed ... ok
+test initial_strategy::tests::pascal_case_aliases_resolve_to_the_same_variants ... ok
+test initial_strategy::tests::random_needs_a_well_formed_seed ... ok
+test initial_strategy::tests::unknown_label_is_an_error_never_identity ... ok
+test match_record::tests::disabled_recorder_is_a_no_op ... ok
+test match_record::tests::log_lines_give_way_to_match_events ... ok
+test coordinator_loop::tests::state_polling_stops_at_once_on_bad_credentials ... ok
+test coordinator_loop::tests::rejected_plan_is_not_sent_again ... ok
+test coordinator_loop::tests::plan_is_not_repeated_after_the_answer_window ... ok
+test match_record::tests::unknown_event_types_still_load ... ok
+test coordinator_loop::tests::previous_day_polling_is_bounded_and_future_days_are_not_retried ... ok
+test arena_import::tests::writes_a_reloadable_case_file ... ok
+test protocol_to_engine::tests::reexport_still_converts_wire_settings ... ok
+test solver_adapter::tests::dummy_snapshot_is_well_typed ... ok
+test solver_adapter::tests::engine_loop_adapter_falls_back_when_loop_solver_errors ... ok
+test solver_adapter::tests::engine_loop_adapter_produces_well_shaped_plan_with_moves ... ok
+test openapi_fixture::tests::load_real_fixture_and_check_coverage ... ok
+test solver_adapter::tests::wait_solver_returns_well_shaped_wait_all ... ok
+test tournament::tests::protocol_progress_clamps_negative_revisions_to_zero ... ok
+test tournament::tests::protocol_progress_is_days_times_100_plus_sum_revisions ... ok
+test tournament::tests::render_markdown_contains_all_solvers_and_header ... ok
+test tournament::tests::run_tournament_rejects_empty_solver_list ... ok
+test tournament::tests::tournament_config_round_trips_every_initial_label ... ok
+test coordinator_loop::tests::state_polling_outlasts_garbage_and_server_errors ... ok
+test coordinator_loop::tests::previous_day_state_is_polled_until_expected_day ... ok
+test match_record::tests::sha256_matches_the_published_vectors ... ok
+test match_record::tests::probe_reports_an_unusable_root ... ok
+test match_record::tests::a_full_queue_drops_and_counts_instead_of_blocking ... ok
+test arena::tests::append_evidence_creates_parents_and_appends_lines ... ok
+test match_record::tests::sha256_of_a_file_matches_the_in_memory_digest ... ok
+match-record: writing events.jsonl in C:\Users\rebui\AppData\Local\Temp\.tmp8Lb9v8\20261010T155119Z-p36240 failed (譌｢縺ｫ蟄伜惠縺吶ｋ繝輔ぃ繧､繝ｫ繧剃ｽ懈・縺吶ｋ縺薙→縺ｯ縺ｧ縺阪∪縺帙ｓ縲・(os error 183)); 1 failed write(s) so far. The match continues.
+test match_record::tests::a_token_that_looks_like_data_cannot_break_the_json ... ok
+test match_record::tests::a_torn_line_is_skipped_not_fatal ... ok
+test match_record::tests::events_round_trip_through_the_file ... ok
+test match_record::tests::a_vanished_directory_is_counted_and_recording_recovers ... ok
+test match_record::tests::secrets_never_reach_any_file ... ok
+test match_record::tests::events_lost_at_the_end_are_still_counted_as_missing ... ok
+test match_record::tests::two_starts_get_two_directories ... ok
+test arena::tests::source_commit_sha_falls_back_to_the_git_head_of_this_checkout ... ok
+test coordinator_loop::tests::plan_without_a_verdict_is_sent_again_until_accepted ... ok
+test candidate_bridge::tests::campaign_candidate_matches_live_bridge_on_every_day ... ok
+
+test result: ok. 88 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
+
+     Running unittests src\main.rs (target\debug\deps\procon-541ea60a2ebcc1bf.exe)
+
+running 144 tests
+test action_adapter::tests::oversized_wait_token_is_rejected_before_expansion ... ok
+test action_adapter::tests::direction_sequence_round_trips ... ok
+test action_adapter::tests::step_sum_off_by_one_is_rejected ... ok
+test action_adapter::tests::wrong_shape_is_rejected ... ok
+test action_adapter::tests::wait_all_round_trips ... ok
+test arena::tests::next_match_window_walks_the_quarter_hour_cadence ... ok
+test arena::tests::registration_budget_is_bounded_by_window_and_cap ... ok
+test action_adapter::tests::bad_wire_action_is_rejected ... ok
+test arena::tests::lobby_registration_messages_parse_only_when_complete ... ok
+test arena::tests::loop_results_classify_into_arena_statuses ... ok
+test arena::tests::profile_debug_never_shows_the_token ... ok
+test arena::tests::registration_path_is_the_official_singular_setting ... ok
+test arena::tests::secret_redacts_debug_display_and_text ... ok
+test arena::tests::record_round_trips_without_secret_fields ... ok
+test arena::tests::resolve_profile_precedence_and_defaults ... ok
+test arena::tests::source_commit_sha_is_unknown_only_when_nothing_is_available ... ok
+test action_adapter::tests::i32_min_wait_token_is_rejected_without_panicking ... ok
+test arena::tests::source_commit_sha_prefers_the_env_override ... ok
+test arena::tests::nine_day_record_stays_one_modest_jsonl_line ... ok
+test arena_import::tests::html_shell_fails_closed ... ok
+test arena_import::tests::json_without_a_setting_fails_closed ... ok
+test arena_import::tests::explicit_name_overrides_the_embedded_identifier ... ok
+test arena_import::tests::names_are_sanitised ... ok
+test arena_import::tests::emitted_case_deserializes_for_procon_eval_case_files ... ok
+test arena_import::tests::sample_converts_to_a_fixture_shaped_case ... ok
+test arena_import::tests::setting_that_fails_engine_validation_fails_closed ... ok
+test arena_import::tests::wrong_shape_setting_fails_closed ... ok
+test bundle::tests::cargo_output_resolves_custom_target_and_platform_filename ... ok
+test candidate_bridge::tests::agent_count_mismatch_is_rejected_not_guessed ... ok
+test candidate_bridge::tests::bridge_converts_candidate_plan_into_wire_actions ... ok
+test candidate_bridge::tests::cell_index_rejects_out_of_board_positions ... ok
+test candidate_bridge::tests::live_state_overlay_moves_agents_and_traffic ... ok
+test candidate_bridge::tests::malformed_candidate_plan_degrades_to_wait_all ... ok
+test candidate_bridge::tests::missing_setting_degrades_to_wait_all ... ok
+test candidate_bridge::tests::registry_ids_resolve_through_the_bridge ... ok
+test coordinator_loop::tests::an_explicit_pattern_wins_for_every_solver ... ok
+test coordinator_loop::tests::day_movement_is_a_summary_not_the_raw_plan ... ok
+test coordinator_loop::tests::day_movement_skips_illegal_direction_codes_without_panicking ... ok
+test coordinator_loop::tests::day_movement_summarises_moves_waits_runs_and_directions ... ok
+test coordinator_loop::tests::day_summary_records_day_start_kind_pos_and_fuel ... ok
+test coordinator_loop::tests::default_is_the_historical_alternation_for_every_team_size ... ok
+test coordinator_loop::tests::loop_solver_name_alternates_kind_0_and_kind_1 ... ok
+test coordinator_loop::tests::patterns_cycle_over_agent_slots ... ok
+test coordinator_loop::tests::solver_budget_uses_absolute_deadline_and_submission_margin ... ok
+test coordinator_loop::tests::the_live_flag_uses_the_offline_grammar ... ok
+test bundle::tests::lint_detects_forbidden_filename ... ok
+test bundle::tests::lint_skips_binary_entries ... ok
+test bundle::tests::lint_ignores_env_example_placeholders ... ok
+test coordinator_loop::tests::unknown_solver_name_treated_as_real_solver ... ok
+test bundle::tests::lint_detects_api_key_assignment ... ok
+test coordinator_loop::tests::wait_solver_name_yields_all_kind_0_without_an_explicit_pattern ... ok
+test coordinator_loop::tests::zero_agents_yields_empty_kinds ... ok
+test fixtures::tests::index_round_trips ... ok
+test initial_strategy::tests::every_canonical_label_round_trips ... ok
+test initial_strategy::tests::pascal_case_aliases_resolve_to_the_same_variants ... ok
+test fixtures::tests::tiny_setting_is_well_formed ... ok
+test initial_strategy::tests::random_label_carries_the_seed ... ok
+test initial_strategy::tests::random_needs_a_well_formed_seed ... ok
+test initial_strategy::tests::unknown_label_is_an_error_never_identity ... ok
+test loop_runner::tests::empty_players_is_rejected ... ok
+test loop_runner::tests::closure_transport_works ... ok
+test loop_runner::tests::finish_signal_after_the_last_day_is_read ... ok
+test loop_runner::tests::server_ends_match_early ... ok
+test loop_runner::tests::happy_path_three_days ... ok
+test loop_runner::tests::zero_days_is_rejected ... ok
+test loop_runner::tests::solver_retries_then_gives_up ... ok
+test match_config::tests::parse_returns_config ... ok
+test bundle::tests::missing_executable_is_a_hard_error ... ok
+test match_config::tests::pretty_print_round_trips ... ok
+test match_config::tests::validate_accepts_sample ... ok
+test coordinator_loop::tests::state_polling_stops_at_once_on_bad_credentials ... ok
+test match_config::tests::validate_rejects_duplicate_ids ... ok
+test coordinator_loop::tests::rejected_plan_is_not_sent_again ... ok
+test coordinator_loop::tests::plan_is_not_repeated_after_the_answer_window ... ok
+test match_config::tests::validate_rejects_missing_fields ... ok
+test match_config::tests::validate_rejects_non_object_root ... ok
+test bundle::tests::build_bundle_round_trip_larger_payload ... ok
+test match_config::tests::validate_rejects_too_few_agents ... ok
+test bundle::tests::build_bundle_replaces_existing_file ... ok
+test bundle::tests::build_bundle_writes_all_entries ... ok
+test match_config::tests::validate_rejects_too_many_agents ... ok
+test match_config::tests::validate_rejects_zero_days ... ok
+test match_record::tests::disabled_recorder_is_a_no_op ... ok
+test coordinator_loop::tests::previous_day_polling_is_bounded_and_future_days_are_not_retried ... ok
+test arena_import::tests::writes_a_reloadable_case_file ... ok
+test match_record::tests::log_lines_give_way_to_match_events ... ok
+test match_record::tests::unknown_event_types_still_load ... ok
+test openapi_fixture::tests::load_real_fixture_and_check_coverage ... ok
+test protocol_to_engine::tests::reexport_still_converts_wire_settings ... ok
+test solver_adapter::tests::dummy_snapshot_is_well_typed ... ok
+test solver_adapter::tests::engine_loop_adapter_falls_back_when_loop_solver_errors ... ok
+test solver_adapter::tests::engine_loop_adapter_produces_well_shaped_plan_with_moves ... ok
+test solver_adapter::tests::wait_solver_returns_well_shaped_wait_all ... ok
+test tests::arena_flags_are_opt_in ... ok
+test match_record::tests::sha256_matches_the_published_vectors ... ok
+test coordinator_loop::tests::previous_day_state_is_polled_until_expected_day ... ok
+test coordinator_loop::tests::state_polling_outlasts_garbage_and_server_errors ... ok
+test tests::both_subcommands_parse_the_kinds_flag ... ok
+test tests::initial_strategy_flags_default_to_greedy ... ok
+test tests::both_subcommands_reject_unknown_initial_strategy_labels ... ok
+test tests::kinds_flags_default_to_none ... ok
+test tests::no_flag_carries_the_arena_token ... ok
+test tests::parses_arena_coordinator_flags ... ok
+test tests::both_subcommands_reject_an_invalid_kinds_pattern ... ok
+test tests::parses_arena_import_case ... ok
+test tests::parses_bundle_build ... ok
+test tests::parses_coordinator_dry_run ... ok
+test match_record::tests::probe_reports_an_unusable_root ... ok
+test tests::parses_coordinator_state_output ... ok
+test tests::parses_coordinator_state_output_defaults_none ... ok
+test tests::parses_match_config_load ... ok
+test tests::parses_match_config_validate ... ok
+test arena::tests::append_evidence_creates_parents_and_appends_lines ... ok
+test tests::both_subcommands_parse_every_initial_strategy_label ... ok
+test tests::the_kinds_flag_reaches_the_run_configuration ... ok
+test tests::parses_version ... ok
+test tests::tournament_config_receives_the_flag_value ... ok
+test tournament::tests::protocol_progress_clamps_negative_revisions_to_zero ... ok
+test tournament::tests::tournament_config_round_trips_every_initial_label ... ok
+test tournament::tests::render_markdown_contains_all_solvers_and_header ... ok
+test warmup::tests::all_four_solvers_register ... ok
+test tournament::tests::run_tournament_rejects_empty_solver_list ... ok
+test tournament::tests::protocol_progress_is_days_times_100_plus_sum_revisions ... ok
+test warmup::tests::astar_finds_path_through_ridge ... ok
+test warmup::tests::greedy_decides_actions ... ok
+test warmup::tests::percentile_handles_single_sample ... ok
+test warmup::tests::percentile_interpolates ... ok
+test warmup::tests::unknown_solver_errors ... ok
+test warmup::tests::warmup_report_has_all_passers ... ok
+test warmup::tests::format_report_human_is_non_empty ... ok
+test match_record::tests::a_full_queue_drops_and_counts_instead_of_blocking ... ok
+test loop_runner::tests::transport_exhausts_retries ... ok
+test loop_runner::tests::transport_retries_then_succeeds ... ok
+test match_record::tests::sha256_of_a_file_matches_the_in_memory_digest ... ok
+match-record: writing events.jsonl in C:\Users\rebui\AppData\Local\Temp\.tmpZM9UMy\20261010T155121Z-p16312 failed (譌｢縺ｫ蟄伜惠縺吶ｋ繝輔ぃ繧､繝ｫ繧剃ｽ懈・縺吶ｋ縺薙→縺ｯ縺ｧ縺阪∪縺帙ｓ縲・(os error 183)); 1 failed write(s) so far. The match continues.
+test match_record::tests::a_token_that_looks_like_data_cannot_break_the_json ... ok
+test match_record::tests::events_round_trip_through_the_file ... ok
+test match_record::tests::a_torn_line_is_skipped_not_fatal ... ok
+test match_record::tests::a_vanished_directory_is_counted_and_recording_recovers ... ok
+test match_record::tests::secrets_never_reach_any_file ... ok
+test match_record::tests::events_lost_at_the_end_are_still_counted_as_missing ... ok
+test match_record::tests::two_starts_get_two_directories ... ok
+test arena::tests::source_commit_sha_falls_back_to_the_git_head_of_this_checkout ... ok
+test coordinator_loop::tests::plan_without_a_verdict_is_sent_again_until_accepted ... ok
+test candidate_bridge::tests::campaign_candidate_matches_live_bridge_on_every_day ... ok
+
+test result: ok. 144 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.97s
+
+     Running tests\agent_submit_recovery_e2e.rs (target\debug\deps\agent_submit_recovery_e2e-88864cfdceb80fc1.exe)
+
+running 7 tests
+test auth_fail_is_not_read_back ... ok
+test exhausted_access_time_budget_is_not_read_back ... ok
+test setting_timeout_is_ridden_out_and_the_match_completes ... ok
+test accepted_with_lost_ack_continues_by_readback ... ok
+test ack_lost_at_the_kind_deadline ... ok
+test never_arrived_ends_unconfirmed_without_reposting ... ok
+test server_that_never_comes_back_ends_unconfirmed ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.83s
+
+     Running tests\arena_fake_server.rs (target\debug\deps\arena_fake_server-36d3af1c37ee10bc.exe)
+
+running 12 tests
+test arena_env_defaults_are_opt_in ... ok
+test default_coordinator_config_carries_no_arena_slots ... ok
+test shortlist_candidate_ids_resolve_through_the_registry ... ok
+test registration_fails_closed_on_the_spa_html_shell_after_a_single_request ... ok
+test next_without_arena_is_rejected_before_touching_anything ... ok
+test registration_match_and_evidence_record_form_one_coherent_run ... ok
+test lobby_403_registration_stops_the_poll_and_records_match_and_departure ... ok
+test registration_waits_through_403_and_registers_on_the_first_200 ... ok
+test binary_arena_run_records_evidence_and_exits_without_leaking_the_token ... ok
+test registration_gives_up_within_the_window_budget ... ok
+test registration_sleeps_until_the_window_opens_without_polling ... ok
+test binary_arena_evidence_falls_back_to_the_git_head_without_the_env_var ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests\arena_import_case.rs (target\debug\deps\arena_import_case-f1d0fc44956c7bce.exe)
+
+running 2 tests
+test import_case_emits_a_casespec_the_evaluator_can_re_run ... ok
+test import_case_fails_closed_on_a_non_replay_payload ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\arena_token_hygiene.rs (target\debug\deps\arena_token_hygiene-326a2afabb836451.exe)
+
+running 7 tests
+test debug_renderings_of_profile_and_config_never_show_the_token ... ok
+test evidence_records_redact_the_token_from_error_text ... ok
+test a_server_that_echoes_the_token_gets_redacted_error_messages ... ok
+test tracing_output_during_registration_never_contains_the_token ... ok
+test dry_run_reports_only_a_boolean_never_the_token ... ok
+test help_documents_the_env_var_but_offers_no_token_flag ... ok
+test state_snapshots_redact_the_token_before_writing ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\campaign_live.rs (target\debug\deps\campaign_live-4bc7a901bcc9356c.exe)
+
+running 1 test
+test campaign_cli_submits_accepted_official_plans ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\coordinator_state_snapshot.rs (target\debug\deps\coordinator_state_snapshot-01534605465bcb1f.exe)
+
+running 4 tests
+test snapshot_opt_out_writes_nothing_to_disk ... ok
+test snapshot_completed_after_four_days ... ok
+test snapshot_rejected_when_server_returns_neg1_revision ... ok
+test start_wait_gives_up_when_the_match_never_flips ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\e2e_openapi_fixture.rs (target\debug\deps\e2e_openapi_fixture-9a61d64f293b3c82.exe)
+
+running 3 tests
+test low_threshold_traffic_and_departed_cell_fuel_accept_every_day ... ok
+test e2e_openapi_fixture_completes_four_days ... ok
+test kinds_composition_reaches_the_wire_and_the_outcome ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\e2e_real_server.rs (target\debug\deps\e2e_real_server-198d4f95e8e4fa09.exe)
+
+running 9 tests
+test openapi_fixture_still_drifts_guard ... ok
+test auth_fail_401_does_not_retry ... ok
+test happy_path_completes_four_days ... ok
+test action_plan_body_captured_and_step_sum_correct ... ok
+test revision_neg1_returns_rejected_error ... ok
+test transient_500_retries_then_succeeds ... ok
+test starts_at_in_future_polls_until_reached ... ok
+test kind_submission_during_window_succeeds_even_if_match_starts_later ... ok
+test match_state_during_match_start_delay_retries_then_succeeds ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
+
+     Running tests\http_log_e2e.rs (target\debug\deps\http_log_e2e-bc7db1bda643cecc.exe)
+
+running 8 tests
+test a_log_that_cannot_be_written_does_not_disturb_requests ... ok
+test a_decode_error_is_attached_to_its_own_exchange ... ok
+test a_large_request_body_is_logged_whole ... ok
+test a_match_is_the_same_with_and_without_the_log ... ok
+test a_body_that_breaks_off_is_handled_the_same_with_and_without_the_log ... ok
+test a_stuck_console_does_not_stop_the_file ... ok
+test every_status_and_failure_is_logged_as_it_happened ... ok
+test a_stalled_503_body_does_not_delay_the_retry ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.77s
+
+     Running tests\match_config_load.rs (target\debug\deps\match_config_load-8ca1c5993ed0b906.exe)
+
+running 7 tests
+test help_lists_subcommands ... ok
+test validate_rejects_duplicate_ids ... ok
+test load_reports_missing_file ... ok
+test validate_accepts_valid_fixture ... ok
+test validate_rejects_too_few_agents ... ok
+test load_pretty_prints_match_config ... ok
+test validate_rejects_zero_day_steps ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\match_record_e2e.rs (target\debug\deps\match_record_e2e-daf90308446a54bd.exe)
+
+running 6 tests
+match-record: writing state.json in C:\Users\rebui\AppData\Local\Temp\.tmpwMaZAF\20261010T155135Z-p33584 failed (謖・ｮ壹＆繧後◆繝代せ縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ縲・(os error 3)); 1 failed write(s) so far. The match continues.
+test an_unwritable_record_directory_costs_records_not_days ... ok
+test recording_on_and_off_submit_identical_plans ... ok
+test a_restarted_process_continues_the_match_in_a_linked_directory ... ok
+test full_matches_on_16_24_32_boards_are_recorded_as_played ... ok
+test recording_one_day_costs_the_match_thread_microseconds ... ok
+test resends_rejections_and_verdicts_are_told_apart ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.50s
+
+     Running tests\solver_loop_dryrun.rs (target\debug\deps\solver_loop_dryrun-5c97782ed3a500b4.exe)
+
+running 6 tests
+test engine_loop_adapter_handles_zero_spots_without_panicking ... ok
+test engine_loop_adapter_falls_back_when_setting_is_missing ... ok
+test engine_loop_adapter_plan_satisfies_map_passability_for_handcrafted_grid ... ok
+test is_legal_move_rejects_pond_and_out_of_bounds ... ok
+test wire_terrain_mapping_matches_protocol_to_engine ... ok
+test engine_loop_adapter_plan_satisfies_map_passability_for_quick_like_fixture ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\tournament_basic.rs (target\debug\deps\tournament_basic-646aa024ce704d78.exe)
+
+running 6 tests
+test tournament_rejects_unknown_solver ... ok
+test repeated_state_reads_do_not_advance_the_match ... ok
+test tournament_with_auto_restart_skips_hook_for_first_solver ... ok
+test tournament_two_solvers_against_fresh_servers_produce_identical_scores ... ok
+test tournament_with_auto_restart_propagates_hook_failure ... ok
+test tournament_with_auto_restart_invokes_hook_between_solvers ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+     Running unittests src\lib.rs (target\debug\deps\protocol-02a2582e1cc201d8.exe)
+
+running 26 tests
+test http_client::tests::header_text_keeps_utf8_and_escapes_everything_else ... ok
+test match_config::tests::access_time_error_round_trips ... ok
+test match_config::tests::agent_kind_round_trips ... ok
+test match_config::tests::agent_kind_serialises_as_number ... ok
+test match_config::tests::auth_error_round_trips ... ok
+test match_config::tests::camel_case_fields_are_used ... ok
+test match_config::tests::cell_type_serialises_as_number ... ok
+test match_config::tests::traffic_status_serialises_as_number ... ok
+test tests::hello_round_trips ... ok
+test tests::snapshot_rejects_unknown_player ... ok
+test http_client::tests::submit_actions_does_not_retry_on_negative_revision ... ok
+test http_client::tests::get_json_fails_closed_on_an_html_shell ... ok
+test http_client::tests::submit_agent_does_not_retry_auth_error ... ok
+test http_client::tests::submit_actions_sends_procon_token_header ... ok
+test http_client::tests::get_match_setting_fails_closed_on_an_html_shell ... ok
+test http_client::tests::submit_agent_success_path ... ok
+test http_client::tests::get_json_403_html_is_not_mistaken_for_an_access_time_window ... ok
+test http_client::tests::submit_actions_returns_action_accepted_on_positive_revision ... ok
+test http_client::tests::get_json_fails_closed_when_the_body_is_html_without_content_type ... ok
+test http_client::tests::get_match_setting_does_not_retry_on_401 ... ok
+test http_client::tests::get_match_setting_success_path ... ok
+test http_client::tests::posts_are_never_retried_on_transient_status ... ok
+test http_client::tests::get_json_decodes_with_the_token_header ... ok
+test http_client::tests::get_match_setting_does_not_retry_on_403 ... ok
+test http_client::tests::submit_agent_timeout_retries_then_fails ... ok
+test http_client::tests::get_match_setting_retries_transient_then_succeeds ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\http_integration.rs (target\debug\deps\http_integration-74f949886fef2444.exe)
+
+running 8 tests
+test protocol_version_constant_is_stable ... ok
+test access_time_error_is_returned ... ok
+test get_match_state_decodes_json ... ok
+test submit_agent_happy_path ... ok
+test auth_error_is_returned_without_retry ... ok
+test get_retries_on_5xx_then_succeeds ... ok
+test get_match_setting_retries_a_timed_out_attempt_then_succeeds ... ok
+test accepted_posts_with_lost_acknowledgements_are_not_replayed ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests\match_config_roundtrip.rs (target\debug\deps\match_config_roundtrip-8e108f684b0065ca.exe)
+
+running 9 tests
+test action_accepted_round_trips_negative_revision ... ok
+test agent_state_nested_in_match_state_round_trips ... ok
+test match_setting_round_trips ... ok
+test match_state_round_trips ... ok
+test agent_kinds_body_round_trips ... ok
+test auth_and_access_time_errors_round_trip ... ok
+test missing_required_field_is_rejected ... ok
+test invalid_agent_kind_value_is_rejected ... ok
+test fixture_is_valid_openapi_doc ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\roundtrip.rs (target\debug\deps\roundtrip-53e85c3ee6d6c44c.exe)
+
+running 15 tests
+test heavy_event_streams_round_trip ... ignored, heavy property test, run via `cargo test -- --ignored`
+test heavy_match_config_round_trip_thousands ... ignored, heavy property test, run via `cargo test -- --ignored`
+test fixture_lists_expected_schemas ... ok
+test protocol_version_constant_round_trips ... ok
+test fixture_is_valid_json ... ok
+test match_summary_round_trip ... ok
+test match_config_round_trip ... ok
+test match_config_uses_camel_case_on_the_wire ... ok
+test client_event_round_trip ... ok
+test envelope_round_trip ... ok
+test match_snapshot_round_trip ... ok
+test hello_round_trip ... ok
+test server_event_round_trip ... ok
+test client_frame_round_trip ... ok
+test server_frame_round_trip ... ok
+
+test result: ok. 13 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests cli
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests protocol
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,0 +1,19 @@
+   Compiling num-traits v0.2.19
+   Compiling chrono v0.4.45
+   Compiling protocol v0.5.1 (C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\crates\protocol)
+   Compiling engine v0.5.1 (C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\crates\engine)
+   Compiling bench v0.5.1 (C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\crates\bench)
+   Compiling cli v0.5.1 (C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\crates\cli)
+    Finished `test` profile [optimized + debuginfo] target(s) in 32.09s
+     Running tests\tournament_basic.rs (target\debug\deps\tournament_basic-3a407b56ae30554a.exe)
+
+running 6 tests
+test tournament_rejects_unknown_solver ... ok
+test repeated_state_reads_do_not_advance_the_match ... ok
+test tournament_with_auto_restart_skips_hook_for_first_solver ... ok
+test tournament_two_solvers_against_fresh_servers_produce_identical_scores ... ok
+test tournament_with_auto_restart_propagates_hook_failure ... ok
+test tournament_with_auto_restart_invokes_hook_between_solvers ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
