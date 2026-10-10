@@ -1,0 +1,5 @@
+[03:13:03] waiting for quiet (batch: D)
+[03:49:48] quiet confirmed, starting batch: D
+wrote 33 records to docs/research/round1-20261010/results-405/wsl-10s/d-depth-ladder/runs.jsonl and docs/research/round1-20261010/results-405/wsl-10s/d-depth-ladder/aggregate.json
+[03:53:41] batch D done
+[03:53:41] waiting for quiet (batch: BAIL-S9012)
