@@ -36,7 +36,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
+# Source checkout: <repo>\ops\honsen\honsen.ps1 -> repo root (two levels up).
+# Offline distribution: <bundle>\bin\honsen.ps1 beside procon.exe -> bundle root.
+# Use the colocated binary as the explicit distribution marker so env, logs,
+# records, and the launch lock all live under the same <bundle> directory.
+$BundledExe = Join-Path $PSScriptRoot 'procon.exe'
+if (Test-Path -LiteralPath $BundledExe -PathType Leaf) {
+    $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+}
+else {
+    $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
+}
 $RecordDir = Join-Path $RepoRoot 'records'
 $HttpLogDir = Join-Path $RepoRoot 'logs'
 
@@ -73,6 +83,7 @@ function Resolve-Exe {
     $candidates = @()
     if ($Exe) { $candidates += $Exe }
     if ($env:HONSEN_EXE) { $candidates += $env:HONSEN_EXE }
+    $candidates += (Join-Path $PSScriptRoot 'procon.exe')
     $candidates += (Join-Path $RepoRoot 'target\release\procon.exe')
     foreach ($path in $candidates) {
         if (Test-Path -LiteralPath $path -PathType Leaf) {

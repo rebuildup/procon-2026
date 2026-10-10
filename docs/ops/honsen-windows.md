@@ -19,22 +19,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\honsen.ps1 start
 
 - preflight は **GET /setting の1回のみ**で、車種・行動の POST は行わない。PREFLIGHT OK、試合記録 OK、HTTP 通信ログ OK を確認。
 - start は自動的にもう一度 preflight を行ってから参加する。車種受付が始まる前に起動し、試合終了まで閉じない。
-- `$HOME\procon-honsen\.env` の `PROCON_SERVER` と `PROCON_TOKEN` を起動ごとに自動読込する。すでに設定したプロセス環境変数がある場合はそれを優先する。不足時のみトークン入力を求める。
+- `$HOME\procon-honsen\.env` の `PROCON_SERVER` と `PROCON_TOKEN` を起動ごとに自動読込する。`.env` がある場合はそちらを優先する（古い練習用の環境変数を上書きする）。不足時のみトークン入力を求める。
 - 別の start や procon.exe を同時に起動しない。コンソール内をクリックして文字列選択すると処理が止まる場合がある。
 
 ## 2. 会場へ行く前の準備（ネット接続がある場所）
 
-本番で使用する Windows 11 実機上で準備。Rust の MSVC toolchain と Visual Studio Build Tools「C++ によるデスクトップ開発」がビルド時のみ必要。修正版リリース v0.5.1 が main に**マージ済み**であることを確認してから以下を実行する。
+本番で使用する Windows 11 実機上で準備。Rust の MSVC toolchain と Visual Studio Build Tools「C++ によるデスクトップ開発」がビルド時のみ必要。検証対象の `release-0-5-1` で承認された **source commit SHA を先に固定**してから以下を実行する。main マージ前でもRCを検証できるが、動くreleaseブランチの最新版を無条件に本番へ持ち込まない。
 
 ```powershell
 git clone https://github.com/rebuildup/procon-2026.git
 cd procon-2026
 git fetch origin --tags
-git switch main
-git pull --ff-only origin main
-git log -1 --format='%H %s'
-
-$env:PROCON_SOURCE_COMMIT_SHA = (git rev-parse HEAD)
+git switch --detach origin/release-0-5-1
+$SourceSha = (git rev-parse HEAD)
+Write-Host "RC source commit: $SourceSha"
+# 取り込む前に承認済みのRC SHAと完全一致していることを確認する。
+$env:PROCON_SOURCE_COMMIT_SHA = $SourceSha
 cargo build --release --locked -p cli
 if ($LASTEXITCODE -ne 0) { throw 'release build failed' }
 
@@ -49,12 +49,40 @@ Copy-Item .\docs\ops\http-log.md $Dest -Force
 & (Join-Path $Dest 'procon.exe') version
 Get-FileHash (Join-Path $Dest 'procon.exe') -Algorithm SHA256
 Get-FileHash (Join-Path $Dest 'honsen.ps1') -Algorithm SHA256
-Compress-Archive -Path (Join-Path $Dest '*') -DestinationPath (Join-Path $HOME 'procon-honsen-offline.zip') -Force
+$Zip = Join-Path $HOME 'procon-honsen-offline.zip'
+Compress-Archive -Path (Join-Path $Dest '*') -DestinationPath $Zip -Force
+
+# 配布ZIPを別の場所へ実際に展開し、ビルド環境のtarget/へ依存せず起動するか確認する。
+$SmokeBase = Join-Path $HOME 'procon-honsen-rc-smoke'
+$SmokeBin = Join-Path $SmokeBase 'bin'
+New-Item -ItemType Directory -Force $SmokeBin | Out-Null
+Expand-Archive -LiteralPath $Zip -DestinationPath $SmokeBin -Force
+& (Join-Path $SmokeBin 'procon.exe') version
+if ($LASTEXITCODE -ne 0) { throw 'ZIP展開後のprocon.exeが起動しません' }
+foreach ($File in 'procon.exe', 'honsen.ps1', 'OFFLINE-RUNBOOK.md') {
+    if (-not (Test-Path -LiteralPath (Join-Path $SmokeBin $File) -PathType Leaf)) {
+        throw "ZIP配布物に $File がありません"
+    }
+}
+$UnpackedHash = (Get-FileHash -LiteralPath (Join-Path $SmokeBin 'procon.exe') -Algorithm SHA256).Hash
+$OriginalHash = (Get-FileHash -LiteralPath (Join-Path $Dest 'procon.exe') -Algorithm SHA256).Hash
+if ($UnpackedHash -ne $OriginalHash) {
+    throw 'ZIP展開後exeのSHA256が一致しません'
+}
+# ローカル模擬サーバーでの試合完走は別途必須（本番サーバーへ検証POSTしない）。
 
 # 秘密情報はZIPに入れず、既存の .env を親ディレクトリに別置きする
 if (-not (Test-Path -LiteralPath .\.env -PathType Leaf)) { throw '既存の .env が見つかりません。保存先を確認してください。' }
 Copy-Item -LiteralPath .\.env -Destination (Join-Path $HOME 'procon-honsen\.env') -Force
 ```
+
+Windows検証機での**必須E2Eゲート**（開発環境のPythonとビルド済みMSVC exeを使用。競技会場には不要）:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\ops\honsen\verify-offline-bundle.ps1
+```
+
+実際にZIPを別ディレクトリへ展開し、そこから `preflight` → ローカル模擬サーバー3日試合 `start` → `show` を実行する。受理日 `0,1,2`・試合記録・HTTPログ・ソースexe/配布exe/manifestのハッシュ一致を確認。**このPASSはWindows実機で実行して初めて成立する。** 本番サーバーへの検証POSTは不要。
 
 **バージョン 0.5.1 と SHA256 を確認。** git clone 済みなら clone は省略してよい。ビルド時の commit SHA は試合記録の manifest に残る。競技中は build・pull を実行しない。完成した bin と zip を PC・USB など二重に保持する。ビルドできない場合は事前作成済みの**同じ Windows/MSVC 用**バイナリと本スクリプトを持ち込む（出所とSHA256を確認）。
 
