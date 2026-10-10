@@ -180,3 +180,13 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   - 判定メモ: chains12 が B 総量・辞書順リスクの両面で最良候補。D 非劣化の観点では chains8 の s9008 D-loss が残るため、本命は chains12・対抗 chains8
   証跡: `wsl-corpus/param-chains{8,12,16}/{runs.jsonl,aggregate.json}`。
 - [22:11] **E2 開始 (1/3)**: `wsl-corpus/param-chains8-seed7/` — holdout24+fixture9 × `fleet:budget=official:iters=60000:chains=8:seed=7`、jobs 6、nice 15。
+- [22:19] **E2 seed7 完了**: 33 runs 全 success、illegal=0 等 0。ウォール ~5m（jobs 6）。
+  - vs chains8 seed42（holdout24）: 9 win / 15 draw / 8 LOSE（**すべて B-only**、最大 -19 = s5023）。holdout24 B 合計 8910 → 8898（**-12**）。D-loss なし
+  - maxday 最大 19.0s（s5017）— seed7 は時間安全
+- [22:30] **E2 seed123 完了 — 重大**: **9/24 盤面が invalid/timeout**（隠蔽なしで記録）:
+  - invalid 6 件: official daySeconds 超過（day0〜1）。maxday s5022 **253.0s** / s5020 230.1s / s5023 188.2s / s5019 82.7s / s5012 72.7s — 60s の日窓を大きく超過
+  - timeout 3 件: harness_deadline 到達で kill（s5017 605s / s5021・s5024 425s）
+  - **seed123 + chains8 は探索時間が爆発**（seed42: maxday ≤31.8s、seed7: ≤19.0s に対し 188〜253s）。seed が実行時間の鲁棒性に支配的な影響を持つ
+  - B 比較は無意味（失敗盤面 0 記録）、holdout24 有効 15 盤面の B 合計 6254 は参考値にもならず
+  - 判定: **seed123 は本命から排除**。seed 選定には「実行時間安全性」も辞書順と同時に評価する必要あり
+  証跡: `wsl-corpus/param-chains8-seed{7,123}/runs.jsonl`（seed123 の status/status_detail に実測値あり）。
