@@ -541,3 +541,90 @@ async fn a_restarted_process_continues_the_match_in_a_linked_directory() {
     // The 401 body carried the token; no file may.
     assert_no_token(root.path());
 }
+
+/// What recording costs the thread that answers the day: the calls the loop
+/// makes for one day (observed state, full plan, one attempt, the verdict,
+/// the snapshot) on a 32×32 board with 8 agents and a full traffic list.
+///
+/// The bound is deliberately loose (CI machines vary); the printed numbers
+/// are the measurement. Run with `--release -- --nocapture` to see them.
+#[test]
+fn recording_one_day_costs_the_match_thread_microseconds() {
+    use protocol::match_config::MatchState;
+    const DAYS: u32 = 200;
+
+    let cells = 32 * 32;
+    let agents = |n: i32| -> Vec<Value> {
+        (0..n).map(|i| json!({ "kind": i % 2, "pos": i * 37 % cells, "fuel": 40 })).collect()
+    };
+    let state: MatchState = serde_json::from_value(json!({
+        "endsAt": 1_800_000_000_i64,
+        "day": 3,
+        "agents": agents(8),
+        "others": (1..10).map(|id| json!({ "id": id, "agents": agents(8) })).collect::<Vec<_>>(),
+        "traffics": (0..cells).map(|pos| json!({ "pos": pos, "status": pos % 3 })).collect::<Vec<_>>(),
+    }))
+    .expect("state");
+    let plan: Vec<Vec<i32>> = (0..8).map(|a| (0..300).map(|s| (a + s) % 6).collect()).collect();
+    let snapshot = br#"{"schemaVersion":1,"status":"running"}"#.to_vec();
+
+    let one_day = |rec: &MatchRecorder, day: u32| {
+        rec.event_with(|| RecordEvent::DayState {
+            expected_day: 3,
+            fetch_ms: 4,
+            observed: state.clone(),
+        });
+        rec.event_with(|| RecordEvent::Plan {
+            day,
+            day_steps: 300,
+            budget_ms: 50_000,
+            solve_ms: 9000,
+            actions: plan.clone(),
+        });
+        rec.event_with(|| RecordEvent::SubmitAttempt {
+            day,
+            attempt: 1,
+            elapsed_ms: 5,
+            outcome: SubmitOutcome::Accepted,
+            revision: Some(1),
+            error: None,
+        });
+        rec.event_with(|| RecordEvent::DayResult {
+            day,
+            status: DayStatus::Accepted,
+            revision: Some(1),
+            attempts: 1,
+            answer_ms: 9010,
+            margin_ms: 50_000,
+            reason: None,
+        });
+        rec.state_snapshot(snapshot.clone());
+        rec.report_health();
+    };
+    let measure = |rec: &MatchRecorder| -> (f64, f64) {
+        let mut worst = Duration::ZERO;
+        let mut total = Duration::ZERO;
+        for day in 0..DAYS {
+            let began = std::time::Instant::now();
+            one_day(rec, day);
+            let took = began.elapsed();
+            worst = worst.max(took);
+            total += took;
+        }
+        (total.as_secs_f64() * 1e6 / f64::from(DAYS), worst.as_secs_f64() * 1e6)
+    };
+
+    let (off_mean, off_worst) = measure(&MatchRecorder::disabled());
+    let root = tempfile::tempdir().expect("tempdir");
+    let rec = recorder(root.path());
+    let (on_mean, on_worst) = measure(&rec);
+    assert!(rec.flush(Duration::from_secs(120)));
+    assert_eq!(rec.health().dropped + rec.health().write_errors, 0);
+    println!(
+        "record overhead per day on the match thread: off mean {off_mean:.2} us (worst {off_worst:.1} us), \
+         on mean {on_mean:.2} us (worst {on_worst:.1} us)"
+    );
+    // A day's answer window is tens of seconds; even a slow CI box must stay
+    // four orders of magnitude under it.
+    assert!(on_mean < 5_000.0, "recording a day took {on_mean:.0} us on average");
+}

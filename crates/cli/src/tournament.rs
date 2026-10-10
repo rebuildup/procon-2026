@@ -370,7 +370,8 @@ fn compute_protocol_progress(outcome: &CoordinatorOutcome) -> u32 {
     days.saturating_mul(100).saturating_add(revisions)
 }
 
-/// Invoke the operator-supplied server restart hook via `sh -c <cmd>` so
+/// Invoke the operator-supplied server restart hook through the platform
+/// shell (`sh -c <cmd>` on Unix, `cmd.exe /C <cmd>` on Windows) so
 /// shell pipelines like `./restart.sh && echo ok` are passed verbatim
 /// without argv splitting. A non-zero exit surfaces as
 /// [`TournamentError::ServerRestartFailed`] and aborts the tournament —
@@ -384,9 +385,7 @@ fn compute_protocol_progress(outcome: &CoordinatorOutcome) -> u32 {
 /// harness robust against simple `pkill && ./procon-server &` scripts.
 fn maybe_restart_server(cmd: &str) -> Result<(), TournamentError> {
     tracing::info!(cmd, "restarting match server");
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
+    let status = restart_shell(cmd)
         .status()
         .map_err(|e| TournamentError::ServerRestartFailed(e.to_string()))?;
     if !status.success() {
@@ -396,6 +395,25 @@ fn maybe_restart_server(cmd: &str) -> Result<(), TournamentError> {
     }
     std::thread::sleep(std::time::Duration::from_millis(500));
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn restart_shell(cmd: &str) -> std::process::Command {
+    let mut shell = std::process::Command::new("sh");
+    shell.arg("-c").arg(cmd);
+    shell
+}
+
+/// `cmd.exe` does not parse the MSVCRT-style quoting that `Command::arg`
+/// produces, so the command line is handed over raw. `/S` makes it strip
+/// exactly the outer pair of quotes added here and leave the operator's own
+/// quoting untouched.
+#[cfg(windows)]
+fn restart_shell(cmd: &str) -> std::process::Command {
+    use std::os::windows::process::CommandExt as _;
+    let mut shell = std::process::Command::new("cmd.exe");
+    shell.args(["/D", "/S", "/C"]).raw_arg(format!("\"{cmd}\""));
+    shell
 }
 
 /// Render `report` as a markdown table.
