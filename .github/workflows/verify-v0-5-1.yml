@@ -1,0 +1,149 @@
+name: v0.5.1 release gate
+on:
+  push:
+    branches: ['release-0-5-1']
+    paths:
+      - 'crates/**'
+      - 'ops/honsen/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/verify-v0-5-1.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  full-release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install just and frontend dependencies
+        run: |
+          cargo install just --locked
+          (cd packages/frontend && bun install --frozen-lockfile)
+      - name: Full release gate
+        run: just release-check release-0-5-1
+
+  # The match-day machine is Windows 11 and nobody on the team builds there
+  # day to day, so the release proves it natively: build, test, and play a
+  # whole (mock) match through the PowerShell launcher with the match record
+  # and the HTTP log on (Issues #394, #396).
+  windows-native:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Environment
+        shell: powershell
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          (Get-CimInstance Win32_OperatingSystem).Caption
+          rustc -Vv
+      - name: Release build of procon.exe
+        shell: powershell
+        run: |
+          $env:PROCON_SOURCE_COMMIT_SHA = (git rev-parse HEAD)
+          cargo build --release --locked -p cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          (Get-FileHash target\release\procon.exe -Algorithm SHA256).Hash.ToLower()
+          target\release\procon.exe version
+      - name: Tests (cli, protocol)
+        shell: powershell
+        run: |
+          cargo test --locked -p cli -p protocol
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Play a match through honsen.ps1 on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:HONSEN_HOME = Join-Path $env:RUNNER_TEMP 'honsen'
+          New-Item -ItemType Directory -Force $env:HONSEN_HOME | Out-Null
+          @('PROCON_SERVER=http://127.0.0.1:18080', 'PROCON_TOKEN="local-e2e-token"') |
+            Set-Content -LiteralPath (Join-Path $env:HONSEN_HOME '.env') -Encoding UTF8
+          Remove-Item Env:PROCON_TOKEN -ErrorAction SilentlyContinue
+          Remove-Item Env:PROCON_SERVER -ErrorAction SilentlyContinue
+          $case = 'docs/evidence/campaign-311/fleet-371/corpus-hard/hard-16-a4-d10-short-s9001.json'
+          $mock = Join-Path $env:RUNNER_TEMP 'mock.json'
+          $server = Start-Process python -PassThru -NoNewWindow -ArgumentList @(
+            'ops/honsen/mock_server.py', '--case-file', $case, '--port', '18080',
+            '--days', '3', '--day-seconds', '8', '--summary', $mock)
+          Start-Sleep -Seconds 3
+
+          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ops\honsen\honsen.ps1 `
+            start -Exe target\release\procon.exe
+          if ($LASTEXITCODE -ne 0) { throw "honsen.ps1 start exited with $LASTEXITCODE" }
+          if (-not $server.WaitForExit(60000)) { $server.Kill(); throw 'mock server did not finish' }
+          Get-Content $mock
+
+          $run = Get-ChildItem (Join-Path $env:HONSEN_HOME 'records') -Directory | Select-Object -First 1
+          foreach ($name in 'manifest.json', 'setting.json', 'events.jsonl', 'coordinator.log', 'state.json') {
+            if (-not (Test-Path (Join-Path $run.FullName $name))) { throw "$name is missing" }
+          }
+
+          # Read the record back with the same binary.
+          $summary = (& target\release\procon.exe record show $run.FullName | Out-String) | ConvertFrom-Json
+          if ($summary.days.Count -ne 3) { throw "expected 3 days, got $($summary.days.Count)" }
+          foreach ($day in $summary.days) {
+            if ($day.status -ne 'accepted') { throw "day $($day.day) is $($day.status)" }
+            if ($day.plan_agents -ne 4) { throw "day $($day.day) has plans for $($day.plan_agents) agents" }
+            if (-not $day.observed) { throw "day $($day.day) has no observed state" }
+          }
+          if ($summary.unparsed_lines -ne 0 -or $summary.missing_seq -ne 0) { throw 'the record has gaps' }
+          if ($summary.map.width -ne 16 -or $summary.map.cells -ne 256) { throw 'the map was not saved whole' }
+
+          $manifest = Get-Content (Join-Path $run.FullName 'manifest.json') -Raw | ConvertFrom-Json
+          if ($manifest.os -ne 'windows') { throw "manifest os is $($manifest.os)" }
+          $hash = (Get-FileHash target\release\procon.exe -Algorithm SHA256).Hash.ToLower()
+          if ($manifest.binary.sha256 -ne $hash) { throw 'manifest binary sha256 differs from the file' }
+          if ($manifest.source_commit_sha -ne (git rev-parse HEAD)) { throw 'manifest commit differs from HEAD' }
+          # manifest.json and state.json are rewritten in place (tmp + rename over the
+          # existing file) as the match goes on: the final values prove that works here.
+          if ($manifest.result.status -ne 'completed') { throw "manifest result is $($manifest.result.status)" }
+          if ($manifest.agent_kinds.kinds.Count -ne 4) { throw 'manifest has no agent kinds' }
+          if ($manifest.recorder.dropped -ne 0 -or $manifest.recorder.write_errors -ne 0) { throw 'the recorder lost records' }
+          $state = Get-Content (Join-Path $run.FullName 'state.json') -Raw | ConvertFrom-Json
+          if ($state.status -ne 'completed' -or $state.revisions.Count -ne 3) { throw "state.json is $($state.status)" }
+
+          # The served setting and the saved one are the same document.
+          $saved = Get-Content (Join-Path $run.FullName 'setting.json') -Raw | ConvertFrom-Json
+          $served = Get-Content $case -Raw | ConvertFrom-Json
+          if (($saved.map.cells | ConvertTo-Json -Compress -Depth 5) -ne ($served.map.cells | ConvertTo-Json -Compress -Depth 5)) {
+            throw 'setting.json terrain differs from the case served'
+          }
+
+          # HTTP log: same run id, every exchange parses, plans are whole.
+          $http = Join-Path $env:HONSEN_HOME "logs\$($run.Name)\http.jsonl"
+          $entries = Get-Content $http | ForEach-Object { $_ | ConvertFrom-Json }
+          $posts = @($entries | Where-Object { $_.method -eq 'POST' -and $_.url.EndsWith(':18080/') -and $_.status -eq 200 })
+          if ($posts.Count -ne 3) { throw "expected 3 accepted POST /, got $($posts.Count)" }
+          foreach ($post in $posts) {
+            $body = [string]$post.request_body
+            if (-not $body.StartsWith('[[') -or -not $body.EndsWith(']]')) { throw 'a logged plan is cut off' }
+            if (($body -split '\],\[').Count -ne 4) { throw 'a logged plan does not cover the 4 agents' }
+          }
+
+          $leaks = @(
+            Get-ChildItem (Join-Path $env:HONSEN_HOME 'records') -Recurse -File
+            Get-ChildItem (Join-Path $env:HONSEN_HOME 'logs') -Recurse -File
+          ) | Select-String -SimpleMatch 'local-e2e-token'
+          if ($leaks) { $leaks | ForEach-Object { $_.Path }; throw 'the token was written to disk' }
+          'Windows native match with .env: OK'
+      - name: Upload the record and the HTTP log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-records
+          path: ${{ runner.temp }}/honsen
+          if-no-files-found: warn
