@@ -4,3 +4,4 @@ wrote 60 records to docs/research/round1-20261010/results-405/wsl-10s/q1-s9003-s
 [06:53:55] Q1 done
 [06:53:55] waiting for quiet (batch: Q3)
 [07:56:55] quiet confirmed, starting batch: Q3
+[08:0x] 最終指示により第2ラウンドを凍結: Q3 は起動直後に証跡未書き出しで停止（未完・成果なし）、Q2 は未開始。Q1 完了分は cf5f35f で回収済み。以後の新規計測は行わない。

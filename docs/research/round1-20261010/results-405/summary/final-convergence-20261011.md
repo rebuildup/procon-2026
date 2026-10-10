@@ -45,7 +45,7 @@
 
 ### match 2052（内部 replay と実戦 B=206 一致・オフライン乖離）
 
-別セッション（Arena 運用）の確定調査。本セッションの証跡ではなく参照のみ:
+比較計測セッション（arena-sized-e9e8af6 worktree で offline 再計算も実施）による確定調査。**完全な記録・証跡は `analysis/match2052-traffic-gap.md`**（coordinator log / runs.jsonl 行 / API problem / 再計算 CaseSpec / 20 試合台帳を evidence 同梱）:
 - Arena match 2052（24×24/5台/9日）: coordinator log の日別 replay_balls 合計 206 = 実戦 B と完全一致。predicted_ends 全 9 日で翌日実観測一致 → シミュレータ再現誤差ゼロ
 - **offline eval B=241**（負荷下・他実行 248）/ **pre-match trial B=244** / **実戦 B=206**: 差 35-42 balls（~17%）は他チーム 9 チームの道路滞在による busy/jam 渋滞。offline エンジンは他チーム滞在 0 扱い（`crates/engine/src/transitions.rs` phase_traffic_update）
 - 日別は day2/3 の落ち込み最大・補給経路渋滞 → 燃料 0 停滞が主因。2052 は busyThreshold=1/jammedThreshold=2 の高感度盤
