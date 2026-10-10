@@ -108,3 +108,48 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   - 同一実行内の隣接値: fleet@10s B406 / chains8@10s B433 / convoy@20s B412 — P3(407) は半予算で convoy@20s にほぼ一致、fleet には並ぶが chains8 には届かず
   - 証跡: `wsl-10s/p3-persist-s9012/{runs.jsonl,aggregate.json}`
 - [21:03] **(A) 開始**: `wsl-10s/b4-chains8-full/` — holdout24+hard12 × `fleet:budget=official:budget_ms=10000:adapt=off:chains=8:seed=42`、kinds `S,P,P,P,P,P,P,P`、jobs 3、nice 15。
+- [21:21] **(A) 完了**: `wsl-10s/b4-chains8-full/` — holdout24+hard12+fixture9 = 45 runs、
+  **全て success、illegal=0 / fuel_short=0 / rejected=0 / timeout=0**。ウォール ~18m（jobs 3、nice 15）。
+  fleet chains8@10s（kinds S,P×7、seed42）の V/D/B（生成盤面 36）:
+  | corpus | case | V/D/B | maxday |
+  |---|---|---|---|
+  | hard | s9003 | 13/106/113 | 10.01s |
+  | hard | s9001 | 13/130/171 | 10.01s |
+  | hard | s9002 | 13/117/208 | 10.01s |
+  | hard | s9004 | 13/130/277 | 10.01s |
+  | hard | s9007 | 20/139/172 | 10.01s |
+  | hard | s9005 | 20/140/203 | 10.02s |
+  | hard | s9006 | 20/140/230 | 10.08s |
+  | hard | s9008 | 20/179/266 | 10.07s |
+  | hard | s9011 | 27/189/335 | 10.10s |
+  | hard | s9009 | 27/189/322 | 10.17s |
+  | hard | s9010 | 27/189/264 | 10.12s |
+  | hard | s9012 | 27/189/397 | 10.10s |
+  | hold | s5007 | 13/91/132 | 10.16s |
+  | hold | s5003 | 13/117/203 | 10.16s |
+  | hold | s5005 | 13/130/340 | 10.10s |
+  | hold | s5002 | 13/78/143 | 10.00s |
+  | hold | s5001 | 13/91/188 | 10.00s |
+  | hold | s5006 | 13/91/163 | 10.00s |
+  | hold | s5004 | 13/91/200 | 10.02s |
+  | hold | s5008 | 13/117/273 | 10.01s |
+  | hold | s5015 | 20/200/353 | 10.01s |
+  | hold | s5011 | 20/140/292 | 10.01s |
+  | hold | s5009 | 20/80/279 | 10.01s |
+  | hold | s5013 | 20/80/218 | 10.01s |
+  | hold | s5010 | 20/120/210 | 10.00s |
+  | hold | s5014 | 20/180/291 | 10.00s |
+  | hold | s5016 | 20/200/473 | 10.01s |
+  | hold | s5012 | 20/80/189 | 10.01s |
+  | hold | s5019 | 27/108/321 | 10.01s |
+  | hold | s5023 | 27/162/461 | 10.01s |
+  | hold | s5017 | 27/270/1149 | 10.01s |
+  | hold | s5022 | 27/270/925 | 10.01s |
+  | hold | s5018 | 27/108/242 | 10.01s |
+  | hold | s5021 | 27/189/727 | 10.01s |
+  | hold | s5020 | 27/270/674 | 10.01s |
+  | hold | s5024 | 27/189/537 | 10.01s |
+  合計 B（生成 36 盤面）= **11941**（hard 2958 + hold 8983）。s9012 は B397（jobs 3 並列下）— b10s 単直列の chains8@10s B433 より低く、並列実行の B 変動を含む点に注意。
+  **deadline 裕度**: maxday は全盤面 10.0〜10.2s（budget_ms=10000 の想定通り、jobs 3 の並列化込みでも 60s 期限に対し余裕 ~50s）。timeout 0。
+  証跡: `wsl-10s/b4-chains8-full/{runs.jsonl,aggregate.json}`。
+- [21:21] **指示タスク全件完了**（P3 / A 実施、B1〜B3 は先行担当が完了済み・再実行なし）。
