@@ -1362,3 +1362,142 @@ pub fn choose_kinds(
     };
     (chosen, trials)
 }
+
+/// One Supply slot's pre-match trials: whole matches played with a short
+/// `fleet` search while our own road use is counted as every team's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotTrial {
+    pub slot: usize,
+    /// Matches played to the end inside the window.
+    pub matches: u32,
+    /// `(variety, daily variety sum, balls)` summed over those matches.
+    pub total: (u32, u32, u32),
+}
+
+/// Mean daily-variety gap (in series per match, as a fraction `num / den`)
+/// below which two slots count as level on the second ranking axis and the
+/// balls decide. Short trials scatter by about half a series per match.
+const SLOT_VARIETY_TIE: (u32, u32) = (1, 4);
+
+/// Which agent should be the Supply (Issue #428).
+///
+/// `choose_kinds` always puts the one Supply in slot 0. The starts differ,
+/// though: on boards with the round-one frame the first day is `W + H` steps
+/// long, and a start that sits next to several series is worth more as a
+/// Patrol than as the Supply. This plays every single-Supply composition
+/// through whole matches — as many rounds of different seeds as fit in
+/// `window` — and returns the slot with the best mean score in the official
+/// order. Roads are classified as if every team moved like us
+/// (`team_count = 1`): with the other teams counted as absent the roads never
+/// jam and the trial overstates what road-side starts are worth.
+///
+/// Only complete rounds count, so every slot is judged on the same seeds.
+/// Without one complete round the answer is `None` (keep slot 0).
+#[must_use]
+pub fn choose_supply_slot(
+    wire: &protocol::match_config::MatchSetting,
+    team: &domain::PlayerId,
+    window: Duration,
+) -> (Option<usize>, Vec<SlotTrial>) {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let n = wire.agents.len();
+    let Ok(mut config) = engine::from_wire::sim_config_from_wire(wire) else {
+        return (None, Vec::new());
+    };
+    config.team_count = 1;
+    let settings: Vec<_> = (0..n)
+        .filter_map(|slot| {
+            let kinds: Vec<AgentKind> = (0..n)
+                .map(|i| if i == slot { AgentKind::Supply } else { AgentKind::Patrol })
+                .collect();
+            engine::from_wire::protocol_setting_to_engine_with_kinds(
+                wire,
+                team.clone(),
+                Some(&kinds),
+            )
+            .ok()
+        })
+        .collect();
+    if n < 3 || settings.len() != n || window.is_zero() {
+        return (None, Vec::new());
+    }
+    let settings = Arc::new(settings);
+    let next = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let threads = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 16);
+    for _ in 0..threads {
+        let (settings, next, stop, sender) =
+            (Arc::clone(&settings), Arc::clone(&next), Arc::clone(&stop), sender.clone());
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                let job = next.fetch_add(1, Ordering::Relaxed);
+                let (round, slot) = (job / settings.len(), job % settings.len());
+                let solver = FleetCandidate {
+                    iters: KINDS_TRIAL_ITERS,
+                    budget_ms: 0,
+                    seed: 42 + round as u64,
+                    chains: 1,
+                    adapt: true,
+                };
+                let score = MatchSim::new(config)
+                    .run(settings[slot].clone(), &solver)
+                    .ok()
+                    .filter(|r| r.rejected_response_count == 0)
+                    .map_or((0, 0, 0), |r| (r.variety, r.daily_variety_sum, r.total_balls));
+                if sender.send((round, slot, score)).is_err() {
+                    return;
+                }
+            }
+        });
+    }
+    drop(sender);
+    let deadline = Instant::now() + window;
+    let mut rounds: Vec<Vec<Option<(u32, u32, u32)>>> = Vec::new();
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        match receiver.recv_timeout(left) {
+            Ok((round, slot, score)) => {
+                if rounds.len() <= round {
+                    rounds.resize(round + 1, vec![None; n]);
+                }
+                rounds[round][slot] = Some(score);
+            }
+            Err(_) => break,
+        }
+    }
+    stop.store(true, Ordering::Relaxed);
+    let mut trials: Vec<SlotTrial> =
+        (0..n).map(|slot| SlotTrial { slot, matches: 0, total: (0, 0, 0) }).collect();
+    for round in rounds.iter().filter(|r| r.iter().all(Option::is_some)) {
+        for (trial, score) in trials.iter_mut().zip(round) {
+            let (v, d, b) = score.expect("complete round");
+            trial.matches += 1;
+            trial.total = (trial.total.0 + v, trial.total.1 + d, trial.total.2 + b);
+        }
+    }
+    if trials[0].matches == 0 {
+        return (None, Vec::new());
+    }
+    let chosen = best_slot(&trials);
+    (chosen, trials)
+}
+
+/// The slot with the best trial total in the official order. Every slot
+/// must have played the same number of matches, so totals compare like
+/// means. Slots within [`SLOT_VARIETY_TIE`] of the best daily variety are
+/// level on that axis; a full tie keeps the lowest slot.
+#[must_use]
+pub fn best_slot(trials: &[SlotTrial]) -> Option<usize> {
+    let played = trials.first()?.matches;
+    let best_v = trials.iter().map(|t| t.total.0).max()?;
+    let best_d = trials.iter().filter(|t| t.total.0 == best_v).map(|t| t.total.1).max()?;
+    let slack = played * SLOT_VARIETY_TIE.0 / SLOT_VARIETY_TIE.1;
+    trials
+        .iter()
+        .filter(|t| t.total.0 == best_v && t.total.1 + slack >= best_d)
+        // `max_by_key` returns the last maximum: reversed, the lowest slot.
+        .rev()
+        .max_by_key(|t| t.total.2)
+        .map(|t| t.slot)
+}

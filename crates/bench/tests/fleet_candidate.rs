@@ -148,3 +148,69 @@ fn fleet_chains_stay_legal_when_tomorrow_decides() {
     let (daily, _) = play_701("fleet:budget=official:iters=600:seed=3:chains=2", "S,P,P,P,P");
     assert!(daily >= 196, "daily variety sum {daily}");
 }
+
+fn slot_trials(
+    totals: &[(u32, u32, u32)],
+    matches: u32,
+) -> Vec<bench::adapters::fleet_solver::SlotTrial> {
+    totals
+        .iter()
+        .enumerate()
+        .map(|(slot, &total)| bench::adapters::fleet_solver::SlotTrial { slot, matches, total })
+        .collect()
+}
+
+/// The Supply slot is ranked in the official order: variety, then daily
+/// variety, then balls.
+#[test]
+fn best_slot_follows_the_official_order() {
+    use bench::adapters::fleet_solver::best_slot;
+    // More balls never outrank a clear daily-variety lead (8 matches: a lead
+    // of more than 2 series in total is clear).
+    assert_eq!(
+        best_slot(&slot_trials(&[(80, 400, 900), (80, 403, 700), (80, 390, 990)], 8)),
+        Some(1)
+    );
+    // Variety outranks both.
+    assert_eq!(best_slot(&slot_trials(&[(79, 500, 900), (80, 300, 100)], 8)), Some(1));
+}
+
+/// Short trials scatter by a fraction of a series per match, so slots within
+/// a quarter series per match are level and the balls decide.
+#[test]
+fn best_slot_breaks_near_ties_on_balls_and_full_ties_on_the_lowest_slot() {
+    use bench::adapters::fleet_solver::best_slot;
+    assert_eq!(
+        best_slot(&slot_trials(&[(80, 400, 700), (80, 402, 650), (80, 401, 720)], 8)),
+        Some(2)
+    );
+    assert_eq!(best_slot(&slot_trials(&[(80, 400, 700), (80, 400, 700)], 8)), Some(0));
+    // One match: no slack at all.
+    assert_eq!(best_slot(&slot_trials(&[(10, 50, 70), (10, 49, 90)], 1)), Some(0));
+    assert_eq!(best_slot(&[]), None);
+}
+
+/// Every slot is judged on the same number of whole matches, and the answer
+/// names one of the team's agents.
+#[test]
+fn choose_supply_slot_plays_every_slot_equally_often() {
+    use bench::adapters::fleet_solver::choose_supply_slot;
+    let case: CaseSpec = serde_json::from_str(include_str!("fixtures/arena-701.json")).unwrap();
+    let team = PlayerId::new("player-a").unwrap();
+    let (slot, trials) =
+        choose_supply_slot(&case.setting, &team, std::time::Duration::from_secs(20));
+    assert_eq!(trials.len(), case.setting.agents.len());
+    assert!(trials[0].matches >= 1);
+    assert!(trials.iter().all(|t| t.matches == trials[0].matches));
+    assert!(slot.is_some_and(|s| s < trials.len()));
+}
+
+/// An expired window keeps the measured default (slot 0): no answer.
+#[test]
+fn choose_supply_slot_gives_no_answer_when_out_of_time() {
+    use bench::adapters::fleet_solver::choose_supply_slot;
+    let case: CaseSpec = serde_json::from_str(include_str!("fixtures/arena-701.json")).unwrap();
+    let team = PlayerId::new("player-a").unwrap();
+    let (slot, trials) = choose_supply_slot(&case.setting, &team, std::time::Duration::ZERO);
+    assert_eq!((slot, trials.len()), (None, 0));
+}

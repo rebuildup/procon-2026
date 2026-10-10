@@ -812,7 +812,7 @@ where
     } else if simulated_kinds {
         let team = PlayerId::new(&cfg.team_id)
             .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
-        let (kinds, trials) =
+        let (mut kinds, trials) =
             bench::adapters::fleet_solver::choose_kinds(&wire_setting, &team, AUTO_KINDS_WINDOW);
         for trial in &trials {
             tracing::info!(
@@ -822,6 +822,30 @@ where
                 balls = trial.score.2,
                 "agent kinds trial"
             );
+        }
+        // Which start becomes the one Supply (Issue #428): opt-in, because it
+        // spends more of the `POST /agent` window.
+        let one_supply = kinds.iter().filter(|&&k| k == EngineAgentKind::Supply).count() == 1;
+        if let Some(window) = supply_slot_window().filter(|_| one_supply) {
+            let (slot, slot_trials) =
+                bench::adapters::fleet_solver::choose_supply_slot(&wire_setting, &team, window);
+            for trial in &slot_trials {
+                tracing::info!(
+                    slot = trial.slot,
+                    matches = trial.matches,
+                    variety = trial.total.0,
+                    daily_variety = trial.total.1,
+                    balls = trial.total.2,
+                    "supply slot trial"
+                );
+            }
+            if let Some(slot) = slot {
+                for (i, kind) in kinds.iter_mut().enumerate() {
+                    *kind =
+                        if i == slot { EngineAgentKind::Supply } else { EngineAgentKind::Patrol };
+                }
+            }
+            tracing::info!(slot = ?slot, "supply slot selected");
         }
         kinds
     } else {
@@ -1536,6 +1560,15 @@ fn solver_budget_ms(ends_at: i64, now_ms: i64) -> u64 {
 /// the official server's default window is 5 s from its start, so this stays
 /// far inside it; trials that are not done by then fall back to one Supply.
 const AUTO_KINDS_WINDOW: Duration = Duration::from_millis(1500);
+
+/// `PROCON_SUPPLY_SLOT_WINDOW_MS`: extra time `--kinds-auto` spends choosing
+/// which agent is the Supply, after the composition trial. Unset, empty or
+/// `0` keeps the Supply in slot 0. Capped at 30 s; the operator must keep
+/// `AUTO_KINDS_WINDOW` plus this inside the server's `POST /agent` window.
+fn supply_slot_window() -> Option<Duration> {
+    let ms: u64 = std::env::var("PROCON_SUPPLY_SLOT_WINDOW_MS").ok()?.trim().parse().ok()?;
+    (ms > 0).then(|| Duration::from_millis(ms.min(30_000)))
+}
 
 /// Resolve the `POST /agent` composition for a team of `n_agents`.
 ///
