@@ -113,6 +113,10 @@ function Require-Server {
 }
 
 function Invoke-Preflight([string]$ExePath) {
+    # Windows PowerShell 5.1 は、stderr に何か書いたネイティブコマンドを
+    # 'Stop' の下ではエラー扱いにすることがある。procon.exe は通信ログを
+    # stderr に出すので、ネイティブコマンドを呼ぶ関数の中では 'Continue' にする。
+    $ErrorActionPreference = 'Continue'
     $script:Failed = $false
     Write-Host "== preflight: $Server"
 
@@ -159,7 +163,7 @@ function Invoke-Preflight([string]$ExePath) {
     $status = 0
     try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri ($Server.TrimEnd('/') + '/setting') `
-            -Headers @{ 'Procon-Token' = $env:PROCON_TOKEN } -TimeoutSec 5
+            -Headers @{ 'Procon-Token' = $env:PROCON_TOKEN } -TimeoutSec 5 -ErrorAction Stop
         $status = [int]$response.StatusCode
     }
     catch {
@@ -191,6 +195,7 @@ function Get-LatestRun {
 }
 
 function Invoke-Start([string]$ExePath) {
+    $ErrorActionPreference = 'Continue'
     if (Get-Process -Name 'procon' -ErrorAction SilentlyContinue) {
         throw '別の procon.exe が動いています。二重起動はできません。'
     }
