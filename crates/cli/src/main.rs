@@ -19,6 +19,7 @@ mod bundle;
 mod candidate_bridge;
 mod coordinator_loop;
 mod fixtures;
+mod http_log;
 mod initial_strategy;
 mod loop_runner;
 mod match_config;
@@ -218,6 +219,16 @@ enum Cmd {
         /// `info`) sets the level of `coordinator.log`.
         #[arg(long, value_name = "DIR", env = "PROCON_RECORD_DIR")]
         record_dir: Option<PathBuf>,
+
+        /// Log every HTTP request and response (Issue #396): a readable
+        /// block per request on stderr — number, time, method, URL, status
+        /// (`200 OK`, `401 Unauthorized`, …) or failure (timeout, connect),
+        /// duration, headers and the complete bodies — and the same content
+        /// as one JSON object per request in `<DIR>/<run-id>/http.jsonl`.
+        /// Retries are logged one by one. Tokens are masked. Printing and
+        /// writing happen on a background thread. Off when omitted.
+        #[arg(long, value_name = "DIR", env = "PROCON_HTTP_LOG_DIR")]
+        http_log_dir: Option<PathBuf>,
     },
     /// Read back a match record written by `coordinator --record-dir`.
     #[command(subcommand)]
@@ -389,15 +400,71 @@ async fn main() -> ExitCode {
         tracing::info!(run_id, dir = %dir.display(), "match recording enabled");
     }
 
-    let result = run(cli, recorder.clone()).await;
+    let http_log = start_http_log(&cli, &recorder);
+
+    let result = run(cli, recorder.clone(), http_log.clone()).await;
     if !recorder.flush(std::time::Duration::from_secs(5)) {
         eprintln!("match-record: not everything was written before exit");
+    }
+    if let Some(log) = http_log.as_ref() {
+        let flushed = log.flush(std::time::Duration::from_secs(5));
+        let (dropped, write_errors) = log.lost();
+        if !flushed || dropped > 0 || write_errors > 0 {
+            eprintln!(
+                "http-log: incomplete (flushed={flushed}, dropped={dropped}, failed writes={write_errors})"
+            );
+        }
     }
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: {err:#}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+/// Every token this process could be holding, whichever profile is used.
+fn known_secrets(token: Option<&String>) -> Vec<arena::Secret> {
+    token
+        .cloned()
+        .into_iter()
+        .chain(std::env::var("PROCON_TOKEN").ok())
+        .chain(std::env::var("PROCON_ARENA_TOKEN").ok())
+        .filter(|t| !t.is_empty())
+        .map(arena::Secret::new)
+        .collect()
+}
+
+/// Start the HTTP log for a real `coordinator` run with `--http-log-dir`
+/// (Issue #396). It shares the match record's run id when both are on. A
+/// failed start is reported and the run continues without the log.
+fn start_http_log(
+    cli: &Cli,
+    recorder: &MatchRecorder,
+) -> Option<std::sync::Arc<http_log::HttpLog>> {
+    let Cmd::Coordinator { http_log_dir: Some(root), dry_run: false, token, .. } = &cli.cmd else {
+        return None;
+    };
+    let run_id = recorder.run_id().map_or_else(http_log::new_run_id, str::to_owned);
+    match http_log::HttpLog::start(
+        root,
+        &run_id,
+        known_secrets(token.as_ref()),
+        Box::new(std::io::stderr()),
+    ) {
+        Ok(log) => {
+            tracing::info!(run_id, path = %log.path().display(), "HTTP log enabled");
+            recorder.update_manifest(json!({ "http_log": log.path().display().to_string() }));
+            Some(log)
+        }
+        Err(error) => {
+            tracing::error!(
+                dir = %root.display(),
+                error = %error,
+                "HTTP log could NOT start; the run continues without it"
+            );
+            None
         }
     }
 }
@@ -409,15 +476,7 @@ fn start_recorder(cli: &Cli) -> (MatchRecorder, Option<(PathBuf, std::io::Error)
     let Cmd::Coordinator { record_dir: Some(root), dry_run: false, token, .. } = &cli.cmd else {
         return (MatchRecorder::disabled(), None);
     };
-    // Every token this process could be holding, whichever profile is used.
-    let secrets = token
-        .clone()
-        .into_iter()
-        .chain(std::env::var("PROCON_TOKEN").ok())
-        .chain(std::env::var("PROCON_ARENA_TOKEN").ok())
-        .filter(|t| !t.is_empty())
-        .map(arena::Secret::new)
-        .collect();
+    let secrets = known_secrets(token.as_ref());
     let mut manifest = serde_json::Map::new();
     manifest.insert("source_commit_sha".to_owned(), json!(arena::source_commit_sha()));
     let options = match_record::RecorderOptions {
@@ -433,7 +492,11 @@ fn start_recorder(cli: &Cli) -> (MatchRecorder, Option<(PathBuf, std::io::Error)
 
 // One arm per `Cmd` variant: subcommand dispatch, not a single logic block.
 #[allow(clippy::too_many_lines, reason = "one arm per Cmd variant")]
-async fn run(cli: Cli, recorder: MatchRecorder) -> Result<()> {
+async fn run(
+    cli: Cli,
+    recorder: MatchRecorder,
+    http_log: Option<std::sync::Arc<http_log::HttpLog>>,
+) -> Result<()> {
     let server = EngineServer::new(EngineServerConfig::default());
     match cli.cmd {
         Cmd::Hello => {
@@ -489,6 +552,7 @@ async fn run(cli: Cli, recorder: MatchRecorder) -> Result<()> {
             candidate,
             arena_evidence,
             record_dir,
+            http_log_dir,
         } => {
             cmd_coordinator(
                 server,
@@ -501,7 +565,7 @@ async fn run(cli: Cli, recorder: MatchRecorder) -> Result<()> {
                 state_output,
                 exit_after_match,
                 ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto },
-                RecordFlags { record_dir, recorder },
+                RecordFlags { record_dir, recorder, http_log_dir, http_log },
             )
             .await?;
         }
@@ -604,6 +668,10 @@ struct RecordFlags {
     record_dir: Option<PathBuf>,
     /// The recorder `main` started; disabled without `--record-dir`.
     recorder: MatchRecorder,
+    /// `--http-log-dir` as given (checked by `--dry-run`).
+    http_log_dir: Option<PathBuf>,
+    /// The HTTP log `main` started (Issue #396); `None` without the flag.
+    http_log: Option<std::sync::Arc<http_log::HttpLog>>,
 }
 
 /// One `--kinds` pattern, parsed once by [`parse_kinds_pattern`] while clap
@@ -706,7 +774,7 @@ async fn cmd_coordinator(
     record_flags: RecordFlags,
 ) -> Result<()> {
     let ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto } = arena_flags;
-    let RecordFlags { record_dir, recorder } = record_flags;
+    let RecordFlags { record_dir, recorder, http_log_dir, http_log } = record_flags;
     if next && !arena {
         anyhow::bail!(
             "--next requires --arena: the :00/:15/:30/:45 cadence and the \
@@ -791,20 +859,26 @@ async fn cmd_coordinator(
         // Pre-match check of the record directory (Issue #394): a run that
         // would play unrecorded, or whose directory is not writable, is
         // visible here — before the match, when it can still be fixed.
-        let record = record_dir.as_deref().map_or_else(
-            || json!({ "enabled": false }),
-            |root| match match_record::probe_record_root(root) {
-                Ok(()) => {
-                    json!({ "enabled": true, "dir": root.display().to_string(), "writable": true })
-                }
-                Err(e) => json!({
-                    "enabled": true,
-                    "dir": root.display().to_string(),
-                    "writable": false,
-                    "error": e.to_string(),
-                }),
-            },
-        );
+        let probe = |dir: Option<&std::path::Path>| {
+            dir.map_or_else(
+                || json!({ "enabled": false }),
+                |root| match match_record::probe_record_root(root) {
+                    Ok(()) => json!({
+                        "enabled": true,
+                        "dir": root.display().to_string(),
+                        "writable": true,
+                    }),
+                    Err(e) => json!({
+                        "enabled": true,
+                        "dir": root.display().to_string(),
+                        "writable": false,
+                        "error": e.to_string(),
+                    }),
+                },
+            )
+        };
+        let record = probe(record_dir.as_deref());
+        let http_log = probe(http_log_dir.as_deref());
         println!(
             "{}",
             json!({
@@ -813,6 +887,7 @@ async fn cmd_coordinator(
                 "dry_run": true,
                 "arena": profile.is_some(),
                 "record": record,
+                "http_log": http_log,
             })
         );
         return Ok(());
@@ -822,9 +897,18 @@ async fn cmd_coordinator(
     let base_url = effective_server
         .ok_or_else(|| anyhow::anyhow!("PROCON_SERVER (or --server) must be set"))?;
     let token = effective_token.unwrap_or_default();
-    let client = MatchClient::builder(base_url.clone(), token)
+    let mut client_builder = MatchClient::builder(base_url.clone(), token)
         .retry_policy(RetryPolicy::default())
-        .request_timeout(std::time::Duration::from_secs(5))
+        .request_timeout(std::time::Duration::from_secs(5));
+    if let Some(log) = http_log {
+        client_builder = client_builder.observer(log);
+    } else {
+        tracing::warn!(
+            "HTTP log is OFF: request and response bodies will not be saved \
+             (set --http-log-dir <DIR> or PROCON_HTTP_LOG_DIR)"
+        );
+    }
+    let client = client_builder
         .build()
         .map_err(|e: HttpClientError| anyhow::anyhow!("match client: {e}"))?;
 

@@ -78,3 +78,8 @@ __pycache__/
 # natural-japanese skill: calibration corpus + generated reports
 corpus/
 .infisical.json
+
+# Match records and HTTP logs written by `procon coordinator`
+# (--record-dir / --http-log-dir; Issues #394, #396)
+/records/
+/logs/
