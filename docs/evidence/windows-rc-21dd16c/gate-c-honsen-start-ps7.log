@@ -1,0 +1,349 @@
+== preflight: http://127.0.0.1:18440
+OK    バイナリ: C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\target\release\procon.exe  {"package":"0.5.1","protocol":{"major":1,"minor":0},"rustc":"1.85"}
+OK    sha256: 23a7b97e2fa677983cd1796da2e4c4baedfff3d24df68112cd3b345042d2d342
+OK    トークン: 設定済み
+OK    試合記録: C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\records
+OK    HTTP 通信ログ: C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\logs
+OK    空き容量: 65.8 GB
+OK    サーバー応答: 200（認証 OK、試合設定が出ている）
+PREFLIGHT OK
+01:08:33 honsen: coordinator を起動します（再起動 0 回目）
+2026-10-10T16:08:33.630438Z  INFO match recording enabled run_id="20261010T160833Z-p20828" dir=C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\records\20261010T160833Z-p20828
+2026-10-10T16:08:33.631162Z  INFO HTTP log enabled run_id="20261010T160833Z-p20828" path=C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\logs\20261010T160833Z-p20828\http.jsonl
+2026-10-10T16:08:33.631243Z  INFO agent kind composition selected kinds=P,S
+2026-10-10T16:08:33.631554Z  INFO offline candidate selected for the live run candidate=sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42
+[HTTP #1] 2026-10-10T16:08:33.631Z GET http://127.0.0.1:18440/setting -> 200 OK (2 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:33 GMT
+  < content-type: application/json
+  < content-length: 1572
+  < body: {"startsAt": 0, "daySeconds": [8, 8, 8], "daySteps": [36, 34, 35], "map": {"height": 16, "width": 16, "cells": [[2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 1, 1, 0, 2, 0, 2], [2, 2, 2, 2, 2, 0, 2, 2, 0, 0, 0, 1, 2, 2, 2, 2], [2, 2, 1, 1, 1, 1, 0, 0, 2, 0, 0, 0, 1, 1, 1, 1], [2, 2, 2, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 1, 1, 1], [2, 2, 2, 2, 1, 1, 3, 3, 2, 0, 0, 0, 0, 0, 1, 1], [2, 0, 2, 2, 2, 0, 3, 3, 3, 1, 0, 0, 0, 0, 0, 0], [2, 2, 2, 2, 2, 2, 3, 3, 3, 1, 1, 0, 0, 0, 0, 0], [2, 2, 2, 0, 1, 1, 3, 3, 1, 1, 2, 2, 0, 0, 0, 0], [0, 2, 2, 1, 1, 1, 3, 3, 0, 2, 2, 2, 0, 0, 0, 0], [2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 0, 2, 0, 0, 0, 0], [2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 0, 1], [3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 2, 2, 1, 0, 1, 1], [3, 3, 2, 0, 2, 2, 3, 3, 1, 1, 2, 2, 2, 1, 1, 1], [3, 3, 2, 2, 2, 0, 2, 3, 3, 1, 2, 2, 1, 1, 1, 2], [3, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2], [1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2]]}, "spots": [{"brand": 0, "pos": 174, "stocks": 2}, {"brand": 1, "pos": 14, "stocks": 1}, {"brand": 2, "pos": 128, "stocks": 3}, {"brand": 3, "pos": 189, "stocks": 2}, {"brand": 4, "pos": 213, "stocks": 4}, {"brand": 5, "pos": 115, "stocks": 2}, {"brand": 6, "pos": 39, "stocks": 2}, {"brand": 7, "pos": 136, "stocks": 4}, {"brand": 8, "pos": 95, "stocks": 3}, {"brand": 9, "pos": 157, "stocks": 4}, {"brand": 10, "pos": 12, "stocks": 4}, {"brand": 11, "pos": 38, "stocks": 1}, {"brand": 12, "pos": 195, "stocks": 1}, {"brand": 12, "pos": 228, "stocks": 1}], "agents": [85, 81, 21, 154], "fuelLimits": 36, "players": 2, "busyThreshold": 3, "jammedThreshold": 8}
+2026-10-10T16:08:33.631570Z  INFO coordinator loop strategy selected solver="candidate"
+2026-10-10T16:08:33.647284Z  INFO fleet day plan day=0 clean=true chains=1 model_series=12 model_balls=12 replay_series=12 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(228, 20), (115, 26), (14, 21), (95, 21)]
+2026-10-10T16:08:33.650679Z  INFO fleet day plan day=0 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 4294967295), (213, 13), (157, 36), (174, 33)]
+2026-10-10T16:08:33.659329Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=13 replay_series=13 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 8), (128, 21), (38, 9), (189, 12)]
+2026-10-10T16:08:33.666690Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 1), (213, 3), (12, 0), (95, 3)]
+2026-10-10T16:08:33.668503Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 4294967295), (128, 31), (38, 36), (14, 17)]
+2026-10-10T16:08:33.678683Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=19 replay_series=13 replay_balls=19 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 4294967295), (136, 36), (174, 9), (174, 30)]
+2026-10-10T16:08:33.678948Z  INFO agent kinds trial kinds=S,P,P,P variety=13 daily_variety=39 balls=52
+2026-10-10T16:08:33.678987Z  INFO agent kinds trial kinds=P,P,P,P variety=13 daily_variety=37 balls=39
+[HTTP #2] 2026-10-10T16:08:33.679Z POST http://127.0.0.1:18440/agent -> 200 OK (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [1,0,0,0]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:33 GMT
+  < content-type: application/json
+  < content-length: 2
+  < body: {}
+[HTTP #3] 2026-10-10T16:08:33.680Z GET http://127.0.0.1:18440/setting -> 200 OK (25 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:33 GMT
+  < content-type: application/json
+  < content-length: 1581
+  < body: {"startsAt": 1791648515, "daySeconds": [8, 8, 8], "daySteps": [36, 34, 35], "map": {"height": 16, "width": 16, "cells": [[2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 1, 1, 0, 2, 0, 2], [2, 2, 2, 2, 2, 0, 2, 2, 0, 0, 0, 1, 2, 2, 2, 2], [2, 2, 1, 1, 1, 1, 0, 0, 2, 0, 0, 0, 1, 1, 1, 1], [2, 2, 2, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 1, 1, 1], [2, 2, 2, 2, 1, 1, 3, 3, 2, 0, 0, 0, 0, 0, 1, 1], [2, 0, 2, 2, 2, 0, 3, 3, 3, 1, 0, 0, 0, 0, 0, 0], [2, 2, 2, 2, 2, 2, 3, 3, 3, 1, 1, 0, 0, 0, 0, 0], [2, 2, 2, 0, 1, 1, 3, 3, 1, 1, 2, 2, 0, 0, 0, 0], [0, 2, 2, 1, 1, 1, 3, 3, 0, 2, 2, 2, 0, 0, 0, 0], [2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 0, 2, 0, 0, 0, 0], [2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 0, 1], [3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 2, 2, 1, 0, 1, 1], [3, 3, 2, 0, 2, 2, 3, 3, 1, 1, 2, 2, 2, 1, 1, 1], [3, 3, 2, 2, 2, 0, 2, 3, 3, 1, 2, 2, 1, 1, 1, 2], [3, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2], [1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2]]}, "spots": [{"brand": 0, "pos": 174, "stocks": 2}, {"brand": 1, "pos": 14, "stocks": 1}, {"brand": 2, "pos": 128, "stocks": 3}, {"brand": 3, "pos": 189, "stocks": 2}, {"brand": 4, "pos": 213, "stocks": 4}, {"brand": 5, "pos": 115, "stocks": 2}, {"brand": 6, "pos": 39, "stocks": 2}, {"brand": 7, "pos": 136, "stocks": 4}, {"brand": 8, "pos": 95, "stocks": 3}, {"brand": 9, "pos": 157, "stocks": 4}, {"brand": 10, "pos": 12, "stocks": 4}, {"brand": 11, "pos": 38, "stocks": 1}, {"brand": 12, "pos": 195, "stocks": 1}, {"brand": 12, "pos": 228, "stocks": 1}], "agents": [85, 81, 21, 154], "fuelLimits": 36, "players": 2, "busyThreshold": 3, "jammedThreshold": 8}
+[HTTP #4] 2026-10-10T16:08:33.706Z GET http://127.0.0.1:18440/ -> 403 Forbidden (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:33 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #5] 2026-10-10T16:08:34.223Z GET http://127.0.0.1:18440/ -> 403 Forbidden (15 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:34 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #6] 2026-10-10T16:08:34.739Z GET http://127.0.0.1:18440/ -> 403 Forbidden (16 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:34 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #7] 2026-10-10T16:08:35.270Z GET http://127.0.0.1:18440/ -> 200 OK (1 ms) attempt=1 day=0
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:35 GMT
+  < content-type: application/json
+  < content-length: 219
+  < body: {"endsAt": 1791648523, "day": 0, "agents": [{"kind": 1, "pos": 85, "fuel": 36}, {"kind": 0, "pos": 81, "fuel": 36}, {"kind": 0, "pos": 21, "fuel": 36}, {"kind": 0, "pos": 154, "fuel": 36}], "others": [], "traffics": []}
+2026-10-10T16:08:33.679013Z  INFO agent kinds selected for POST /agent n_agents=4 kinds=S,P,P,P solver=candidate:sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42
+2026-10-10T16:08:35.523379Z  INFO fleet day plan day=0 clean=true chains=4 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (213, 23), (157, 36), (189, 36)]
+2026-10-10T16:08:35.641207Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=14 replay_series=11 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (197, 27), (38, 18), (136, 36)]
+2026-10-10T16:08:35.643425Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(195, 36), (128, 26), (195, 36), (189, 15)]
+2026-10-10T16:08:35.644382Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (128, 31), (38, 36), (14, 18)]
+2026-10-10T16:08:35.648461Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (39, 26), (136, 36), (12, 6)]
+2026-10-10T16:08:35.652523Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (39, 26), (136, 36), (12, 6)]
+2026-10-10T16:08:35.661160Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (38, 36), (12, 14), (213, 23)]
+2026-10-10T16:08:35.663602Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (38, 36), (12, 14), (213, 23)]
+2026-10-10T16:08:35.675584Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (38, 36), (128, 3), (189, 27)]
+2026-10-10T16:08:35.708124Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (136, 36), (136, 36), (115, 26)]
+2026-10-10T16:08:35.731023Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(39, 36), (128, 31), (136, 17), (39, 36)]
+2026-10-10T16:08:35.731164Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (115, 36), (12, 18), (38, 26)]
+2026-10-10T16:08:35.731232Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=13 replay_series=11 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (95, 31), (128, 18), (12, 36)]
+2026-10-10T16:08:35.749183Z  INFO fleet day plan day=1 clean=true chains=1 model_series=9 model_balls=11 replay_series=9 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (12, 36), (128, 20), (12, 36)]
+2026-10-10T16:08:35.778347Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(128, 36), (128, 36), (189, 13), (12, 6)]
+2026-10-10T16:08:35.780586Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=12 replay_series=11 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(195, 36), (195, 36), (174, 27), (115, 36)]
+2026-10-10T16:08:35.789423Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=12 replay_series=11 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (12, 36), (38, 31), (228, 18)]
+2026-10-10T16:08:35.797329Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(180, 36), (115, 32), (180, 36), (189, 18)]
+2026-10-10T16:08:35.802277Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(195, 36), (128, 8), (195, 36), (189, 31)]
+2026-10-10T16:08:35.828535Z  INFO fleet day plan day=1 clean=true chains=1 model_series=10 model_balls=11 replay_series=10 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (136, 13), (39, 25), (115, 36)]
+2026-10-10T16:08:35.864644Z  INFO fleet day plan day=2 clean=true chains=1 model_series=10 model_balls=11 replay_series=10 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (136, 8), (12, 36), (95, 22)]
+2026-10-10T16:08:35.865979Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (136, 7), (95, 36), (189, 16)]
+2026-10-10T16:08:35.866236Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (136, 8), (38, 36), (213, 24)]
+2026-10-10T16:08:35.868135Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (174, 8), (115, 25), (136, 12)]
+2026-10-10T16:08:35.868934Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(228, 36), (136, 2), (174, 9), (228, 36)]
+2026-10-10T16:08:35.878049Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (136, 36), (12, 4), (174, 8)]
+2026-10-10T16:08:35.880704Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (136, 36), (12, 5), (174, 8)]
+2026-10-10T16:08:35.883250Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=19 replay_series=13 replay_balls=19 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (136, 36), (189, 9), (189, 30)]
+2026-10-10T16:08:35.905128Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (189, 36), (174, 34), (128, 5)]
+2026-10-10T16:08:35.913255Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (95, 36), (12, 32), (128, 6)]
+2026-10-10T16:08:35.918414Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (174, 17), (136, 36), (128, 6)]
+2026-10-10T16:08:35.924077Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=15 replay_series=12 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (174, 0), (14, 24), (136, 36)]
+2026-10-10T16:08:35.924519Z  INFO fleet day plan day=2 clean=true chains=1 model_series=10 model_balls=13 replay_series=10 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (95, 36), (115, 25), (136, 8)]
+2026-10-10T16:08:35.942444Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(228, 36), (228, 36), (128, 0), (189, 16)]
+2026-10-10T16:08:35.946749Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (115, 36), (12, 4), (95, 9)]
+2026-10-10T16:08:35.961152Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=12 replay_series=12 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(195, 36), (136, 24), (189, 17), (195, 36)]
+2026-10-10T16:08:35.962093Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (213, 17), (174, 14), (136, 23)]
+2026-10-10T16:08:35.966754Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=19 replay_series=13 replay_balls=19 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (136, 36), (14, 23), (174, 9)]
+2026-10-10T16:08:35.967025Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=13 replay_series=13 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (136, 24), (174, 14), (228, 24)]
+2026-10-10T16:08:35.970668Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (213, 23), (174, 9), (38, 36)]
+2026-10-10T16:08:35.971270Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(228, 36), (157, 11), (195, 22), (228, 36)]
+2026-10-10T16:08:35.973641Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (174, 17), (157, 20), (128, 6)]
+2026-10-10T16:08:35.976940Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (189, 36), (128, 14), (174, 33)]
+2026-10-10T16:08:35.983408Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=13 replay_series=13 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (12, 36), (14, 32), (189, 6)]
+2026-10-10T16:08:36.031507Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=13 replay_series=11 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (38, 25), (14, 13), (115, 36)]
+2026-10-10T16:08:36.032902Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (157, 36), (115, 14), (157, 36)]
+2026-10-10T16:08:36.033780Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (115, 36), (38, 19), (14, 20)]
+2026-10-10T16:08:36.043586Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=13 replay_series=11 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (38, 25), (14, 13), (115, 36)]
+2026-10-10T16:08:36.046455Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=12 replay_series=11 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (38, 27), (12, 18), (95, 36)]
+2026-10-10T16:08:36.050276Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (115, 23), (38, 20), (12, 36)]
+2026-10-10T16:08:36.054444Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (95, 36), (213, 20), (38, 27)]
+2026-10-10T16:08:36.057802Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (136, 36), (136, 36), (115, 14)]
+2026-10-10T16:08:36.083051Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=12 replay_series=11 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(151, 36), (151, 36), (12, 20), (38, 26)]
+2026-10-10T16:08:36.085902Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=13 replay_series=11 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (128, 0), (12, 36), (100, 29)]
+2026-10-10T16:08:36.097891Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (115, 23), (12, 20), (38, 36)]
+2026-10-10T16:08:36.098937Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (189, 36), (195, 4), (115, 14)]
+2026-10-10T16:08:36.103554Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (183, 25), (39, 13), (95, 36)]
+2026-10-10T16:08:36.118031Z  INFO fleet day plan day=1 clean=true chains=1 model_series=9 model_balls=10 replay_series=9 replay_balls=10 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (12, 5), (189, 36), (228, 18)]
+2026-10-10T16:08:36.118087Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(39, 36), (39, 36), (136, 25), (115, 2)]
+2026-10-10T16:08:36.121213Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (187, 30), (39, 14), (95, 36)]
+2026-10-10T16:08:36.130476Z  INFO fleet day plan day=1 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (189, 36), (39, 17), (12, 6)]
+2026-10-10T16:08:36.140622Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(39, 36), (39, 36), (136, 25), (115, 0)]
+2026-10-10T16:08:36.142407Z  INFO fleet day plan day=1 clean=true chains=1 model_series=11 model_balls=12 replay_series=11 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (95, 36), (195, 4), (38, 27)]
+2026-10-10T16:08:36.172418Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=12 replay_series=11 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (115, 0), (136, 25), (174, 17)]
+2026-10-10T16:08:36.172560Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(213, 36), (213, 36), (157, 24), (174, 0)]
+2026-10-10T16:08:36.172677Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=13 replay_series=13 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (115, 0), (228, 13), (174, 30)]
+2026-10-10T16:08:36.173169Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(174, 36), (213, 18), (189, 33), (174, 36)]
+2026-10-10T16:08:36.173230Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (213, 23), (189, 14), (174, 0)]
+2026-10-10T16:08:36.175940Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(174, 36), (228, 18), (174, 36), (174, 36)]
+2026-10-10T16:08:36.181692Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(39, 36), (128, 0), (95, 18), (14, 25)]
+2026-10-10T16:08:36.183000Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=12 replay_series=12 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (115, 0), (213, 25), (174, 15)]
+2026-10-10T16:08:36.200477Z  INFO fleet day plan day=2 clean=true chains=1 model_series=10 model_balls=10 replay_series=10 replay_balls=10 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (38, 36), (128, 3), (136, 0)]
+2026-10-10T16:08:36.202306Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=11 replay_series=11 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(128, 36), (95, 0), (128, 36), (228, 13)]
+2026-10-10T16:08:36.203725Z  INFO fleet day plan day=2 clean=true chains=1 model_series=10 model_balls=11 replay_series=10 replay_balls=11 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (213, 23), (189, 5), (39, 35)]
+2026-10-10T16:08:36.211096Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=12 replay_series=11 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (213, 13), (189, 5), (12, 27)]
+2026-10-10T16:08:36.213604Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (213, 13), (189, 36), (14, 25)]
+2026-10-10T16:08:36.217352Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(213, 36), (136, 0), (213, 36), (14, 14)]
+2026-10-10T16:08:36.217766Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (213, 13), (189, 5), (14, 24)]
+2026-10-10T16:08:36.224012Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (213, 13), (95, 32), (95, 16)]
+2026-10-10T16:08:36.231883Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (128, 20), (189, 36), (195, 2)]
+2026-10-10T16:08:36.234579Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (128, 20), (189, 27), (228, 13)]
+2026-10-10T16:08:36.240471Z  INFO fleet day plan day=2 clean=true chains=1 model_series=10 model_balls=12 replay_series=10 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(39, 36), (115, 25), (189, 20), (189, 6)]
+2026-10-10T16:08:36.242502Z  INFO fleet day plan day=2 clean=true chains=1 model_series=10 model_balls=12 replay_series=10 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (12, 28), (115, 36), (95, 18)]
+2026-10-10T16:08:36.247555Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (115, 36), (174, 17), (195, 2)]
+2026-10-10T16:08:36.254536Z  INFO fleet day plan day=2 clean=true chains=1 model_series=10 model_balls=13 replay_series=10 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (189, 23), (115, 36), (213, 10)]
+2026-10-10T16:08:36.257990Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=13 replay_series=13 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (195, 22), (95, 11), (213, 4)]
+2026-10-10T16:08:36.259483Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=15 replay_series=12 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (213, 23), (174, 15), (12, 6)]
+2026-10-10T16:08:36.269510Z  INFO convoy day plan day=0 pool=22 depth=2 complete=false chosen=0 elapsed_ms=996
+2026-10-10T16:08:36.269615Z  INFO plan generated candidate=sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42 n_agents=4 day_steps=36 moves=[17, 14, 20, 18] waits=[19, 22, 16, 18]
+[HTTP #8] 2026-10-10T16:08:36.269Z POST http://127.0.0.1:18440/ -> 200 OK (1 ms) attempt=1 day=0
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [[4,4,5,-10,2,2,3,3,3,3,2,2,2,2,2,2,0,1],[4,4,3,1,2,2,3,4,3,3,4,3,3,1,-7],[3,2,2,1,1,2,2,2,2,2,2,4,4,3,3,3,4,4,4,4],[0,5,1,1,2,1,2,2,2,2,4,4,4,4,3,2,5,4,-4]]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:36 GMT
+  < content-type: application/json
+  < content-length: 15
+  < body: {"revision": 1}
+[HTTP #9] 2026-10-10T16:08:43.285Z GET http://127.0.0.1:18440/ -> 200 OK (16 ms) attempt=1 day=1
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:43 GMT
+  < content-type: application/json
+  < content-length: 219
+  < body: {"endsAt": 1791648531, "day": 1, "agents": [{"kind": 1, "pos": 85, "fuel": 36}, {"kind": 0, "pos": 81, "fuel": 36}, {"kind": 0, "pos": 21, "fuel": 36}, {"kind": 0, "pos": 154, "fuel": 36}], "others": [], "traffics": []}
+2026-10-10T16:08:36.270948Z  INFO plan accepted by server day=0 revision=1 answer_ms=998 submit_ms=1 margin_ms=6730
+2026-10-10T16:08:43.553049Z  INFO fleet day plan day=1 clean=true chains=4 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (213, 23), (95, 12), (189, 36)]
+2026-10-10T16:08:43.626045Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (128, 18), (95, 32), (195, 4)]
+2026-10-10T16:08:43.626823Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=15 replay_series=12 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (12, 36), (14, 33), (189, 23)]
+2026-10-10T16:08:43.627270Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(128, 36), (128, 36), (136, 3), (38, 1)]
+2026-10-10T16:08:43.627356Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(128, 36), (128, 36), (38, 8), (39, 0)]
+2026-10-10T16:08:43.627630Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=15 replay_series=11 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(174, 36), (174, 36), (38, 24), (14, 19)]
+2026-10-10T16:08:43.627940Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (128, 5), (14, 21), (38, 36)]
+2026-10-10T16:08:43.641315Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (128, 18), (38, 24), (174, 5)]
+2026-10-10T16:08:43.641559Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(195, 36), (128, 31), (195, 36), (189, 6)]
+2026-10-10T16:08:43.674777Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(128, 36), (128, 36), (128, 36), (174, 14)]
+2026-10-10T16:08:43.685228Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (115, 36), (128, 20), (174, 17)]
+2026-10-10T16:08:43.686081Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(213, 36), (95, 9), (128, 19), (38, 0)]
+2026-10-10T16:08:43.690825Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(14, 36), (12, 4), (14, 36), (128, 10)]
+2026-10-10T16:08:43.693668Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (128, 31), (12, 8), (38, 36)]
+2026-10-10T16:08:43.701474Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(174, 36), (174, 36), (128, 3), (38, 21)]
+2026-10-10T16:08:43.706024Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(38, 36), (195, 16), (128, 6), (174, 5)]
+2026-10-10T16:08:43.708993Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (136, 36), (128, 20), (174, 5)]
+2026-10-10T16:08:43.721043Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(39, 36), (39, 36), (174, 8), (95, 0)]
+2026-10-10T16:08:43.733138Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=15 replay_series=12 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (95, 36), (39, 12), (14, 23)]
+2026-10-10T16:08:43.746093Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(195, 36), (128, 7), (115, 27), (189, 20)]
+2026-10-10T16:08:43.756031Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (128, 7), (115, 36), (189, 23)]
+2026-10-10T16:08:43.759505Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(195, 36), (128, 25), (115, 27), (174, 14)]
+2026-10-10T16:08:43.762469Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(195, 36), (12, 9), (128, 22), (38, 1)]
+2026-10-10T16:08:43.764751Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (128, 25), (115, 36), (174, 14)]
+2026-10-10T16:08:43.815767Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(39, 36), (115, 0), (136, 17), (38, 35)]
+2026-10-10T16:08:43.816591Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (128, 31), (136, 17), (38, 1)]
+2026-10-10T16:08:43.817287Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (128, 0), (136, 25), (115, 14)]
+2026-10-10T16:08:43.817815Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=15 replay_series=13 replay_balls=15 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (128, 5), (38, 30), (12, 36)]
+2026-10-10T16:08:43.818323Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=13 replay_series=11 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (39, 13), (189, 36), (12, 3)]
+2026-10-10T16:08:43.819183Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(174, 36), (39, 13), (136, 0), (174, 36)]
+2026-10-10T16:08:43.831705Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (39, 12), (136, 27), (12, 3)]
+2026-10-10T16:08:43.832253Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(136, 36), (128, 18), (38, 9), (136, 36)]
+2026-10-10T16:08:43.849552Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(174, 36), (128, 0), (95, 31), (115, 14)]
+2026-10-10T16:08:43.850303Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (128, 0), (95, 36), (115, 14)]
+2026-10-10T16:08:43.853758Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=13 replay_series=11 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (38, 14), (95, 32), (128, 19)]
+2026-10-10T16:08:43.862097Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (95, 36), (128, 3), (38, 27)]
+2026-10-10T16:08:43.867822Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(189, 36), (128, 19), (95, 29), (38, 0)]
+2026-10-10T16:08:43.869099Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (128, 31), (95, 18), (38, 0)]
+2026-10-10T16:08:43.871429Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(128, 36), (38, 0), (128, 36), (174, 5)]
+2026-10-10T16:08:43.875829Z  INFO fleet day plan day=2 clean=true chains=1 model_series=13 model_balls=14 replay_series=13 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (38, 0), (128, 18), (136, 29)]
+2026-10-10T16:08:43.879259Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (95, 36), (39, 12), (95, 36)]
+2026-10-10T16:08:43.886640Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=14 replay_series=12 replay_balls=14 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(95, 36), (95, 36), (39, 13), (95, 36)]
+2026-10-10T16:08:43.901125Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (115, 14), (195, 4), (136, 29)]
+2026-10-10T16:08:43.903582Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=12 replay_series=11 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(174, 36), (95, 30), (195, 4), (38, 21)]
+2026-10-10T16:08:43.904100Z  INFO fleet day plan day=2 clean=true chains=1 model_series=11 model_balls=12 replay_series=11 replay_balls=12 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(174, 36), (95, 31), (195, 4), (38, 21)]
+2026-10-10T16:08:43.906631Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(39, 36), (95, 18), (195, 4), (115, 25)]
+2026-10-10T16:08:43.908030Z  INFO fleet day plan day=2 clean=true chains=1 model_series=12 model_balls=13 replay_series=12 replay_balls=13 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (115, 14), (195, 4), (136, 29)]
+2026-10-10T16:08:43.917176Z  INFO convoy day plan day=1 pool=25 depth=1 complete=true chosen=0 elapsed_ms=614
+2026-10-10T16:08:43.917264Z  INFO plan generated candidate=sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42 n_agents=4 day_steps=34 moves=[15, 14, 16, 18] waits=[19, 20, 18, 16]
+[HTTP #10] 2026-10-10T16:08:43.917Z POST http://127.0.0.1:18440/ -> 200 OK (1 ms) attempt=1 day=1
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [[4,4,5,-10,2,2,3,3,3,3,2,2,2,2,2,2,-1],[4,4,3,1,2,2,3,4,3,3,4,3,3,1,-5],[3,2,2,1,1,2,2,2,2,2,2,4,4,3,3,3,-6],[0,5,1,1,2,1,2,2,2,2,4,4,4,4,3,2,5,4,-2]]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:43 GMT
+  < content-type: application/json
+  < content-length: 15
+  < body: {"revision": 2}
+[HTTP #11] 2026-10-10T16:08:51.930Z GET http://127.0.0.1:18440/ -> 200 OK (16 ms) attempt=1 day=2
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:51 GMT
+  < content-type: application/json
+  < content-length: 219
+  < body: {"endsAt": 1791648539, "day": 2, "agents": [{"kind": 1, "pos": 85, "fuel": 36}, {"kind": 0, "pos": 81, "fuel": 36}, {"kind": 0, "pos": 21, "fuel": 36}, {"kind": 0, "pos": 154, "fuel": 36}], "others": [], "traffics": []}
+2026-10-10T16:08:43.918647Z  INFO plan accepted by server day=1 revision=2 answer_ms=616 submit_ms=1 margin_ms=7082
+2026-10-10T16:08:52.197832Z  INFO fleet day plan day=2 clean=true chains=4 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(12, 36), (228, 13), (174, 5), (12, 36)]
+2026-10-10T16:08:52.243987Z  INFO convoy day plan day=2 pool=11 depth=0 complete=true chosen=0 elapsed_ms=296
+2026-10-10T16:08:52.244039Z  INFO plan generated candidate=sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42 n_agents=4 day_steps=35 moves=[21, 14, 20, 19] waits=[14, 21, 15, 16]
+2026-10-10T16:08:52.260256Z  INFO plan accepted by server day=2 revision=3 answer_ms=313 submit_ms=16 margin_ms=6740
+2026-10-10T16:08:52.260332Z  WARN coordinator loop wired in #135; full E2E driving comes in #136. outcome: CoordinatorOutcome { days_completed: 3, revisions: [1, 2, 3], day_steps: [36, 34, 35], day_seconds: [8, 8, 8], days: [DaySummary { day: 0, agents: [DayAgentState { kind: AgentKind(1), pos: 85, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 81, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 21, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 154, fuel: 36 }], movement: [DayMovement { moves: 17, waits: 10, runs: 1, dirs: [1, 1, 8, 4, 2, 1] }, DayMovement { moves: 14, waits: 7, runs: 1, dirs: [0, 2, 2, 6, 4, 0] }, DayMovement { moves: 20, waits: 0, runs: 0, dirs: [0, 2, 8, 4, 6, 0] }, DayMovement { moves: 18, waits: 4, runs: 1, dirs: [1, 3, 6, 1, 5, 2] }] }, DaySummary { day: 1, agents: [DayAgentState { kind: AgentKind(1), pos: 85, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 81, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 21, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 154, fuel: 36 }], movement: [DayMovement { moves: 15, waits: 11, runs: 2, dirs: [0, 0, 8, 4, 2, 1] }, DayMovement { moves: 14, waits: 5, runs: 1, dirs: [0, 2, 2, 6, 4, 0] }, DayMovement { moves: 16, waits: 6, runs: 1, dirs: [0, 2, 8, 4, 2, 0] }, DayMovement { moves: 18, waits: 2, runs: 1, dirs: [1, 3, 6, 1, 5, 2] }] }, DaySummary { day: 2, agents: [DayAgentState { kind: AgentKind(1), pos: 85, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 81, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 21, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 154, fuel: 36 }], movement: [DayMovement { moves: 21, waits: 0, runs: 0, dirs: [4, 4, 8, 3, 0, 2] }, DayMovement { moves: 14, waits: 6, runs: 1, dirs: [0, 1, 3, 5, 5, 0] }, DayMovement { moves: 20, waits: 2, runs: 1, dirs: [0, 3, 5, 9, 3, 0] }, DayMovement { moves: 19, waits: 0, runs: 0, dirs: [4, 7, 3, 2, 0, 3] }] }], kinds: [Supply, Patrol, Patrol, Patrol] }
+[HTTP #12] 2026-10-10T16:08:52.244Z POST http://127.0.0.1:18440/ -> 200 OK (16 ms) attempt=1 day=2
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [[0,1,1,2,2,2,2,2,2,2,2,3,3,3,0,0,0,1,1,5,5],[4,4,3,1,2,2,3,4,3,3,4,2,3,4,-6],[3,2,2,3,3,3,3,4,4,1,1,2,2,3,3,3,4,3,1,2,-2],[2,2,3,3,1,2,5,0,1,1,1,1,0,0,0,1,1,5,5]]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 16:08:52 GMT
+  < content-type: application/json
+  < content-length: 15
+  < body: {"revision": 3}
+01:08:52 honsen: coordinator が終了しました（終了コード 0）
+試合完了（正常終了）
+記録: C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\records\20261010T160833Z-p20828
+2026-10-10T16:08:52.260368Z  INFO --exit-after-match: 3 day(s) completed, exiting 0
+{
+  "agent_kinds": "S,P,P,P",
+  "binary_sha256": "23a7b97e2fa677983cd1796da2e4c4baedfff3d24df68112cd3b345042d2d342",
+  "continues_run_id": null,
+  "days": [
+    {
+      "agents": 4,
+      "day": 0,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 72,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 1,
+      "status": "accepted",
+      "traffics": 0
+    },
+    {
+      "agents": 4,
+      "day": 1,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 68,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 2,
+      "status": "accepted",
+      "traffics": 0
+    },
+    {
+      "agents": 4,
+      "day": 2,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 76,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 3,
+      "status": "accepted",
+      "traffics": 0
+    }
+  ],
+  "events": 17,
+  "map": {
+    "agents": 4,
+    "cells": 256,
+    "days": 3,
+    "height": 16,
+    "spots": 14,
+    "width": 16
+  },
+  "missing_seq": 0,
+  "recorder": {
+    "dropped": 0,
+    "events_numbered": 17,
+    "write_errors": 0
+  },
+  "result": {
+    "days_completed": 3,
+    "error": null,
+    "revisions": [
+      1,
+      2,
+      3
+    ],
+    "status": "completed"
+  },
+  "run_id": "20261010T160833Z-p20828",
+  "schema_version": 1,
+  "solver": {
+    "candidate_id": "sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42",
+    "kinds_auto": true,
+    "kinds_flag": null,
+    "label": "candidate:sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42",
+    "loop_initial_strategy": "greedy",
+    "loop_iterations": 32,
+    "solver_flag": "loop"
+  },
+  "source_commit_sha": "21dd16c25a99ba6c8c4c36ed6e61f8ae130f9640",
+  "started_at": "2026-10-10T16:08:33.627Z",
+  "unparsed_lines": 0
+HTTP 通信ログ: C:\Users\rebui\AppData\Local\Temp\opencode\rc-21dd16c\logs
+}
+
