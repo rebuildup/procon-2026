@@ -230,3 +230,13 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
 - [00:2x] **bail 計測開始**（PR #435 委譲分・worktree `.worktrees/bail-435-verify` eb2f5de・binary sha256 `85119c9f…`）:
   ラベル爆発盤面 4 枚（s5016 24×24 d10 / s5020 32×32 d10 / s5023 32×32 d6 / s9012 32×32 d7）×
   `convoy:budget_ms=20000:seed=42` vs `:bail=on`、jobs 1・nice 19。期待効果（#435）: B 同等のまま回答時間 20s→5s（axis4）＋爆発盤面で残予算を embedded fleet へ譲渡しての B 回収。証跡は bail-435-verify 側 `eval-bail-435/`、回収後に本 results へ取り込む。
+- [00:3x] **bail 計測完了（8 corpus セル + fixture 18 セル・全 success・illegal/fuel_short/rejected 0・load 9-13 で実施）**:
+  | 盤面 | parent B | bail B | 辞書順 | maxday |
+  |---|---|---|---|---|
+  | s9012 | 387 | 364 | loss（B −23・ノイズ境界） | 33.4s → **7.6s** |
+  | s5016 | 452 | 445 | loss（B −7・ノイズ内） | 39.9s → **8.9s** |
+  | s5023 | 413 | 452 | **win（B +39）** | 50.4s → **8.7s** |
+  | s5020 | 615 | 672 | **win（B +57）** | 38.8s → **6.7s** |
+  fixture 9 盤面は 8 draw + road-heavy-v2 B−1（byte 同等性の保証どおり小盤面は中性）。
+  **axis-4 と期限安全性は構造的に確定**: parent は budget 20s を全日使い切り maxday 最大 50.4s（60s 日窓に接近・負荷下で超過リスク実在）に対し、bail は全盤面 maxday ≤8.9s。
+  B は爆発盤面で #435 予測どおり +39/+57。s9012 −23 は負荷起因ノイズ域のため**静穏時 B 確認再実行を判定条件に追加**。正式分析ドキュメントはサブエージェントが `analysis/bail-435-wsl.md` に作成中。
