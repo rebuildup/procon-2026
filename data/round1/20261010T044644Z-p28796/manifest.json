@@ -1,0 +1,74 @@
+{
+  "agent_kinds": {
+    "kinds": [
+      1,
+      0,
+      0,
+      0
+    ],
+    "pattern": "S,P,P,P",
+    "source": "auto"
+  },
+  "arch": "x86_64",
+  "arena": false,
+  "binary": {
+    "path": "C:\\Users\\rebui\\Desktop\\procon-2026\\target\\release\\procon.exe",
+    "sha256": "ff28c73a8c43fbfba2cdb3339dc7c37e8cfbfc6c03bdd46d2e1818cc06d636cf",
+    "size_bytes": 6034432
+  },
+  "files": {
+    "events": "events.jsonl",
+    "log": "coordinator.log",
+    "setting": "setting.json",
+    "state": "state.json"
+  },
+  "http_log": ".\\logs\\20261010T044644Z-p28796\\http.jsonl",
+  "match": {
+    "agents": 4,
+    "days": 5,
+    "map_height": 16,
+    "map_width": 16,
+    "players": 10,
+    "starts_at": 1791608168
+  },
+  "match_identity": {
+    "note": "the official API publishes no match id; run_id is ours",
+    "official_match_id": null
+  },
+  "os": "windows",
+  "package_version": "0.5.0",
+  "pid": 28796,
+  "recorder": {
+    "dropped": 0,
+    "events_numbered": 25,
+    "write_errors": 0
+  },
+  "result": {
+    "days_completed": 5,
+    "error": null,
+    "revisions": [
+      3,
+      12,
+      21,
+      30,
+      37
+    ],
+    "status": "completed"
+  },
+  "run_id": "20261010T044644Z-p28796",
+  "schema_version": 1,
+  "server": "http://172.28.0.10:8080",
+  "solver": {
+    "candidate_id": "fleet:budget=official:budget_ms=10000:adapt=off",
+    "kinds_auto": true,
+    "kinds_flag": null,
+    "label": "candidate:fleet:budget=official:budget_ms=10000:adapt=off",
+    "loop_initial_strategy": "greedy",
+    "loop_iterations": 32,
+    "solver_flag": "loop"
+  },
+  "source_commit_sha": "7a93ad76549397e21178476d472a6a070ecddfce",
+  "source_commit_sha_from": "git-working-directory",
+  "started_at": "2026-10-10T04:46:44.473Z",
+  "started_unix_ms": 1791607604473
+}
