@@ -84,6 +84,13 @@ const PARAMS: &[ParamSpec] = &[
         required: false,
         doc: "label cap of one patrol-day search (default 1500000)",
     },
+    ParamSpec {
+        key: "bail",
+        required: false,
+        doc: "when the patrol-day label search fails, answer the embedded fleet's plan \
+              instead of burning the rest of the window on a one-node beam: on | off \
+              (default off)",
+    },
 ];
 
 fn parse<T: std::str::FromStr>(
@@ -145,6 +152,13 @@ impl CandidateFactory for ConvoyFactory {
             depth: parse(spec, "depth", 8u32)?,
             width: parse(spec, "width", 24usize)?.max(1),
             labels: parse(spec, "labels", 1_500_000usize)?,
+            bail: match spec.param("bail") {
+                None | Some("off") => false,
+                Some("on") => true,
+                Some(other) => {
+                    return Err(CandidateError::Build(format!("unknown bail mode {other:?}")));
+                }
+            },
         }))
     }
 }
@@ -161,6 +175,13 @@ pub struct ConvoyCandidate {
     pub depth: u32,
     pub width: usize,
     pub labels: usize,
+    /// When the label search fails and the pool holds only `fleet`'s plan,
+    /// answer it instead of playing the remaining days on a one-node beam
+    /// (Issue #432). The beam provably cannot change that answer: with a
+    /// single root, `best` is always 0. The saved budget is not handed back
+    /// to the fleet — the fleet has already searched with a quarter of the
+    /// window, and returning early is what keeps the live response short.
+    pub bail: bool,
 }
 
 const NONE: u32 = u32::MAX;
@@ -1119,6 +1140,10 @@ impl Solver for ConvoyCandidate {
         let mut pool = self.day_plans(ctx.state, true, window.map(|w| started + w / 3));
         if pool.is_empty() {
             return self.fleet.decide(ctx);
+        }
+        if self.bail && pool.len() == 1 {
+            tracing::info!(day = ctx.day, pool = 1, "convoy bail: fleet plan only");
+            return pool.swap_remove(0).plan;
         }
         let remaining = ctx.state.setting.num_days.saturating_sub(ctx.day + 1);
         let depth = self.depth.min(remaining);
