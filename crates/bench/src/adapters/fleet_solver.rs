@@ -58,6 +58,18 @@ const PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "seed", required: false, doc: "search seed (default 42)" },
     ParamSpec {
+        key: "fuel_need",
+        required: false,
+        doc: "percent of a patrol's daily balls that a day-end tank covering tomorrow's \
+              burn is worth, 0..=300 (default 0: off)",
+    },
+    ParamSpec {
+        key: "fuel_mix",
+        required: false,
+        doc: "off (default) | on: with 2+ chains only every other chain uses fuel_need, and \
+              tomorrow's replay always picks between them",
+    },
+    ParamSpec {
         key: "chains",
         required: false,
         doc: "search chains, 1..16 (default 1); with 2+ the day plan is chosen by \
@@ -113,7 +125,14 @@ impl CandidateFactory for FleetFactory {
         if !(1..=16).contains(&chains) {
             return Err(CandidateError::Build(format!("chains must be 1..=16, got {chains}")));
         }
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
+        let fuel_need = parse(spec, "fuel_need", 0u32)?;
+        if fuel_need > 300 {
+            return Err(CandidateError::Build(format!(
+                "fuel_need must be 0..=300, got {fuel_need}"
+            )));
+        }
+        let fuel_mix = spec.param("fuel_mix") == Some("on");
+        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, fuel_need, fuel_mix }))
     }
 }
 
@@ -126,6 +145,11 @@ pub struct FleetCandidate {
     pub chains: u32,
     /// Live: shrink the window on boards whose search converges sooner.
     pub adapt: bool,
+    /// Percent of a patrol's daily balls that ending the day with tomorrow's
+    /// fuel is worth in the search score (0: only the small full-tank term).
+    pub fuel_need: u32,
+    /// Only every other chain values the fuel; tomorrow's replay picks.
+    pub fuel_mix: bool,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -215,6 +239,8 @@ struct World {
     supplies: Vec<SupplyInfo>,
     new_series: Vec<bool>,
     series_slots: usize,
+    /// `(fuel a patrol burns tomorrow, score of ending the day with it)`.
+    need: Option<(i64, i64)>,
 }
 
 fn cell_index(width: usize, col: i32, row: i32) -> usize {
@@ -224,7 +250,7 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
 
 impl World {
     #[allow(clippy::too_many_lines, reason = "one-shot precomputation of the day's matrices")]
-    fn new(state: &MatchState, steps: u32, later: &[u32]) -> Self {
+    fn new(state: &MatchState, steps: u32, later: &[u32], fuel_need: u32) -> Self {
         let tomorrow = later.first().copied();
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
@@ -316,11 +342,36 @@ impl World {
             supplies,
             new_series,
             series_slots,
+            need: None,
         };
         for m in 0..NM {
             for u in 0..nn {
                 world.tree(m, u);
             }
+        }
+        if let (Some(tomorrow), true) = (tomorrow, fuel_need > 0 && !world.supplies.is_empty()) {
+            // What a patrol with fuel to spare does in a day like today, by
+            // the greedy start: balls per patrol, and fuel per tick from the
+            // board's mean move (a patrol is on the move most of the day).
+            let np = world.patrols.len().max(1);
+            let starts: Vec<Start> = world
+                .patrols
+                .iter()
+                .map(|p| Start { node: p.start, offset: 0, fuel: p.cap, escorted: true })
+                .collect();
+            let (_, balls) = world.greedy(&starts, steps, None);
+            let (mut burn, mut ticks) = (0u64, 0u64);
+            for (t, f) in world.time_cost.iter().zip(&world.fuel_cost) {
+                if *t != NONE {
+                    burn += u64::from(*f);
+                    ticks += u64::from(*t);
+                }
+            }
+            let cap = world.patrols.iter().map(|p| p.cap).max().unwrap_or(0);
+            let need = (u64::from(tomorrow) * burn / ticks.max(1)).min(u64::from(cap)).max(1);
+            let worth =
+                balls * W_BALL * i64::from(fuel_need) / 100 / i64::try_from(np).unwrap_or(i64::MAX);
+            world.need = Some((i64::try_from(need).unwrap_or(i64::MAX), worth));
         }
         world
     }
@@ -675,6 +726,11 @@ impl World {
                 let full = i64::from(self.patrols[p].cap.min(tomorrow));
                 let have = if start.escorted { full } else { i64::from(start.fuel).min(full) };
                 score += 150 * have / full.max(1);
+                if let Some((need, worth)) = self.need {
+                    let covered =
+                        if start.escorted { need } else { i64::from(start.fuel).min(need) };
+                    score += worth * covered / need;
+                }
             }
         }
         Evaluation { score, today: (series, balls), tomorrow_series, lines, supplies }
@@ -1188,7 +1244,7 @@ impl Solver for FleetCandidate {
         }
         let later: Vec<u32> =
             (ctx.day + 1..state.setting.num_days).map(|d| state.setting.day_steps_for(d)).collect();
-        let world = World::new(state, ctx.day_steps, &later);
+        let world = World::new(state, ctx.day_steps, &later, self.fuel_need);
         let window = (self.budget_ms > 0).then(|| {
             // Balls stop improving once the search has converged, and from
             // there a longer answer only costs the fourth ranking axis. The
@@ -1228,8 +1284,12 @@ impl Solver for FleetCandidate {
         let second = chains > 1;
         let plan_until = window.map(|w| started + if second { w * 7 / 10 } else { w });
         let until = window.map(|w| started + w);
+        // `fuel_mix`: the odd chains plan without the fuel term.
+        let mixed = self.fuel_mix && self.fuel_need > 0 && second;
+        let plain = mixed.then(|| World::new(state, ctx.day_steps, &later, 0));
+        let world_of = |k: usize| plain.as_ref().filter(|_| k % 2 == 1).unwrap_or(&world);
         let first = per_chain(chains, live, |k| {
-            world.search(
+            world_of(k).search(
                 self.iters,
                 plan_until,
                 self.seed(ctx, k),
@@ -1245,25 +1305,28 @@ impl Solver for FleetCandidate {
             i64::try_from(world.series.iter().collect::<std::collections::BTreeSet<_>>().len())
                 .unwrap_or(i64::MAX);
         let settled = later.is_empty()
-            || first
-                .iter()
-                .all(|(_, e)| e.today.0 == all_series && e.tomorrow_series == all_series);
+            || !mixed
+                && first
+                    .iter()
+                    .all(|(_, e)| e.today.0 == all_series && e.tomorrow_series == all_series);
         let candidates: Vec<Candidate> = per_chain(first.len(), live, |k| {
             let (sol, eval) = &first[k];
             if !second {
-                let (plan, check) = Self::finish(ctx, &world, sol, eval);
+                let (plan, check) = Self::finish(ctx, world_of(k), sol, eval);
                 return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
             }
             let seed = self.seed(ctx, k) ^ 0x5bd1_e995;
+            let world = world_of(k);
             if settled {
                 let (sol, eval) = world.search(self.iters / 3, until, seed, 5.0, Some(sol.clone()));
-                let (plan, check) = Self::finish(ctx, &world, &sol, &eval);
+                let (plan, check) = Self::finish(ctx, world, &sol, &eval);
                 return Candidate { plan, check, model: eval.today, tomorrow: (0, 0) };
             }
-            let (plan, check) = Self::finish(ctx, &world, sol, eval);
+            let (plan, check) = Self::finish(ctx, world, sol, eval);
             let tomorrow = match later.split_first() {
                 Some((&steps, rest)) if check.clean => {
-                    let next = World::new(&check.state, steps, rest);
+                    let need = if mixed { 0 } else { self.fuel_need };
+                    let next = World::new(&check.state, steps, rest, need);
                     next.search(self.iters / 3, until, seed, CHAIN_T0[0], None).1.today
                 }
                 _ => (0, 0),
@@ -1355,6 +1418,8 @@ pub fn choose_kinds(
                 seed: 42,
                 chains: 1,
                 adapt: true,
+                fuel_need: 0,
+                fuel_mix: false,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
@@ -1387,4 +1452,145 @@ pub fn choose_kinds(
         _ => fallback,
     };
     (chosen, trials)
+}
+
+/// One Supply slot's pre-match trials: whole matches played with a short
+/// `fleet` search while our own road use is counted as every team's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotTrial {
+    pub slot: usize,
+    /// Matches played to the end inside the window.
+    pub matches: u32,
+    /// `(variety, daily variety sum, balls)` summed over those matches.
+    pub total: (u32, u32, u32),
+}
+
+/// Mean daily-variety gap (in series per match, as a fraction `num / den`)
+/// below which two slots count as level on the second ranking axis and the
+/// balls decide. Short trials scatter by about half a series per match.
+const SLOT_VARIETY_TIE: (u32, u32) = (1, 4);
+
+/// Which agent should be the Supply (Issue #428).
+///
+/// `choose_kinds` always puts the one Supply in slot 0. The starts differ,
+/// though: on boards with the round-one frame the first day is `W + H` steps
+/// long, and a start that sits next to several series is worth more as a
+/// Patrol than as the Supply. This plays every single-Supply composition
+/// through whole matches — as many rounds of different seeds as fit in
+/// `window` — and returns the slot with the best mean score in the official
+/// order. Roads are classified as if every team moved like us
+/// (`team_count = 1`): with the other teams counted as absent the roads never
+/// jam and the trial overstates what road-side starts are worth.
+///
+/// Only complete rounds count, so every slot is judged on the same seeds.
+/// Without one complete round the answer is `None` (keep slot 0).
+#[must_use]
+pub fn choose_supply_slot(
+    wire: &protocol::match_config::MatchSetting,
+    team: &domain::PlayerId,
+    window: Duration,
+) -> (Option<usize>, Vec<SlotTrial>) {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let n = wire.agents.len();
+    let Ok(mut config) = engine::from_wire::sim_config_from_wire(wire) else {
+        return (None, Vec::new());
+    };
+    config.team_count = 1;
+    let settings: Vec<_> = (0..n)
+        .filter_map(|slot| {
+            let kinds: Vec<AgentKind> = (0..n)
+                .map(|i| if i == slot { AgentKind::Supply } else { AgentKind::Patrol })
+                .collect();
+            engine::from_wire::protocol_setting_to_engine_with_kinds(
+                wire,
+                team.clone(),
+                Some(&kinds),
+            )
+            .ok()
+        })
+        .collect();
+    if n < 3 || settings.len() != n || window.is_zero() {
+        return (None, Vec::new());
+    }
+    let settings = Arc::new(settings);
+    let next = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let threads = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 16);
+    for _ in 0..threads {
+        let (settings, next, stop, sender) =
+            (Arc::clone(&settings), Arc::clone(&next), Arc::clone(&stop), sender.clone());
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                let job = next.fetch_add(1, Ordering::Relaxed);
+                let (round, slot) = (job / settings.len(), job % settings.len());
+                let solver = FleetCandidate {
+                    iters: KINDS_TRIAL_ITERS,
+                    budget_ms: 0,
+                    seed: 42 + round as u64,
+                    chains: 1,
+                    adapt: true,
+                    fuel_need: 0,
+                    fuel_mix: false,
+                };
+                let score = MatchSim::new(config)
+                    .run(settings[slot].clone(), &solver)
+                    .ok()
+                    .filter(|r| r.rejected_response_count == 0)
+                    .map_or((0, 0, 0), |r| (r.variety, r.daily_variety_sum, r.total_balls));
+                if sender.send((round, slot, score)).is_err() {
+                    return;
+                }
+            }
+        });
+    }
+    drop(sender);
+    let deadline = Instant::now() + window;
+    let mut rounds: Vec<Vec<Option<(u32, u32, u32)>>> = Vec::new();
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        match receiver.recv_timeout(left) {
+            Ok((round, slot, score)) => {
+                if rounds.len() <= round {
+                    rounds.resize(round + 1, vec![None; n]);
+                }
+                rounds[round][slot] = Some(score);
+            }
+            Err(_) => break,
+        }
+    }
+    stop.store(true, Ordering::Relaxed);
+    let mut trials: Vec<SlotTrial> =
+        (0..n).map(|slot| SlotTrial { slot, matches: 0, total: (0, 0, 0) }).collect();
+    for round in rounds.iter().filter(|r| r.iter().all(Option::is_some)) {
+        for (trial, score) in trials.iter_mut().zip(round) {
+            let (v, d, b) = score.expect("complete round");
+            trial.matches += 1;
+            trial.total = (trial.total.0 + v, trial.total.1 + d, trial.total.2 + b);
+        }
+    }
+    if trials[0].matches == 0 {
+        return (None, Vec::new());
+    }
+    let chosen = best_slot(&trials);
+    (chosen, trials)
+}
+
+/// The slot with the best trial total in the official order. Every slot
+/// must have played the same number of matches, so totals compare like
+/// means. Slots within [`SLOT_VARIETY_TIE`] of the best daily variety are
+/// level on that axis; a full tie keeps the lowest slot.
+#[must_use]
+pub fn best_slot(trials: &[SlotTrial]) -> Option<usize> {
+    let played = trials.first()?.matches;
+    let best_v = trials.iter().map(|t| t.total.0).max()?;
+    let best_d = trials.iter().filter(|t| t.total.0 == best_v).map(|t| t.total.1).max()?;
+    let slack = played * SLOT_VARIETY_TIE.0 / SLOT_VARIETY_TIE.1;
+    trials
+        .iter()
+        .filter(|t| t.total.0 == best_v && t.total.1 + slack >= best_d)
+        // `max_by_key` returns the last maximum: reversed, the lowest slot.
+        .rev()
+        .max_by_key(|t| t.total.2)
+        .map(|t| t.slot)
 }

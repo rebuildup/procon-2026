@@ -1,0 +1,163 @@
+{"case": "2026-10-10-105938", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 49, "B": 88, "dD": [9, 10, 10, 10, 10], "dB": [15, 18, 15, 19, 21]}
+{"case": "2026-10-10-105938", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 49, "B": 89, "dD": [9, 10, 10, 10, 10], "dB": [16, 18, 16, 17, 22]}
+{"case": "2026-10-10-105938", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 49, "B": 85, "dD": [9, 10, 10, 10, 10], "dB": [16, 16, 16, 15, 22]}
+{"case": "2026-10-10-105938", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 86, "dD": [9, 10, 9, 10, 10], "dB": [16, 19, 14, 18, 19]}
+{"case": "arena-1997", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 60, "B": 98, "dD": [12, 12, 12, 12, 12], "dB": [16, 19, 19, 20, 24]}
+{"case": "arena-1997", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 60, "B": 103, "dD": [12, 12, 12, 12, 12], "dB": [19, 19, 20, 19, 26]}
+{"case": "arena-1997", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 60, "B": 104, "dD": [12, 12, 12, 12, 12], "dB": [19, 19, 21, 20, 25]}
+{"case": "arena-1997", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 60, "B": 103, "dD": [12, 12, 12, 12, 12], "dB": [18, 19, 20, 20, 26]}
+{"case": "round1-like-s10091", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 69, "dD": [8, 10, 10, 10, 10], "dB": [11, 17, 15, 12, 14]}
+{"case": "round1-like-s10091", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 72, "dD": [8, 10, 9, 10, 10], "dB": [11, 17, 14, 14, 16]}
+{"case": "round1-like-s10091", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 69, "dD": [8, 10, 10, 10, 10], "dB": [11, 17, 15, 12, 14]}
+{"case": "round1-like-s10091", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 45, "B": 65, "dD": [8, 9, 9, 10, 9], "dB": [9, 13, 13, 16, 14]}
+{"case": "round1-like-s10257", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 64, "dD": [8, 10, 10, 9, 10], "dB": [13, 13, 13, 11, 14]}
+{"case": "round1-like-s10257", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 45, "B": 63, "dD": [8, 10, 9, 8, 10], "dB": [13, 14, 12, 10, 14]}
+{"case": "round1-like-s10257", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 64, "dD": [8, 10, 10, 9, 10], "dB": [13, 13, 13, 11, 14]}
+{"case": "round1-like-s10257", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 45, "B": 59, "dD": [8, 10, 10, 9, 8], "dB": [11, 13, 12, 12, 11]}
+{"case": "round1-like-s8002", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 43, "B": 58, "dD": [8, 9, 8, 8, 10], "dB": [11, 12, 8, 11, 16]}
+{"case": "round1-like-s8002", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 55, "dD": [8, 9, 9, 8, 10], "dB": [11, 12, 9, 10, 13]}
+{"case": "round1-like-s8002", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 56, "dD": [9, 9, 8, 8, 10], "dB": [12, 12, 10, 8, 14]}
+{"case": "round1-like-s8002", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 55, "dD": [8, 9, 9, 8, 10], "dB": [11, 12, 9, 10, 13]}
+{"case": "round1-like-s8129", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 69, "dD": [8, 10, 9, 10, 10], "dB": [13, 15, 14, 12, 15]}
+{"case": "round1-like-s8129", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 73, "dD": [8, 10, 10, 10, 10], "dB": [13, 15, 15, 13, 17]}
+{"case": "round1-like-s8129", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 49, "B": 74, "dD": [9, 10, 10, 10, 10], "dB": [13, 14, 15, 13, 19]}
+{"case": "round1-like-s8129", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 71, "dD": [9, 10, 10, 9, 10], "dB": [12, 14, 15, 14, 16]}
+{"case": "round1-like-s8544", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 73, "dD": [7, 10, 10, 10, 10], "dB": [11, 14, 16, 14, 18]}
+{"case": "round1-like-s8544", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 74, "dD": [8, 10, 10, 9, 10], "dB": [11, 15, 16, 13, 19]}
+{"case": "round1-like-s8544", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 73, "dD": [8, 10, 10, 9, 10], "dB": [12, 14, 14, 13, 20]}
+{"case": "round1-like-s8544", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 46, "B": 76, "dD": [8, 10, 9, 9, 10], "dB": [12, 14, 15, 14, 21]}
+{"case": "round1-like-s8567", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 43, "B": 55, "dD": [8, 10, 8, 8, 9], "dB": [11, 14, 9, 10, 11]}
+{"case": "round1-like-s8567", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 43, "B": 55, "dD": [8, 10, 8, 8, 9], "dB": [11, 14, 9, 10, 11]}
+{"case": "round1-like-s8567", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 51, "dD": [9, 9, 8, 9, 9], "dB": [10, 11, 9, 10, 11]}
+{"case": "round1-like-s8567", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 46, "B": 52, "dD": [9, 9, 9, 9, 10], "dB": [10, 10, 9, 10, 13]}
+{"case": "round1-like-s8640", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 67, "dD": [8, 10, 10, 10, 10], "dB": [8, 14, 15, 14, 16]}
+{"case": "round1-like-s8640", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 67, "dD": [8, 10, 10, 10, 10], "dB": [9, 14, 14, 14, 16]}
+{"case": "round1-like-s8640", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 58, "dD": [8, 10, 10, 10, 10], "dB": [9, 14, 10, 10, 15]}
+{"case": "round1-like-s8640", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 65, "dD": [8, 10, 10, 10, 10], "dB": [8, 14, 13, 15, 15]}
+{"case": "round1-like-s8658", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 63, "dD": [8, 10, 10, 10, 10], "dB": [11, 12, 13, 12, 15]}
+{"case": "round1-like-s8658", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 64, "dD": [8, 10, 10, 9, 10], "dB": [12, 13, 12, 13, 14]}
+{"case": "round1-like-s8658", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 65, "dD": [8, 10, 10, 10, 10], "dB": [11, 14, 12, 12, 16]}
+{"case": "round1-like-s8658", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 46, "B": 67, "dD": [8, 10, 9, 9, 10], "dB": [10, 14, 12, 15, 16]}
+{"case": "round1-like-s8779", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 65, "dD": [8, 10, 10, 10, 10], "dB": [12, 15, 13, 12, 13]}
+{"case": "round1-like-s8779", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 65, "dD": [8, 10, 10, 10, 10], "dB": [12, 15, 13, 12, 13]}
+{"case": "round1-like-s8779", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 65, "dD": [8, 10, 10, 10, 10], "dB": [10, 15, 14, 12, 14]}
+{"case": "round1-like-s8779", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 74, "dD": [8, 10, 10, 10, 10], "dB": [12, 15, 15, 15, 17]}
+{"case": "round1-like-s8843", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 63, "dD": [8, 9, 9, 8, 10], "dB": [14, 14, 11, 8, 16]}
+{"case": "round1-like-s8843", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 62, "dD": [8, 9, 9, 8, 10], "dB": [14, 14, 10, 8, 16]}
+{"case": "round1-like-s8843", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 43, "B": 58, "dD": [9, 7, 8, 9, 10], "dB": [12, 9, 12, 11, 14]}
+{"case": "round1-like-s8843", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 56, "dD": [8, 10, 9, 7, 10], "dB": [12, 12, 10, 10, 12]}
+{"case": "round1-like-s9018", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 72, "dD": [8, 10, 10, 10, 10], "dB": [10, 16, 15, 14, 17]}
+{"case": "round1-like-s9018", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 49, "B": 68, "dD": [9, 10, 10, 10, 10], "dB": [12, 14, 13, 14, 15]}
+{"case": "round1-like-s9018", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 49, "B": 67, "dD": [9, 10, 10, 10, 10], "dB": [12, 14, 13, 13, 15]}
+{"case": "round1-like-s9018", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 66, "dD": [9, 10, 10, 9, 10], "dB": [12, 14, 13, 13, 14]}
+{"case": "round1-like-s9206", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 70, "dD": [8, 10, 10, 10, 10], "dB": [13, 12, 13, 15, 17]}
+{"case": "round1-like-s9206", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 73, "dD": [8, 10, 10, 10, 10], "dB": [13, 12, 14, 15, 19]}
+{"case": "round1-like-s9206", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 65, "dD": [8, 10, 9, 10, 10], "dB": [13, 13, 9, 15, 15]}
+{"case": "round1-like-s9206", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 66, "dD": [8, 10, 10, 9, 10], "dB": [12, 14, 12, 11, 17]}
+{"case": "round1-like-s9450", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 43, "B": 57, "dD": [8, 9, 9, 8, 9], "dB": [11, 11, 12, 9, 14]}
+{"case": "round1-like-s9450", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 55, "dD": [8, 10, 9, 8, 9], "dB": [10, 13, 9, 9, 14]}
+{"case": "round1-like-s9450", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 46, "B": 62, "dD": [9, 9, 9, 9, 10], "dB": [12, 11, 13, 11, 15]}
+{"case": "round1-like-s9450", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 42, "B": 52, "dD": [9, 9, 9, 7, 8], "dB": [12, 11, 11, 8, 10]}
+{"case": "round1-like-s9731", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 66, "dD": [8, 10, 10, 10, 10], "dB": [11, 15, 15, 12, 13]}
+{"case": "round1-like-s9731", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 64, "dD": [8, 10, 10, 10, 10], "dB": [11, 15, 13, 12, 13]}
+{"case": "round1-like-s9731", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 68, "dD": [8, 10, 9, 10, 10], "dB": [11, 14, 13, 14, 16]}
+{"case": "round1-like-s9731", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 70, "dD": [8, 10, 9, 10, 10], "dB": [12, 15, 12, 14, 17]}
+{"case": "round1-like-s9886", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 63, "dD": [8, 9, 8, 9, 10], "dB": [10, 12, 12, 12, 17]}
+{"case": "round1-like-s9886", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 44, "B": 67, "dD": [9, 8, 9, 8, 10], "dB": [10, 12, 13, 16, 16]}
+{"case": "round1-like-s9886", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 46, "B": 67, "dD": [8, 9, 10, 9, 10], "dB": [11, 14, 14, 13, 15]}
+{"case": "round1-like-s9886", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 43, "B": 68, "dD": [8, 9, 8, 8, 10], "dB": [12, 13, 11, 13, 19]}
+{"case": "round1-like-s9954", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 55, "dD": [8, 10, 9, 10, 10], "dB": [9, 12, 9, 12, 13]}
+{"case": "round1-like-s9954", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 60, "dD": [8, 10, 9, 10, 10], "dB": [10, 11, 11, 14, 14]}
+{"case": "round1-like-s9954", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 43, "B": 53, "dD": [8, 8, 8, 10, 9], "dB": [8, 11, 11, 13, 10]}
+{"case": "round1-like-s9954", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 47, "B": 55, "dD": [8, 10, 10, 10, 9], "dB": [11, 12, 10, 10, 12]}
+{"case": "round1-match3", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 40, "B": 49, "dD": [8, 7, 8, 8, 9], "dB": [10, 9, 9, 10, 11]}
+{"case": "round1-match3", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 36, "B": 46, "dD": [8, 7, 6, 9, 6], "dB": [10, 9, 7, 9, 11]}
+{"case": "round1-match3", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 39, "B": 49, "dD": [8, 8, 7, 7, 9], "dB": [10, 9, 7, 10, 13]}
+{"case": "round1-match3", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 37, "B": 43, "dD": [8, 6, 6, 9, 8], "dB": [10, 7, 6, 10, 10]}
+{"case": "arena-1998", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 159, "B": 307, "dD": [15, 16, 16, 16, 16, 16, 16, 16, 16, 16], "dB": [25, 31, 29, 32, 29, 32, 33, 33, 31, 32]}
+{"case": "arena-1998", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 160, "B": 308, "dD": [16, 16, 16, 16, 16, 16, 16, 16, 16, 16], "dB": [22, 32, 32, 31, 33, 31, 33, 31, 31, 32]}
+{"case": "arena-1998", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 160, "B": 313, "dD": [16, 16, 16, 16, 16, 16, 16, 16, 16, 16], "dB": [25, 30, 31, 32, 33, 33, 32, 33, 31, 33]}
+{"case": "arena-1998", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 160, "B": 288, "dD": [16, 16, 16, 16, 16, 16, 16, 16, 16, 16], "dB": [26, 30, 31, 31, 27, 31, 28, 25, 30, 29]}
+{"case": "arena-1998", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 160, "B": 279, "dD": [16, 16, 16, 16, 16, 16, 16, 16, 16, 16], "dB": [20, 28, 25, 32, 29, 31, 27, 30, 29, 28]}
+{"case": "arena-1999", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 150, "B": 365, "dD": [15, 15, 15, 15, 15, 15, 15, 15, 15, 15], "dB": [28, 30, 34, 35, 40, 39, 38, 41, 39, 41]}
+{"case": "arena-1999", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 150, "B": 369, "dD": [15, 15, 15, 15, 15, 15, 15, 15, 15, 15], "dB": [29, 31, 35, 34, 39, 40, 40, 39, 41, 41]}
+{"case": "arena-1999", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 150, "B": 362, "dD": [15, 15, 15, 15, 15, 15, 15, 15, 15, 15], "dB": [30, 29, 34, 35, 40, 39, 38, 39, 39, 39]}
+{"case": "arena-1999", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 150, "B": 362, "dD": [15, 15, 15, 15, 15, 15, 15, 15, 15, 15], "dB": [29, 30, 33, 35, 38, 39, 39, 39, 40, 40]}
+{"case": "arena-1999", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 150, "B": 367, "dD": [15, 15, 15, 15, 15, 15, 15, 15, 15, 15], "dB": [28, 29, 35, 36, 40, 40, 39, 39, 40, 41]}
+{"case": "arena-2000", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 128, "B": 263, "dD": [16, 16, 16, 16, 16, 16, 16, 16], "dB": [29, 31, 31, 28, 36, 36, 36, 36]}
+{"case": "arena-2000", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 128, "B": 268, "dD": [16, 16, 16, 16, 16, 16, 16, 16], "dB": [29, 33, 31, 30, 36, 37, 36, 36]}
+{"case": "arena-2000", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 128, "B": 265, "dD": [16, 16, 16, 16, 16, 16, 16, 16], "dB": [29, 32, 28, 31, 36, 37, 36, 36]}
+{"case": "arena-2000", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 128, "B": 267, "dD": [16, 16, 16, 16, 16, 16, 16, 16], "dB": [29, 33, 32, 31, 35, 37, 34, 36]}
+{"case": "arena-2000", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 128, "B": 268, "dD": [16, 16, 16, 16, 16, 16, 16, 16], "dB": [28, 33, 32, 33, 36, 34, 36, 36]}
+{"case": "tight-like-16r-s301", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 48, "B": 72, "dD": [10, 10, 10, 8, 10], "dB": [12, 15, 13, 13, 19]}
+{"case": "tight-like-16r-s301", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 50, "B": 72, "dD": [10, 10, 10, 10, 10], "dB": [13, 13, 11, 16, 19]}
+{"case": "tight-like-16r-s301", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 50, "B": 79, "dD": [10, 10, 10, 10, 10], "dB": [13, 15, 16, 15, 20]}
+{"case": "tight-like-16r-s301", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 50, "B": 77, "dD": [10, 10, 10, 10, 10], "dB": [12, 14, 17, 15, 19]}
+{"case": "tight-like-16r-s303", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 95, "dD": [11, 11, 11, 11, 11], "dB": [17, 19, 19, 19, 21]}
+{"case": "tight-like-16r-s303", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 95, "dD": [11, 11, 11, 11, 11], "dB": [17, 19, 18, 18, 23]}
+{"case": "tight-like-16r-s303", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 98, "dD": [11, 11, 11, 11, 11], "dB": [17, 19, 20, 20, 22]}
+{"case": "tight-like-16r-s303", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 94, "dD": [11, 11, 11, 11, 11], "dB": [16, 19, 18, 19, 22]}
+{"case": "tight-like-16r-s305", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 59, "B": 84, "dD": [11, 12, 12, 12, 12], "dB": [14, 17, 16, 17, 20]}
+{"case": "tight-like-16r-s305", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 60, "B": 82, "dD": [12, 12, 12, 12, 12], "dB": [13, 17, 14, 17, 21]}
+{"case": "tight-like-16r-s305", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 60, "B": 86, "dD": [12, 12, 12, 12, 12], "dB": [13, 17, 18, 18, 20]}
+{"case": "tight-like-16r-s305", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 58, "B": 82, "dD": [11, 12, 11, 12, 12], "dB": [12, 17, 14, 17, 22]}
+{"case": "tight-like-16r-s307", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 59, "B": 75, "dD": [11, 12, 12, 12, 12], "dB": [13, 15, 15, 15, 17]}
+{"case": "tight-like-16r-s307", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 59, "B": 78, "dD": [11, 12, 12, 12, 12], "dB": [13, 16, 14, 15, 20]}
+{"case": "tight-like-16r-s307", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 60, "B": 79, "dD": [12, 12, 12, 12, 12], "dB": [14, 15, 14, 17, 19]}
+{"case": "tight-like-16r-s307", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 12, "D": 60, "B": 79, "dD": [12, 12, 12, 12, 12], "dB": [14, 15, 14, 17, 19]}
+{"case": "tight-like-16u-s300", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 88, "dD": [11, 11, 11, 11, 11], "dB": [16, 17, 17, 18, 20]}
+{"case": "tight-like-16u-s300", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 90, "dD": [11, 11, 11, 11, 11], "dB": [16, 17, 18, 18, 21]}
+{"case": "tight-like-16u-s300", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 87, "dD": [11, 11, 11, 11, 11], "dB": [16, 18, 18, 18, 17]}
+{"case": "tight-like-16u-s300", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 91, "dD": [11, 11, 11, 11, 11], "dB": [17, 18, 17, 18, 21]}
+{"case": "tight-like-16u-s302", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 50, "B": 82, "dD": [10, 10, 10, 10, 10], "dB": [16, 16, 17, 18, 15]}
+{"case": "tight-like-16u-s302", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 50, "B": 92, "dD": [10, 10, 10, 10, 10], "dB": [18, 19, 18, 16, 21]}
+{"case": "tight-like-16u-s302", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 50, "B": 94, "dD": [10, 10, 10, 10, 10], "dB": [16, 19, 18, 19, 22]}
+{"case": "tight-like-16u-s302", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 50, "B": 90, "dD": [10, 10, 10, 10, 10], "dB": [17, 19, 14, 19, 21]}
+{"case": "tight-like-16u-s304", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 49, "B": 83, "dD": [9, 10, 10, 10, 10], "dB": [13, 16, 16, 18, 20]}
+{"case": "tight-like-16u-s304", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 50, "B": 77, "dD": [10, 10, 10, 10, 10], "dB": [10, 16, 15, 18, 18]}
+{"case": "tight-like-16u-s304", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 50, "B": 68, "dD": [10, 10, 10, 10, 10], "dB": [10, 15, 15, 11, 17]}
+{"case": "tight-like-16u-s304", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 10, "D": 49, "B": 65, "dD": [10, 10, 9, 10, 10], "dB": [10, 12, 14, 14, 15]}
+{"case": "tight-like-16u-s306", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 98, "dD": [11, 11, 11, 11, 11], "dB": [17, 19, 20, 20, 22]}
+{"case": "tight-like-16u-s306", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 97, "dD": [11, 11, 11, 11, 11], "dB": [16, 19, 20, 20, 22]}
+{"case": "tight-like-16u-s306", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 99, "dD": [11, 11, 11, 11, 11], "dB": [17, 18, 20, 21, 23]}
+{"case": "tight-like-16u-s306", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 11, "D": 55, "B": 96, "dD": [11, 11, 11, 11, 11], "dB": [16, 18, 19, 21, 22]}
+{"case": "tight-like-24r-s301", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 78, "B": 94, "dD": [16, 16, 15, 16, 15], "dB": [18, 19, 16, 17, 24]}
+{"case": "tight-like-24r-s301", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 79, "B": 107, "dD": [15, 16, 16, 16, 16], "dB": [22, 22, 22, 19, 22]}
+{"case": "tight-like-24r-s301", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 78, "B": 99, "dD": [15, 16, 15, 16, 16], "dB": [19, 19, 18, 19, 24]}
+{"case": "tight-like-24r-s301", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 79, "B": 111, "dD": [15, 16, 16, 16, 16], "dB": [18, 20, 23, 22, 28]}
+{"case": "tight-like-24r-s301", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 79, "B": 109, "dD": [15, 16, 16, 16, 16], "dB": [18, 19, 22, 22, 28]}
+{"case": "tight-like-24r-s303", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 82, "B": 116, "dD": [15, 17, 16, 17, 17], "dB": [20, 22, 21, 24, 29]}
+{"case": "tight-like-24r-s303", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 84, "B": 133, "dD": [16, 17, 17, 17, 17], "dB": [21, 26, 27, 27, 32]}
+{"case": "tight-like-24r-s303", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 84, "B": 128, "dD": [16, 17, 17, 17, 17], "dB": [21, 27, 25, 25, 30]}
+{"case": "tight-like-24r-s303", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 83, "B": 124, "dD": [16, 17, 17, 16, 17], "dB": [21, 23, 24, 28, 28]}
+{"case": "tight-like-24r-s303", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 83, "B": 116, "dD": [16, 17, 17, 16, 17], "dB": [18, 24, 25, 21, 28]}
+{"case": "tight-like-24r-s305", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 111, "dD": [16, 16, 16, 16, 16], "dB": [21, 23, 22, 22, 23]}
+{"case": "tight-like-24r-s305", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 116, "dD": [16, 16, 16, 16, 16], "dB": [19, 23, 23, 22, 29]}
+{"case": "tight-like-24r-s305", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 111, "dD": [16, 16, 16, 16, 16], "dB": [22, 23, 22, 19, 25]}
+{"case": "tight-like-24r-s305", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 112, "dD": [16, 16, 16, 16, 16], "dB": [20, 24, 22, 20, 26]}
+{"case": "tight-like-24r-s305", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 104, "dD": [16, 16, 16, 16, 16], "dB": [18, 24, 20, 20, 22]}
+{"case": "tight-like-24r-s307", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 119, "dD": [15, 15, 15, 15, 15], "dB": [27, 26, 26, 16, 24]}
+{"case": "tight-like-24r-s307", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 134, "dD": [15, 15, 15, 15, 15], "dB": [26, 26, 27, 26, 29]}
+{"case": "tight-like-24r-s307", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 120, "dD": [15, 15, 15, 15, 15], "dB": [26, 27, 24, 18, 25]}
+{"case": "tight-like-24r-s307", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 121, "dD": [15, 15, 15, 15, 15], "dB": [28, 23, 19, 24, 27]}
+{"case": "tight-like-24r-s307", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 74, "B": 121, "dD": [15, 15, 15, 14, 15], "dB": [25, 26, 24, 18, 28]}
+{"case": "tight-like-24u-s300", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 82, "B": 127, "dD": [14, 17, 17, 17, 17], "dB": [20, 28, 26, 24, 29]}
+{"case": "tight-like-24u-s300", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 83, "B": 127, "dD": [15, 17, 17, 17, 17], "dB": [20, 27, 27, 24, 29]}
+{"case": "tight-like-24u-s300", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 84, "B": 127, "dD": [16, 17, 17, 17, 17], "dB": [19, 22, 26, 26, 34]}
+{"case": "tight-like-24u-s300", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 84, "B": 127, "dD": [16, 17, 17, 17, 17], "dB": [20, 24, 29, 27, 27]}
+{"case": "tight-like-24u-s300", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 17, "D": 83, "B": 137, "dD": [15, 17, 17, 17, 17], "dB": [22, 28, 29, 27, 31]}
+{"case": "tight-like-24u-s302", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 159, "dD": [16, 16, 16, 16, 16], "dB": [28, 31, 31, 32, 37]}
+{"case": "tight-like-24u-s302", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 160, "dD": [16, 16, 16, 16, 16], "dB": [29, 31, 31, 33, 36]}
+{"case": "tight-like-24u-s302", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 162, "dD": [16, 16, 16, 16, 16], "dB": [29, 30, 31, 33, 39]}
+{"case": "tight-like-24u-s302", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 160, "dD": [16, 16, 16, 16, 16], "dB": [30, 31, 31, 31, 37]}
+{"case": "tight-like-24u-s302", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 16, "D": 80, "B": 158, "dD": [16, 16, 16, 16, 16], "dB": [29, 30, 31, 31, 37]}
+{"case": "tight-like-24u-s304", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 141, "dD": [15, 15, 15, 15, 15], "dB": [28, 28, 28, 23, 34]}
+{"case": "tight-like-24u-s304", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 140, "dD": [15, 15, 15, 15, 15], "dB": [27, 30, 27, 24, 32]}
+{"case": "tight-like-24u-s304", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 143, "dD": [15, 15, 15, 15, 15], "dB": [27, 29, 27, 31, 29]}
+{"case": "tight-like-24u-s304", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 135, "dD": [15, 15, 15, 15, 15], "dB": [29, 28, 18, 25, 35]}
+{"case": "tight-like-24u-s304", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 146, "dD": [15, 15, 15, 15, 15], "dB": [27, 29, 29, 29, 32]}
+{"case": "tight-like-24u-s306", "slot": 0, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 159, "dD": [15, 15, 15, 15, 15], "dB": [29, 31, 31, 32, 36]}
+{"case": "tight-like-24u-s306", "slot": 1, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 159, "dD": [15, 15, 15, 15, 15], "dB": [29, 31, 31, 32, 36]}
+{"case": "tight-like-24u-s306", "slot": 2, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 157, "dD": [15, 15, 15, 15, 15], "dB": [27, 32, 32, 30, 36]}
+{"case": "tight-like-24u-s306", "slot": 3, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 159, "dD": [15, 15, 15, 15, 15], "dB": [28, 31, 30, 33, 37]}
+{"case": "tight-like-24u-s306", "slot": 4, "cand": "fleet:budget=official:seed=42:iters=60000:chains=4", "V": 15, "D": 75, "B": 159, "dD": [15, 15, 15, 15, 15], "dB": [28, 32, 32, 32, 35]}
