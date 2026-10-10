@@ -84,6 +84,19 @@ Arena match 2001（32×32・`terrain: official`・7 台・8 日・燃料 80）�
 
 どの条件でも区間が 0 をまたぎ、D はむしろ 2〜3 盤面で下がる。現行の分類が成績を落としている証拠はなく、実装は入れていない（実験用の切り替えも残していない）。無印の設定では翌日の再計画が走る日が少なく、ほとんどの盤面で結果が一致する。
 
+## 16×16 の `convoy` には足さない／盤面サイズで切り替える `sized`
+
+`convoy:budget=official:seed=42` に `:fuel_need=50:fuel_mix=on` を足すと、16×16 本選型 27 盤面（時計なし）で 4 勝 14 分 9 敗・D −1・B −6（`convoy-with-fuel-16x16.jsonl`）。利益がないので 16×16 では使わない。
+
+coordinator は盤面を知る前に Candidate を 1 つ指定して起動するので、盤面の辺で担当を切り替えるだけの Candidate `sized` を追加した（自分では何も計画しない）。
+
+| 盤面の長辺 | 担当 |
+|---|---|
+| 16 以下 | `convoy:budget=official:seed=S[:budget_ms=convoy_ms]`（`convoy_ms` の既定は `budget_ms`、上限 20000） |
+| 17 以上 | `fleet:budget=official:seed=S:budget_ms=N:adapt=off:fuel_need=50:fuel_mix=on`（`budget_ms` なしなら `iters=60000:chains=4`） |
+
+`sized` の出力が担当 Candidate の出力と一致することを test で固定（`crates/bench/tests/sized_candidate.rs`）。公式簡易サーバーで 16×16・24×24・32×32 を 1 試合ずつ（`sized:budget=official:budget_ms=4000:convoy_ms=4000`）、全日受理。
+
 ## 未検証
 
 - 実戦。

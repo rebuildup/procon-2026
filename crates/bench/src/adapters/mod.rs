@@ -103,4 +103,6 @@ pub(crate) fn reject_unknown_params(
 }
 
 pub mod search_solver;
+pub mod sized_solver;
 pub use search_solver::SearchFactory;
+pub use sized_solver::SizedFactory;
