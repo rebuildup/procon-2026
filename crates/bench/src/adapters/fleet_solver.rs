@@ -78,6 +78,13 @@ const PARAMS: &[ParamSpec] = &[
               the live cap above the default four, so budget runs can trade \
               cores for variance)",
     },
+    ParamSpec {
+        key: "second_share",
+        required: false,
+        doc: "percent of the search window the chains spend on the day plan before \
+              the second phase (default 70; the rest polishes the plan or replays \
+              tomorrow from each chain's end)",
+    },
 ];
 
 fn parse<T: std::str::FromStr>(
@@ -132,7 +139,22 @@ impl CandidateFactory for FleetFactory {
             )));
         }
         let fuel_mix = spec.param("fuel_mix") == Some("on");
-        Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt, fuel_need, fuel_mix }))
+        let second_pct = parse(spec, "second_share", 70u32)?;
+        if !(10..=95).contains(&second_pct) {
+            return Err(CandidateError::Build(format!(
+                "second_share must be 10..=95, got {second_pct}"
+            )));
+        }
+        Ok(Box::new(FleetCandidate {
+            iters,
+            budget_ms,
+            seed,
+            chains,
+            adapt,
+            fuel_need,
+            fuel_mix,
+            second_pct,
+        }))
     }
 }
 
@@ -150,6 +172,9 @@ pub struct FleetCandidate {
     pub fuel_need: u32,
     /// Only every other chain values the fuel; tomorrow's replay picks.
     pub fuel_mix: bool,
+    /// Percent of the window the chains spend on the day plan before the
+    /// second phase (default 70).
+    pub second_pct: u32,
 }
 
 /// Starting temperatures of the chains, in score units (one ball = 100).
@@ -1282,7 +1307,8 @@ impl Solver for FleetCandidate {
         // Several chains get a second phase on 30% of the window (offline: a
         // third of `iters`); one chain spends everything on the day plan.
         let second = chains > 1;
-        let plan_until = window.map(|w| started + if second { w * 7 / 10 } else { w });
+        let plan_until =
+            window.map(|w| started + if second { w * self.second_pct / 100 } else { w });
         let until = window.map(|w| started + w);
         // `fuel_mix`: the odd chains plan without the fuel term.
         let mixed = self.fuel_mix && self.fuel_need > 0 && second;
@@ -1420,6 +1446,7 @@ pub fn choose_kinds(
                 adapt: true,
                 fuel_need: 0,
                 fuel_mix: false,
+                second_pct: 70,
             };
             if let Ok(result) = MatchSim::new(config).run(setting, &solver) {
                 if result.rejected_response_count == 0 {
@@ -1533,6 +1560,7 @@ pub fn choose_supply_slot(
                     adapt: true,
                     fuel_need: 0,
                     fuel_mix: false,
+                    second_pct: 70,
                 };
                 let score = MatchSim::new(config)
                     .run(settings[slot].clone(), &solver)

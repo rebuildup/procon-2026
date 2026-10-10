@@ -163,6 +163,7 @@ impl CandidateFactory for ConvoyFactory {
                 adapt: false,
                 fuel_need: parse(spec, "fuel_need", 0u32)?.min(300),
                 fuel_mix: spec.param("fuel_mix") == Some("on"),
+                second_pct: 70,
             },
             ahead: FleetCandidate {
                 iters: 20_000,
@@ -172,6 +173,7 @@ impl CandidateFactory for ConvoyFactory {
                 adapt: true,
                 fuel_need: 0,
                 fuel_mix: false,
+                second_pct: 70,
             },
             budget_ms,
             scenarios: match spec.param("forecast") {
