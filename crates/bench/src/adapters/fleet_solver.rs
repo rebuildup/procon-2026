@@ -60,8 +60,11 @@ const PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "chains",
         required: false,
-        doc: "OFFLINE search chains, 1..8 (default 1); with 2+ the day plan is chosen \
-              by planning tomorrow from each chain's end. Live uses the spare cores",
+        doc: "search chains, 1..16 (default 1); with 2+ the day plan is chosen by \
+              planning tomorrow from each chain's end. Offline runs them in turn; \
+              live runs one per core (Issue #409: an explicit count also raises \
+              the live cap above the default four, so budget runs can trade \
+              cores for variance)",
     },
 ];
 
@@ -107,8 +110,8 @@ impl CandidateFactory for FleetFactory {
             }
         };
         let chains = parse(spec, "chains", 1u32)?;
-        if !(1..=8).contains(&chains) {
-            return Err(CandidateError::Build(format!("chains must be 1..=8, got {chains}")));
+        if !(1..=16).contains(&chains) {
+            return Err(CandidateError::Build(format!("chains must be 1..=16, got {chains}")));
         }
         Ok(Box::new(FleetCandidate { iters, budget_ms, seed, chains, adapt }))
     }
@@ -118,7 +121,8 @@ pub struct FleetCandidate {
     pub iters: u32,
     pub budget_ms: u32,
     pub seed: u64,
-    /// Offline chain count; live runs one chain per spare core (at most 4).
+    /// Chain count. Offline runs them in turn; live runs one per core, four
+    /// by default and up to `chains` when the count is set explicitly.
     pub chains: u32,
     /// Live: shrink the window on boards whose search converges sooner.
     pub adapt: bool,
@@ -128,7 +132,19 @@ pub struct FleetCandidate {
 /// The cool schedule collects the most balls on roomy days; the hot ones
 /// keep more series on days too short to reach everything (measured on the
 /// hard corpus), so the chains differ and tomorrow's replay picks.
-const CHAIN_T0: [f64; 4] = [40.0, 150.0, 400.0, 40.0];
+///
+/// The first four entries are the historical schedule and must not move:
+/// chains 1..=4 (and the default live quad) replay them byte-identically.
+/// Indices 4..16 extend the ladder for Issue #409's wider chains; beyond a
+/// plain `[40, 150, 400]` cycle they interleave fresh temperatures so that
+/// neighbouring chains start further apart and more of the hot end is
+/// sampled where short days need it.
+const CHAIN_T0: [f64; 16] = [
+    40.0, 150.0, 400.0, 40.0, // historical quad (k = 0..4)
+    250.0, 80.0, 600.0, 150.0, // k = 4..8
+    40.0, 300.0, 1000.0, 250.0, // k = 8..12
+    600.0, 80.0, 150.0, 400.0, // k = 12..16
+];
 
 const NM: usize = 3;
 const FAST: usize = 0;
@@ -1196,10 +1212,14 @@ impl Solver for FleetCandidate {
                 )))
             }
         });
-        // Live: one chain per spare core. Offline: `chains`.
+        // Live: one chain per core — four by default, or the explicit
+        // `chains` count when the operator widened it (still bounded by the
+        // cores present, Issue #409). Offline: `chains` in turn, so an
+        // `iters` run stays reproducible.
         let live = window.is_some();
         let chains = if live {
-            std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 4)
+            let cores = std::thread::available_parallelism().map_or(1, usize::from).max(1);
+            if self.chains > 1 { cores.min(self.chains as usize) } else { cores.min(4) }
         } else {
             self.chains as usize
         };
@@ -1209,7 +1229,13 @@ impl Solver for FleetCandidate {
         let plan_until = window.map(|w| started + if second { w * 7 / 10 } else { w });
         let until = window.map(|w| started + w);
         let first = per_chain(chains, live, |k| {
-            world.search(self.iters, plan_until, self.seed(ctx, k), CHAIN_T0[k % 4], None)
+            world.search(
+                self.iters,
+                plan_until,
+                self.seed(ctx, k),
+                CHAIN_T0[k % CHAIN_T0.len()],
+                None,
+            )
         });
         // Is tomorrow's variety at stake? If every chain covers every series
         // today and the mere greedy estimate covers them all tomorrow, the
