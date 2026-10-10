@@ -67,6 +67,7 @@ pub mod generator;
 pub mod generator_32;
 pub mod kinds;
 pub mod report;
+pub mod telemetry;
 pub mod tournament;
 
 pub use aggregate::{

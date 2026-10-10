@@ -792,8 +792,20 @@ impl ConvoyCandidate {
     fn day_plans(&self, state: &MatchState, root: bool, deadline: Option<Instant>) -> Vec<Played> {
         let variants = if root { VARIANTS.len() } else { 1 };
         let mut out: Vec<Played> = Vec::new();
+        // Issue #429: the label search has no per-iteration clock; the
+        // replayed day plans are its best-so-far signal, in the same packed
+        // score the beam ranks by.
+        let report = |p: &Played| {
+            let (variety, series, balls) = (
+                i64::try_from(p.variety).unwrap_or(i64::MAX),
+                i64::try_from(p.series_today).unwrap_or(i64::MAX),
+                i64::from(p.balls_today),
+            );
+            crate::telemetry::SEARCH.improve(variety * 1_000_000 + series * 10_000 + balls);
+        };
         let keep = |out: &mut Vec<Played>, plan: AgentActions| {
             if let Some(played) = play(state, plan) {
+                report(&played);
                 if !out.iter().any(|o| o.plan == played.plan) {
                     out.push(played);
                 }
@@ -1107,12 +1119,35 @@ impl Solver for ConvoyCandidate {
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let started = Instant::now();
-        let window = (self.budget_ms > 0).then(|| {
-            let cap = Duration::from_millis(u64::from(self.budget_ms));
+        // Issue #429: the outermost decide owns the day boundary (a nested
+        // fleet decide sees the depth guard and keeps this one's counters).
+        let window_ms =
+            (self.budget_ms > 0).then(|| u64::from(self.budget_ms.min(ctx.remaining_ms)));
+        crate::telemetry::SEARCH.day_begin(ctx.day, window_ms, 0);
+        let out = self.decide_inner(ctx, started, window_ms);
+        crate::telemetry::SEARCH.day_end();
+        crate::telemetry::SEARCH.plan_built();
+        out
+    }
+}
+
+impl ConvoyCandidate {
+    /// The planner proper ([`Self::decide`] wraps it with telemetry
+    /// boundaries).
+    fn decide_inner(
+        &self,
+        ctx: &SolverContext<'_>,
+        started: Instant,
+        window_ms: Option<u64>,
+    ) -> AgentActions {
+        let window = window_ms.map(|ms| {
+            let cap = Duration::from_millis(ms);
             if ctx.remaining_ms == u32::MAX {
                 cap
             } else {
-                cap.min(Duration::from_millis(u64::from(ctx.remaining_ms.saturating_sub(300))))
+                cap.min(Duration::from_millis(
+                    u64::from(ctx.remaining_ms.saturating_sub(300)).max(1),
+                ))
             }
         });
         // `fleet`'s plan comes first in the pool: it is the plan to beat.

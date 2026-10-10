@@ -938,6 +938,10 @@ impl World {
                     if i >= iters {
                         break;
                     }
+                    let out = crate::telemetry::SEARCH.tick(u64::from(i), best_score);
+                    if out {
+                        break; // Issue #429 manual cutoff.
+                    }
                     f64::from(i) / f64::from(iters.max(1))
                 }
                 Some(end) => {
@@ -945,8 +949,8 @@ impl World {
                     // completes whatever the machine's speed.
                     if i % 256 == 0 {
                         let now = Instant::now();
-                        if now >= end {
-                            break;
+                        if now >= end || crate::telemetry::SEARCH.tick(u64::from(i), best_score) {
+                            break; // deadline, or Issue #429 manual cutoff
                         }
                         let window = end.duration_since(started).as_secs_f64().max(1e-3);
                         live_progress = now.duration_since(started).as_secs_f64() / window;
@@ -968,6 +972,7 @@ impl World {
                 if current_eval.score > best_score {
                     best_score = current_eval.score;
                     best = current.clone();
+                    crate::telemetry::SEARCH.improve(best_score);
                 }
             }
         }
@@ -1160,6 +1165,28 @@ impl Solver for FleetCandidate {
     }
     fn decide(&self, ctx: &SolverContext<'_>) -> AgentActions {
         let started = Instant::now();
+        // Issue #429: label the current day for the live monitor, then
+        // report the plan the trust gate accepted. Both are no-ops while
+        // telemetry is off (default).
+        let window_ms =
+            (self.budget_ms > 0).then(|| u64::from(self.budget_ms.min(ctx.remaining_ms)));
+        crate::telemetry::SEARCH.day_begin(ctx.day, window_ms, u64::from(self.iters));
+        let out = self.decide_inner(ctx, started, window_ms);
+        crate::telemetry::SEARCH.day_end();
+        crate::telemetry::SEARCH.plan_built();
+        out
+    }
+}
+
+impl FleetCandidate {
+    /// The planner proper ( [`Self::decide`] wraps it with telemetry
+    /// boundaries).
+    fn decide_inner(
+        &self,
+        ctx: &SolverContext<'_>,
+        started: Instant,
+        _window_ms: Option<u64>,
+    ) -> AgentActions {
         let fallback =
             || CoverageCandidate { park_risk: false, variant: 0, fuel_aware: false }.decide(ctx);
         let state = ctx.state;
