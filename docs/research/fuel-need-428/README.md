@@ -26,7 +26,7 @@ Arena match 2001（32×32・`terrain: official`・7 台・8 日・燃料 80）�
 | tight-like-24 ×8、seed 42・7 | `fuel_need=50:fuel_mix=on` | 16 | 11 / 1 / 4 | **+7** | +45（+1.4%） |
 | 実盤面 2 + Arena official 16/24 の 5 盤面、seed 42・7 | `fuel_need=50` | 14 | 4 / 3 / 7 | −1 | −14 |
 | 同 | `fuel_need=50:fuel_mix=on` | 14 | 4 / 8 / 2 | +1 | +25 |
-| 実盤面 2 + round1-like 16 + tight-like-16 ×8、seed 42 | `fuel_need=50:fuel_mix=on` | 27 | 10 / 9 / 8 | +5 | +24（+1.3%） |
+| 実盤面 2 + Arena 1997 + round1-like 16 + tight-like-16 ×8、seed 42 | `fuel_need=50:fuel_mix=on` | 27 | 10 / 9 / 8 | +5 | +22 |
 | Arena（official 以外）29 + sample 枠 16、seed 42 | `fuel_need=50:fuel_mix=on` | 45 | 21 / 3 / 21 | −1 | +55（+0.6%） |
 
 - `fuel_need` 単独は、燃料が効かない盤面（Arena 1999・2000）で 4 seed とも B を 1.5〜2% 落とす（`plain-real-and-arena-official-4seeds.jsonl`）。`fuel_mix=on` でこの損は消える。
