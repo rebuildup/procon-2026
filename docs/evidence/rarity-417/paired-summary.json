@@ -1,0 +1,1197 @@
+{
+  "summaries": [
+    {
+      "stage": "hard",
+      "cases": 12,
+      "score_counts": {
+        "win": 5,
+        "tie": 0,
+        "loss": 7
+      },
+      "official_counts": {
+        "win": 5,
+        "tie": 0,
+        "loss": 7
+      },
+      "delta_totals": [
+        0,
+        -4,
+        8
+      ],
+      "v_regressions": 0,
+      "d_regressions": 3,
+      "max_day_us": 1617858
+    },
+    {
+      "stage": "holdout",
+      "cases": 24,
+      "score_counts": {
+        "win": 10,
+        "tie": 4,
+        "loss": 10
+      },
+      "official_counts": {
+        "win": 11,
+        "tie": 0,
+        "loss": 13
+      },
+      "delta_totals": [
+        0,
+        0,
+        -12
+      ],
+      "v_regressions": 0,
+      "d_regressions": 0,
+      "max_day_us": 4336178
+    },
+    {
+      "stage": "official",
+      "cases": 9,
+      "score_counts": {
+        "win": 0,
+        "tie": 9,
+        "loss": 0
+      },
+      "official_counts": {
+        "win": 5,
+        "tie": 0,
+        "loss": 4
+      },
+      "delta_totals": [
+        0,
+        0,
+        0
+      ],
+      "v_regressions": 0,
+      "d_regressions": 0,
+      "max_day_us": 329235
+    }
+  ],
+  "pairs": [
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-16-a3-d9-short-s9003",
+      "baseline": [
+        13,
+        105,
+        114
+      ],
+      "rarity2": [
+        13,
+        105,
+        112
+      ],
+      "delta": [
+        0,
+        0,
+        -2
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 1759332,
+      "rarity2_response_us": 1332835,
+      "baseline_max_day_us": 293476,
+      "rarity2_max_day_us": 197026
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-16-a4-d10-short-s9001",
+      "baseline": [
+        13,
+        130,
+        166
+      ],
+      "rarity2": [
+        13,
+        129,
+        166
+      ],
+      "delta": [
+        0,
+        -1,
+        0
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 1316692,
+      "rarity2_response_us": 1440289,
+      "baseline_max_day_us": 151553,
+      "rarity2_max_day_us": 166842
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-16-a4-d9-short-s9002",
+      "baseline": [
+        13,
+        117,
+        204
+      ],
+      "rarity2": [
+        13,
+        117,
+        209
+      ],
+      "delta": [
+        0,
+        0,
+        5
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 1634575,
+      "rarity2_response_us": 3148419,
+      "baseline_max_day_us": 192983,
+      "rarity2_max_day_us": 462221
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-16-a5-d10-short-s9004",
+      "baseline": [
+        13,
+        130,
+        273
+      ],
+      "rarity2": [
+        13,
+        130,
+        249
+      ],
+      "delta": [
+        0,
+        0,
+        -24
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 3211167,
+      "rarity2_response_us": 3408806,
+      "baseline_max_day_us": 443601,
+      "rarity2_max_day_us": 411676
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-24-a4-d7-short-s9007",
+      "baseline": [
+        20,
+        138,
+        167
+      ],
+      "rarity2": [
+        20,
+        136,
+        171
+      ],
+      "delta": [
+        0,
+        -2,
+        4
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 2259408,
+      "rarity2_response_us": 1954818,
+      "baseline_max_day_us": 422956,
+      "rarity2_max_day_us": 323825
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-24-a5-d7-short-s9005",
+      "baseline": [
+        20,
+        140,
+        201
+      ],
+      "rarity2": [
+        20,
+        140,
+        192
+      ],
+      "delta": [
+        0,
+        0,
+        -9
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 1783151,
+      "rarity2_response_us": 1600469,
+      "baseline_max_day_us": 385927,
+      "rarity2_max_day_us": 272741
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-24-a5-d7-short-s9006",
+      "baseline": [
+        20,
+        140,
+        224
+      ],
+      "rarity2": [
+        20,
+        140,
+        223
+      ],
+      "delta": [
+        0,
+        0,
+        -1
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 3080522,
+      "rarity2_response_us": 3846245,
+      "baseline_max_day_us": 599566,
+      "rarity2_max_day_us": 668816
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-24-a6-d9-short-s9008",
+      "baseline": [
+        20,
+        180,
+        245
+      ],
+      "rarity2": [
+        20,
+        179,
+        223
+      ],
+      "delta": [
+        0,
+        -1,
+        -22
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 4229964,
+      "rarity2_response_us": 3671470,
+      "baseline_max_day_us": 558453,
+      "rarity2_max_day_us": 599645
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-32-a6-d7-short-s9011",
+      "baseline": [
+        27,
+        189,
+        313
+      ],
+      "rarity2": [
+        27,
+        189,
+        320
+      ],
+      "delta": [
+        0,
+        0,
+        7
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 5758769,
+      "rarity2_response_us": 3157229,
+      "baseline_max_day_us": 1232023,
+      "rarity2_max_day_us": 574077
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-32-a7-d7-short-s9009",
+      "baseline": [
+        27,
+        189,
+        297
+      ],
+      "rarity2": [
+        27,
+        189,
+        308
+      ],
+      "delta": [
+        0,
+        0,
+        11
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 6997878,
+      "rarity2_response_us": 4707211,
+      "baseline_max_day_us": 1445034,
+      "rarity2_max_day_us": 923976
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-32-a7-d7-short-s9010",
+      "baseline": [
+        27,
+        189,
+        258
+      ],
+      "rarity2": [
+        27,
+        189,
+        270
+      ],
+      "delta": [
+        0,
+        0,
+        12
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 3970854,
+      "rarity2_response_us": 4393245,
+      "baseline_max_day_us": 719769,
+      "rarity2_max_day_us": 731499
+    },
+    {
+      "stage": "hard",
+      "case_id": "fixture:hard-32-a8-d7-short-s9012",
+      "baseline": [
+        27,
+        189,
+        368
+      ],
+      "rarity2": [
+        27,
+        189,
+        395
+      ],
+      "delta": [
+        0,
+        0,
+        27
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 9018913,
+      "rarity2_response_us": 6363683,
+      "baseline_max_day_us": 1617858,
+      "rarity2_max_day_us": 1175812
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-16-a3-d7-mixed-s5007",
+      "baseline": [
+        13,
+        91,
+        131
+      ],
+      "rarity2": [
+        13,
+        91,
+        131
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "loss",
+      "baseline_response_us": 1969845,
+      "rarity2_response_us": 1995607,
+      "baseline_max_day_us": 332713,
+      "rarity2_max_day_us": 340035
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-16-a3-d9-mixed-s5003",
+      "baseline": [
+        13,
+        117,
+        202
+      ],
+      "rarity2": [
+        13,
+        117,
+        201
+      ],
+      "delta": [
+        0,
+        0,
+        -1
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 3259727,
+      "rarity2_response_us": 3936541,
+      "baseline_max_day_us": 495225,
+      "rarity2_max_day_us": 619747
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-16-a4-d10-mixed-s5005",
+      "baseline": [
+        13,
+        130,
+        337
+      ],
+      "rarity2": [
+        13,
+        130,
+        339
+      ],
+      "delta": [
+        0,
+        0,
+        2
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 5588498,
+      "rarity2_response_us": 5827614,
+      "baseline_max_day_us": 680867,
+      "rarity2_max_day_us": 687835
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-16-a4-d6-short-s5002",
+      "baseline": [
+        13,
+        78,
+        140
+      ],
+      "rarity2": [
+        13,
+        78,
+        140
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "loss",
+      "baseline_response_us": 2175229,
+      "rarity2_response_us": 2379120,
+      "baseline_max_day_us": 451938,
+      "rarity2_max_day_us": 510851
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-16-a4-d7-mixed-s5001",
+      "baseline": [
+        13,
+        91,
+        184
+      ],
+      "rarity2": [
+        13,
+        91,
+        185
+      ],
+      "delta": [
+        0,
+        0,
+        1
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 2009051,
+      "rarity2_response_us": 1549508,
+      "baseline_max_day_us": 350727,
+      "rarity2_max_day_us": 302253
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-16-a4-d7-short-s5006",
+      "baseline": [
+        13,
+        91,
+        161
+      ],
+      "rarity2": [
+        13,
+        91,
+        162
+      ],
+      "delta": [
+        0,
+        0,
+        1
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 2244920,
+      "rarity2_response_us": 3184226,
+      "baseline_max_day_us": 440072,
+      "rarity2_max_day_us": 790954
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-16-a5-d7-short-s5004",
+      "baseline": [
+        13,
+        91,
+        199
+      ],
+      "rarity2": [
+        13,
+        91,
+        195
+      ],
+      "delta": [
+        0,
+        0,
+        -4
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 3562131,
+      "rarity2_response_us": 3115844,
+      "baseline_max_day_us": 673716,
+      "rarity2_max_day_us": 524281
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-16-a5-d9-short-s5008",
+      "baseline": [
+        13,
+        117,
+        272
+      ],
+      "rarity2": [
+        13,
+        117,
+        272
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "win",
+      "baseline_response_us": 5285303,
+      "rarity2_response_us": 4912574,
+      "baseline_max_day_us": 920197,
+      "rarity2_max_day_us": 660617
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-24-a4-d10-mixed-s5015",
+      "baseline": [
+        20,
+        200,
+        346
+      ],
+      "rarity2": [
+        20,
+        200,
+        352
+      ],
+      "delta": [
+        0,
+        0,
+        6
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 7833416,
+      "rarity2_response_us": 8284477,
+      "baseline_max_day_us": 1137715,
+      "rarity2_max_day_us": 1056276
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-24-a4-d7-mixed-s5011",
+      "baseline": [
+        20,
+        140,
+        286
+      ],
+      "rarity2": [
+        20,
+        140,
+        286
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "loss",
+      "baseline_response_us": 4398650,
+      "rarity2_response_us": 5545666,
+      "baseline_max_day_us": 770679,
+      "rarity2_max_day_us": 1058977
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-24-a5-d4-mixed-s5009",
+      "baseline": [
+        20,
+        80,
+        274
+      ],
+      "rarity2": [
+        20,
+        80,
+        277
+      ],
+      "delta": [
+        0,
+        0,
+        3
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 3879476,
+      "rarity2_response_us": 3373938,
+      "baseline_max_day_us": 1265396,
+      "rarity2_max_day_us": 1187631
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-24-a5-d4-mixed-s5013",
+      "baseline": [
+        20,
+        80,
+        214
+      ],
+      "rarity2": [
+        20,
+        80,
+        215
+      ],
+      "delta": [
+        0,
+        0,
+        1
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 2813826,
+      "rarity2_response_us": 4061641,
+      "baseline_max_day_us": 950173,
+      "rarity2_max_day_us": 1496870
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-24-a5-d6-short-s5010",
+      "baseline": [
+        20,
+        120,
+        205
+      ],
+      "rarity2": [
+        20,
+        120,
+        206
+      ],
+      "delta": [
+        0,
+        0,
+        1
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 3917229,
+      "rarity2_response_us": 3799557,
+      "baseline_max_day_us": 891113,
+      "rarity2_max_day_us": 931585
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-24-a5-d9-short-s5014",
+      "baseline": [
+        20,
+        180,
+        277
+      ],
+      "rarity2": [
+        20,
+        180,
+        271
+      ],
+      "delta": [
+        0,
+        0,
+        -6
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 5020616,
+      "rarity2_response_us": 4601737,
+      "baseline_max_day_us": 646040,
+      "rarity2_max_day_us": 616139
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-24-a6-d10-short-s5016",
+      "baseline": [
+        20,
+        200,
+        458
+      ],
+      "rarity2": [
+        20,
+        200,
+        460
+      ],
+      "delta": [
+        0,
+        0,
+        2
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 7144211,
+      "rarity2_response_us": 9544718,
+      "baseline_max_day_us": 859077,
+      "rarity2_max_day_us": 1439623
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-24-a6-d4-short-s5012",
+      "baseline": [
+        20,
+        80,
+        187
+      ],
+      "rarity2": [
+        20,
+        80,
+        184
+      ],
+      "delta": [
+        0,
+        0,
+        -3
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 2582110,
+      "rarity2_response_us": 2877219,
+      "baseline_max_day_us": 841004,
+      "rarity2_max_day_us": 866652
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-32-a6-d4-mixed-s5019",
+      "baseline": [
+        27,
+        108,
+        313
+      ],
+      "rarity2": [
+        27,
+        108,
+        310
+      ],
+      "delta": [
+        0,
+        0,
+        -3
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 7265703,
+      "rarity2_response_us": 5573579,
+      "baseline_max_day_us": 2818545,
+      "rarity2_max_day_us": 1883958
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-32-a6-d6-mixed-s5023",
+      "baseline": [
+        27,
+        162,
+        426
+      ],
+      "rarity2": [
+        27,
+        162,
+        434
+      ],
+      "delta": [
+        0,
+        0,
+        8
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 4234623,
+      "rarity2_response_us": 4322377,
+      "baseline_max_day_us": 948451,
+      "rarity2_max_day_us": 991903
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-32-a7-d10-mixed-s5017",
+      "baseline": [
+        27,
+        270,
+        1129
+      ],
+      "rarity2": [
+        27,
+        270,
+        1119
+      ],
+      "delta": [
+        0,
+        0,
+        -10
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 25352573,
+      "rarity2_response_us": 28602447,
+      "baseline_max_day_us": 3950873,
+      "rarity2_max_day_us": 4336178
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-32-a7-d10-short-s5022",
+      "baseline": [
+        27,
+        270,
+        884
+      ],
+      "rarity2": [
+        27,
+        270,
+        882
+      ],
+      "delta": [
+        0,
+        0,
+        -2
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 14482266,
+      "rarity2_response_us": 16333372,
+      "baseline_max_day_us": 1755776,
+      "rarity2_max_day_us": 2169494
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-32-a7-d4-short-s5018",
+      "baseline": [
+        27,
+        108,
+        229
+      ],
+      "rarity2": [
+        27,
+        108,
+        231
+      ],
+      "delta": [
+        0,
+        0,
+        2
+      ],
+      "score_outcome": "win",
+      "official_outcome": "win",
+      "baseline_response_us": 3533844,
+      "rarity2_response_us": 3905866,
+      "baseline_max_day_us": 1196857,
+      "rarity2_max_day_us": 1312234
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-32-a7-d7-mixed-s5021",
+      "baseline": [
+        27,
+        189,
+        715
+      ],
+      "rarity2": [
+        27,
+        189,
+        711
+      ],
+      "delta": [
+        0,
+        0,
+        -4
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 14212158,
+      "rarity2_response_us": 13901862,
+      "baseline_max_day_us": 2589652,
+      "rarity2_max_day_us": 2701092
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-32-a8-d10-short-s5020",
+      "baseline": [
+        27,
+        270,
+        649
+      ],
+      "rarity2": [
+        27,
+        270,
+        645
+      ],
+      "delta": [
+        0,
+        0,
+        -4
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 11405557,
+      "rarity2_response_us": 18344265,
+      "baseline_max_day_us": 1546872,
+      "rarity2_max_day_us": 3035308
+    },
+    {
+      "stage": "holdout",
+      "case_id": "fixture:hold-32-a8-d7-short-s5024",
+      "baseline": [
+        27,
+        189,
+        512
+      ],
+      "rarity2": [
+        27,
+        189,
+        510
+      ],
+      "delta": [
+        0,
+        0,
+        -2
+      ],
+      "score_outcome": "loss",
+      "official_outcome": "loss",
+      "baseline_response_us": 13200123,
+      "rarity2_response_us": 15121156,
+      "baseline_max_day_us": 3268202,
+      "rarity2_max_day_us": 3028411
+    },
+    {
+      "stage": "official",
+      "case_id": "fixture:large-32x32",
+      "baseline": [
+        4,
+        4,
+        23
+      ],
+      "rarity2": [
+        4,
+        4,
+        23
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "win",
+      "baseline_response_us": 283612,
+      "rarity2_response_us": 250540,
+      "baseline_max_day_us": 283612,
+      "rarity2_max_day_us": 250540
+    },
+    {
+      "stage": "official",
+      "case_id": "fixture:medium-16x16",
+      "baseline": [
+        4,
+        4,
+        14
+      ],
+      "rarity2": [
+        4,
+        4,
+        14
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "loss",
+      "baseline_response_us": 150592,
+      "rarity2_response_us": 164697,
+      "baseline_max_day_us": 150592,
+      "rarity2_max_day_us": 164697
+    },
+    {
+      "stage": "official",
+      "case_id": "fixture:mountain-heavy",
+      "baseline": [
+        2,
+        2,
+        10
+      ],
+      "rarity2": [
+        2,
+        2,
+        10
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "win",
+      "baseline_response_us": 147351,
+      "rarity2_response_us": 146185,
+      "baseline_max_day_us": 147351,
+      "rarity2_max_day_us": 146185
+    },
+    {
+      "stage": "official",
+      "case_id": "fixture:openapi-sample",
+      "baseline": [
+        2,
+        2,
+        5
+      ],
+      "rarity2": [
+        2,
+        2,
+        5
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "loss",
+      "baseline_response_us": 120454,
+      "rarity2_response_us": 157627,
+      "baseline_max_day_us": 120454,
+      "rarity2_max_day_us": 157627
+    },
+    {
+      "stage": "official",
+      "case_id": "fixture:road-heavy",
+      "baseline": [
+        2,
+        2,
+        5
+      ],
+      "rarity2": [
+        2,
+        2,
+        5
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "loss",
+      "baseline_response_us": 211094,
+      "rarity2_response_us": 257739,
+      "baseline_max_day_us": 211094,
+      "rarity2_max_day_us": 257739
+    },
+    {
+      "stage": "official",
+      "case_id": "fixture:road-heavy-v2",
+      "baseline": [
+        3,
+        9,
+        34
+      ],
+      "rarity2": [
+        3,
+        9,
+        34
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "win",
+      "baseline_response_us": 645480,
+      "rarity2_response_us": 562926,
+      "baseline_max_day_us": 329235,
+      "rarity2_max_day_us": 263505
+    },
+    {
+      "stage": "official",
+      "case_id": "fixture:series-few",
+      "baseline": [
+        1,
+        1,
+        13
+      ],
+      "rarity2": [
+        1,
+        1,
+        13
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "win",
+      "baseline_response_us": 143430,
+      "rarity2_response_us": 139177,
+      "baseline_max_day_us": 143430,
+      "rarity2_max_day_us": 139177
+    },
+    {
+      "stage": "official",
+      "case_id": "fixture:series-many",
+      "baseline": [
+        4,
+        4,
+        10
+      ],
+      "rarity2": [
+        4,
+        4,
+        10
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "win",
+      "baseline_response_us": 132558,
+      "rarity2_response_us": 123912,
+      "baseline_max_day_us": 132558,
+      "rarity2_max_day_us": 123912
+    },
+    {
+      "stage": "official",
+      "case_id": "fixture:small-8x8",
+      "baseline": [
+        2,
+        2,
+        7
+      ],
+      "rarity2": [
+        2,
+        2,
+        7
+      ],
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "score_outcome": "tie",
+      "official_outcome": "loss",
+      "baseline_response_us": 110910,
+      "rarity2_response_us": 113063,
+      "baseline_max_day_us": 110910,
+      "rarity2_max_day_us": 113063
+    }
+  ]
+}

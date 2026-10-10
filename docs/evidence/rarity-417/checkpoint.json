@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "issue_id": 417,
+  "target_release": "release-0-5-1",
+  "ticket_branch": "417",
+  "pr_number": 418,
+  "immediate_pr_base": "413",
+  "predecessor_issue_or_pr": 413,
+  "predecessor_sha": "d87c66d169087e917881fb4eb676a3b2cac8b06c",
+  "execution_generation": 1,
+  "status": "evaluation-complete-negative",
+  "completed_steps": [
+    "hard12, existing holdout24, bundled fixtures9 paired evaluation",
+    "94 raw records valid; 45 unique case pairs after control deduplication",
+    "input/artifact hashes and repeated control score agreement verified",
+    "rarity shared use in initial routes and tomorrow score identified"
+  ],
+  "next_steps": [
+    "Keep rarity=2 off: empirical D decreases on three hard cases",
+    "For another experiment, separate initial-route rarity from tomorrow-score changes and preserve this negative evidence",
+    "Use a separate candidate Issue/numbered branch/PR and compare under the same conditions before expanding to fresh holdout"
+  ],
+  "pending_validation": [],
+  "active_children": [],
+  "blockers": [],
+  "decision_refs": [
+    "docs/contest/solver-exploration.md",
+    "docs/evaluation.md"
+  ],
+  "artifact_refs": [
+    "docs/evidence/rarity-417/README.md",
+    "docs/evidence/rarity-417/manifest.json",
+    "docs/evidence/rarity-417/paired-summary.json"
+  ]
+}

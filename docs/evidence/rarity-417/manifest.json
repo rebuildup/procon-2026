@@ -115,13 +115,40 @@
       ]
     ]
   ],
-  "status": "hard-completed",
+  "status": "completed",
   "started_at": 1791625555.055467,
   "results": [
     {
       "stage": "hard",
       "exit_code": 0,
       "elapsed_seconds": 84.826719333
+    },
+    {
+      "stage": "holdout",
+      "exit_code": 0,
+      "elapsed_seconds": 333.3484015
+    },
+    {
+      "stage": "official",
+      "exit_code": 0,
+      "elapsed_seconds": 4.037807125000029
     }
-  ]
+  ],
+  "finished_at": 1791625977.2713048,
+  "toolchain": {
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "build_command": "CARGO_INCREMENTAL=0 cargo build --release --locked -p bench --bin procon-eval -j 2",
+  "artifact_sha256": {
+    "hard/aggregate.json": "66621a910bc00eae4e1b79f4c52c315747e02cf51419515f2a3f753c5cbdc005",
+    "hard/runs.jsonl": "98eeccfca18106c2b4f7fe00b8bafae91a8053d4879c681cea070873df132cf3",
+    "holdout/aggregate.json": "0e85fc9c723740cfcd10b95458d66834ecaf538caa62787470b473c90dfccb4b",
+    "holdout/runs.jsonl": "cd785c51014e38f9002f59a8c6090e9d1d4b438361da8add52bf45897efe38b2",
+    "official/aggregate.json": "39129c6c26e632742ef3399fa46770164943831485ff6abfc0ec767a93ccc3fd",
+    "official/runs.jsonl": "be3d0785aaea013f01f536497253d2c461cd0bc527e9ccbd18a47a135fc05fb5",
+    "paired-summary.json": "5a3df53dfe6a4b6e6c1b1439edbd4676bb500c3f4feb2b0207572ae9c4bff081",
+    "reproduce.py": "dcce5cf862dde27c3222b591e519b608dec9a243ed5d46a932d9593df270aa1c",
+    "summarize.py": "6beb411810501625289392b67746e0042c735e719888400ba3fcd4159fc0414a"
+  }
 }
