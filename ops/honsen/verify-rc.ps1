@@ -65,8 +65,11 @@ $script:ServerBinaryPath = ''
 $script:NextFixedPort = $Port
 $script:HostPs = 'powershell.exe'
 if (-not $script:IsWin) { $script:HostPs = 'pwsh' }
-# e2e / telemetry が意図せずモニターを上げないように、外から来た設定は落としておく
+# e2e / telemetry が意図せずモニターを上げないように、外から来た設定は落としておく。
+# 供給スロット試算（#433）の変数も、検証対象候補の挙動を変えないよう落とす
+# （verify-offline-bundle.ps1 と同じ配慮）。
 Remove-Item Env:PROCON_TELEMETRY -ErrorAction SilentlyContinue
+Remove-Item Env:PROCON_SUPPLY_SLOT_WINDOW_MS -ErrorAction SilentlyContinue
 
 function Join-Under([string]$Base, [string[]]$Parts) {
     $path = $Base
