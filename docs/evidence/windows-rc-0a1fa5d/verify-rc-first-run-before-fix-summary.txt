@@ -1,0 +1,13 @@
+verify-rc summary  2026-10-11T02:07:58.9085610+09:00
+  head: bdc28fe99b14f1b5e088830704fe9f2631ed844d
+  exe:  C:\Users\rebui\Desktop\procon-wt\rc\target\release\procon.exe  sha256=8F188D80C2FB8B3F8CF3CBC556A640D672C64B3BB3F8D1E98651A4F898B2C6FD
+  PASS  prereq             git / cargo / Python 3（python3）を確認
+  PASS  build-release      exe: C:\Users\rebui\Desktop\procon-wt\rc\target\release\procon.exe
+  PASS  sha-check          exe sha256 8F188D80C2FB...（HEAD と version JSON を記録済み）
+  PASS  tournament-basics  ok. 6 passed; 0 failed
+  FAIL  bundle-e2e         verify-offline-bundle.ps1 が失敗しました (exit code 1)
+  PASS  e2e-mock           3 日受理・記録一式・HTTP ログ・show/record show 欠損 0・manifest SHA 照合・ロック解除
+  SKIP  e2e-official       公式簡易サーバー バイナリ（procon-server-*）が見つかりません。Windows 実機には配布されないため、実機では SKIP になります
+  FAIL  double-start       1 回目の start がロック取得と coordinator 起動まで到達しません
+  SKIP  telemetry          このバイナリは PROCON_TELEMETRY / --telemetry 非対応です（PR #436 / branch 429 が未 merge）。merge 後に再実施してください
+  RESULT: PASS=5 FAIL=2 SKIP=2  exit=1

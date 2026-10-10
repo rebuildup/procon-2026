@@ -1,0 +1,206 @@
+phase: double-start  started: 2026-10-11T02:12:11.9764946+09:00
+展開バンドル: C:\Users\rebui\Desktop\procon-wt\out\run2\double-start-smoke\bin\procon.exe
+coordinator PID: 35236  ロック: C:\Users\rebui\Desktop\procon-wt\rc\.honsen.lock
+== 2 回目の start（二重起動は拒否されるのが期待）
+== preflight: http://127.0.0.1:60114
+OK    バイナリ: C:\Users\rebui\Desktop\procon-wt\out\run2\double-start-smoke\bin\procon.exe  {"package":"0.5.1","protocol":{"major":1,"minor":0},"rustc":"1.85"}
+OK    sha256: e53e2f91cc2466a009cb495094b6d8ef15b16940b0a47202fb1b1ed3837d0a0d
+OK    トークン: 設定済み
+OK    試合記録: C:\Users\rebui\Desktop\procon-wt\rc\records
+OK    HTTP 通信ログ: C:\Users\rebui\Desktop\procon-wt\rc\logs
+OK    空き容量: 61 GB
+FAIL  別の procon.exe が動いています（同じトークンだと回答を上書きし合います）
+OK    サーバー応答: 200（認証 OK、試合設定が出ている）
+PREFLIGHT FAIL
+Read-Host : Windows PowerShell は NonInteractive モードです。Read と Prompt の機能は使用できません。
+発生場所 C:\Users\rebui\Desktop\procon-wt\rc\ops\honsen\honsen.ps1:361 文字:19
++ ...   $answer = Read-Host 'preflight に FAIL があります。それでも起動しますか？ 起動するなら YES  ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [Read-Host]、PSInvalidOperationException
+    + FullyQualifiedErrorId : InvalidOperation,Microsoft.PowerShell.Commands.ReadHostCommand
+ 
+2 回目の start は拒否されました（exit 1）
+== 異常終了の模擬: PID 31000（honsen ラッパー）と PID 35236（coordinator）を強制終了
+kill 後も .honsen.lock が残っていることを確認（PID が書かれたままの残骸）
+== 復帰: もう一度 start（ロック引継ぎで起動に進むのが期待）
+== preflight: http://127.0.0.1:60126
+OK    バイナリ: C:\Users\rebui\Desktop\procon-wt\out\run2\double-start-smoke\bin\procon.exe  {"package":"0.5.1","protocol":{"major":1,"minor":0},"rustc":"1.85"}
+OK    sha256: e53e2f91cc2466a009cb495094b6d8ef15b16940b0a47202fb1b1ed3837d0a0d
+OK    トークン: 設定済み
+OK    試合記録: C:\Users\rebui\Desktop\procon-wt\rc\records
+OK    HTTP 通信ログ: C:\Users\rebui\Desktop\procon-wt\rc\logs
+OK    空き容量: 61 GB
+OK    サーバー応答: 200（認証 OK、試合設定が出ている）
+PREFLIGHT OK
+02:12:23 honsen: coordinator を起動します（再起動 0 回目）
+2026-10-10T17:12:23.539112Z  INFO match recording enabled run_id="20261010T171223Z-p29564" dir=C:\Users\rebui\Desktop\procon-wt\rc\records\20261010T171223Z-p29564
+2026-10-10T17:12:23.540298Z  INFO HTTP log enabled run_id="20261010T171223Z-p29564" path=C:\Users\rebui\Desktop\procon-wt\rc\logs\20261010T171223Z-p29564\http.jsonl
+2026-10-10T17:12:23.540408Z  INFO agent kind composition selected kinds=P,S
+2026-10-10T17:12:23.540727Z  INFO offline candidate selected for the live run candidate=fleet:budget=official:budget_ms=1000
+[HTTP #1] 2026-10-10T17:12:23.540Z GET http://127.0.0.1:60126/setting -> 200 OK (4 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:23 GMT
+  < content-type: application/json
+  < content-length: 1565
+  < body: {"startsAt": 0, "daySeconds": [8, 8], "daySteps": [36, 34], "map": {"height": 16, "width": 16, "cells": [[2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 1, 1, 0, 2, 0, 2], [2, 2, 2, 2, 2, 0, 2, 2, 0, 0, 0, 1, 2, 2, 2, 2], [2, 2, 1, 1, 1, 1, 0, 0, 2, 0, 0, 0, 1, 1, 1, 1], [2, 2, 2, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 1, 1, 1], [2, 2, 2, 2, 1, 1, 3, 3, 2, 0, 0, 0, 0, 0, 1, 1], [2, 0, 2, 2, 2, 0, 3, 3, 3, 1, 0, 0, 0, 0, 0, 0], [2, 2, 2, 2, 2, 2, 3, 3, 3, 1, 1, 0, 0, 0, 0, 0], [2, 2, 2, 0, 1, 1, 3, 3, 1, 1, 2, 2, 0, 0, 0, 0], [0, 2, 2, 1, 1, 1, 3, 3, 0, 2, 2, 2, 0, 0, 0, 0], [2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 0, 2, 0, 0, 0, 0], [2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 0, 1], [3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 2, 2, 1, 0, 1, 1], [3, 3, 2, 0, 2, 2, 3, 3, 1, 1, 2, 2, 2, 1, 1, 1], [3, 3, 2, 2, 2, 0, 2, 3, 3, 1, 2, 2, 1, 1, 1, 2], [3, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2], [1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2]]}, "spots": [{"brand": 0, "pos": 174, "stocks": 2}, {"brand": 1, "pos": 14, "stocks": 1}, {"brand": 2, "pos": 128, "stocks": 3}, {"brand": 3, "pos": 189, "stocks": 2}, {"brand": 4, "pos": 213, "stocks": 4}, {"brand": 5, "pos": 115, "stocks": 2}, {"brand": 6, "pos": 39, "stocks": 2}, {"brand": 7, "pos": 136, "stocks": 4}, {"brand": 8, "pos": 95, "stocks": 3}, {"brand": 9, "pos": 157, "stocks": 4}, {"brand": 10, "pos": 12, "stocks": 4}, {"brand": 11, "pos": 38, "stocks": 1}, {"brand": 12, "pos": 195, "stocks": 1}, {"brand": 12, "pos": 228, "stocks": 1}], "agents": [85, 81, 21, 154], "fuelLimits": 36, "players": 2, "busyThreshold": 3, "jammedThreshold": 8}
+2026-10-10T17:12:23.540750Z  INFO coordinator loop strategy selected solver="candidate"
+2026-10-10T17:12:23.574103Z  INFO fleet day plan day=0 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 4294967295), (213, 13), (157, 36), (174, 33)]
+2026-10-10T17:12:23.577075Z  INFO fleet day plan day=0 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(228, 18), (39, 15), (95, 12), (189, 14)]
+2026-10-10T17:12:23.593269Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=17 replay_series=13 replay_balls=17 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(128, 4294967295), (128, 36), (38, 9), (12, 11)]
+2026-10-10T17:12:23.595007Z  INFO fleet day plan day=1 clean=true chains=1 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(128, 0), (189, 0), (14, 0), (136, 1)]
+2026-10-10T17:12:23.595302Z  INFO agent kinds trial kinds=S,P,P,P variety=13 daily_variety=26 balls=33
+2026-10-10T17:12:23.595351Z  INFO agent kinds trial kinds=P,P,P,P variety=13 daily_variety=26 balls=33
+[HTTP #2] 2026-10-10T17:12:23.595Z POST http://127.0.0.1:60126/agent -> 200 OK (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [1,0,0,0]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:23 GMT
+  < content-type: application/json
+  < content-length: 2
+  < body: {}
+[HTTP #3] 2026-10-10T17:12:23.597Z GET http://127.0.0.1:60126/setting -> 200 OK (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:23 GMT
+  < content-type: application/json
+  < content-length: 1574
+  < body: {"startsAt": 1791652345, "daySeconds": [8, 8], "daySteps": [36, 34], "map": {"height": 16, "width": 16, "cells": [[2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 1, 1, 0, 2, 0, 2], [2, 2, 2, 2, 2, 0, 2, 2, 0, 0, 0, 1, 2, 2, 2, 2], [2, 2, 1, 1, 1, 1, 0, 0, 2, 0, 0, 0, 1, 1, 1, 1], [2, 2, 2, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 1, 1, 1], [2, 2, 2, 2, 1, 1, 3, 3, 2, 0, 0, 0, 0, 0, 1, 1], [2, 0, 2, 2, 2, 0, 3, 3, 3, 1, 0, 0, 0, 0, 0, 0], [2, 2, 2, 2, 2, 2, 3, 3, 3, 1, 1, 0, 0, 0, 0, 0], [2, 2, 2, 0, 1, 1, 3, 3, 1, 1, 2, 2, 0, 0, 0, 0], [0, 2, 2, 1, 1, 1, 3, 3, 0, 2, 2, 2, 0, 0, 0, 0], [2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 0, 2, 0, 0, 0, 0], [2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 0, 1], [3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 2, 2, 1, 0, 1, 1], [3, 3, 2, 0, 2, 2, 3, 3, 1, 1, 2, 2, 2, 1, 1, 1], [3, 3, 2, 2, 2, 0, 2, 3, 3, 1, 2, 2, 1, 1, 1, 2], [3, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2], [1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2]]}, "spots": [{"brand": 0, "pos": 174, "stocks": 2}, {"brand": 1, "pos": 14, "stocks": 1}, {"brand": 2, "pos": 128, "stocks": 3}, {"brand": 3, "pos": 189, "stocks": 2}, {"brand": 4, "pos": 213, "stocks": 4}, {"brand": 5, "pos": 115, "stocks": 2}, {"brand": 6, "pos": 39, "stocks": 2}, {"brand": 7, "pos": 136, "stocks": 4}, {"brand": 8, "pos": 95, "stocks": 3}, {"brand": 9, "pos": 157, "stocks": 4}, {"brand": 10, "pos": 12, "stocks": 4}, {"brand": 11, "pos": 38, "stocks": 1}, {"brand": 12, "pos": 195, "stocks": 1}, {"brand": 12, "pos": 228, "stocks": 1}], "agents": [85, 81, 21, 154], "fuelLimits": 36, "players": 2, "busyThreshold": 3, "jammedThreshold": 8}
+[HTTP #4] 2026-10-10T17:12:23.598Z GET http://127.0.0.1:60126/ -> 403 Forbidden (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:23 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #5] 2026-10-10T17:12:24.110Z GET http://127.0.0.1:60126/ -> 403 Forbidden (16 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:24 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #6] 2026-10-10T17:12:24.629Z GET http://127.0.0.1:60126/ -> 403 Forbidden (1 ms) attempt=1 day=-
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:24 GMT
+  < content-type: application/json
+  < content-length: 62
+  < body: {"code": "AccessTimeError", "message": "match is not running"}
+[HTTP #7] 2026-10-10T17:12:25.144Z GET http://127.0.0.1:60126/ -> 200 OK (1 ms) attempt=1 day=0
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:25 GMT
+  < content-type: application/json
+  < content-length: 219
+  < body: {"endsAt": 1791652353, "day": 0, "agents": [{"kind": 1, "pos": 85, "fuel": 36}, {"kind": 0, "pos": 81, "fuel": 36}, {"kind": 0, "pos": 21, "fuel": 36}, {"kind": 0, "pos": 154, "fuel": 36}], "others": [], "traffics": []}
+2026-10-10T17:12:23.595375Z  INFO agent kinds selected for POST /agent n_agents=4 kinds=S,P,P,P solver=candidate:fleet:budget=official:budget_ms=1000
+2026-10-10T17:12:25.735318Z  INFO fleet day plan day=0 clean=true chains=4 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(157, 36), (213, 23), (157, 36), (189, 36)]
+2026-10-10T17:12:25.735452Z  INFO plan generated candidate=fleet:budget=official:budget_ms=1000 n_agents=4 day_steps=36 moves=[17, 14, 20, 18] waits=[19, 22, 16, 18]
+[HTTP #8] 2026-10-10T17:12:25.735Z POST http://127.0.0.1:60126/ -> 200 OK (1 ms) attempt=1 day=0
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [[4,4,5,-10,2,2,3,3,3,3,2,2,2,2,2,2,0,1],[4,4,3,1,2,2,3,4,3,3,4,3,3,1,-7],[3,2,2,1,1,2,2,2,2,2,2,4,4,3,3,3,4,4,4,4],[0,5,1,1,2,1,2,2,2,2,4,4,4,4,3,2,5,4,-4]]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:25 GMT
+  < content-type: application/json
+  < content-length: 15
+  < body: {"revision": 1}
+[HTTP #9] 2026-10-10T17:12:33.751Z GET http://127.0.0.1:60126/ -> 200 OK (1 ms) attempt=1 day=1
+  > Procon-Token: [MASKED]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:33 GMT
+  < content-type: application/json
+  < content-length: 219
+  < body: {"endsAt": 1791652361, "day": 1, "agents": [{"kind": 1, "pos": 85, "fuel": 36}, {"kind": 0, "pos": 81, "fuel": 36}, {"kind": 0, "pos": 21, "fuel": 36}, {"kind": 0, "pos": 154, "fuel": 36}], "others": [], "traffics": []}
+2026-10-10T17:12:25.737547Z  INFO plan accepted by server day=0 revision=1 answer_ms=591 submit_ms=2 margin_ms=7263
+2026-10-10T17:12:34.341711Z  INFO fleet day plan day=1 clean=true chains=4 model_series=13 model_balls=16 replay_series=13 replay_balls=16 tomorrow_series=0 tomorrow_balls=0 predicted_ends=[(115, 36), (213, 23), (174, 5), (12, 11)]
+2026-10-10T17:12:34.341866Z  INFO plan generated candidate=fleet:budget=official:budget_ms=1000 n_agents=4 day_steps=34 moves=[3, 14, 20, 17] waits=[31, 20, 14, 17]
+2026-10-10T17:12:34.343984Z  INFO plan accepted by server day=1 revision=2 answer_ms=591 submit_ms=2 margin_ms=6657
+2026-10-10T17:12:34.344078Z  WARN coordinator loop wired in #135; full E2E driving comes in #136. outcome: CoordinatorOutcome { days_completed: 2, revisions: [1, 2], day_steps: [36, 34], day_seconds: [8, 8], days: [DaySummary { day: 0, agents: [DayAgentState { kind: AgentKind(1), pos: 85, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 81, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 21, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 154, fuel: 36 }], movement: [DayMovement { moves: 17, waits: 10, runs: 1, dirs: [1, 1, 8, 4, 2, 1] }, DayMovement { moves: 14, waits: 7, runs: 1, dirs: [0, 2, 2, 6, 4, 0] }, DayMovement { moves: 20, waits: 0, runs: 0, dirs: [0, 2, 8, 4, 6, 0] }, DayMovement { moves: 18, waits: 4, runs: 1, dirs: [1, 3, 6, 1, 5, 2] }] }, DaySummary { day: 1, agents: [DayAgentState { kind: AgentKind(1), pos: 85, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 81, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 21, fuel: 36 }, DayAgentState { kind: AgentKind(0), pos: 154, fuel: 36 }], movement: [DayMovement { moves: 3, waits: 28, runs: 1, dirs: [0, 0, 0, 0, 2, 1] }, DayMovement { moves: 14, waits: 5, runs: 1, dirs: [0, 2, 2, 6, 4, 0] }, DayMovement { moves: 20, waits: 1, runs: 1, dirs: [0, 3, 5, 9, 3, 0] }, DayMovement { moves: 17, waits: 2, runs: 1, dirs: [4, 7, 2, 2, 0, 2] }] }], kinds: [Supply, Patrol, Patrol, Patrol] }
+[HTTP #10] 2026-10-10T17:12:34.341Z POST http://127.0.0.1:60126/ -> 200 OK (1 ms) attempt=1 day=1
+  > Procon-Token: [MASKED]
+  > Content-Type: application/json
+  > body: [[4,4,5,-28],[4,4,3,1,2,2,3,4,3,3,4,3,3,1,-5],[3,2,2,3,3,3,3,4,4,1,1,2,2,3,3,3,4,3,1,2,-1],[2,2,3,3,0,1,1,1,1,1,0,0,0,1,1,5,5,-2]]
+  < server: BaseHTTP/0.6 Python/3.14.8
+  < date: Sat, 10 Oct 2026 17:12:34 GMT
+  < content-type: application/json
+  < content-length: 15
+  < body: {"revision": 2}
+02:12:34 honsen: coordinator が終了しました（終了コード 0）
+試合完了（正常終了）
+記録: C:\Users\rebui\Desktop\procon-wt\rc\records\20261010T171223Z-p29564
+2026-10-10T17:12:34.344136Z  INFO --exit-after-match: 2 day(s) completed, exiting 0
+{
+  "agent_kinds": "S,P,P,P",
+  "binary_sha256": "e53e2f91cc2466a009cb495094b6d8ef15b16940b0a47202fb1b1ed3837d0a0d",
+  "continues_run_id": null,
+  "days": [
+    {
+      "agents": 4,
+      "day": 0,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 72,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 1,
+      "status": "accepted",
+      "traffics": 0
+    },
+    {
+      "agents": 4,
+      "day": 1,
+      "observed": true,
+      "others": 0,
+      "plan_actions": 58,
+      "plan_agents": 4,
+      "post_attempts": 1,
+      "revision": 2,
+      "status": "accepted",
+      "traffics": 0
+    }
+  ],
+  "events": 13,
+  "map": {
+    "agents": 4,
+    "cells": 256,
+    "days": 2,
+    "height": 16,
+    "spots": 14,
+    "width": 16
+  },
+  "missing_seq": 0,
+  "recorder": {
+    "dropped": 0,
+    "events_numbered": 13,
+    "write_errors": 0
+  },
+  "result": {
+    "days_completed": 2,
+    "error": null,
+    "revisions": [
+      1,
+      2
+    ],
+    "status": "completed"
+  },
+  "run_id": "20261010T171223Z-p29564",
+  "schema_version": 1,
+  "solver": {
+    "candidate_id": "fleet:budget=official:budget_ms=1000",
+    "kinds_auto": true,
+    "kinds_flag": null,
+    "label": "candidate:fleet:budget=official:budget_ms=1000",
+    "loop_initial_strategy": "greedy",
+    "loop_iterations": 32,
+    "solver_flag": "loop"
+  },
+  "source_commit_sha": "0a1fa5d1bc6cbdce4b477224aebcb81ff70f4e72",
+  "started_at": "2026-10-10T17:12:23.533Z",
+  "unparsed_lines": 0
+HTTP 通信ログ: C:\Users\rebui\Desktop\procon-wt\rc\logs
+}
+復帰試合 accepted_days: 0,1
+RESULT: PASS

@@ -6,6 +6,11 @@ param(
     [int]$Port = 0
 )
 
+# Windows PowerShell 5.1 started from a shell that inherited PowerShell 7 module paths cannot autoload
+# built-in cmdlets such as Get-FileHash. Drop the PowerShell 7 entries (not WindowsPowerShell) for this process.
+if ($PSVersionTable.PSEdition -eq 'Desktop' -and $env:PSModulePath) {
+    $env:PSModulePath = (($env:PSModulePath -split ';') | Where-Object { $_ -and ($_ -notmatch 'PowerShell' -or $_ -match 'WindowsPowerShell') }) -join ';'
+}
 $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $Exe) { $Exe = Join-Path $RepoRoot 'target\release\procon.exe' }
@@ -60,6 +65,8 @@ try {
         '--summary', ('"{0}"' -f $SummaryFile)
     )
     $Server = Start-Process -FilePath 'python' -ArgumentList $PythonArgs -PassThru -NoNewWindow -RedirectStandardOutput $ServerOut -RedirectStandardError $ServerErr
+    # Cache the process handle now: without it, ExitCode reads as $null after WaitForExit(ms) on PS 5.1.
+    $null = $Server.Handle
     Start-Sleep -Seconds 2
     if ($Server.HasExited) { throw 'mock server exited before preflight' }
     & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $DistScript preflight

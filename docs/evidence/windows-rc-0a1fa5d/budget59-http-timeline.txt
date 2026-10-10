@@ -1,0 +1,8 @@
+59s candidate, hold-32-a7-d10-mixed-s5017 (32x32, 7 agents), mock 1 day x 60s, pwsh 7, repo launcher default candidate
+(transcribed from logs/<run>/http.jsonl before cleanup; times are UTC on 2026-10-10)
+17:13:04.009  GET  /setting          200   (coordinator start, candidate=fleet:budget=official:budget_ms=59000:adapt=off)
+17:13:04.102  POST /agent            200
+17:13:04.106..05.642  GET /          403 x4   (waiting for day window)
+17:13:06.156  GET  /                 200   (day 0 start observed)
+17:14:00.705  POST /                 200   (plan submitted, accepted: accepted_days=[0], bad_token=0)
+=> submit at ~54.5 s after day start of a 60 s window (~5.5 s slack); no timeout, no resubmit.
