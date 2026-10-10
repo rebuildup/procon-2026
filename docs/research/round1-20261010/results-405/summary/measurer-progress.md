@@ -153,3 +153,9 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   **deadline 裕度**: maxday は全盤面 10.0〜10.2s（budget_ms=10000 の想定通り、jobs 3 の並列化込みでも 60s 期限に対し余裕 ~50s）。timeout 0。
   証跡: `wsl-10s/b4-chains8-full/{runs.jsonl,aggregate.json}`。
 - [21:21] **指示タスク全件完了**（P3 / A 実施、B1〜B3 は先行担当が完了済み・再実行なし）。
+
+## バッチ 1（パラメータ最適化・追加測定担当 2）
+
+- [21:47] **E1 開始 (1/3)**: `wsl-corpus/param-chains8/` — holdout24+hard12+fixture9 ×
+  `fleet:budget=official:iters=60000:chains=8:seed=42`、kinds `S,P,P,P,P,P,P,P`（chains4 baseline と同一構成）、jobs 6、nice 15。
+  比較先: `wsl-corpus/{holdout,hard}-fleet-iters60k-chains4`（clockless baseline 済み）。
