@@ -101,3 +101,10 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
 - [21:01] **P3 開始**: `wsl-10s/p3-persist-s9012/` — s9012 単盤面（+同梱 fixture 9）×
   `convoy:budget=official:budget_ms=10000:seed=42:forecast=persist`、kinds `S,P,P,P,P,P,P,P`、jobs 1、nice 15。
   判定基準: convoy@10s 既定（s9012 B369）との差。B+25 以上 = beam 完走時利得大 / +5〜25 = 監視 / +5 未満 = close。
+- [21:03] **P3 完了**: 10 runs 全て success、illegal=0 / fuel_short=0 / rejected=0。ウォール ~90s。
+  - s9012: V27/D189/**B407**、rt 37.9s、maxday 7.32s（60s 期限に対し十分）
+  - 比較（同一 kinds S,P×7・同一 seed42・同一 budget 10s）: 既定 convoy@10s B369 → **+38**（判定基準 +25 以上 = beam 完走時利得大）
+  - 参照: d2-persist の同一候補 s9012 は B387（+18）。単サンプル変動 ±20 を考慮すると実利得は +18〜38 の帯
+  - 同一実行内の隣接値: fleet@10s B406 / chains8@10s B433 / convoy@20s B412 — P3(407) は半予算で convoy@20s にほぼ一致、fleet には並ぶが chains8 には届かず
+  - 証跡: `wsl-10s/p3-persist-s9012/{runs.jsonl,aggregate.json}`
+- [21:03] **(A) 開始**: `wsl-10s/b4-chains8-full/` — holdout24+hard12 × `fleet:budget=official:budget_ms=10000:adapt=off:chains=8:seed=42`、kinds `S,P,P,P,P,P,P,P`、jobs 3、nice 15。
