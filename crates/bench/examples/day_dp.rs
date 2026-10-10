@@ -24,6 +24,11 @@
 //!   optimistic upper bound — the supply vehicle is unconstrained in fuel
 //!   and the DP assumes it can always be where a patrol needs it, which
 //!   ignores contention between patrols sharing one supply vehicle.
+//!   `supply_schedule=q:t[,...]` tightens the model to named rendezvous: the
+//!   DP may refuel only on those cells and only from tick `t` on, and the
+//!   replay then *moves the supply vehicle itself* along the schedule
+//!   (time-Dijkstra legs, waiting on each rendezvous cell), so a plan that
+//!   survives the replay is legal under the real one-supply refuel rule.
 //!
 //! # Exactness statement
 //!
@@ -40,10 +45,15 @@
 //!   `refuel=on` it is exact for the patrol given the refuel model, and the
 //!   refuel model itself is an upper bound on what a coordinated 1-supply
 //!   team achieves.
-//! - Neither mode schedules the supply vehicle's route; `cell refuel=on`
-//!   replaces it with the earliest-arrival bound. Stock contention between
-//!   patrols (two patrols picking the same spot) is checked and reported on
-//!   the winning assignment.
+//! - Without `supply_schedule`, `cell refuel=on` is an upper bound: the
+//!   earliest-arrival field lets every patrol refuel everywhere, which one
+//!   supply vehicle cannot generally honour. With `supply_schedule`, the
+//!   refuel model is exact per patrol *and* the replay schedules the single
+//!   supply vehicle explicitly, so a clean replay is a legal 1-supply plan
+//!   (the schedule is an input the caller picks; §4.3 of the notes reduces
+//!   9/10 to one rendezvous, and this option verifies it). Stock contention
+//!   between patrols (two patrols picking the same spot) is checked and
+//!   reported on the winning assignment.
 //!
 //! # Output
 //!
@@ -60,6 +70,8 @@
 //! - `kinds=S,P,P,P` agent kinds (default `S` then `P` for the rest)
 //! - `mode=legs|cell` (default `legs`)
 //! - `refuel=on|off` (default `off`, `cell` mode only)
+//! - `supply_schedule=q:t[,...]` (cell mode) refuel only on cell `q` from
+//!   tick `t` on; the replay drives the supply vehicle along the schedule
 //! - `verify=on|off` replay the winning joint plan through `MatchSim`
 //!   (default `on`)
 //! - `traffic=smooth|observed` road state for the replay (default `smooth`;
@@ -70,7 +82,7 @@
 //! `day_dp /tmp/dp382/ref16.case.json day=0 kinds=S,P,P,P mode=legs`
 use bench::{CaseSpec, kinds};
 use engine::model::{AgentKind, Direction, HexCoord, MapGrid, MatchState, Terrain, TrafficState};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// (time, fuel) label; both minimized.
 type Cost = (u32, u32);
@@ -243,6 +255,25 @@ fn earliest_arrival(board: &Board, src: usize) -> Vec<u32> {
     best
 }
 
+/// Where/when the DP may refuel: either the loose earliest-arrival field or
+/// an explicit rendezvous list (`supply_schedule=q:t`, "refuel on `q` from
+/// tick `t` on" — the supply vehicle waits there, so any later tick works).
+enum Refuel {
+    Off,
+    Field(Vec<u32>),
+    Schedule(Vec<(usize, u32)>),
+}
+
+impl Refuel {
+    fn allows(&self, cell: usize, tick: u32) -> bool {
+        match self {
+            Self::Off => false,
+            Self::Field(field) => field[cell] <= tick,
+            Self::Schedule(list) => list.iter().any(|&(q, from)| q == cell && from <= tick),
+        }
+    }
+}
+
 /// One witness route: cells in visiting order, starting at the patrol start.
 type Route = Vec<usize>;
 
@@ -372,7 +403,7 @@ fn patrol_cell_states(
     start: usize,
     max_time: u32,
     max_fuel: u32,
-    refuel_field: Option<&[u32]>,
+    refuel: &Refuel,
 ) -> BTreeMap<u64, PatrolPlan> {
     // State key: (cell, mask, tick) -> min fuel. Predecessor links rebuild
     // the route; `pred_key` also marks which link was a pickup.
@@ -443,18 +474,21 @@ fn patrol_cell_states(
             pred.insert(wait_key, (cell, nm, tick));
             queue.push(std::cmp::Reverse((tick + 1, fuel, cell, nm)));
         }
-        // One hex step; the departure cell bills step + fuel (Q11).
+        // One hex step; the departure cell bills step + fuel (Q11). The DP
+        // tracks cumulative fuel spent since the last refill; the engine
+        // tracks tank (cap minus spend). They agree move-by-move — a move is
+        // legal iff `spent + cost <= max_fuel` — but a refill does NOT
+        // retroactively pay the move that arrives at it: the move into the
+        // supply cell must be affordable from the current tank first
+        // (`apply_due_moves` charges before `refill_fuel_if_supply_present`
+        // tops up), so the affordability check precedes the reset.
         for &next in &board.neighbors[cell] {
             let nt = tick + board.step[cell];
-            let mut nf = fuel + board.fuel[cell];
-            if let Some(supply_field) = refuel_field {
-                if supply_field[next] <= nt {
-                    nf = 0;
-                }
-            }
-            if nt > max_time || nf > max_fuel {
+            let spent = fuel + board.fuel[cell];
+            if nt > max_time || spent > max_fuel {
                 continue;
             }
+            let nf = if refuel.allows(next, nt) { 0 } else { spent };
             let key = (next, nm, nt);
             if labels.get(&key).is_none_or(|&f| nf < f) {
                 labels.insert(key, nf);
@@ -477,33 +511,43 @@ fn pred_mask(
     pred.get(&key).map_or(mask, |&(_, pm, _)| pm)
 }
 
-/// BFS shortest (fewest cells) path between two cells over passable cells.
+/// Fastest (terrain-time Dijkstra) path between two cells over passable
+/// cells. Hop-count BFS is wrong here: the DP's event ticks bill the
+/// *departure* terrain per move, and a road-heavy path can be quicker than a
+/// shorter-in-hops one (59→9 is 5 ticks via roads, 6 via the hop-shortest
+/// route), so the wire expansion must retrace the same weighted timing.
 fn shortest_path(board: &Board, src: usize, dst: usize) -> Option<Vec<usize>> {
     if src == dst {
         return Some(vec![src]);
     }
-    let mut prev: BTreeMap<usize, usize> = BTreeMap::new();
-    let mut seen: BTreeSet<usize> = BTreeSet::from([src]);
-    let mut queue = VecDeque::from([src]);
-    while let Some(cell) = queue.pop_front() {
+    let mut prev: Vec<Option<usize>> = vec![None; board.step.len()];
+    let mut best = vec![INF; board.step.len()];
+    best[src] = 0;
+    let mut queue = std::collections::BinaryHeap::from([std::cmp::Reverse((0u32, src))]);
+    while let Some(std::cmp::Reverse((time, cell))) = queue.pop() {
+        if best[cell] < time {
+            continue;
+        }
         for &next in &board.neighbors[cell] {
-            if seen.insert(next) {
-                prev.insert(next, cell);
-                if next == dst {
-                    let mut path = vec![dst];
-                    let mut cur = dst;
-                    while let Some(&p) = prev.get(&cur) {
-                        path.push(p);
-                        cur = p;
-                    }
-                    path.reverse();
-                    return Some(path);
-                }
-                queue.push_back(next);
+            let nt = time + board.step[cell];
+            if nt < best[next] {
+                best[next] = nt;
+                prev[next] = Some(cell);
+                queue.push(std::cmp::Reverse((nt, next)));
             }
         }
     }
-    None
+    let mut path = vec![dst];
+    let mut cur = dst;
+    while let Some(p) = prev[cur] {
+        path.push(p);
+        cur = p;
+    }
+    if cur != src {
+        return None;
+    }
+    path.reverse();
+    Some(path)
 }
 
 /// Wire code (official order) of the move `a -> b`.
@@ -597,6 +641,50 @@ fn play_day(sim: &engine::MatchSim, state: &mut MatchState, plan: &engine::model
     }
 }
 
+/// Wire codes for the supply agent under `schedule` (`cell:tick` in visiting
+/// order): time-Dijkstra leg per hop (`pareto_path` over an unconstrained
+/// field — the supply vehicle pays time but never fuel), a wait run until
+/// each rendezvous tick, then a trailing wait.
+fn supply_to_wire(
+    board: &Board,
+    map: &MapGrid,
+    schedule: &[(usize, u32)],
+    start: usize,
+    day_steps: u32,
+) -> Vec<i64> {
+    let coords: Vec<HexCoord> = (0..board.step.len()).map(|i| coord_of(map, i)).collect();
+    let mut codes: Vec<i64> = Vec::new();
+    let mut tick = 0u32;
+    let mut pos = start;
+    for &(cell, at) in schedule {
+        if cell == pos {
+            if tick < at {
+                codes.push(-i64::from(at - tick));
+                tick = at;
+            }
+            continue;
+        }
+        let Some(path) = shortest_path(board, pos, cell) else { break };
+        for (a, b) in path.windows(2).map(|w| (w[0], w[1])) {
+            if tick + board.step[a] > at.min(day_steps) {
+                break;
+            }
+            let Some(dir) = direction_between(coords[a], coords[b]) else { break };
+            codes.push(i64::try_from(dir).expect("direction fits i64"));
+            tick += board.step[a];
+            pos = b;
+        }
+        if pos == cell && tick < at {
+            codes.push(-i64::from(at - tick));
+            tick = at;
+        }
+    }
+    if tick < day_steps {
+        codes.push(-i64::from(day_steps - tick));
+    }
+    codes
+}
+
 #[allow(clippy::too_many_lines, reason = "one linear driver: parse, both DP modes, replay")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let argv: Vec<String> = std::env::args().collect();
@@ -626,6 +714,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let refuel = get("refuel", "off") == "on";
     let verify = get("verify", "on") == "on";
     let witness = get("witness", "on") == "on";
+    let schedule: Vec<(usize, u32)> = get("supply_schedule", "")
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let (q, t) = s.split_once(':').ok_or("supply_schedule wants cell:tick")?;
+            Ok::<_, String>((
+                q.parse::<usize>().map_err(|e| e.to_string())?,
+                t.parse::<u32>().map_err(|e| e.to_string())?,
+            ))
+        })
+        .collect::<Result<_, String>>()?;
     let team = domain::PlayerId::new("player-a")?;
     let state = MatchState::new(case.to_engine_setting_with_kinds(&team, Some(&kinds))?)?;
     let board = Board::from_state(&state);
@@ -717,13 +816,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .collect()
         }
         "cell" => {
-            let refuel_field = refuel.then(|| supply_start.map(|s| earliest_arrival(&board, s)));
+            let refuel_model = if !schedule.is_empty() {
+                Refuel::Schedule(schedule.clone())
+            } else if refuel {
+                match supply_start.map(|s| earliest_arrival(&board, s)) {
+                    Some(field) => Refuel::Field(field),
+                    None => Refuel::Off,
+                }
+            } else {
+                Refuel::Off
+            };
             let per_patrol: Vec<BTreeMap<u64, PatrolPlan>> = patrol_starts
                 .iter()
-                .map(|&start| {
-                    let field = refuel_field.as_ref().and_then(|f| f.as_deref());
-                    patrol_cell_states(&board, start, max_time, max_fuel, field)
-                })
+                .map(|&start| patrol_cell_states(&board, start, max_time, max_fuel, &refuel_model))
                 .collect();
             // Exact assignment over masks.
             let mut dp: BTreeMap<u64, Vec<Option<u64>>> = BTreeMap::new();
@@ -764,7 +869,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .count_ones() as usize;
     println!(
-        "joint best: {best_count}/{} distinct series (mode={mode} refuel={refuel}, {:.1?})",
+        "joint best: {best_count}/{} distinct series (mode={mode} refuel={refuel} schedule={schedule:?}, {:.1?})",
         board.series_count,
         started.elapsed()
     );
@@ -804,7 +909,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let steps = usize::try_from(max_time)?;
         // Per-agent sequential wire codes. `plans` is indexed by patrol
         // (agents in kind order), while the wire list is indexed by agent id —
-        // assign by kind: the supply agent and any planless patrol wait all day.
+        // assign by kind: a planless patrol waits all day, and the supply
+        // agent either follows the schedule or waits at its start.
         let mut patrol_iter = plans.iter();
         let lists: Vec<Vec<i64>> = sim_state
             .agents
@@ -822,7 +928,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         _ => vec![-i64::from(max_time)],
                     }
                 } else {
-                    vec![-i64::from(max_time)]
+                    match (schedule.is_empty(), supply_start) {
+                        (false, Some(s)) => supply_to_wire(&board, map, &schedule, s, max_time),
+                        _ => vec![-i64::from(max_time)],
+                    }
                 }
             })
             .collect();
