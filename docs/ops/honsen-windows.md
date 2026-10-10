@@ -75,6 +75,14 @@ if (-not (Test-Path -LiteralPath .\.env -PathType Leaf)) { throw '既存の .env
 Copy-Item -LiteralPath .\.env -Destination (Join-Path $HOME 'procon-honsen\.env') -Force
 ```
 
+Windows検証機での**必須E2Eゲート**（開発環境のPythonとビルド済みMSVC exeを使用。競技会場には不要）:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\ops\honsen\verify-offline-bundle.ps1
+```
+
+実際にZIPを別ディレクトリへ展開し、そこから `preflight` → ローカル模擬サーバー3日試合 `start` → `show` を実行する。受理日 `0,1,2`・試合記録・HTTPログ・ソースexe/配布exe/manifestのハッシュ一致を確認。**このPASSはWindows実機で実行して初めて成立する。** 本番サーバーへの検証POSTは不要。
+
 **バージョン 0.5.1 と SHA256 を確認。** git clone 済みなら clone は省略してよい。ビルド時の commit SHA は試合記録の manifest に残る。競技中は build・pull を実行しない。完成した bin と zip を PC・USB など二重に保持する。ビルドできない場合は事前作成済みの**同じ Windows/MSVC 用**バイナリと本スクリプトを持ち込む（出所とSHA256を確認）。
 
 ## 3. 本番直前チェック
