@@ -227,3 +227,6 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   - 監視セル: s5023 fuel-only −29（B-only・D 同点）、s5020 c8 未測定
   - 判定: `fuel_need=50:fuel_mix=on` は offline 辞書順で非劣化・B 合計 +44〜50。**chains8 offline の唯一の D-loss（s9008）を消す**点で chains8 採用の辞書順リスクを低減。検証 27 盤面と clocked 確認を経て初めて採用推薦
   欠落 2 セル（s5020 c8 fuel/mix）と inv セルの scored 再取得のため、静穏時に corpus9 再実行。
+- [00:2x] **bail 計測開始**（PR #435 委譲分・worktree `.worktrees/bail-435-verify` eb2f5de・binary sha256 `85119c9f…`）:
+  ラベル爆発盤面 4 枚（s5016 24×24 d10 / s5020 32×32 d10 / s5023 32×32 d6 / s9012 32×32 d7）×
+  `convoy:budget_ms=20000:seed=42` vs `:bail=on`、jobs 1・nice 19。期待効果（#435）: B 同等のまま回答時間 20s→5s（axis4）＋爆発盤面で残予算を embedded fleet へ譲渡しての B 回収。証跡は bail-435-verify 側 `eval-bail-435/`、回収後に本 results へ取り込む。
