@@ -28,6 +28,12 @@ fn sized_hands_a_large_board_to_fleet_with_the_fuel_term() {
     let ctx = SolverContext::from_state(&state);
     let fleet = "fleet:budget=official:seed=7:iters=60000:chains=4:fuel_need=50:fuel_mix=on";
     assert_eq!(solver("sized:budget=official:seed=7").decide(&ctx), solver(fleet).decide(&ctx));
+    let mid =
+        "fleet:budget=official:seed=7:iters=60000:chains=4:fuel_need=50:fuel_mix=on:midleg=on";
+    assert_eq!(
+        solver("sized:budget=official:seed=7:midleg=on").decide(&ctx),
+        solver(mid).decide(&ctx)
+    );
     let plain = "fleet:budget=official:seed=7:iters=60000:chains=4";
     assert_eq!(
         solver("sized:budget=official:seed=7:fuel_need=0").decide(&ctx),

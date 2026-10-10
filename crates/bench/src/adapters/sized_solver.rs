@@ -33,6 +33,11 @@ const PARAMS: &[ParamSpec] = &[
         required: false,
         doc: "fleet's fuel_need on boards wider than 16, with fuel_mix=on (default 50; 0: off)",
     },
+    ParamSpec {
+        key: "midleg",
+        required: false,
+        doc: "fleet's midleg on boards wider than 16: off (default) | on",
+    },
 ];
 
 /// Boards up to this side go to `convoy`.
@@ -85,6 +90,10 @@ impl CandidateFactory for SizedFactory {
         if fuel_need > 0 {
             large.push(pair("fuel_need", fuel_need.to_string()));
             large.push(pair("fuel_mix", "on".into()));
+        }
+        if let Some(mode) = spec.param("midleg") {
+            // `fleet` validates the value.
+            large.push(pair("midleg", mode.to_owned()));
         }
         Ok(Box::new(SizedCandidate {
             small: ConvoyFactory.build(&CandidateSpec::new("convoy", small))?,
