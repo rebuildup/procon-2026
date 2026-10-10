@@ -69,6 +69,41 @@ fn fleet_requires_official_budget_and_rejects_bad_values() {
     assert!(build("fleet:budget=official:adapt=sometimes").is_err());
 }
 
+
+#[test]
+fn fleet_rarity_is_explicit_and_preserves_legacy_default() {
+    let registry = CandidateRegistry::builtin();
+    let build = |id: &str| registry.build(id).and_then(|c| c.build_solver());
+    for id in [
+        "fleet:budget=official:iters=100:rarity=0",
+        "fleet:budget=official:iters=100:rarity=1",
+        "fleet:budget=official:iters=100:rarity=2",
+        "fleet:budget=official:iters=100:rarity=4",
+    ] {
+        assert!(build(id).is_ok(), "{id}");
+    }
+    for id in [
+        "fleet:budget=official:rarity=5",
+        "fleet:budget=official:rarity=unknown",
+    ] {
+        assert!(build(id).is_err(), "{id}");
+    }
+
+    let (_, state) = state_701("S,P,P,P,P");
+    let ctx = SolverContext::from_state(&state);
+    let before = solver("fleet:budget=official:iters=100:seed=42").decide(&ctx);
+    let zero = solver("fleet:budget=official:iters=100:seed=42:rarity=0").decide(&ctx);
+    assert_eq!(before, zero, "rarity=0 must preserve the existing plan exactly");
+
+    let experimental = solver("fleet:budget=official:iters=100:seed=42:rarity=2").decide(&ctx);
+    assert!(experimental.is_well_shaped(&ctx.agent_ids, ctx.day_steps));
+    assert_eq!(
+        BudgetMode::Official.apply(&ctx, experimental.clone()),
+        experimental,
+        "rarity candidate must remain an official normalization fixed point"
+    );
+}
+
 #[test]
 fn fleet_iters_mode_is_reproducible() {
     let (_, state) = state_701("S,P,P,P,P");
