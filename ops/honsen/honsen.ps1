@@ -216,6 +216,20 @@ function Invoke-Start([string]$ExePath) {
             Write-Host '試合完了（正常終了）' -ForegroundColor Green
             break
         }
+        # 回答が拒否された日があると、coordinator は試合を最後まで進めたうえで 0 以外で
+        # 終了する。これはクラッシュではないので再起動しない（終わった試合へ入り直さない）。
+        $latest = Get-LatestRun
+        if ($latest) {
+            $statePath = Join-Path $latest 'state.json'
+            if (Test-Path -LiteralPath $statePath) {
+                $status = ''
+                try { $status = (Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).status } catch { }
+                if ($status -eq 'rejected') {
+                    Write-Host '試合は最後まで進みましたが、拒否された日があります（再起動しません）' -ForegroundColor Red
+                    break
+                }
+            }
+        }
         $restarts++
         if (((Get-Date) - $began).TotalMinutes -ge $MaxRunMinutes) {
             Write-Host "開始から $MaxRunMinutes 分を超えたので再起動をやめます" -ForegroundColor Red

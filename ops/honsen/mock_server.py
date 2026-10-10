@@ -29,6 +29,7 @@ p.add_argument('--token', default='local-e2e-token')
 p.add_argument('--days', type=int, default=3)
 p.add_argument('--day-seconds', type=int, default=6)
 p.add_argument('--start-delay', type=int, default=2, help='seconds between POST /agent and the first day')
+p.add_argument('--reject-day', type=int, default=-1, help='answer revision -1 to every plan of this day')
 p.add_argument('--wait-seconds', type=int, default=600,
                help='give up if no team has posted its agent kinds this long after launch')
 p.add_argument('--summary', type=Path, help='write what the server saw to this JSON file on exit')
@@ -99,7 +100,7 @@ class Handler(BaseHTTPRequestHandler):
                 plan = json.loads(body)
                 well_formed = (isinstance(plan, list) and len(plan) == len(case['agents'])
                                and all(isinstance(row, list) and all(isinstance(x, int) for x in row) for row in plan))
-                if not well_formed:
+                if not well_formed or day == a.reject_day:
                     return self.reply(200, {'revision': -1})
                 state['revision'] += 1
                 if day not in state['accepted_days']:
@@ -131,4 +132,5 @@ with lock:
 if a.summary:
     a.summary.write_text(json.dumps(summary) + '\n', encoding='utf-8')
 print(json.dumps(summary), flush=True)
-raise SystemExit(0 if summary['accepted_days'] == list(range(days)) else 1)
+expected = [day for day in range(days) if day != a.reject_day]
+raise SystemExit(0 if summary['accepted_days'] == expected else 1)

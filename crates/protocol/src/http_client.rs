@@ -133,6 +133,9 @@ impl From<AccessTimeError> for HttpClientError {
 /// observer sees anything.
 #[derive(Debug, Clone)]
 pub struct HttpExchange {
+    /// Identifies this exchange within the client (and its clones), from 1.
+    /// [`HttpObserver::decode_failed`] refers to an exchange by this id.
+    pub id: u64,
     /// `GET` / `POST`.
     pub method: String,
     /// The full request URL.
@@ -189,9 +192,9 @@ pub trait HttpObserver: Send + Sync + std::fmt::Debug {
     /// One request finished (with a response or with a failure).
     fn exchange(&self, exchange: HttpExchange);
 
-    /// A response arrived but could not be decoded into the type the
-    /// protocol promises. Refers to the most recent exchange.
-    fn decode_failed(&self, error: &str);
+    /// The response of exchange `exchange_id` arrived but could not be
+    /// decoded into the type the protocol promises.
+    fn decode_failed(&self, exchange_id: u64, error: &str);
 }
 
 /// Asynchronous HTTP client for the contest server.
@@ -208,6 +211,8 @@ pub struct MatchClient {
     /// `None` on every default path: no observer, no change to how a
     /// request is sent or how its body is read.
     observer: Option<std::sync::Arc<dyn HttpObserver>>,
+    /// Source of [`HttpExchange::id`], shared by clones of this client.
+    exchange_ids: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl MatchClient {
@@ -238,14 +243,19 @@ impl MatchClient {
         }
     }
 
-    /// Tell the observer, if any, that a decode failed.
-    fn observed<T>(&self, result: Result<T, HttpClientError>) -> Result<T, HttpClientError> {
+    /// Tell the observer, if any, that decoding the response of `exchange`
+    /// failed.
+    fn observed<T>(
+        &self,
+        exchange: u64,
+        result: Result<T, HttpClientError>,
+    ) -> Result<T, HttpClientError> {
         if let (
             Some(observer),
             Err(e @ (HttpClientError::Decode(_) | HttpClientError::ApiDrift { .. })),
         ) = (self.observer.as_ref(), result.as_ref())
         {
-            observer.decode_failed(&e.to_string());
+            observer.decode_failed(exchange, &e.to_string());
         }
         result
     }
@@ -259,8 +269,9 @@ impl MatchClient {
         let url = self.endpoint("/agent")?;
         let body: AgentKindsBody = kinds;
         let body_bytes = serde_json::to_vec(&body)?;
-        let response = self.execute(reqwest::Method::POST, &url, Some(body_bytes), true).await?;
-        self.observed(handle_submit_response(response).await)
+        let (response, exchange) =
+            self.execute(reqwest::Method::POST, &url, Some(body_bytes), true).await?;
+        self.observed(exchange, handle_submit_response(response).await)
     }
 
     /// Fetch the current [`MatchState`] snapshot from `GET /`.
@@ -270,8 +281,9 @@ impl MatchClient {
     /// See [`HttpClientError`].
     pub async fn get_match_state(&self) -> Result<MatchState, HttpClientError> {
         let url = self.endpoint("/")?;
-        let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
-        self.observed(Self::decode_match_state(response).await)
+        let (response, exchange) =
+            self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
+        self.observed(exchange, Self::decode_match_state(response).await)
     }
 
     /// Fetch the static match configuration from `GET /setting`.
@@ -285,8 +297,9 @@ impl MatchClient {
     /// See [`HttpClientError`].
     pub async fn get_match_setting(&self) -> Result<MatchSetting, HttpClientError> {
         let url = self.endpoint("/setting")?;
-        let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
-        self.observed(Self::decode_setting_response(response).await)
+        let (response, exchange) =
+            self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
+        self.observed(exchange, Self::decode_setting_response(response).await)
     }
 
     /// Submit the day's action plan for all agents to `POST /`.
@@ -309,9 +322,9 @@ impl MatchClient {
     ) -> Result<ActionAccepted, HttpClientError> {
         let url = self.endpoint("/")?;
         let body_bytes = serde_json::to_vec(&plan)?;
-        let response =
+        let (response, exchange) =
             self.execute_with_retry(reqwest::Method::POST, &url, Some(body_bytes)).await?;
-        self.observed(Self::decode_action_accepted(response).await)
+        self.observed(exchange, Self::decode_action_accepted(response).await)
     }
 
     /// Fetch an arbitrary protocol path and decode its body as `T`.
@@ -333,8 +346,9 @@ impl MatchClient {
         path: &str,
     ) -> Result<T, HttpClientError> {
         let url = self.endpoint(path)?;
-        let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
-        self.observed(Self::decode_success_json(response, path).await)
+        let (response, exchange) =
+            self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
+        self.observed(exchange, Self::decode_success_json(response, path).await)
     }
 
     /// Decode a `MatchSetting` from a successful response.
@@ -441,7 +455,7 @@ impl MatchClient {
         method: reqwest::Method,
         url: &str,
         body: Option<Vec<u8>>,
-    ) -> Result<reqwest::Response, HttpClientError> {
+    ) -> Result<(reqwest::Response, u64), HttpClientError> {
         self.execute(method, url, body, false).await
     }
 
@@ -457,7 +471,9 @@ impl MatchClient {
         url: &str,
         body: Option<Vec<u8>>,
         body_unused_on_success: bool,
-    ) -> Result<reqwest::Response, HttpClientError> {
+    ) -> Result<(reqwest::Response, u64), HttpClientError> {
+        // Id of the latest observed exchange; 0 without an observer.
+        let mut exchange = 0_u64;
         // POST outcomes can be ambiguous: only reads may be replayed.
         let max_retries =
             if method == reqwest::Method::GET { self.retry_policy.max_retries } else { 0 };
@@ -483,8 +499,11 @@ impl MatchClient {
             let sent = match self.observer.as_deref() {
                 None => builder.send().await.map_err(|error| SendFailure { error, in_body: false }),
                 Some(observer) => {
+                    exchange =
+                        self.exchange_ids.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                     self.send_observed(
                         observer,
+                        exchange,
                         builder,
                         &method,
                         url,
@@ -504,7 +523,7 @@ impl MatchClient {
                         });
                         continue;
                     }
-                    return Ok(response);
+                    return Ok((response, exchange));
                 }
                 Err(SendFailure { error: err, in_body }) => {
                     // A body that broke off is never repeated here: without
@@ -546,6 +565,7 @@ impl MatchClient {
     async fn send_observed(
         &self,
         observer: &dyn HttpObserver,
+        id: u64,
         builder: reqwest::RequestBuilder,
         method: &reqwest::Method,
         url: &str,
@@ -561,6 +581,7 @@ impl MatchClient {
         }
         let report = |outcome: HttpOutcome| {
             observer.exchange(HttpExchange {
+                id,
                 method: method.as_str().to_owned(),
                 url: url.to_owned(),
                 request_headers: request_headers.clone(),
@@ -770,6 +791,7 @@ impl MatchClientBuilder {
             retry_policy: self.retry_policy,
             request_timeout: self.request_timeout,
             observer: self.observer,
+            exchange_ids: std::sync::Arc::default(),
         })
     }
 }

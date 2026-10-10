@@ -28,11 +28,12 @@
 //! every registered token is replaced wherever it appears — URL, bodies,
 //! header values, error text — before anything is printed or stored.
 
+use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -45,6 +46,9 @@ use crate::arena::Secret;
 
 /// Entries the client may have queued ahead of the writer.
 const QUEUE_CAPACITY: usize = 4096;
+
+/// Exchanges kept for matching a later decode failure.
+const RECENT_EXCHANGES: usize = 64;
 
 /// Header names (lowercase substrings) whose values are never shown.
 const SECRET_HEADER_MARKERS: [&str; 7] =
@@ -101,7 +105,7 @@ pub struct HttpLogEntry {
 
 enum Msg {
     Exchange(Box<HttpExchange>),
-    DecodeFailed(String),
+    DecodeFailed(u64, String),
     Flush(SyncSender<()>),
 }
 
@@ -121,9 +125,6 @@ pub struct HttpLog {
     path: PathBuf,
     dropped: Arc<AtomicU64>,
     write_errors: Arc<AtomicU64>,
-    /// The most recent exchange did not fit in the queue, so a decode
-    /// failure reported next has no entry to refer to.
-    last_exchange_dropped: AtomicBool,
 }
 
 impl HttpLog {
@@ -162,13 +163,7 @@ impl HttpLog {
             last_complaint: None,
         };
         std::thread::Builder::new().name("http-log".to_owned()).spawn(move || writer.run(&rx))?;
-        Ok(Arc::new(Self {
-            tx,
-            path,
-            dropped,
-            write_errors,
-            last_exchange_dropped: AtomicBool::new(false),
-        }))
+        Ok(Arc::new(Self { tx, path, dropped, write_errors }))
     }
 
     /// The `http.jsonl` path.
@@ -183,12 +178,10 @@ impl HttpLog {
         (self.dropped.load(Ordering::Relaxed), self.write_errors.load(Ordering::Relaxed))
     }
 
-    fn send(&self, msg: Msg) -> bool {
-        let queued = self.tx.try_send(msg).is_ok();
-        if !queued {
+    fn send(&self, msg: Msg) {
+        if self.tx.try_send(msg).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
-        queued
     }
 
     /// Wait until everything queued so far is printed and on disk, for at
@@ -217,18 +210,11 @@ impl HttpLog {
 
 impl HttpObserver for HttpLog {
     fn exchange(&self, exchange: HttpExchange) {
-        let queued = self.send(Msg::Exchange(Box::new(exchange)));
-        self.last_exchange_dropped.store(!queued, Ordering::Relaxed);
+        self.send(Msg::Exchange(Box::new(exchange)));
     }
 
-    fn decode_failed(&self, error: &str) {
-        // Without its exchange the failure would be pinned on the request
-        // before it; count it as lost instead.
-        if self.last_exchange_dropped.load(Ordering::Relaxed) {
-            self.dropped.fetch_add(1, Ordering::Relaxed);
-            return;
-        }
-        self.send(Msg::DecodeFailed(error.to_owned()));
+    fn decode_failed(&self, exchange_id: u64, error: &str) {
+        self.send(Msg::DecodeFailed(exchange_id, error.to_owned()));
     }
 }
 
@@ -248,28 +234,47 @@ struct Writer {
 
 impl Writer {
     fn run(mut self, rx: &Receiver<Msg>) {
-        let mut last: Option<HttpLogEntry> = None;
+        // The exchanges a decode failure may still refer to, by client id
+        // (without their headers and bodies, which the failure line omits).
+        let mut recent: VecDeque<(u64, HttpLogEntry)> = VecDeque::with_capacity(RECENT_EXCHANGES);
         while let Ok(msg) = rx.recv() {
             match msg {
                 Msg::Exchange(exchange) => {
                     let entry = self.entry(&exchange);
                     self.emit(&entry);
-                    last = Some(entry);
-                }
-                Msg::DecodeFailed(error) => {
-                    if let Some(previous) = last.as_ref() {
-                        let entry = HttpLogEntry {
+                    if recent.len() == RECENT_EXCHANGES {
+                        recent.pop_front();
+                    }
+                    recent.push_back((
+                        exchange.id,
+                        HttpLogEntry {
                             kind: "decode_error".to_owned(),
                             result: "failed".to_owned(),
                             failure: Some("decode".to_owned()),
-                            error: Some(self.redact(&error)),
+                            error: None,
                             request_headers: Vec::new(),
                             request_body: None,
                             response_headers: Vec::new(),
                             response_body: None,
-                            ..previous.clone()
-                        };
-                        self.emit(&entry);
+                            ..entry
+                        },
+                    ));
+                }
+                Msg::DecodeFailed(id, error) => {
+                    // Matched by id, never by "the last one": an exchange
+                    // that was dropped, or another client clone's request in
+                    // between, must not be blamed.
+                    match recent.iter().find(|(known, _)| *known == id) {
+                        Some((_, template)) => {
+                            let entry = HttpLogEntry {
+                                error: Some(self.redact(&error)),
+                                ..template.clone()
+                            };
+                            self.emit(&entry);
+                        }
+                        None => {
+                            self.dropped.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
                 Msg::Flush(ack) => {
