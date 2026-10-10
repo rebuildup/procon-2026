@@ -73,6 +73,7 @@ honsen status -w              # 監視画面（1 秒ごとに更新、Ctrl-C で
 - `試合状態 : running`
 - `revision : [1, 2, 3, …]` — 日が進むたびに 1 つ増える。**0 以上の数字 = サーバーが受理した**
 - 最新ログに `plan accepted by server day=N revision=R … margin_ms=…`（`margin_ms` は締切までの残り時間）
+- 既定候補（`budget_ms=59000:adapt=off`）は毎日ほぼ時間いっぱいまで探索する。受理の行が出るのは各日の開始から約 54 秒後で、`margin_ms` は 5200 前後になる。これが正常値で、日の前半にログが進まないのは故障ではない
 
 「送った」だけでは受理ではありません。受理の根拠はサーバーが返した `revision` だけです。
 
