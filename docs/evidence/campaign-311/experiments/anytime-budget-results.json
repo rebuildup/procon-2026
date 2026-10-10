@@ -1,0 +1,57 @@
+{
+  "source_commit_sha": "d5a33aa7b57849e723adb82ee80e444b1ffe65c3",
+  "note": "MatchSim-based, provisional until #342 parity fix",
+  "experiment_b_anytime_budget": {
+    "0ms": {
+      "V": 20,
+      "D": 198,
+      "B": 358,
+      "time_ms": 128
+    },
+    "1000ms": {
+      "V": 20,
+      "D": 197,
+      "B": 387,
+      "time_ms": 10135
+    },
+    "5000ms": {
+      "V": 20,
+      "D": 198,
+      "B": 401,
+      "time_ms": 50167
+    },
+    "15000ms": {
+      "V": 20,
+      "D": 199,
+      "B": 407,
+      "time_ms": 140192
+    },
+    "20000ms": {
+      "V": 20,
+      "D": 199,
+      "B": 407,
+      "time_ms": 184021
+    },
+    "conclusion": "15s budget optimal: D+1, B+49. 20s saturates. 1s has noise (D-1)."
+  },
+  "recommended_candidates": {
+    "1_strongest": {
+      "id": "anytime:budget_ms=15000:seed=42:budget=official",
+      "D": 199,
+      "B": 407,
+      "note": "Best D and B, uses 15s search"
+    },
+    "2_stable_fallback": {
+      "id": "coverage:budget=official:park=far",
+      "D": 198,
+      "B": 358,
+      "note": "Deterministic, fast (128ms)"
+    },
+    "3_conditional": {
+      "id": "coverage:budget=official:park=far:fuelaware=true",
+      "D": "varies",
+      "B": "varies",
+      "note": "Use when fuel pressure exists (min_fuel < 50)"
+    }
+  }
+}

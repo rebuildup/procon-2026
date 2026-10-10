@@ -1,0 +1,100 @@
+{
+  "suite": "release-smoke",
+  "source_sha": "602f46568bc718e3f8e31803cf4a9464d34b0a5f",
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64"
+  },
+  "loadavg": [
+    3.23,
+    4.83,
+    4.41
+  ],
+  "candidate": {
+    "tiny_case": "smoke:tiny-8x8",
+    "eval_binary": "target/release/procon-eval",
+    "candidates": {
+      "coverage:budget=official:park=far": {
+        "kind": "required",
+        "ok": true,
+        "status": "success",
+        "scored": true,
+        "detail": null,
+        "variety": 3,
+        "total_balls": 6,
+        "elapsed_s": 0.222
+      },
+      "coverage:budget=official:park=none": {
+        "kind": "required",
+        "ok": true,
+        "status": "success",
+        "scored": true,
+        "detail": null,
+        "variety": 3,
+        "total_balls": 6,
+        "elapsed_s": 0.004
+      },
+      "anytime": {
+        "kind": "probe",
+        "ok": false,
+        "status": "invalid",
+        "scored": false,
+        "detail": "bad candidate \"anytime\": algorithm \"anytime\" is missing required parameter \"budget\"",
+        "variety": 0,
+        "total_balls": 0,
+        "elapsed_s": 0.004
+      },
+      "coverage:budget=official:park=far:fuelaware=true": {
+        "kind": "probe",
+        "ok": true,
+        "status": "success",
+        "scored": true,
+        "detail": null,
+        "variety": 3,
+        "total_balls": 6,
+        "elapsed_s": 0.004
+      }
+    },
+    "required_ok": true,
+    "probe_facts": {
+      "anytime": {
+        "constructible": false,
+        "status": "invalid",
+        "detail": "bad candidate \"anytime\": algorithm \"anytime\" is missing required parameter \"budget\""
+      },
+      "coverage:budget=official:park=far:fuelaware=true": {
+        "constructible": true,
+        "status": "success",
+        "detail": null
+      }
+    }
+  },
+  "official_cli": {
+    "ok": true,
+    "exit_code": 0,
+    "candidate": "coverage:budget=official:park=far",
+    "days": 10,
+    "revisions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "min_revision": 1,
+    "revision_floor": 1,
+    "source_sha": "602f46568bc718e3f8e31803cf4a9464d34b0a5f",
+    "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+    "cli_sha256": "86f2367f48b14a36566ee77987ebdc809e984cbf3e5c7fbd6433ab898589e5ce",
+    "elapsed_s": 32.398,
+    "output_dir": "target/release-smoke/official-cli",
+    "stderr_tail": "",
+    "limitation": "Local official binary, single team, shortened windows; not arena score parity."
+  },
+  "overall": "PASS"
+}

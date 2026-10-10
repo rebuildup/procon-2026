@@ -1,0 +1,19 @@
+{
+  "source_sha": "18253a4f8ba80571927d06f47a23c51550ef644b",
+  "tree_equivalent_measurement_sha": "8f4cc89bdbcacc461584fba807f461d5ecec5e09",
+  "tree_note": "coverage path tree is byte-identical at 8f4cc89 and 18253a4 (reconcile merge only); tour work (#333 / branch 333 / 60ed527) is NOT on this branch",
+  "harness": "procon-eval release profile (CARGO_INCREMENTAL=0, --offline --locked)",
+  "kinds": "P,S,P,S,P",
+  "candidates": [
+    "coverage:budget=official:park=none",
+    "coverage:budget=official:park=far"
+  ],
+  "baseline": "coverage:budget=official:park=none",
+  "cases": "bundled fixtures (all) + fixture:701 + generated v2 x4 = 14 cases x 2 candidates = 28 runs",
+  "wdl_vs_park_none": "1W / 13D / 0L",
+  "all_status_success": true,
+  "illegal_action_total": 0,
+  "fuel_short_total": 0,
+  "day_budget_exceeded_total": 0,
+  "old_evidence": "docs/evidence/campaign-311/coverage-park/ (source-sha.txt stamps badc5df but park=far cannot build there; PR body cited 5cdcf49; reproduced exactly at 5cdcf49)"
+}

@@ -1,0 +1,1642 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>ヘキサうどん戦略ラボ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Dela+Gothic+One&family=M+PLUS+1+Code:wght@400;600&display=swap">
+<style>
+/* レイアウト: 左=条件と戦略 / 中央=六角盤面と再生 / 右=結果。狭い画面では縦積み */
+:root{
+  --bg:#f3f4ef; --panel:#ffffff; --ink:#1c231f; --muted:#5f6a62; --line:#d8ddd3;
+  --accent:#b5651d; --accent-ink:#ffffff; --good:#2f7d4f; --bad:#b23a3a;
+  --plain:#ebe6c8; --road:#8e98a2; --mount:#a88b68; --pond:#86b6d8; --busy:#d99a2b; --jam:#c4423a;
+  --hexline:rgba(28,35,31,.16);
+  --f-display:"Dela Gothic One","BIZ UDPGothic",system-ui,sans-serif;
+  --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --f-mono:"M PLUS 1 Code",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#131714; --panel:#1b201c; --ink:#e5e9e2; --muted:#9aa49c; --line:#2e3630;
+  --accent:#e09a4b; --accent-ink:#1b1206; --good:#5fc28a; --bad:#ee7a70;
+  --plain:#3d3b2b; --road:#5f6973; --mount:#6e583f; --pond:#2d5a7c; --busy:#c98a22; --jam:#b6443b;
+  --hexline:rgba(229,233,226,.10); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#131714; --panel:#1b201c; --ink:#e5e9e2; --muted:#9aa49c; --line:#2e3630;
+  --accent:#e09a4b; --accent-ink:#1b1206; --good:#5fc28a; --bad:#ee7a70;
+  --plain:#3d3b2b; --road:#5f6973; --mount:#6e583f; --pond:#2d5a7c; --busy:#c98a22; --jam:#b6443b;
+  --hexline:rgba(229,233,226,.10); color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.55;padding-inline:16px;padding-block:14px 40px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;margin-bottom:12px}
+h1{font-family:var(--f-display);font-weight:400;font-size:24px;margin:0;letter-spacing:.02em}
+header p{margin:0;color:var(--muted);font-size:13px}
+.tabs{display:flex;gap:4px;margin-left:auto}
+.tabs button{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 14px;border-radius:999px;cursor:pointer;font:inherit}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.grid{display:grid;grid-template-columns:270px minmax(0,1fr) 330px;gap:14px;align-items:start}
+@media (max-width:1150px){.grid{grid-template-columns:270px minmax(0,1fr)}.right{grid-column:1/-1}}
+@media (max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}#main{order:-1}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.panel h2{font-size:12px;letter-spacing:.08em;color:var(--muted);margin:2px 0 8px;font-weight:700}
+.panel + .panel{margin-top:10px}
+fieldset{border:0;margin:0 0 12px;padding:0;display:grid;gap:7px}
+legend{font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:6px;padding:0}
+.row{display:grid;grid-template-columns:1fr 104px;align-items:center;gap:8px}
+.row label{font-size:13px}
+.row small{display:block;color:var(--muted);font-size:11px;line-height:1.3}
+input[type=number],select{width:100%;font:inherit;font-family:var(--f-mono);font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+select{font-family:var(--f-body)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input:focus-visible,select:focus-visible,button:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn{font:inherit;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:6px 12px;border-radius:7px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+.boardwrap{position:relative}
+canvas#board{width:100%;display:block;touch-action:manipulation;cursor:crosshair}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.days{display:flex;flex-wrap:wrap;gap:4px}
+.days button{font:inherit;font-family:var(--f-mono);font-size:12px;min-width:44px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:3px 6px;cursor:pointer}
+.days button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.days button.miss{box-shadow:inset 0 -3px 0 var(--bad)}
+.stepline{display:flex;align-items:center;gap:8px;flex:1 1 240px;min-width:0}
+.stepline output{font-family:var(--f-mono);font-size:12px;white-space:nowrap;color:var(--muted)}
+.hint{font-size:12px;color:var(--muted);margin:8px 0 0}
+.hint b{color:var(--ink)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px;border:1px solid var(--hexline)}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kpi{border:1px solid var(--line);border-radius:8px;padding:8px}
+.kpi span{display:block;font-size:11px;color:var(--muted);line-height:1.3}
+.kpi strong{font-family:var(--f-mono);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.kpi em{font-style:normal;font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-size:11px;color:var(--muted);font-weight:700;text-align:right}
+th:first-child,td:first-child{text-align:left}
+td.l,th.l{text-align:left;white-space:normal}
+tr.sel td{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+tbody tr{cursor:pointer}
+.tablewrap{overflow-x:auto}
+.chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.chip.ok{color:var(--good);border-color:color-mix(in srgb,var(--good) 50%,transparent)}
+.chip.ng{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 50%,transparent)}
+.miss-list{font-family:var(--f-mono);color:var(--bad)}
+textarea{width:100%;min-height:80px;font-family:var(--f-mono);font-size:11.5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);padding:6px;resize:vertical}
+details summary{cursor:pointer;font-size:12px;color:var(--muted);letter-spacing:.06em;font-weight:700}
+details[open] summary{margin-bottom:6px}
+.agents{display:grid;gap:4px;font-size:12.5px}
+.agents div{display:flex;gap:8px;align-items:center;font-variant-numeric:tabular-nums}
+.sw{width:14px;height:14px;border-radius:50%;flex:none;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line)}
+.sw.sq{border-radius:3px;transform:rotate(45deg) scale(.85)}
+.progress{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:8px 0}
+.progress div{height:100%;width:0;background:var(--accent);transition:width .15s}
+.best{font-weight:700;color:var(--accent)}
+.heat td.v{font-family:var(--f-mono)}
+.note{font-size:12px;color:var(--muted);line-height:1.6}
+.note p{margin:0 0 6px}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:7px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.on{opacity:1}
+.mode-seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.mode-seg button{flex:1;white-space:nowrap;padding-inline:10px;font:inherit;font-size:12px;background:var(--bg);color:var(--ink);border:0;padding:5px 4px;cursor:pointer}
+.mode-seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.tl-legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);margin-bottom:6px}
+.tl-legend span{display:inline-flex;align-items:center;gap:5px}
+.tl-legend i{display:inline-block;width:12px;height:12px;border-radius:3px}
+.tl-wrap{overflow-x:auto}
+#timeline{display:block;width:100%;min-width:520px;height:auto;cursor:pointer}
+#timeline text{font-family:var(--f-mono);font-size:11px;fill:var(--muted)}
+#wastePanel{margin-top:12px}
+.waste-grid{display:grid;gap:10px;margin-top:10px}
+#wasteTable td,#wasteTable th{text-align:right}
+#wasteTable td:first-child,#wasteTable th:first-child{text-align:left}
+.cw-new{--c:#2a78d6}.cw-dup{--c:#eb6834}.cw-ref{--c:#1baf7a}.cw-park{--c:#4a3aa7}.cw-none{--c:#e34948}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+<header>
+  <h1>ヘキサうどん戦略ラボ</h1>
+  <p>第37回高専プロコン競技部門の練習用。マップと試合条件を変えながら、担当の分け方と補給車の使い方を比べます。</p>
+  <div class="tabs" role="tablist">
+    <button id="tab-one" role="tab" aria-selected="true">1試合を見る</button>
+    <button id="tab-batch" role="tab" aria-selected="false">まとめて比べる</button>
+  </div>
+</header>
+
+<div class="grid" id="grid">
+  <aside class="left">
+    <section class="panel">
+      <fieldset>
+        <legend>大会の段階とマップ</legend>
+        <div class="row"><label for="stage">段階</label>
+          <select id="stage"><option value="r1">1回戦・敗者復活</option><option value="sf">準決勝</option><option value="f">決勝</option><option value="custom">自由設定</option><option value="s16">参考マップ 16×16</option><option value="s24">参考マップ 24×24</option><option value="s32">参考マップ 32×32</option></select></div>
+        <div class="row"><label for="size">盤面の一辺<small>H = W</small></label><input id="size" type="number" min="8" max="32" value="16"></div>
+        <div class="row"><label for="agents">エージェント数</label><input id="agents" type="number" min="3" max="8" value="4"></div>
+        <div class="row"><label for="spots">スポット数</label><input id="spots" type="number" min="3" max="32" value="16"></div>
+        <div class="row"><label for="brands">系列数<small id="brandRange">本選は 10〜14</small></label><input id="brands" type="number" min="1" max="32" value="12"></div>
+        <div class="row"><label for="maxStock">最大在庫の上限<small>各スポット 1〜この値</small></label><input id="maxStock" type="number" min="1" max="8" value="4"></div>
+        <div class="row"><label for="seed">マップ番号</label><input id="seed" type="number" min="1" value="1"></div>
+        <div class="btns"><button class="btn" id="newMap">別のマップ</button></div>
+      </fieldset>
+      <details>
+        <summary>地形の作り方</summary>
+        <fieldset>
+          <div class="row"><label for="pond">池の割合 %</label><input id="pond" type="number" min="0" max="40" value="21"></div>
+          <div class="row"><label for="mount">山地の割合 %</label><input id="mount" type="number" min="0" max="50" value="22"></div>
+          <div class="row"><label for="roads">道路の割合 %</label><input id="roads" type="number" min="0" max="60" value="27"></div>
+          <div class="row"><label for="edgeBias">スポットの端寄せ<small>0 = 一様・参考マップは 1 前後</small></label><input id="edgeBias" type="number" min="0" max="5" step="0.1" value="1"></div>
+          <div class="row"><label for="startMode">初期位置</label>
+            <select id="startMode"><option value="random">ばらばら（参考マップと同じ）</option><option value="cluster">中央付近に集合</option><option value="same">全員同じセル</option></select></div>
+        </fieldset>
+      </details>
+    </section>
+    <section class="panel">
+      <fieldset>
+        <legend>試合条件（本選では当日まで非公開）</legend>
+        <div class="row"><label for="days">日数<small>4〜10</small></label><input id="days" type="number" min="1" max="10" value="5"></div>
+        <div class="row"><label for="stepMul">1日目のステップ数<small>(W+H) の何倍か・1〜4</small></label><input id="stepMul" type="number" min="1" max="4" step="0.1" value="1"></div>
+        <div class="row"><label for="jitter">日ごとのステップ数</label><select id="jitter"><option value="grow">日ごとに増える（最終日 1.5倍）</option><option value="0">毎日同じ</option><option value="1">±20% ばらつく</option></select></div>
+        <div class="row"><label for="fuelMul">燃料上限<small>1日目ステップ数の何倍か・1〜3</small></label><input id="fuelMul" type="number" min="1" max="3" step="0.05" value="1.25"></div>
+        <div class="row"><label for="busy">混雑基準値<small>1〜5</small></label><input id="busy" type="number" min="1" max="5" value="1"></div>
+        <div class="row"><label for="jammed">渋滞基準値<small>2〜10</small></label><input id="jammed" type="number" min="2" max="10" value="3"></div>
+        <div class="row"><label for="players">チーム数</label><input id="players" type="number" min="1" max="20" value="10"></div>
+        <div class="row"><label for="env">実際の道路状況<small>2日目以降。「滞在数から計算」は他チームも自チームと同じように道路を使うと見なします</small></label><select id="env"><option value="sim">滞在数から計算（日ごとに変化）</option><option value="jam">すべて渋滞で固定（最悪想定）</option><option value="busy">すべて混雑以上で固定</option><option value="alt">偶数日渋滞・奇数日空き</option><option value="free">ずっと空いている</option></select></div>
+        <div class="row"><label for="otherLoad">他チームの道路利用<small>自チームの何倍と見なすか</small></label><input id="otherLoad" type="number" min="0" max="3" step="0.1" value="1"></div>
+      </fieldset>
+    </section>
+    <section class="panel">
+      <fieldset>
+        <legend>戦略</legend>
+        <div class="row"><label for="supply">補給車の台数</label><input id="supply" type="number" min="0" max="7" value="1"></div>
+        <div class="row"><label for="mode">補給車の使い方</label>
+          <select id="mode"><option value="hub">拠点で待機</option><option value="loop">ループを巡回</option><option value="pair">巡回車に随伴</option></select></div>
+        <div class="row"><label for="loopK">ループの経由点<small>スポット群の中心を何点つなぐか</small></label><input id="loopK" type="number" min="2" max="7" value="3"></div>
+        <div class="row"><label for="loopDirSel">ループの向き</label><select id="loopDirSel"><option value="ctr">2台なら逆回し</option><option value="fwd">全台同じ向き</option><option value="rev">全台逆向き</option></select></div>
+        <div class="row"><label for="assign">担当の分け方</label>
+          <select id="assign"><option value="free">全員自由</option><option value="region">領域で分割</option><option value="brand">系列で分担</option><option value="manual">手動で指定</option></select></div>
+        <div class="row"><label for="outside">担当外のスポット</label>
+          <select id="outside"><option value="0">取らない</option><option value="0.3" selected>余裕があれば取る</option><option value="1">区別しない</option></select></div>
+        <div class="row"><label for="wm">試合で未獲得の系列の優先度<small>勝敗の第1基準。1玉に対する倍率</small></label><input id="wm" type="number" min="0" max="200" value="30"></div>
+        <div class="row"><label for="wb">その日に未取得の系列の優先度<small>1玉の価値に対する倍率</small></label><input id="wb" type="number" min="0" max="50" value="8"></div>
+        <div class="row"><label for="lam">燃料の節約度<small>0 = 最短時間だけ見る</small></label><input id="lam" type="number" min="0" max="3" step="0.1" value="0.3"></div>
+        <div class="row"><label for="planner">計画の探索方法</label><select id="planner"><option value="roll">ビームサーチ（ロールアウト評価）</option><option value="greedy">貪欲法＋ランダム試行</option><option value="beam">ビームサーチ（単純評価）</option></select></div>
+        <div class="row"><label for="look">日をまたいだ評価<small>翌日以降を貪欲法で試して選ぶ</small></label><select id="look"><option value="1">1日先まで</option><option value="0">しない</option><option value="2">2日先まで</option></select></div>
+        <div class="row"><label for="forecast">翌日の道路の予測</label><select id="forecast"><option value="jam">すべて渋滞</option><option value="model">今日の滞在から計算</option><option value="busy">すべて混雑</option><option value="alt">偶数日渋滞・奇数日空き</option><option value="free">空いたまま</option></select></div>
+        <div class="row"><label for="K">貪欲法の試行回数</label><input id="K" type="number" min="1" max="2000" value="200"></div>
+        <div class="row"><label for="bw">ビーム幅</label><input id="bw" type="number" min="1" max="2000" value="20"></div>
+        <div class="row"><label for="bb">1手あたりの分岐数</label><input id="bb" type="number" min="1" max="12" value="4"></div>
+      </fieldset>
+    </section>
+  </aside>
+
+  <main id="main">
+    <section class="panel" id="viewOne">
+      <div class="boardwrap"><canvas id="board" aria-label="六角マップ"></canvas></div>
+      <div class="toolbar">
+        <div class="days" id="dayBtns"></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="play">再生</button>
+        <div class="stepline"><input type="range" id="step" min="0" max="10" value="0" aria-label="ステップ"><output id="stepOut">0 / 0</output></div>
+        <div class="mode-seg" role="group" aria-label="盤面クリックの動作">
+          <button id="cmAssign" aria-pressed="true">担当を指定</button>
+          <button id="cmHub" aria-pressed="false">補給拠点を置く</button>
+        </div>
+      </div>
+      <p class="hint" id="clickHint"><b>スポットをクリック</b>すると担当の巡回車が順に切り替わり、分け方は「手動で指定」になります。今の自動の割り当てを出発点にして直せます。</p>
+      <div class="legend">
+        <span><i style="background:var(--plain)"></i>平地 2歩・燃料1</span>
+        <span><i style="background:var(--road)"></i>道路 1歩・燃料2</span>
+        <span><i style="background:var(--busy)"></i>混雑 2歩</span>
+        <span><i style="background:var(--jam)"></i>渋滞 4歩</span>
+        <span><i style="background:var(--mount)"></i>山地 3歩・燃料2</span>
+        <span><i style="background:var(--pond)"></i>池</span>
+        <span>丸＝スポット（数字は系列）・外周の色＝担当・薄い丸＝その日に取得済み・◆＝補給車・□＝補給拠点・点線＝補給車のループ</span>
+      </div>
+    </section>
+
+    <section class="panel" id="wastePanel">
+      <h2>時間の使い方（この日）</h2>
+      <p class="note" style="margin:0 0 8px">各エージェントの1ステップごとに、何のための行動だったかを色分けしています。移動はその後に起きた出来事（獲得・補給）で分類します。クリックするとそのステップへ移動します。</p>
+      <div class="tl-legend" id="tlLegend"></div>
+      <div class="tl-wrap"><svg id="timeline" role="img" aria-label="エージェントごとの時間の使い方"></svg></div>
+      <div class="waste-grid">
+        <div class="tablewrap"><table id="wasteTable"><thead><tr><th>巡回車</th><th>新しい系列へ</th><th>取得済み系列へ</th><th>補給の寄り道</th><th>翌日の位置取り</th><th>成果なしの移動</th><th>途中の待機</th><th>終了後の余り</th></tr></thead><tbody></tbody></table></div>
+        <div id="missWhy" class="note"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="viewBatch" hidden>
+      <h2>まとめて比べる</h2>
+      <div class="note"><p>左の「段階」（参考マップを選んでいる場合は同じ大きさ）と地形の設定でマップをたくさん作り、選んだ戦略を全部同じマップで走らせます。試合条件をランダムにすると、非公開の条件がどう振れても強い戦略と、条件しだいで入れ替わる戦略が見えてきます。</p></div>
+      <fieldset>
+        <div class="row"><label for="bMaps">マップの数</label><input id="bMaps" type="number" min="1" max="500" value="30"></div>
+        <div class="row"><label for="bSeed">最初のマップ番号</label><input id="bSeed" type="number" min="1" value="1000"></div>
+        <div class="row"><label for="bMapSrc">マップ</label><select id="bMapSrc"><option value="gen">毎回新しく生成</option><option value="sample">選択中の参考マップを使う</option></select></div>
+        <div class="row"><label for="bRand">試合条件</label><select id="bRand"><option value="2">参考マップ寄りでランダム</option><option value="1">要項の全範囲でランダム</option><option value="0">左の値で固定</option></select></div>
+      </fieldset>
+      <fieldset>
+        <legend>比べる戦略</legend>
+        <div class="btns" id="bAssign">
+          <label><input type="checkbox" value="free" checked> 全員自由</label>
+          <label><input type="checkbox" value="region" checked> 領域で分割</label>
+          <label><input type="checkbox" value="brand" checked> 系列で分担</label>
+        </div>
+        <div class="btns" id="bSupply">
+          <span class="note">補給車の台数:</span>
+          <label><input type="checkbox" value="0" checked> 0</label>
+          <label><input type="checkbox" value="1" checked> 1</label>
+          <label><input type="checkbox" value="2" checked> 2</label>
+          <label><input type="checkbox" value="3"> 3</label>
+        </div>
+        <div class="btns" id="bPlanner">
+          <span class="note">探索方法:</span>
+          <label><input type="checkbox" value="current" checked> 左で選んだもの</label>
+          <label><input type="checkbox" value="greedy"> 貪欲法</label>
+          <label><input type="checkbox" value="roll"> ロールアウト付きビーム</label>
+        </div>
+        <div class="btns" id="bMode">
+          <span class="note">使い方:</span>
+          <label><input type="checkbox" value="pair" checked> 随伴</label>
+          <label><input type="checkbox" value="hub" checked> 拠点で待機</label>
+        </div>
+        <p class="note">担当外・優先度・燃料の節約度・試行回数・ビーム幅は左の値を使います。探索方法を複数選ぶと、同じ戦略を探索方法ごとに比べます。</p>
+      </fieldset>
+      <div class="btns"><button class="btn primary" id="bRun">比較を始める</button><button class="btn" id="bStop" disabled>止める</button></div>
+      <div class="progress"><div id="bProg"></div></div>
+      <p class="note" id="bStatus">未実行</p>
+      <div id="bResults"></div>
+    </section>
+  </main>
+
+  <aside class="right" id="right">
+    <section class="panel">
+      <h2>この試合の結果</h2>
+      <div class="kpis">
+        <div class="kpi"><span>試合全体の獲得種類</span><strong id="kAll">–</strong></div>
+        <div class="kpi"><span>各日の種類数の合計</span><strong id="kDaily">–</strong></div>
+        <div class="kpi"><span>総玉数</span><strong id="kUdon">–</strong></div>
+      </div>
+      <p class="hint">勝敗は 1.全体の種類数 → 2.各日の種類数の合計 → 3.総玉数 の順。実質は2が勝負どころです。</p>
+      <div class="tablewrap"><table id="dayTable"><thead><tr><th>日</th><th>歩数</th><th>系列</th><th>玉</th><th>混/渋</th><th class="l">取り逃し</th></tr></thead><tbody></tbody></table></div>
+    </section>
+    <section class="panel">
+      <h2>エージェント（表示中のステップ）</h2>
+      <div class="agents" id="agentList"></div>
+    </section>
+    <section class="panel">
+      <details>
+        <summary>この日の回答 JSON</summary>
+        <textarea id="planJson" readonly></textarea>
+        <div class="btns"><button class="btn" id="copyPlan">コピー</button></div>
+      </details>
+      <details>
+        <summary>マップを書き出す・読み込む</summary>
+        <p class="note">書き出しは簡易サーバー（procon-server）の設定 JSON 形式です。読み込みは設定 JSON と GET /setting の応答のどちらでも使えます。</p>
+        <div class="btns"><button class="btn" id="copyMap">設定 JSON をコピー</button></div>
+        <textarea id="importText" placeholder="ここに JSON を貼り付け"></textarea>
+        <div class="btns"><button class="btn" id="importBtn">読み込む</button><button class="btn" id="unImport" hidden>生成マップに戻す</button></div>
+        <p class="note" id="importMsg"></p>
+      </details>
+    </section>
+    <section class="panel note">
+      <h2>計画の作り方（自動部分）</h2>
+      <p>巡回車は「試合でまだ取っていない系列」「その日まだ取っていない系列」を強く優先し、価値÷所要ステップの大きいスポットへ向かいます。</p><p>貪欲法：最良の1手だけを選び続ける計画を、少しずつ揺らして試行回数ぶん作ります。ビームサーチ：1手ごとに上位の分岐数だけ枝分かれさせ、ビーム幅の数だけ途中の計画を残します。ロールアウト評価では、途中の計画を「残りを貪欲法で最後まで進めた結果」で比べます。どちらも最後に厳密シミュレーションで系列数→玉数が最も多いものを採用します。</p>
+      <p>随伴：補給車がまず巡回車の所へ行き、以後は同じ手で一緒に動くので燃料は常に満タン。拠点で待機：補給車は拠点（自動または手動で置く）に留まり、巡回車は燃料が足りなくなる前に寄ります。</p>
+      <p>日をまたいだ評価：その日の計画の候補（終了位置の違うものを最大40個）それぞれについて、翌日を予測した道路状況で貪欲法で進め、「その日＋翌日」の種類数の合計が最も大きい候補を採用します。日の終わりには、近いスポットの上で止まります（翌日ステップ1で1玉取れるため）。計画はすべて提出前と同じ判定（歩数・池・燃料）を通過したものです。</p>
+    </section>
+  </aside>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+"use strict";
+/* ===== ヘキサうどん エンジン（sim.py と同じルール） ===== */
+const ROADSTEP = [1, 2, 4];
+
+function mulberry(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function rawNb(H, W, p, d) {
+  const r = (p / W) | 0, c = p % W, od = r & 1;
+  let nr = r, nc = c;
+  switch (d) {
+    case 0: nr = r - 1; nc = c - od; break;
+    case 1: nr = r - 1; nc = c + 1 - od; break;
+    case 2: nc = c + 1; break;
+    case 3: nr = r + 1; nc = c + 1 - od; break;
+    case 4: nr = r + 1; nc = c - od; break;
+    case 5: nc = c - 1; break;
+  }
+  if (nr < 0 || nr >= H || nc < 0 || nc >= W) return -1;
+  return nr * W + nc;
+}
+
+function makeGame(o) {
+  const g = Object.assign({}, o);
+  const n = g.H * g.W;
+  g.nbr = new Int32Array(n * 6).fill(-1);
+  for (let p = 0; p < n; p++) {
+    if (g.cells[p] === 3) continue;
+    for (let d = 0; d < 6; d++) {
+      const q = rawNb(g.H, g.W, p, d);
+      if (q >= 0 && g.cells[q] !== 3) g.nbr[p * 6 + d] = q;
+    }
+  }
+  g.spotAt = new Map();
+  g.spots.forEach((s, k) => { if (!g.spotAt.has(s.pos)) g.spotAt.set(s.pos, []); g.spotAt.get(s.pos).push(k); });
+  g.roads = [];
+  for (let p = 0; p < n; p++) if (g.cells[p] === 1) g.roads.push(p);
+  g.brands = [...new Set(g.spots.map(s => s.brand))].sort((a, b) => a - b);
+  return g;
+}
+
+function costArrays(g, tr) {
+  const n = g.H * g.W, st = new Int32Array(n), fu = new Int32Array(n);
+  for (let p = 0; p < n; p++) {
+    const c = g.cells[p];
+    if (c === 0) { st[p] = 2; fu[p] = 1; }
+    else if (c === 1) { st[p] = ROADSTEP[tr[p]]; fu[p] = 2; }
+    else if (c === 2) { st[p] = 3; fu[p] = 2; }
+  }
+  return { st, fu };
+}
+
+function trafficFor(g, hist, day) {
+  const tr = new Uint8Array(g.H * g.W);
+  if (day === 0) return tr;
+  const a = hist[day - 1], b = day >= 2 ? hist[day - 2] : null;
+  for (const p of g.roads) {
+    const v = (a[p] + (b ? b[p] : 0)) / g.players;
+    tr[p] = v >= g.jammed ? 2 : v >= g.busy ? 1 : 0;
+  }
+  return tr;
+}
+
+/* 1日分の厳密シミュレーション */
+function simulate(g, agents, plan, N, st, fu, record) {
+  const n = agents.length, A = agents.map(a => ({ kind: a.kind, pos: a.pos, fuel: a.fuel }));
+  if (!Array.isArray(plan) || plan.length !== n) return { error: `エージェント数が合いません（${plan && plan.length} / ${n}）` };
+  const sched = [];
+  for (let i = 0; i < n; i++) {
+    let t = 0, pos = A[i].pos; const q = [];
+    for (const x of plan[i]) {
+      if (!Number.isInteger(x) || x > 5) return { error: `エージェント${i}: 不正な値 ${x}` };
+      if (x < 0) { t -= x; continue; }
+      const np = g.nbr[pos * 6 + x];
+      if (np < 0) return { error: `エージェント${i}: セル${pos}から方向${x}へは移動できません` };
+      t += st[pos]; q.push([t, np, fu[pos]]); pos = np;
+    }
+    if (t !== N) return { error: `エージェント${i}: 合計${t}ステップ（必要 ${N}）` };
+    sched.push(q);
+  }
+  const idx = new Int32Array(n), stock = g.spots.map(s => s.stocks);
+  const taken = A.map(() => new Set()), got = [];
+  const stay = new Float64Array(g.H * g.W);
+  const tp = record ? A.map(a => [a.pos]) : null, tf = record ? A.map(a => [a.fuel]) : null;
+  for (let step = 1; step <= N; step++) {
+    for (let i = 0; i < n; i++) {
+      const q = sched[i];
+      if (idx[i] < q.length && q[idx[i]][0] === step && A[i].kind === 0) {
+        const f = q[idx[i]][2];
+        if (A[i].fuel < f) return { error: `エージェント${i}: ステップ${step}で燃料不足（残り${A[i].fuel}, 必要${f}）` };
+        A[i].fuel -= f;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const q = sched[i];
+      if (idx[i] < q.length && q[idx[i]][0] === step) { A[i].pos = q[idx[i]][1]; idx[i]++; }
+    }
+    for (let i = 0; i < n; i++) {
+      if (A[i].kind !== 0) continue;
+      const ks = g.spotAt.get(A[i].pos);
+      if (!ks) continue;
+      for (const k of ks) if (!taken[i].has(k) && stock[k] > 0) {
+        stock[k]--; taken[i].add(k); got.push({ agent: i, brand: g.spots[k].brand, spot: k, step });
+      }
+    }
+    const sup = new Set();
+    for (const a of A) if (a.kind === 1) sup.add(a.pos);
+    if (sup.size) for (const a of A) if (a.kind === 0 && sup.has(a.pos)) a.fuel = g.fuelLimit;
+    for (const a of A) if (g.cells[a.pos] === 1) stay[a.pos]++;
+    if (record) for (let i = 0; i < n; i++) { tp[i].push(A[i].pos); tf[i].push(A[i].fuel); }
+  }
+  return { agents: A, got, stay, error: null, tracePos: tp, traceFuel: tf };
+}
+
+/* ---- 最短経路（重み = ステップ + λ×燃料、コストは出発セルで決まる） ---- */
+function dijkstra(g, src, st, fu, lam) {
+  const n = g.H * g.W;
+  const d = new Float64Array(n).fill(Infinity), s = new Int32Array(n).fill(-1), f = new Int32Array(n);
+  const pv = new Int32Array(n).fill(-1), pd = new Int8Array(n).fill(-1);
+  d[src] = 0; s[src] = 0;
+  const hk = [0], hv = [src];
+  const push = (k, v) => { hk.push(k); hv.push(v); let i = hk.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= hk[i]) break; [hk[p], hk[i]] = [hk[i], hk[p]]; [hv[p], hv[i]] = [hv[i], hv[p]]; i = p; } };
+  const pop = () => { const k = hk[0], v = hv[0], lk = hk.pop(), lv = hv.pop(); if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r; if (m === i) break; [hk[m], hk[i]] = [hk[i], hk[m]]; [hv[m], hv[i]] = [hv[i], hv[m]]; i = m; } } return [k, v]; };
+  while (hk.length) {
+    const [du, u] = pop();
+    if (du > d[u]) continue;
+    const w = st[u] + lam * fu[u];
+    for (let k = 0; k < 6; k++) {
+      const v = g.nbr[u * 6 + k]; if (v < 0) continue;
+      const nd = du + w;
+      if (nd < d[v] - 1e-9 || (Math.abs(nd - d[v]) < 1e-9 && s[u] + st[u] < s[v])) {
+        d[v] = nd; s[v] = s[u] + st[u]; f[v] = f[u] + fu[u]; pv[v] = u; pd[v] = k; push(nd, v);
+      }
+    }
+  }
+  return { d, s, f, pv, pd };
+}
+
+function pathTo(D, src, dst) { // [[dir, cell], ...]
+  const out = [];
+  let v = dst;
+  while (v !== src) { if (D.pv[v] < 0) return null; out.push([D.pd[v], v]); v = D.pv[v]; }
+  return out.reverse();
+}
+
+function makeCtx(g, st, fu, lam) {
+  const cL = new Map(), c0 = new Map();
+  return {
+    st, fu,
+    dist(src, zero) {
+      const c = zero || lam === 0 ? c0 : cL;
+      let D = c.get(src);
+      if (!D) { D = dijkstra(g, src, st, fu, zero ? 0 : lam); c.set(src, D); }
+      return D;
+    }
+  };
+}
+
+/* ---- 1日の計画（貪欲＋ノイズ） ---- */
+function greedyDay(g, S, N, ctx, plan, rng, noise, have) {
+  have = have || new Set();
+  const n = S.length, acts = S.map(() => []), tAg = new Array(n).fill(0);
+  const stock = g.spots.map(s => s.stocks), covered = new Set();
+  const st = ctx.st;
+  const paired = new Map(), hubs = [], loopPres = [];
+  const walk = (i, src, dst, zero, limitT) => { // limitT: 打ち切り時刻（部分移動用）
+    const D = ctx.dist(src, zero), P = pathTo(D, src, dst);
+    if (!P) return { pos: src, ok: false };
+    let pos = src, ok = true;
+    for (const [dir, cell] of P) {
+      if (limitT !== undefined && tAg[i] + st[pos] > limitT) { ok = false; break; }
+      acts[i].push(dir); tAg[i] += st[pos]; pos = cell;
+    }
+    return { pos, ok };
+  };
+  // 補給車
+  for (let j = 0; j < n; j++) {
+    if (S[j].kind !== 1) continue;
+    if (plan.mode === 'pair' && plan.pairOf[j] !== undefined) {
+      const i = plan.pairOf[j];
+      if (S[j].pos === S[i].pos) { paired.set(i, j); continue; }
+      const D = ctx.dist(S[j].pos, true), steps = D.s[S[i].pos];
+      if (steps >= 0 && steps <= N - 2) { walk(j, S[j].pos, S[i].pos, true); paired.set(i, j); }
+      else walk(j, S[j].pos, S[i].pos, true, N);
+    } else if (plan.mode === 'hub' && plan.hubOf[j] !== undefined) {
+      const h = plan.hubOf[j];
+      if (S[j].pos === h) { hubs.push({ cell: h, t: 0 }); continue; }
+      const D = ctx.dist(S[j].pos, true), steps = D.s[h];
+      if (steps >= 0 && steps <= N) { walk(j, S[j].pos, h, true); hubs.push({ cell: h, t: steps }); }
+      else walk(j, S[j].pos, h, true, N);
+    } else if (plan.mode === 'loop' && plan.loop) {
+      loopPres.push(...loopSupply(g, S, N, ctx, plan, j, acts, tAg));
+    }
+  }
+  presToHubs(loopPres, hubs);
+  const P = [];
+  for (let i = 0; i < n; i++) {
+    if (S[i].kind !== 0) continue;
+    const p = { i, pos: S[i].pos, fuel: S[i].fuel, taken: new Set(), done: false, inf: paired.has(i) };
+    if (p.inf) { const t0 = tAg[paired.get(i)]; if (t0 > 0) { acts[i].push(-t0); tAg[i] = t0; } }
+    P.push(p);
+  }
+  const mark = (p, cell) => {
+    const ks = g.spotAt.get(cell); if (!ks) return;
+    for (const k of ks) if (!p.taken.has(k) && stock[k] > 0) { p.taken.add(k); stock[k]--; covered.add(g.spots[k].brand); }
+  };
+  for (const p of P) mark(p, p.pos);
+  const move = (p, dst) => {
+    const zero = p.inf, D = ctx.dist(p.pos, zero), path = pathTo(D, p.pos, dst);
+    const j = p.inf ? paired.get(p.i) : -1;
+    for (const [dir, cell] of path) {
+      acts[p.i].push(dir); tAg[p.i] += st[p.pos];
+      if (j >= 0) { acts[j].push(dir); tAg[j] += st[p.pos]; }
+      if (!p.inf) p.fuel -= ctx.fu[p.pos];
+      p.pos = cell; mark(p, cell);
+    }
+    if (p.inf) p.fuel = g.fuelLimit;
+  };
+  const hubNeed = (cell, zero) => {
+    if (!hubs.length) return 0;
+    let m = Infinity; const D = ctx.dist(cell, zero);
+    for (const h of hubs) if (D.s[h.cell] >= 0) m = Math.min(m, D.f[h.cell]);
+    return m === Infinity ? 0 : m;
+  };
+  let guard = 0;
+  while (guard++ < 5000) {
+    let p = null;
+    for (const q of P) if (!q.done && (!p || tAg[q.i] < tAg[p.i])) p = q;
+    if (!p) break;
+    const t = tAg[p.i], D = ctx.dist(p.pos, p.inf);
+    const strandP = plan.unstrand !== false && hubs.length && !p.inf && hubNeed(p.pos, false) > p.fuel;
+    let best = -1, bestSc = -Infinity, fuelBlocked = false;
+    for (let k = 0; k < g.spots.length; k++) {
+      if (p.taken.has(k) || stock[k] <= 0) continue;
+      const own = plan.owner[k];
+      const fac = own < 0 || own === p.i ? 1 : plan.outside;
+      if (fac <= 0) continue;
+      const c = g.spots[k].pos, steps = D.s[c];
+      if (steps < 0 || t + steps > N) continue;
+      if (!p.inf) {
+        if (D.f[c] > p.fuel) { fuelBlocked = true; continue; }
+        if (hubs.length && !strandP && p.fuel - D.f[c] < hubNeed(c, false)) { fuelBlocked = true; continue; }
+      }
+      const b = g.spots[k].brand;
+      const val = ((covered.has(b) ? 0 : plan.wb) + (covered.has(b) || have.has(b) ? 0 : plan.wm) + 1) * fac;
+      const sc = val / (steps + 1) * (1 + noise * (rng() * 2 - 1));
+      if (sc > bestSc) { bestSc = sc; best = k; }
+    }
+    if (best >= 0) { move(p, g.spots[best].pos); continue; }
+    if (fuelBlocked && hubs.length && !p.inf && p.fuel < g.fuelLimit) {
+      let hb = null, ha = Infinity;
+      for (const h of hubs) {
+        const s = D.s[h.cell]; if (s < 0 || D.f[h.cell] > p.fuel) continue;
+        const arr = hubEarliest(h, t + s); if (arr <= N && arr < ha) { ha = arr; hb = h; }
+      }
+      if (hb) {
+        const wait = ha - (t + D.s[hb.cell]);
+        if (wait > 0) { acts[p.i].push(-wait); tAg[p.i] += wait; }
+        if (p.pos !== hb.cell) move(p, hb.cell);
+        p.fuel = g.fuelLimit; continue;
+      }
+    }
+    // 終盤: スポット上で日を終える（翌日ステップ1で獲得）
+    if (!g.spotAt.has(p.pos)) {
+      let bc = -1, bs = Infinity;
+      for (const s of g.spots) {
+        const c = s.pos, steps = D.s[c];
+        if (steps < 0 || t + steps > N || (!p.inf && (D.f[c] > p.fuel || (plan.reserveEnd && hubs.length && p.fuel - D.f[c] < hubNeed(c, false))))) continue;
+        if (steps < bs) { bs = steps; bc = c; }
+      }
+      if (bc >= 0) move(p, bc);
+    }
+    p.done = true;
+  }
+  for (let i = 0; i < n; i++) if (tAg[i] < N) acts[i].push(-(N - tAg[i]));
+  return acts;
+}
+
+function dayScore(sim, have) {
+  const b = new Set(sim.got.map(x => x.brand));
+  let nw = 0; if (have) b.forEach(x => { if (!have.has(x)) nw++; });
+  let fuel = 0; for (const a of sim.agents) if (a.kind === 0) fuel += a.fuel;
+  return { brands: b.size, udon: sim.got.length, nw, key: nw * 1e12 + b.size * 1e8 + sim.got.length * 1e4 + Math.min(fuel, 9999), set: b };
+}
+
+function bestDay(g, S, N, ctx, plan, rng, K, have) {
+  let best = null;
+  for (let it = 0; it < K; it++) {
+    const acts = greedyDay(g, S, N, ctx, plan, rng, it === 0 ? 0 : 0.6, have);
+    const sim = simulate(g, S, acts, N, ctx.st, ctx.fu, false);
+    if (sim.error) continue;
+    const sc = dayScore(sim, have);
+    if (!best || sc.key > best.sc.key) best = { acts, sc };
+  }
+  if (!best) best = { acts: S.map(() => [-N]), sc: null, fallback: true };
+  return best;
+}
+
+/* ---- 担当の割り当て ---- */
+function cellXY(g, p) { const r = (p / g.W) | 0, c = p % g.W; return [c + ((r & 1) ? 0 : 0.5), r * 0.866]; }
+
+function kmeans(pts, k, rng, iters = 20) {
+  if (k <= 0) return { lab: pts.map(() => 0), cen: [] };
+  const cen = [pts[Math.floor(rng() * pts.length)].slice()];
+  while (cen.length < k) {
+    const d2 = pts.map(p => Math.min(...cen.map(c => (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2)));
+    const tot = d2.reduce((a, b) => a + b, 0); let r = rng() * tot, i = 0;
+    while (i < pts.length - 1 && r > d2[i]) { r -= d2[i]; i++; }
+    cen.push(pts[i].slice());
+  }
+  let lab = pts.map(() => 0);
+  for (let it = 0; it < iters; it++) {
+    lab = pts.map(p => { let b = 0, bd = Infinity; cen.forEach((c, j) => { const d = (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2; if (d < bd) { bd = d; b = j; } }); return b; });
+    for (let j = 0; j < k; j++) { const m = pts.filter((_, i) => lab[i] === j); if (m.length) cen[j] = [m.reduce((a, p) => a + p[0], 0) / m.length, m.reduce((a, p) => a + p[1], 0) / m.length]; }
+  }
+  return { lab, cen };
+}
+
+function computePlanCfg(g, S, cfg, rng) {
+  const n = S.length, patrol = [], supply = [];
+  S.forEach((a, i) => (a.kind === 0 ? patrol : supply).push(i));
+  const tr0 = new Uint8Array(g.H * g.W), { st, fu } = costArrays(g, tr0), ctx = makeCtx(g, st, fu, cfg.lam);
+  const owner = g.spots.map(() => -1);
+  if (cfg.assign === 'region' && patrol.length > 1) {
+    const pts = g.spots.map(s => cellXY(g, s.pos));
+    const { lab, cen } = kmeans(pts, Math.min(patrol.length, g.spots.length), rng);
+    const used = new Set(), cl2ag = {};
+    const pairs = [];
+    cen.forEach((c, j) => patrol.forEach(i => { const [x, y] = cellXY(g, S[i].pos); pairs.push([(x - c[0]) ** 2 + (y - c[1]) ** 2, j, i]); }));
+    pairs.sort((a, b) => a[0] - b[0]);
+    for (const [, j, i] of pairs) if (cl2ag[j] === undefined && !used.has(i)) { cl2ag[j] = i; used.add(i); }
+    lab.forEach((j, k) => owner[k] = cl2ag[j] ?? -1);
+  } else if (cfg.assign === 'brand' && patrol.length > 1) {
+    const cap = Math.ceil(g.brands.length / patrol.length), load = {}, pairs = [];
+    patrol.forEach(i => load[i] = 0);
+    for (const b of g.brands) for (const i of patrol) {
+      const D = ctx.dist(S[i].pos);
+      let m = Infinity; g.spots.forEach(s => { if (s.brand === b && D.s[s.pos] >= 0) m = Math.min(m, D.s[s.pos]); });
+      pairs.push([m, b, i]);
+    }
+    pairs.sort((a, b) => a[0] - b[0]);
+    const bOwn = {};
+    for (const [, b, i] of pairs) if (bOwn[b] === undefined && load[i] < cap) { bOwn[b] = i; load[i]++; }
+    g.spots.forEach((s, k) => owner[k] = bOwn[s.brand] ?? -1);
+  } else if (cfg.assign === 'manual' && cfg.manual) {
+    g.spots.forEach((s, k) => { const a = cfg.manual[k]; owner[k] = a !== undefined && S[a] && S[a].kind === 0 ? a : -1; });
+  }
+  const pairOf = {}, hubOf = {};
+  if (cfg.mode === 'pair') {
+    const free = new Set(patrol);
+    for (const j of supply) {
+      const D = ctx.dist(S[j].pos, true); let b = -1, bd = Infinity;
+      for (const i of free) if (D.s[S[i].pos] >= 0 && D.s[S[i].pos] < bd) { bd = D.s[S[i].pos]; b = i; }
+      if (b >= 0) { pairOf[j] = b; free.delete(b); }
+    }
+  } else if (cfg.mode === 'hub' && supply.length) {
+    let hubs = (cfg.hubs || []).filter(c => g.cells[c] !== 3).slice(0, supply.length);
+    if (hubs.length < supply.length) {
+      const pts = g.spots.map(s => cellXY(g, s.pos));
+      const { cen } = kmeans(pts, supply.length - hubs.length, rng);
+      for (const c of cen) {
+        let b = -1, bd = Infinity;
+        for (let p = 0; p < g.H * g.W; p++) { if (g.cells[p] === 3 || hubs.includes(p)) continue; const [x, y] = cellXY(g, p); const d = (x - c[0]) ** 2 + (y - c[1]) ** 2; if (d < bd) { bd = d; b = p; } }
+        hubs.push(b);
+      }
+    }
+    // 近い補給車から割り当て
+    const left = new Set(hubs);
+    for (const j of supply) {
+      const D = ctx.dist(S[j].pos, true); let b = -1, bd = Infinity;
+      for (const h of left) if (D.s[h] >= 0 && D.s[h] < bd) { bd = D.s[h]; b = h; }
+      if (b >= 0) { hubOf[j] = b; left.delete(b); }
+    }
+  }
+  let loopInfo = null;
+  if (cfg.mode === 'loop' && supply.length) loopInfo = buildLoop(g, ctx, rng, cfg.loopK || 4);
+  const loopDir = {};
+  supply.forEach((j, k) => { let d = cfg.loopReverse ? -1 : 1; if (cfg.loopCounter && k % 2 === 1) d = -d; loopDir[j] = d; });
+  return { owner, pairOf, hubOf, mode: cfg.mode, outside: cfg.outside, wb: cfg.wb, wm: cfg.wm ?? 30, advance: !!cfg.advance, reserveEnd: cfg.reserveEnd !== false, unstrand: cfg.unstrand !== false, loopDir, loop: loopInfo && loopInfo.loop, loopLen: loopInfo && loopInfo.len, loopWp: loopInfo && loopInfo.wp };
+}
+
+/* ---- 1試合を通して実行 ---- */
+function runMatch(g, cfg, seed, record) {
+  const rng = mulberry(seed);
+  const n = g.starts.length, k = Math.min(cfg.supply, n - 1);
+  const S0 = g.starts.map((p, i) => ({ kind: i >= n - k ? 1 : 0, pos: p, fuel: g.fuelLimit }));
+  const plan = computePlanCfg(g, S0, cfg, rng);
+  let S = S0;
+  const hist = [], days = [], all = new Set();
+  let daily = 0, udon = 0, fallbacks = 0, fullDays = 0;
+  const mult = 1 + (g.players - 1) * (cfg.otherLoad ?? 1);
+  for (let d = 0; d < g.daySteps.length; d++) {
+    const N = g.daySteps[d], tr = trafficFor(g, hist, d);
+    if (d > 0 && (cfg.env === 'jam' || cfg.env === 'busy')) for (const p of g.roads) tr[p] = Math.max(tr[p], cfg.env === 'jam' ? 2 : 1);
+    if (cfg.env === 'free') tr.fill(0);
+    if (cfg.env === 'alt') tr.set(altTraffic(g, d));
+    const { st, fu } = costArrays(g, tr);
+    const ctx = makeCtx(g, st, fu, cfg.lam);
+    const look = cfg.look && cfg.look.depth > 0 ? { ...cfg.look, day: d, hist, mult, lam: cfg.lam } : null;
+    let best, usedHub = null;
+    if (cfg.beam && cfg.hubMove && plan.mode === 'hub' && S.some(a => a.kind === 1)) {
+      if (!plan.hubOf0) plan.hubOf0 = { ...plan.hubOf };
+      const cands = hubCandidates(g, S, plan, ctx, rng, cfg.hubMove);
+      for (const [name, hubOf] of Object.entries(cands)) {
+        const b = bestDayBeam(g, S, N, ctx, { ...plan, hubOf }, rng, cfg.beam, all, look);
+        if (!best || b.v > best.v) { best = b; usedHub = { name, hubOf }; }
+      }
+      plan.hubOf = usedHub.hubOf;
+    } else best = cfg.beam ? bestDayBeam(g, S, N, ctx, plan, rng, cfg.beam, all, look) : bestDay(g, S, N, ctx, plan, rng, cfg.K, all);
+    if (best.fallback) fallbacks++;
+    const sim = simulate(g, S, best.acts, N, st, fu, record);
+    const sc = dayScore(sim);
+    sc.set.forEach(b => all.add(b)); daily += sc.brands; udon += sc.udon; if (sc.brands === g.brands.length) fullDays++;
+    const stay = new Float64Array(g.H * g.W); for (const p of g.roads) stay[p] = sim.stay[p] * mult;
+    hist.push(stay);
+    if (record) days.push({ hub: usedHub && usedHub.name, hubOf: { ...plan.hubOf }, N, tr, acts: best.acts, sim, start: S, brands: sc.brands, udon: sc.udon, set: sc.set, fallback: !!best.fallback });
+    S = sim.agents;
+  }
+  return { allBrands: all.size, daily, udon, fallbacks, fullDays, days, plan, kinds: S0.map(a => a.kind), nb: g.brands.length, nd: g.daySteps.length };
+}
+
+/* ---- マップ生成 ---- */
+function genMap(o, rng) {
+  const H = o.H, W = o.W, n = H * W, cells = new Array(n).fill(0), ri = k => Math.floor(rng() * k);
+  function blobs(type, frac, mn, mx) {
+    const target = Math.round(n * frac); let cnt = 0, guard = 0;
+    while (cnt < target && guard++ < 20000) {
+      const p = ri(n); if (cells[p] !== 0) continue;
+      const size = mn + ri(mx - mn + 1), fr = [p]; let k = 0;
+      while (fr.length && k < size && cnt < target) {
+        const i = ri(fr.length), q = fr[i]; fr.splice(i, 1);
+        if (cells[q] !== 0) continue;
+        cells[q] = type; cnt++; k++;
+        for (let d = 0; d < 6; d++) { const v = rawNb(H, W, q, d); if (v >= 0 && cells[v] === 0) fr.push(v); }
+      }
+    }
+  }
+  blobs(3, o.pond, 1, o.pondBlob ?? 8);
+  blobs(2, o.mount, 2, 10);
+  const roadTarget = Math.round(n * (o.roadFrac ?? 0.27)); let roadCnt = 0, lines = 0;
+  while (roadCnt < roadTarget && lines++ < 400) {
+    let p = ri(n), d = ri(6), len = Math.round(Math.max(H, W) * (0.5 + rng() * 0.9));
+    for (let s = 0; s < len && p >= 0 && roadCnt < roadTarget; s++) {
+      if (cells[p] !== 1) { cells[p] = 1; roadCnt++; }
+      if (rng() < 0.12) d = (d + (rng() < 0.5 ? 1 : 5)) % 6;
+      p = rawNb(H, W, p, d);
+    }
+  }
+  // 最大連結成分だけ残す
+  const comp = new Int32Array(n).fill(-1); let bestC = -1, bestSize = 0, cid = 0;
+  for (let p = 0; p < n; p++) {
+    if (cells[p] === 3 || comp[p] >= 0) continue;
+    const q = [p]; comp[p] = cid; let sz = 0;
+    while (q.length) { const u = q.pop(); sz++; for (let d = 0; d < 6; d++) { const v = rawNb(H, W, u, d); if (v >= 0 && cells[v] !== 3 && comp[v] < 0) { comp[v] = cid; q.push(v); } } }
+    if (sz > bestSize) { bestSize = sz; bestC = cid; } cid++;
+  }
+  for (let p = 0; p < n; p++) if (cells[p] !== 3 && comp[p] !== bestC) cells[p] = 3;
+  // 地形の割合を目標まで補う（平地→山地）
+  { let m = 0; for (let p = 0; p < n; p++) if (cells[p] === 2) m++; let guard = 0;
+    while (m < Math.round(n * o.mount) && guard++ < 50000) { const p = ri(n); if (cells[p] === 0) { cells[p] = 2; m++; } } }
+  let plain = []; for (let p = 0; p < n; p++) if (cells[p] === 0) plain.push(p);
+  const need = o.spots + o.agents + 4;
+  if (plain.length < need) { for (let p = 0; p < n && plain.length < need; p++) if (cells[p] === 2) { cells[p] = 0; plain.push(p); } }
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  shuffle(plain);
+  // スポットは散らして置く（候補の中から既存スポットと最も離れたセルを選ぶ）
+  const xy = p => { const r = (p / W) | 0, c = p % W; return [c + ((r & 1) ? 0 : 0.5), r * 0.866]; };
+  const spotCells = [];
+  const spread = o.spread ?? 12;
+  while (spotCells.length < o.spots) {
+    let best = -1, bd = -1;
+    for (let t = 0; t < spread; t++) {
+      let p = plain[ri(plain.length)], tries = 0;
+      while ((o.edgeBias ?? 0) > 0 && tries++ < 50 && rng() > Math.exp(-o.edgeBias * Math.min((p / W) | 0, p % W, H - 1 - ((p / W) | 0), W - 1 - p % W))) p = plain[ri(plain.length)];
+      if (spotCells.includes(p)) continue;
+      const [x, y] = xy(p); let md = Infinity;
+      for (const q of spotCells) { const [u, v] = xy(q); md = Math.min(md, (x - u) ** 2 + (y - v) ** 2); }
+      if (md > bd) { bd = md; best = p; }
+    }
+    if (best >= 0) spotCells.push(best);
+  }
+  plain = plain.filter(p => !spotCells.includes(p));
+  plain.unshift(...spotCells);
+  const brandsOf = []; for (let i = 0; i < o.spots; i++) brandsOf.push(i < o.brands ? i : ri(o.brands));
+  shuffle(brandsOf);
+  const spots = spotCells.map((pos, i) => ({ brand: brandsOf[i], pos, stocks: 1 + ri(o.maxStock) }));
+  // 初期位置
+  let starts;
+  const ctr = (() => { let b = -1, bd = Infinity; const cx = W / 2, cy = H / 2; for (const p of plain) { const d = (p % W - cx) ** 2 + (((p / W) | 0) - cy) ** 2; if (d < bd) { bd = d; b = p; } } return b; })();
+  if (o.startMode === 'same') starts = new Array(o.agents).fill(ctr);
+  else if (o.startMode === 'random') starts = plain.slice(o.spots, o.spots + o.agents);
+  else {
+    starts = []; const seen = new Set([ctr]), q = [ctr];
+    while (q.length && starts.length < o.agents) { const u = q.shift(); if (cells[u] === 0) starts.push(u); for (let d = 0; d < 6; d++) { const v = rawNb(H, W, u, d); if (v >= 0 && cells[v] !== 3 && !seen.has(v)) { seen.add(v); q.push(v); } } }
+  }
+  return { H, W, cells, spots, starts };
+}
+
+
+/* ---- ループ型補給 ---- */
+function hubEarliest(h, a) {
+  if (!h.steps) return Math.max(a, h.t);
+  for (const x of h.steps) if (x >= a) return x;
+  return Infinity;
+}
+function presToHubs(pres, hubs) {
+  if (!pres.length) return;
+  const m = new Map();
+  for (const [step, cell] of pres) { if (!m.has(cell)) m.set(cell, []); m.get(cell).push(step); }
+  for (const [cell, steps] of m) { steps.sort((x, y) => x - y); hubs.push({ cell, t: steps[0], steps }); }
+}
+// 補給車 j がループを1日中まわる。戻り値は [ステップ, セル] の在席リスト
+function loopSupply(g, S, N, ctx, plan, j, acts, tAg) {
+  const L = plan.loop, n = L.length, st = ctx.st, posAt = new Int32Array(N + 1);
+  let pos = S[j].pos, t = 0; posAt[0] = pos;
+  const step = np => { const d = st[pos]; if (t + d > N) return false; let dir = -1; for (let k = 0; k < 6; k++) if (g.nbr[pos * 6 + k] === np) dir = k; if (dir < 0) return false;
+    acts[j].push(dir); for (let s = t + 1; s < t + d; s++) posAt[s] = pos; t += d; posAt[t] = np; pos = np; return true; };
+  let idx = L.indexOf(pos);
+  if (idx < 0) {
+    const D = ctx.dist(pos, true); let b = -1, bd = Infinity;
+    L.forEach((c, k) => { if (D.s[c] >= 0 && D.s[c] < bd) { bd = D.s[c]; b = k; } });
+    if (b >= 0) { for (const [, cell] of pathTo(D, pos, L[b])) if (!step(cell)) break; }
+    idx = pos === L[b] ? b : -1;
+  }
+  let guard = 0;
+  const dir = (plan.loopDir && plan.loopDir[j]) || 1;
+  while (idx >= 0 && guard++ < 100000) { const nx = (idx + dir + n) % n; if (!step(L[nx])) break; idx = nx; }
+  for (let s = t + 1; s <= N; s++) posAt[s] = pos;
+  tAg[j] = t;
+  const out = []; for (let s = 1; s <= N; s++) out.push([s, posAt[s]]);
+  return out;
+}
+function buildLoop(g, ctx, rng, K, spotsOnly) {
+  const pts = g.spots.map(s => cellXY(g, s.pos));
+  const { cen } = kmeans(pts, Math.min(K, g.spots.length), rng);
+  const wp = [];
+  for (const c of cen) { let b = -1, bd = Infinity; for (let p = 0; p < g.H * g.W; p++) { if (g.cells[p] === 3 || wp.includes(p)) continue; const [x, y] = cellXY(g, p); const d = (x - c[0]) ** 2 + (y - c[1]) ** 2; if (d < bd) { bd = d; b = p; } } wp.push(b); }
+  // 巡回順（総ステップ最小）を全探索
+  const k = wp.length, Dm = wp.map(a => wp.map(b => ctx.dist(a, true).s[b]));
+  let best = null, bv = Infinity;
+  const perm = (arr, used) => { if (arr.length === k) { let v = 0; for (let i = 0; i < k; i++) v += Dm[arr[i]][arr[(i + 1) % k]]; if (v < bv) { bv = v; best = arr.slice(); } return; } for (let i = 1; i < k; i++) if (!used[i]) { used[i] = 1; arr.push(i); perm(arr, used); arr.pop(); used[i] = 0; } };
+  perm([0], [1]);
+  const loop = [];
+  for (let i = 0; i < k; i++) { const a = wp[best[i]], b = wp[best[(i + 1) % k]]; loop.push(a); for (const [, cell] of pathTo(ctx.dist(a, true), a, b) || []) if (cell !== b) loop.push(cell); }
+  return { loop, len: bv, wp: best.map(i => wp[i]) };
+}
+
+/* ---- 1日の計画（ビームサーチ） ---- */
+function setupDay(g, S, N, ctx, plan) {
+  const n = S.length, acts = S.map(() => []), tAg = new Array(n).fill(0), paired = new Map(), hubs = [], loopPres = [], st = ctx.st;
+  const walk = (i, src, dst, zero, limitT) => {
+    const D = ctx.dist(src, zero), P = pathTo(D, src, dst); if (!P) return;
+    let pos = src;
+    for (const [dir, cell] of P) { if (limitT !== undefined && tAg[i] + st[pos] > limitT) break; acts[i].push(dir); tAg[i] += st[pos]; pos = cell; }
+  };
+  for (let j = 0; j < n; j++) {
+    if (S[j].kind !== 1) continue;
+    if (plan.mode === 'pair' && plan.pairOf[j] !== undefined) {
+      const i = plan.pairOf[j];
+      if (S[j].pos === S[i].pos) { paired.set(i, j); continue; }
+      const steps = ctx.dist(S[j].pos, true).s[S[i].pos];
+      if (steps >= 0 && steps <= N - 2) { walk(j, S[j].pos, S[i].pos, true); paired.set(i, j); } else walk(j, S[j].pos, S[i].pos, true, N);
+    } else if (plan.mode === 'hub' && plan.hubOf[j] !== undefined) {
+      const h = plan.hubOf[j];
+      if (S[j].pos === h) { hubs.push({ cell: h, t: 0 }); continue; }
+      const steps = ctx.dist(S[j].pos, true).s[h];
+      if (steps >= 0 && steps <= N) { walk(j, S[j].pos, h, true); hubs.push({ cell: h, t: steps }); } else walk(j, S[j].pos, h, true, N);
+    } else if (plan.mode === 'loop' && plan.loop) {
+      loopPres.push(...loopSupply(g, S, N, ctx, plan, j, acts, tAg));
+    }
+  }
+  presToHubs(loopPres, hubs);
+  return { acts, tAg, paired, hubs };
+}
+
+function beamDay(g, S, N, ctx, plan, have, W, B, tau, useRoll, nCand) {
+  have = have || new Set();
+  const st = ctx.st, fu = ctx.fu, base = setupDay(g, S, N, ctx, plan), hubs = base.hubs, paired = base.paired;
+  const bIdx = g.spots.map(s => g.brands.indexOf(s.brand));
+  const isNew = g.brands.map(b => !have.has(b));
+  const pcache = new Map();
+  const path = (src, dst, zero) => { const key = (src * 2048 + dst) * 2 + (zero ? 1 : 0); let p = pcache.get(key); if (!p) { p = pathTo(ctx.dist(src, zero), src, dst); pcache.set(key, p); } return p; };
+  const hubNeed = (cell) => { let m = Infinity; const D = ctx.dist(cell, false); for (const h of hubs) if (D.s[h.cell] >= 0) m = Math.min(m, D.f[h.cell]); return m === Infinity ? 0 : m; };
+  const mark = (nd, a, cell) => {
+    const ks = g.spotAt.get(cell); if (!ks) return;
+    for (const k of ks) if (!((a.taken >>> k) & 1) && nd.stock[k] > 0) {
+      a.taken = (a.taken | (1 << k)) >>> 0; nd.stock[k]--; nd.udon++;
+      const bi = bIdx[k]; if (!((nd.cov >>> bi) & 1)) { nd.cov = (nd.cov | (1 << bi)) >>> 0; nd.nBr++; if (isNew[bi]) nd.nNew++; }
+    }
+  };
+  const clone = nd => ({ ag: nd.ag.map(a => ({ ...a })), stock: nd.stock.slice(), cov: nd.cov, nBr: nd.nBr, nNew: nd.nNew, udon: nd.udon, parent: nd, seg: null });
+  const goTo = (nd, a, dst, wait) => {
+    const dirs = [];
+    if (wait > 0) a.t += wait;
+    if (a.pos !== dst) for (const [dir, cell] of path(a.pos, dst, a.inf)) { dirs.push(dir); a.t += st[a.pos]; if (!a.inf) a.fuel -= fu[a.pos]; a.pos = cell; mark(nd, a, cell); }
+    if (a.inf) a.fuel = g.fuelLimit;
+    nd.seg = { i: a.i, wait, dirs, j: a.inf ? paired.get(a.i) : -1 };
+  };
+  const root = { ag: [], stock: g.spots.map(s => s.stocks), cov: 0, nBr: 0, nNew: 0, udon: 0, parent: null, seg: null };
+  for (let i = 0; i < S.length; i++) {
+    if (S[i].kind !== 0) continue;
+    const inf = paired.has(i), t0 = inf ? base.tAg[paired.get(i)] : 0;
+    if (t0 > 0) base.acts[i].push(-t0);
+    root.ag.push({ i, pos: S[i].pos, t: t0, fuel: S[i].fuel, inf, done: false, taken: 0 });
+  }
+  for (const a of root.ag) mark(root, a, a.pos);
+  const evalNode = nd => { let T = 0; for (const a of nd.ag) T += a.t; return plan.wm * nd.nNew + plan.wb * nd.nBr + nd.udon - tau * T / N; };
+  const expand = (nd, Bk) => {
+    let ai = -1; nd.ag.forEach((x, idx) => { if (!x.done && (ai < 0 || x.t < nd.ag[ai].t)) ai = idx; });
+    if (ai < 0) return null;
+    const a = nd.ag[ai], D = ctx.dist(a.pos, a.inf), cands = []; let fuelBlocked = false;
+    const strandA = plan.unstrand !== false && hubs.length && !a.inf && hubNeed(a.pos) > a.fuel;
+    for (let k = 0; k < g.spots.length; k++) {
+      if (((a.taken >>> k) & 1) || nd.stock[k] <= 0) continue;
+      const own = plan.owner[k], fac = own < 0 || own === a.i ? 1 : plan.outside; if (fac <= 0) continue;
+      const c = g.spots[k].pos, steps = D.s[c]; if (steps < 0 || a.t + steps > N) continue;
+      if (!a.inf) { if (D.f[c] > a.fuel) { fuelBlocked = true; continue; } if (hubs.length && !strandA && a.fuel - D.f[c] < hubNeed(c)) { fuelBlocked = true; continue; } }
+      const bi = bIdx[k], cov = (nd.cov >>> bi) & 1;
+      const val = ((cov ? 0 : plan.wb) + (cov || !isNew[bi] ? 0 : plan.wm) + 1) * fac;
+      cands.push([val / (steps + 1), c]);
+    }
+    const kids = [];
+    if (cands.length) {
+      cands.sort((x, y) => y[0] - x[0]);
+      const used = new Set();
+      for (const [, c] of cands) { if (used.has(c)) continue; used.add(c); const ch = clone(nd); goTo(ch, ch.ag[ai], c, 0); kids.push(ch); if (used.size >= Bk) break; }
+      return kids;
+    }
+    if (fuelBlocked && hubs.length && !a.inf && a.fuel < g.fuelLimit) {
+      let hb = null, ha = Infinity;
+      for (const h of hubs) { const s = D.s[h.cell]; if (s < 0 || D.f[h.cell] > a.fuel) continue; const arr = hubEarliest(h, a.t + s); if (arr <= N && arr < ha) { ha = arr; hb = h; } }
+      if (hb) { const ch = clone(nd), x = ch.ag[ai]; goTo(ch, x, hb.cell, ha - (a.t + D.s[hb.cell])); x.fuel = g.fuelLimit; return [ch]; }
+    }
+    const ch = clone(nd), x = ch.ag[ai];
+    let bc = -1;
+    if (!g.spotAt.has(x.pos)) { let bs = Infinity; for (const s of g.spots) { const steps = D.s[s.pos]; if (steps < 0 || x.t + steps > N || (!x.inf && (D.f[s.pos] > x.fuel || (plan.reserveEnd && hubs.length && x.fuel - D.f[s.pos] < hubNeed(s.pos))))) continue; if (steps < bs) { bs = steps; bc = s.pos; } } }
+    if (bc >= 0) goTo(ch, x, bc, 0); else ch.seg = { i: x.i, wait: 0, dirs: [], j: -1 };
+    x.done = true;
+    const outK = [ch];
+    if (plan.advance) {
+      // 余り時間で、今日取れなかった系列のスポットへ向かって進んでおく（翌日の位置取り）
+      let tc = -1, td = Infinity;
+      for (let k = 0; k < g.spots.length; k++) { const bi = bIdx[k]; if ((nd.cov >>> bi) & 1) continue; const c = g.spots[k].pos, sd = D.s[c]; if (sd < 0 || a.t + sd <= N) continue; if (sd < td) { td = sd; tc = c; } }
+      if (tc >= 0) {
+        const ch2 = clone(nd), y = ch2.ag[ai], dirs = [];
+        for (const [dir, cell] of path(y.pos, tc, y.inf)) {
+          if (y.t + st[y.pos] > N) break;
+          if (!y.inf && y.fuel - fu[y.pos] < (hubs.length ? Math.min(hubNeed(cell), g.fuelLimit) : 0)) break;
+          dirs.push(dir); y.t += st[y.pos]; if (!y.inf) y.fuel -= fu[y.pos]; y.pos = cell; mark(ch2, y, cell);
+        }
+        if (dirs.length) { if (y.inf) y.fuel = g.fuelLimit; ch2.seg = { i: y.i, wait: 0, dirs, j: y.inf ? paired.get(y.i) : -1 }; y.done = true; outK.push(ch2); }
+      }
+    }
+    return outK;
+  };
+  const fk = nd => nd.nNew * 1e8 + nd.nBr * 1e4 + nd.udon;
+  const rollout = nd => { let x = nd, k; while ((k = expand(x, 1))) x = k[0]; return x; };
+  let beam = [root]; const finals = [];
+  for (let depth = 0; depth < 2000 && beam.length; depth++) {
+    const next = [], seen = new Set();
+    for (const nd of beam) {
+      const kids = expand(nd, B);
+      if (!kids) { finals.push(nd); continue; }
+      for (const ch of kids) {
+        let key = ch.cov + ':' + ch.stock.join(',');
+        for (const x of ch.ag) key += `|${x.pos},${x.t},${x.taken},${x.done ? 1 : 0},${x.fuel}`;
+        if (seen.has(key)) continue; seen.add(key);
+        if (useRoll) { const f = rollout(ch); finals.push(f); let T = 0; for (const a of ch.ag) T += a.t; ch.ev = fk(f) - T / N * 1e-3; }
+        else ch.ev = evalNode(ch);
+        next.push(ch);
+      }
+    }
+    if (!next.length) break;
+    next.sort((x, y) => y.ev - x.ev);
+    beam = next.length > W ? next.slice(0, W) : next;
+  }
+  // 復元
+  const build = nd => {
+    const acts = base.acts.map(a => a.slice()), segs = [];
+    for (let x = nd; x && x.seg; x = x.parent) segs.push(x.seg);
+    segs.reverse();
+    for (const s of segs) { if (s.wait > 0) acts[s.i].push(-s.wait); acts[s.i].push(...s.dirs); if (s.j >= 0) acts[s.j].push(...s.dirs); }
+    for (let i = 0; i < acts.length; i++) { let t = 0, pos = S[i].pos; for (const v of acts[i]) { if (v < 0) t -= v; else { t += st[pos]; pos = g.nbr[pos * 6 + v]; } } if (t < N) acts[i].push(-(N - t)); }
+    return acts;
+  };
+  finals.sort((x, y) => fk(y) - fk(x));
+  const out = [], ends = new Set();
+  for (const f of finals) {
+    const key = f.ag.map(a => a.pos + ':' + a.fuel).join('|') + '#' + fk(f);
+    if (ends.has(key)) continue; ends.add(key); out.push(f);
+    if (out.length >= (nCand || 6)) break;
+  }
+  return out.map(build);
+}
+
+/* 交互パターン: 1日目は空き、2,4,6…日目は渋滞、3,5,7…日目は空き */
+function altTraffic(g, d) { const tr = new Uint8Array(g.H * g.W); if (d > 0 && d % 2 === 1) for (const p of g.roads) tr[p] = 2; return tr; }
+
+/* 翌日の交通状態の予測 */
+function forecastTraffic(g, hist, d, todayStay, mode) {
+  const tr = new Uint8Array(g.H * g.W);
+  if (mode === 'free') return tr;
+  if (mode === 'jam' || mode === 'busy') { const v = mode === 'jam' ? 2 : 1; for (const p of g.roads) tr[p] = v; return tr; }
+  const a = todayStay, b = d >= 0 ? hist[d] : null; // 明日 = 今日と昨日の滞在から
+  for (const p of g.roads) { const v = (a[p] + (b ? b[p] : 0)) / g.players; tr[p] = v >= g.jammed ? 2 : v >= g.busy ? 1 : 0; }
+  return tr;
+}
+
+function bestDayBeam(g, S, N, ctx, plan, rng, opt, have, look) {
+  let best = null;
+  const cands = [];
+  const tryActs = acts => { const sim = simulate(g, S, acts, N, ctx.st, ctx.fu, false); if (sim.error) return; const sc = dayScore(sim, have); cands.push({ acts, sc, sim }); if (!best || sc.key > best.sc.key) best = { acts, sc }; };
+  for (const acts of beamDay(g, S, N, ctx, plan, have, opt.W, opt.B, opt.tau, opt.roll, look ? look.nCand : 6)) tryActs(acts);
+  if (look && cands.length > 1) {
+    // 日をまたいだ評価: 候補ごとに翌日(以降)を貪欲法で進め、合計で選び直す
+    const top = cands.reduce((x, y) => (y.sc.key > x.sc.key ? y : x));
+    const stayT = new Float64Array(g.H * g.W); for (const p of g.roads) stayT[p] = top.sim.stay[p] * look.mult;
+    const futures = [];
+    let histF = look.hist.slice(), stayF = stayT;
+    for (let k = 1; k <= look.depth && look.day + k < g.daySteps.length; k++) {
+      const tr = look.forecast === 'alt' ? altTraffic(g, look.day + k) : forecastTraffic(g, histF, histF.length - 1, stayF, look.forecast);
+      const c = costArrays(g, tr);
+      futures.push({ N: g.daySteps[look.day + k], ctx: makeCtx(g, c.st, c.fu, look.lam) });
+      histF = histF.concat([stayF]); stayF = stayF; // 以降は同程度と仮定
+    }
+    if (futures.length) {
+      let bestV = -Infinity;
+      for (const c of cands) {
+        const hv = new Set(have); c.sc.set.forEach(b => hv.add(b));
+        let Sx = c.sim.agents, nw = c.sc.nw, br = c.sc.brands, ud = c.sc.udon;
+        futures.forEach((F, k) => {
+          const w = Math.pow(look.gamma, k + 1);
+          const acts = greedyDay(g, Sx, F.N, F.ctx, plan, rng, 0, hv);
+          const sm = simulate(g, Sx, acts, F.N, F.ctx.st, F.ctx.fu, false);
+          if (sm.error) { br -= 99; return; }
+          const sc = dayScore(sm, hv); sc.set.forEach(b => hv.add(b));
+          nw += sc.nw * w; br += sc.brands * w; ud += sc.udon * w; Sx = sm.agents;
+        });
+        const v = nw * 1e8 + br * 1e4 + ud;
+        c.look = v;
+        if (v > bestV) { bestV = v; best = { acts: c.acts, sc: c.sc, v }; }
+      }
+    }
+  }
+  if (opt.withGreedy) tryActs(greedyDay(g, S, N, ctx, plan, rng, 0, have));
+  if (!best) return bestDay(g, S, N, ctx, plan, rng, 4, have);
+  if (best.v === undefined) best.v = best.sc.nw * 1e8 + best.sc.brands * 1e4 + best.sc.udon;
+  return best;
+}
+
+/* 補給拠点の候補（日ごと） */
+function hubCandidates(g, S, plan, ctx, rng, which) {
+  const sup = [], pat = [];
+  S.forEach((a, i) => (a.kind === 1 ? sup : pat).push(i));
+  const out = {};
+  const nearestCell = (x0, y0) => { let b = -1, bd = Infinity; for (let p = 0; p < g.H * g.W; p++) { if (g.cells[p] === 3) continue; const [x, y] = cellXY(g, p); const d = (x - x0) ** 2 + (y - y0) ** 2; if (d < bd) { bd = d; b = p; } } return b; };
+  const assign = cells => { const h = {}, left = new Set(cells); for (const j of sup) { const D = ctx.dist(S[j].pos, true); let b = -1, bd = Infinity; for (const c of left) if (D.s[c] >= 0 && D.s[c] < bd) { bd = D.s[c]; b = c; } if (b >= 0) { h[j] = b; left.delete(b); } } return h; };
+  if (which.includes('fixed')) out.fixed = plan.hubOf0 || plan.hubOf;
+  if (which.includes('stay')) { const h = {}; sup.forEach(j => h[j] = S[j].pos); out.stay = h; }
+  if (which.includes('meet') && pat.length) {
+    // 巡回車が集まりやすいセル: 巡回車からの合計ステップが最小（補給車が1台ずつ担当）
+    if (sup.length === 1) {
+      const Ds = pat.map(i => ctx.dist(S[i].pos, false));
+      let b = -1, bv = Infinity;
+      for (let p = 0; p < g.H * g.W; p++) { if (g.cells[p] === 3) continue; let v = 0; for (const D of Ds) { if (D.s[p] < 0) { v = Infinity; break; } v += D.s[p]; } if (v < bv) { bv = v; b = p; } }
+      if (b >= 0) out.meet = { [sup[0]]: b };
+    } else {
+      const { cen } = kmeans(pat.map(i => cellXY(g, S[i].pos)), Math.min(sup.length, pat.length), rng);
+      out.meet = assign(cen.map(c => nearestCell(c[0], c[1])));
+    }
+  }
+  if (which.includes('spots')) {
+    const { cen } = kmeans(g.spots.map(s => cellXY(g, s.pos)), sup.length, rng);
+    out.spots = assign(cen.map(c => nearestCell(c[0], c[1])));
+  }
+  return out;
+}
+
+if (typeof module !== 'undefined') module.exports = { hubCandidates, forecastTraffic, beamDay, bestDayBeam, mulberry, makeGame, costArrays, trafficFor, simulate, runMatch, genMap, greedyDay, makeCtx, bestDay, computePlanCfg };
+const SAMPLES={"16":{"W":16,"H":16,"cells":[0,0,0,3,0,0,2,0,0,1,1,3,0,2,0,2,2,0,0,1,1,1,0,0,1,0,0,1,1,1,1,0,0,0,1,2,0,1,1,1,2,1,0,3,2,0,3,2,0,0,1,0,2,0,3,0,0,0,1,0,3,3,0,2,0,1,0,0,0,2,2,2,0,0,1,3,2,3,2,2,0,0,1,1,2,2,2,2,2,0,0,1,0,0,1,2,1,1,2,1,1,0,0,0,1,1,1,1,1,1,1,0,1,2,0,2,2,1,2,3,1,2,0,3,3,0,2,1,1,2,0,1,1,0,0,0,1,1,0,0,1,1,1,0,0,1,1,0,3,3,0,2,0,3,1,3,1,2,3,3,0,0,1,0,0,2,3,3,0,2,1,2,1,2,2,3,0,0,0,1,1,1,0,3,0,2,1,0,3,1,3,2,3,3,0,0,1,3,2,0,0,2,1,3,3,1,1,0,3,3,3,0,0,1,0,3,3,3,3,1,0,3,3,2,0,0,3,3,1,3,2,0,3,0,3,1,1,3,3,2,0,0,1,1,1,1,1,1,1,0,3,0,2,1,0,3],"spots":[{"brand":0,"pos":2,"stocks":3},{"brand":0,"pos":135,"stocks":3},{"brand":1,"pos":7,"stocks":3},{"brand":1,"pos":25,"stocks":1},{"brand":2,"pos":14,"stocks":4},{"brand":3,"pos":31,"stocks":3},{"brand":4,"pos":36,"stocks":1},{"brand":4,"pos":55,"stocks":2},{"brand":5,"pos":93,"stocks":4},{"brand":6,"pos":130,"stocks":4},{"brand":7,"pos":160,"stocks":4},{"brand":7,"pos":161,"stocks":1},{"brand":8,"pos":207,"stocks":4},{"brand":9,"pos":233,"stocks":3},{"brand":10,"pos":241,"stocks":3},{"brand":11,"pos":254,"stocks":4}],"starts":[5,92,144,249],"daySteps":[32,36,40,40,48],"fuelLimit":40,"busy":1,"jammed":3,"players":10},"24":{"W":24,"H":24,"cells":[0,0,3,3,0,3,0,0,0,0,2,1,0,1,2,1,1,1,3,3,0,1,1,0,3,0,2,2,2,1,3,3,0,2,0,1,2,3,1,1,2,1,3,0,1,3,2,1,3,1,1,1,1,3,1,1,3,2,1,2,3,0,0,2,1,1,3,3,3,0,3,1,0,0,1,3,1,1,1,2,1,3,1,3,2,2,0,2,1,2,1,0,0,3,2,1,0,3,1,3,0,3,2,2,1,1,1,1,1,2,0,1,2,0,0,0,3,0,1,0,0,2,1,3,2,0,2,2,3,3,3,3,2,1,1,3,0,2,0,1,3,1,1,0,1,0,2,1,1,1,3,3,0,0,0,3,1,0,0,3,0,3,3,1,1,0,2,3,1,2,1,1,2,0,1,1,1,1,1,1,1,0,0,2,2,3,2,2,1,0,0,3,1,3,1,2,2,2,1,2,2,0,0,3,3,3,0,3,2,2,3,3,1,2,0,3,3,0,1,1,0,0,3,1,1,2,2,3,3,0,0,0,0,2,3,1,1,1,0,2,3,0,0,1,1,1,1,3,0,2,3,3,0,2,3,1,1,1,1,2,2,1,1,0,3,3,3,3,2,3,0,1,1,0,0,2,2,2,2,2,2,1,3,1,2,2,2,1,0,1,1,1,1,1,1,3,0,0,2,3,2,2,0,0,2,1,3,1,1,2,0,1,0,1,2,2,1,3,1,3,0,0,2,3,2,3,0,0,0,1,2,1,3,1,2,1,0,0,0,3,1,1,3,0,0,0,2,3,2,3,1,3,1,2,0,0,3,1,1,0,0,1,3,3,3,1,0,0,0,0,1,1,1,3,1,3,1,2,2,2,3,0,1,3,0,1,1,0,1,0,3,3,0,1,2,2,1,1,1,1,2,2,3,2,1,2,3,0,0,0,2,2,2,1,3,0,0,0,1,3,3,2,2,0,0,2,3,0,1,2,3,0,0,2,2,1,1,0,0,0,0,1,2,2,2,0,0,3,3,3,2,1,2,2,3,0,0,0,3,1,3,0,0,0,3,1,1,0,0,0,0,3,0,0,2,3,1,2,1,1,3,2,2,1,3,3,3,3,0,2,1,2,2,0,0,3,3,3,2,1,2,1,3,1,0,0,3,2,1,3,2,2,1,0,2,1,1,3,0,3,0,1,0,2,1,1,2,1,0,3,3,1,3,2,0,1,1,2,1,3,1,1,1,3,2,1,2,0,1,1,0,0,0,0,0,0,0,1,1,1,2,0,1,3,0,0,3,0,3,3,1,1,1,3,0,0],"spots":[{"brand":0,"pos":4,"stocks":3},{"brand":1,"pos":12,"stocks":4},{"brand":2,"pos":20,"stocks":3},{"brand":3,"pos":25,"stocks":5},{"brand":3,"pos":248,"stocks":2},{"brand":4,"pos":43,"stocks":5},{"brand":4,"pos":387,"stocks":2},{"brand":5,"pos":110,"stocks":1},{"brand":5,"pos":488,"stocks":3},{"brand":6,"pos":114,"stocks":2},{"brand":7,"pos":117,"stocks":1},{"brand":7,"pos":231,"stocks":4},{"brand":8,"pos":119,"stocks":4},{"brand":9,"pos":217,"stocks":3},{"brand":10,"pos":337,"stocks":4},{"brand":11,"pos":354,"stocks":4},{"brand":11,"pos":392,"stocks":2},{"brand":12,"pos":381,"stocks":5},{"brand":13,"pos":467,"stocks":3},{"brand":13,"pos":550,"stocks":1},{"brand":14,"pos":520,"stocks":5},{"brand":15,"pos":556,"stocks":1},{"brand":16,"pos":561,"stocks":1},{"brand":17,"pos":567,"stocks":1}],"starts":[34,145,327,409,468],"daySteps":[48,56,68,68,72],"fuelLimit":80,"busy":1,"jammed":3,"players":10},"32":{"W":32,"H":32,"cells":[0,0,0,1,1,1,1,1,3,1,1,1,1,0,0,2,2,2,2,1,0,2,2,2,2,1,1,1,1,1,1,0,0,1,1,1,2,3,2,0,1,1,3,1,2,1,0,3,2,2,2,1,0,0,2,0,0,1,2,2,2,0,3,3,1,0,3,1,3,2,3,3,3,3,1,0,1,2,3,2,0,0,1,2,2,0,0,2,1,2,2,2,3,3,2,2,1,0,2,1,2,2,3,2,2,2,1,0,2,1,3,2,2,3,3,1,3,3,3,2,0,1,0,0,3,2,2,2,1,0,0,1,1,2,3,2,2,1,2,0,2,1,0,1,0,2,3,1,2,2,3,0,3,1,0,0,0,2,1,0,1,0,3,0,3,1,3,2,1,1,2,2,2,2,1,1,3,0,2,1,2,3,3,0,3,0,1,1,0,0,1,3,1,2,2,3,3,1,2,0,3,1,0,2,2,2,1,0,2,0,1,1,2,0,3,3,0,1,3,1,1,1,1,0,2,1,3,2,2,3,0,3,3,3,2,3,3,3,2,1,2,3,1,3,1,0,2,3,2,1,2,0,0,0,2,2,0,1,3,2,3,3,3,2,3,2,0,0,2,3,1,3,0,3,1,0,0,3,3,1,1,0,2,3,2,3,2,2,0,2,1,0,2,3,0,0,2,2,2,0,2,2,2,1,2,2,2,1,3,3,0,1,2,1,3,2,2,3,3,2,3,0,1,1,1,1,1,2,3,2,2,3,3,0,2,1,3,0,1,0,2,2,3,1,2,1,1,3,3,3,0,0,0,0,1,2,1,2,0,1,3,2,2,0,0,1,1,1,3,3,2,1,1,0,3,0,1,2,2,1,0,2,2,0,0,1,3,3,1,0,0,1,2,0,0,0,1,3,0,1,2,2,0,0,1,3,0,1,0,0,2,1,3,2,2,2,2,1,2,3,2,2,2,0,1,1,2,1,1,3,0,3,1,3,2,2,0,1,2,3,1,0,2,2,1,3,2,3,1,0,2,3,3,2,2,3,0,1,1,0,3,3,3,3,1,3,2,3,1,2,3,3,1,1,2,1,2,0,2,0,1,2,2,3,2,2,2,2,0,0,1,3,2,2,3,2,3,1,2,2,2,0,3,0,1,2,1,3,1,2,2,0,1,1,3,3,3,2,2,0,0,1,2,2,3,2,2,3,1,3,2,3,2,2,3,0,1,3,0,0,1,2,3,0,0,0,1,2,3,3,3,0,2,2,1,2,2,0,3,0,2,1,0,2,3,3,2,0,1,3,2,3,2,1,2,2,0,1,0,2,2,0,3,2,2,2,1,3,3,3,0,0,3,1,1,3,0,2,2,1,2,0,0,3,2,1,3,3,2,1,0,2,2,3,2,3,3,0,2,1,1,1,3,0,0,2,3,1,3,1,0,0,1,2,1,2,3,3,1,1,1,0,2,2,0,2,2,0,2,2,2,2,3,1,0,0,0,2,2,1,1,2,2,1,0,1,0,3,0,0,3,1,2,1,0,2,0,2,2,3,3,2,0,0,0,3,3,0,0,0,2,3,1,2,0,3,1,1,3,2,3,2,3,0,2,1,1,1,3,2,3,3,3,0,0,3,3,3,0,0,0,0,3,3,1,1,0,0,1,3,0,3,3,2,2,0,3,1,2,2,1,0,1,1,3,0,2,2,0,3,0,2,2,0,3,2,2,1,0,2,3,1,1,1,3,3,2,2,1,2,0,1,2,0,3,1,1,2,0,2,0,2,2,2,2,0,2,3,1,2,0,0,3,2,0,1,3,0,0,3,1,3,0,1,2,2,3,1,0,1,1,1,2,0,2,2,3,0,2,1,1,0,0,2,2,2,2,1,1,1,1,3,1,2,1,0,3,2,0,1,2,0,2,1,2,0,3,2,0,3,1,3,1,0,0,0,2,2,1,2,2,2,1,2,2,1,3,1,1,2,2,1,3,3,0,0,1,2,2,2,3,0,3,1,3,1,0,2,2,3,3,1,0,3,3,1,1,0,3,3,1,3,3,1,1,3,3,3,1,1,0,3,3,3,1,3,2,1,0,2,0,3,1,2,2,2,1,2,3,1,2,2,2,1,3,3,2,1,2,3,2,3,3,3,3,0,1,3,2,2,1,0,0,0,1,3,3,3,0,2,0,3,3,3,1,3,3,3,2,1,2,3,2,2,0,3,3,2,2,3,2,2,1,3,3,0,1,0,0,2,2,2,3,3,3,0,1,0,3,3,3,3,1,0,3,2,3,2,0,2,2,2,2,2,0,0,3,2,2,2,2,2,3,2],"spots":[{"brand":0,"pos":13,"stocks":6},{"brand":1,"pos":20,"stocks":2},{"brand":1,"pos":373,"stocks":6},{"brand":1,"pos":501,"stocks":7},{"brand":1,"pos":520,"stocks":5},{"brand":1,"pos":694,"stocks":6},{"brand":2,"pos":31,"stocks":4},{"brand":3,"pos":65,"stocks":2},{"brand":4,"pos":144,"stocks":7},{"brand":5,"pos":159,"stocks":5},{"brand":5,"pos":838,"stocks":3},{"brand":6,"pos":199,"stocks":1},{"brand":6,"pos":602,"stocks":5},{"brand":7,"pos":223,"stocks":3},{"brand":8,"pos":245,"stocks":4},{"brand":9,"pos":364,"stocks":5},{"brand":10,"pos":389,"stocks":4},{"brand":11,"pos":538,"stocks":5},{"brand":11,"pos":995,"stocks":1},{"brand":12,"pos":576,"stocks":5},{"brand":12,"pos":741,"stocks":2},{"brand":13,"pos":596,"stocks":7},{"brand":14,"pos":654,"stocks":2},{"brand":15,"pos":703,"stocks":4},{"brand":16,"pos":910,"stocks":4},{"brand":17,"pos":945,"stocks":3},{"brand":18,"pos":958,"stocks":7},{"brand":19,"pos":960,"stocks":5},{"brand":20,"pos":987,"stocks":3},{"brand":21,"pos":997,"stocks":7},{"brand":22,"pos":1003,"stocks":4},{"brand":23,"pos":1014,"stocks":7}],"starts":[213,253,295,350,562,730,797],"daySteps":[64,76,88,88,100],"fuelLimit":120,"busy":1,"jammed":3,"players":10}};
+</script><script>
+/* ===== 画面 ===== */
+const $ = id => document.getElementById(id);
+const STAGES = {
+  r1: { size: 16, agents: 4, spots: 16, brands: [10, 14] },
+  sf: { size: 24, agents: 5, spots: 24, brands: [14, 20] },
+  f: { size: 32, agents: 7, spots: 32, brands: [20, 28] },
+};
+const SAMPLE_STAGE = { s16: ['r1', 16], s24: ['sf', 24], s32: ['f', 32] };
+const baseStage = v => STAGES[v] || (SAMPLE_STAGE[v] && STAGES[SAMPLE_STAGE[v][0]]);
+const AG_COLORS = ['#e4572e', '#2e86ab', '#6f9a1f', '#a23b72', '#e9a10a', '#2aa79b', '#6c5ce7', '#8d6e63'];
+const st = { g: null, res: null, day: 0, step: 0, playing: false, manual: null, hubs: [], clickMode: 'assign', imported: null, exactDays: null };
+
+const num = id => { const v = parseFloat($(id).value); return isNaN(v) ? 0 : v; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 1600); }
+
+function readParams() {
+  return {
+    size: clamp(Math.round(num('size')), 8, 32), agents: clamp(Math.round(num('agents')), 3, 8),
+    spots: clamp(Math.round(num('spots')), 1, 32), brands: Math.max(1, Math.round(num('brands'))),
+    maxStock: Math.max(1, Math.round(num('maxStock'))), seed: Math.max(1, Math.round(num('seed'))),
+    pond: num('pond') / 100, mount: num('mount') / 100, roadFrac: num('roads') / 100, edgeBias: num('edgeBias'), startMode: $('startMode').value,
+    days: clamp(Math.round(num('days')), 1, 10), stepMul: clamp(num('stepMul'), 1, 4), jitter: $('jitter').value,
+    fuelMul: clamp(num('fuelMul'), 1, 3), busy: Math.round(num('busy')), jammed: Math.round(num('jammed')),
+    players: Math.max(1, Math.round(num('players'))), otherLoad: num('otherLoad'),
+  };
+}
+function readStrategy() {
+  return {
+    supply: Math.max(0, Math.round(num('supply'))), mode: $('mode').value, assign: $('assign').value,
+    outside: parseFloat($('outside').value), wb: num('wb'), wm: num('wm'), lam: num('lam'), K: clamp(Math.round(num('K')), 1, 2000),
+    otherLoad: num('otherLoad'), manual: st.manual, hubs: st.hubs, planner: $('planner').value, env: $('env').value, loopK: clamp(Math.round(num('loopK')), 2, 7), loopCounter: $('loopDirSel').value === 'ctr', loopReverse: $('loopDirSel').value === 'rev',
+    look: +$('look').value > 0 ? { depth: +$('look').value, gamma: +$('look').value > 1 ? 0.8 : 1, forecast: $('forecast').value, nCand: 40 } : null,
+    beam: $('planner').value === 'greedy' ? null : { W: clamp(Math.round(num('bw')), 1, 2000), B: clamp(Math.round(num('bb')), 1, 12), tau: 10, roll: $('planner').value === 'roll' },
+  };
+}
+
+function makeDaySteps(p, seed, W, H) {
+  const r = mulberry(seed * 7 + 3), base = p.stepMul * (W + H), out = [];
+  for (let d = 0; d < p.days; d++) {
+    const v = p.jitter === '1' ? base * (0.8 + r() * 0.4) : p.jitter === 'grow' ? base * (1 + 0.5 * (p.days > 1 ? d / (p.days - 1) : 0)) : base;
+    out.push(clamp(Math.round(v), W + H, 4 * (W + H)));
+  }
+  return out;
+}
+
+function buildGame(p) {
+  let m;
+  if (st.imported) m = st.imported;
+  else {
+    const brands = Math.min(p.brands, p.spots);
+    m = genMap({ H: p.size, W: p.size, pond: p.pond, mount: p.mount, roadFrac: p.roadFrac, edgeBias: p.edgeBias, spots: p.spots, brands, agents: p.agents, maxStock: p.maxStock, startMode: p.startMode }, mulberry(p.seed));
+  }
+  const daySteps = st.exactDays || makeDaySteps(p, p.seed, m.W, m.H);
+  return makeGame({ H: m.H, W: m.W, cells: m.cells, spots: m.spots, starts: m.starts, daySteps,
+    fuelLimit: Math.max(1, st.imported && st.imported.fuelLimit && st.exactDays ? st.imported.fuelLimit : Math.round(p.fuelMul * daySteps[0])),
+    busy: p.busy, jammed: p.jammed, players: p.players });
+}
+
+let runTimer = 0;
+function scheduleRun(regen) { clearTimeout(runTimer); runTimer = setTimeout(() => runOne(regen), 120); }
+function runOne() {
+  const p = readParams();
+  st.g = buildGame(p);
+  const s = readStrategy();
+  s.supply = Math.min(s.supply, st.g.starts.length - 1);
+  st.res = runMatch(st.g, s, p.seed, true);
+  st.day = clamp(st.day, 0, st.res.days.length - 1);
+  st.step = st.res.days[st.day].N;
+  stopPlay();
+  layoutBoard(); renderAll();
+}
+
+/* ---- 盤面の描画 ---- */
+const cv = $('board'), cx = cv.getContext('2d');
+let L = { R: 10, w: 0, h: 0 };
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function layoutBoard() {
+  const g = st.g; if (!g) return;
+  const cw = cv.parentElement.clientWidth || 600;
+  const R = cw / (Math.sqrt(3) * (g.W + 0.5));
+  const h = R * (1.5 * (g.H - 1) + 2);
+  const dpr = window.devicePixelRatio || 1;
+  cv.style.height = h + 'px'; cv.width = Math.round(cw * dpr); cv.height = Math.round(h * dpr);
+  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  L = { R, w: cw, h };
+}
+function center(p) {
+  const g = st.g, r = (p / g.W) | 0, c = p % g.W, R = L.R, sw = Math.sqrt(3) * R;
+  return [(c + ((r & 1) ? 0 : 0.5)) * sw + sw / 2, R + r * 1.5 * R];
+}
+function hexPath(x, y, R) {
+  cx.beginPath();
+  for (let k = 0; k < 6; k++) { const a = Math.PI / 180 * (60 * k - 90); const px = x + R * Math.cos(a), py = y + R * Math.sin(a); k ? cx.lineTo(px, py) : cx.moveTo(px, py); }
+  cx.closePath();
+}
+function brandColor(b) { const i = st.g.brands.indexOf(b); return `hsl(${(i * 137.508) % 360} 62% 52%)`; }
+
+function renderBoard() {
+  const g = st.g, res = st.res; if (!g || !res) return;
+  const D = res.days[st.day], step = st.step, R = L.R;
+  const col = { 0: css('--plain'), 1: css('--road'), 2: css('--mount'), 3: css('--pond') };
+  const busy = css('--busy'), jam = css('--jam'), line = css('--hexline'), ink = css('--ink'), panel = css('--panel');
+  cx.clearRect(0, 0, L.w, L.h);
+  for (let p = 0; p < g.H * g.W; p++) {
+    const [x, y] = center(p); hexPath(x, y, R * 0.995);
+    const c = g.cells[p];
+    cx.fillStyle = c === 1 && D.tr[p] ? (D.tr[p] === 2 ? jam : busy) : col[c];
+    cx.fill(); cx.strokeStyle = line; cx.lineWidth = 1; cx.stroke();
+  }
+  // 補給拠点
+  const hubCells = new Set(Object.values(res.plan.hubOf || {}));
+  for (const h of hubCells) { const [x, y] = center(h); cx.strokeStyle = ink; cx.lineWidth = 2; cx.setLineDash([3, 2]); cx.strokeRect(x - R * 0.7, y - R * 0.7, R * 1.4, R * 1.4); cx.setLineDash([]); }
+  // 補給車のループ
+  if (res.plan.loop && res.plan.loop.length > 1) {
+    cx.beginPath(); res.plan.loop.forEach((p, k) => { const [x, y] = center(p); k ? cx.lineTo(x, y) : cx.moveTo(x, y); }); cx.closePath();
+    cx.setLineDash([4, 4]); cx.strokeStyle = ink; cx.globalAlpha = 0.55; cx.lineWidth = Math.max(1.5, R * 0.14); cx.stroke(); cx.setLineDash([]); cx.globalAlpha = 1;
+  }
+  // スポット
+  const gotBy = new Set(D.sim.got.filter(e => e.step <= step).map(e => e.spot));
+  g.spots.forEach((s, k) => {
+    const [x, y] = center(s.pos), own = res.plan.owner[k];
+    cx.globalAlpha = gotBy.has(k) ? 0.32 : 1;
+    if (own >= 0) { cx.beginPath(); cx.arc(x, y, R * 0.78, 0, 7); cx.strokeStyle = AG_COLORS[own % 8]; cx.lineWidth = Math.max(2, R * 0.22); cx.stroke(); }
+    cx.beginPath(); cx.arc(x, y, R * 0.56, 0, 7); cx.fillStyle = brandColor(s.brand); cx.fill();
+    cx.fillStyle = '#fff'; cx.font = `600 ${Math.max(8, R * 0.62)}px ${css('--f-mono')}`; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    cx.fillText(String(s.brand), x, y + R * 0.03);
+    cx.globalAlpha = 1;
+  });
+  // 軌跡
+  const n = D.start.length;
+  for (let i = 0; i < n; i++) {
+    const tp = D.sim.tracePos[i]; cx.beginPath(); let last = -1, off = (i - (n - 1) / 2) * Math.max(1, R * 0.08);
+    for (let s = 0; s <= step; s++) { const p = tp[s]; if (p === last) continue; const [x, y] = center(p); last < 0 ? cx.moveTo(x + off, y + off) : cx.lineTo(x + off, y + off); last = p; }
+    cx.strokeStyle = AG_COLORS[i % 8]; cx.globalAlpha = 0.75; cx.lineWidth = Math.max(1.5, R * 0.16); cx.lineJoin = 'round'; cx.stroke(); cx.globalAlpha = 1;
+  }
+  // エージェント
+  const byCell = new Map();
+  for (let i = 0; i < n; i++) { const p = D.sim.tracePos[i][step]; if (!byCell.has(p)) byCell.set(p, []); byCell.get(p).push(i); }
+  for (const [p, list] of byCell) {
+    const [x0, y0] = center(p);
+    list.forEach((i, j) => {
+      const a = list.length > 1 ? (j / list.length) * Math.PI * 2 : 0, rr = list.length > 1 ? R * 0.42 : 0;
+      const x = x0 + rr * Math.cos(a), y = y0 + rr * Math.sin(a), r = R * (list.length > 1 ? 0.36 : 0.46);
+      cx.beginPath();
+      if (D.start[i].kind === 1) { cx.moveTo(x, y - r * 1.2); cx.lineTo(x + r * 1.2, y); cx.lineTo(x, y + r * 1.2); cx.lineTo(x - r * 1.2, y); cx.closePath(); }
+      else cx.arc(x, y, r, 0, 7);
+      cx.fillStyle = AG_COLORS[i % 8]; cx.fill(); cx.strokeStyle = panel; cx.lineWidth = Math.max(1.5, R * 0.1); cx.stroke();
+      cx.fillStyle = '#fff'; cx.font = `700 ${Math.max(7, r * 1.15)}px ${css('--f-mono')}`; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(String(i), x, y + r * 0.05);
+    });
+  }
+}
+
+/* ---- 右側・ツールバー ---- */
+function renderAll() {
+  const g = st.g, res = st.res, D = res.days[st.day];
+  const nb = g.brands.length;
+  $('kAll').innerHTML = `${res.allBrands}<em>/${nb}</em>`;
+  $('kDaily').innerHTML = `${res.daily}<em>/${nb * res.days.length}</em>`;
+  $('kUdon').textContent = res.udon;
+  // 日ボタン
+  const db = $('dayBtns'); db.innerHTML = '';
+  res.days.forEach((d, i) => {
+    const b = document.createElement('button'); b.textContent = `${i + 1}日目`; b.setAttribute('aria-pressed', i === st.day);
+    if (d.brands < nb) b.classList.add('miss'); b.title = `系列 ${d.brands}/${nb}・玉 ${d.udon}`;
+    b.onclick = () => { st.day = i; st.step = d.N; stopPlay(); renderAll(); }; db.appendChild(b);
+  });
+  // 表
+  const tb = $('dayTable').tBodies[0]; tb.innerHTML = '';
+  res.days.forEach((d, i) => {
+    const miss = g.brands.filter(b => !d.set.has(b));
+    let nbz = 0, nj = 0; for (const p of g.roads) { if (d.tr[p] === 1) nbz++; else if (d.tr[p] === 2) nj++; }
+    const tr = document.createElement('tr'); if (i === st.day) tr.className = 'sel';
+    tr.innerHTML = `<td>${i + 1}</td><td>${d.N}</td><td><span class="chip ${d.brands === nb ? 'ok' : 'ng'}">${d.brands}/${nb}</span></td><td>${d.udon}</td><td>${nbz}/${nj}</td><td class="l miss-list">${d.fallback ? '計画失敗（全員待機）' : miss.join(' ')}</td>`;
+    tr.onclick = () => { st.day = i; st.step = d.N; stopPlay(); renderAll(); };
+    tb.appendChild(tr);
+  });
+  $('step').max = D.N; $('step').value = st.step;
+  $('planJson').value = JSON.stringify(D.acts);
+  renderStep();
+}
+function renderStep() {
+  const res = st.res, D = res.days[st.day], g = st.g;
+  $('stepOut').textContent = `${st.step} / ${D.N}`;
+  const al = $('agentList'); al.innerHTML = '';
+  D.start.forEach((a, i) => {
+    const pos = D.sim.tracePos[i][st.step], fuel = D.sim.traceFuel[i][st.step];
+    const n = D.sim.got.filter(e => e.agent === i && e.step <= st.step).length;
+    const own = res.plan.owner.filter(o => o === i).length;
+    const pair = Object.entries(res.plan.pairOf || {}).find(([j, k]) => +j === i || k === i);
+    const div = document.createElement('div');
+    div.innerHTML = a.kind === 1
+      ? `<span class="sw sq" style="background:${AG_COLORS[i % 8]}"></span>${i} 補給車　セル ${pos}${pair ? `　巡回${pair[1]}に随伴` : ''}`
+      : `<span class="sw" style="background:${AG_COLORS[i % 8]}"></span>${i} 巡回車　燃料 ${fuel}/${g.fuelLimit}　玉 ${n}${own ? `　担当 ${own}か所` : ''}`;
+    al.appendChild(div);
+  });
+  renderBoard();
+  renderTimeline();
+}
+
+
+/* ---- 時間の使い方（無駄の分析） ---- */
+const TL = [
+  { k: 'new', name: '新しい系列へ移動', col: '#2a78d6' },
+  { k: 'dup', name: '取得済み系列へ移動', col: '#eb6834' },
+  { k: 'ref', name: '補給の寄り道', col: '#1baf7a' },
+  { k: 'park', name: '翌日の位置取り', col: '#7b6fd0' },
+  { k: 'none', name: '成果なしの移動', col: '#e34948' },
+  { k: 'wait', name: '途中の待機', col: 'var(--muted)' },
+  { k: 'idle', name: '終了後の余り', col: 'var(--line)' },
+  { k: 'sup', name: '補給車の移動', col: 'var(--ink)' },
+];
+function analyzeDay(g, D) {
+  const { st: stc } = costArrays(g, D.tr), N = D.N;
+  const gots = [...D.sim.got].sort((a, b) => a.step - b.step || a.agent - b.agent), seenB = new Set();
+  for (const e of gots) { e.isNew = !seenB.has(e.brand); seenB.add(e.brand); }
+  return D.start.map((a, i) => {
+    const segs = []; let t = 0, pos = a.pos;
+    for (const x of D.acts[i]) {
+      if (x < 0) { segs.push({ type: 'wait', s: t, e: t - x }); t -= x; }
+      else { const d = stc[pos]; const np = g.nbr[pos * 6 + x]; segs.push({ type: 'move', s: t, e: t + d, to: np }); t += d; pos = np; }
+    }
+    let lastMove = -1; segs.forEach((s, k) => { if (s.type === 'move') lastMove = k; });
+    segs.forEach((s, k) => { if (s.type === 'wait') s.cls = k > lastMove ? 'idle' : 'wait'; });
+    if (a.kind === 1) { segs.forEach(s => { if (s.type === 'move') s.cls = 'sup'; }); return { i, kind: 1, segs }; }
+    const tf = D.sim.traceFuel[i];
+    const ev = [];
+    for (const e of gots) if (e.agent === i) ev.push({ step: e.step, cls: e.isNew ? 'new' : 'dup' });
+    for (let s = 1; s <= N; s++) if (tf[s] > tf[s - 1] && !ev.some(x => x.step === s)) ev.push({ step: s, cls: 'ref' });
+    ev.sort((x, y) => x.step - y.step);
+    const endOnSpot = g.spotAt.has(pos);
+    for (const s of segs) {
+      if (s.type !== 'move') continue;
+      const nx = ev.find(x => x.step >= s.e);
+      s.cls = nx ? nx.cls : (endOnSpot ? 'park' : 'none');
+    }
+    return { i, kind: 0, segs };
+  });
+}
+function renderTimeline() {
+  const g = st.g, D = st.res.days[st.day], N = D.N, rows = analyzeDay(g, D);
+  const svg = $('timeline'); svg.innerHTML = '';
+  const L = 70, R = 10, rowH = 22, T = 6, W = 760, H = T + rows.length * rowH + 24;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const X = s => L + s / N * (W - L - R);
+  const NS = 'http://www.w3.org/2000/svg', mk = (tag, at, txt) => { const e = document.createElementNS(NS, tag); for (const k in at) e.setAttribute(k, at[k]); if (txt !== undefined) e.textContent = txt; svg.appendChild(e); return e; };
+  const colOf = k => TL.find(x => x.k === k).col;
+  rows.forEach((r, ri) => {
+    const y = T + ri * rowH;
+    mk('text', { x: L - 8, y: y + 15, 'text-anchor': 'end' }, `${r.i} ${r.kind ? '補給' : '巡回'}`);
+    for (const s of r.segs) {
+      if (s.e <= s.s) continue;
+      const rc = mk('rect', { x: X(s.s) + 0.5, y: y + 2, width: Math.max(1, X(s.e) - X(s.s) - 1), height: rowH - 6, rx: 2, style: `fill:${colOf(s.cls)}` });
+      const t = document.createElementNS(NS, 'title'); t.textContent = `${TL.find(x => x.k === s.cls).name}：ステップ ${s.s}〜${s.e}`; rc.appendChild(t);
+    }
+    D.sim.got.filter(e => e.agent === r.i).forEach(e => mk('circle', { cx: X(e.step), cy: y + 2, r: 3, style: 'fill:var(--ink)' }));
+  });
+  for (let s = 0; s <= N; s += N > 60 ? 20 : 10) mk('text', { x: X(s), y: H - 6, 'text-anchor': 'middle' }, String(s));
+  mk('line', { x1: X(st.step), x2: X(st.step), y1: T, y2: T + rows.length * rowH, style: 'stroke:var(--ink);stroke-width:1.5' });
+  svg.onclick = ev => { const r = svg.getBoundingClientRect(), sx = (ev.clientX - r.left) * W / r.width; st.step = Math.max(0, Math.min(N, Math.round((sx - L) / (W - L - R) * N))); stopPlay(); $('step').value = st.step; renderStep(); };
+  // 表
+  const tb = $('wasteTable').tBodies[0]; tb.innerHTML = '';
+  const keys = ['new', 'dup', 'ref', 'park', 'none', 'wait', 'idle'], tot = {}; keys.forEach(k => tot[k] = 0);
+  let np = 0;
+  rows.filter(r => !r.kind).forEach(r => {
+    const c = {}; keys.forEach(k => c[k] = 0);
+    r.segs.forEach(s => { if (c[s.cls] !== undefined) c[s.cls] += s.e - s.s; });
+    keys.forEach(k => tot[k] += c[k]); np++;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.i}</td>` + keys.map(k => `<td>${c[k] ? c[k] : '–'}</td>`).join('');
+    tb.appendChild(tr);
+  });
+  const all = np * N, tr = document.createElement('tr'); tr.style.fontWeight = '700';
+  tr.innerHTML = `<td>合計（割合）</td>` + keys.map(k => `<td>${(tot[k] / all * 100).toFixed(0)}%</td>`).join('');
+  tb.appendChild(tr);
+  // 取り逃した系列の理由
+  const miss = g.brands.filter(b => !D.set.has(b));
+  const { st: stc, fu: fuc } = costArrays(g, D.tr), ctx = makeCtx(g, stc, fuc, 0);
+  const lines = miss.map(b => {
+    let best = Infinity, who = -1;
+    D.start.forEach((a, i) => { if (a.kind) return; const Dd = ctx.dist(a.pos); g.spots.forEach(s => { if (s.brand === b && Dd.s[s.pos] >= 0 && Dd.s[s.pos] < best) { best = Dd.s[s.pos]; who = i; } }); });
+    return `系列${b}：朝の位置から一番近い巡回車${who}でも片道${best}歩（1日${N}歩）${best > N ? '→ その日は届かない' : best > N / 2 ? '→ 往復するとほぼ1日' : '→ 届く距離だが他を優先'}`;
+  });
+  $('missWhy').innerHTML = miss.length ? '<b>取り逃した系列</b><br>' + lines.join('<br>') : '<b>この日は全系列を取得</b>';
+}
+
+/* ---- 再生 ---- */
+let raf = 0, lastT = 0, acc = 0;
+function stopPlay() { st.playing = false; cancelAnimationFrame(raf); $('play').textContent = '再生'; }
+function tick(t) {
+  if (!st.playing) return;
+  const D = st.res.days[st.day], rate = D.N / 5; // 1日を約5秒
+  acc += (t - lastT) / 1000 * rate; lastT = t;
+  while (acc >= 1) {
+    acc -= 1; st.step++;
+    if (st.step > D.N) {
+      if (st.day + 1 < st.res.days.length) { st.day++; st.step = 0; renderAll(); return void (raf = requestAnimationFrame(tick)); }
+      st.step = D.N; stopPlay(); renderStep(); return;
+    }
+  }
+  $('step').value = st.step; renderStep();
+  raf = requestAnimationFrame(tick);
+}
+$('play').onclick = () => {
+  if (st.playing) return stopPlay();
+  const D = st.res.days[st.day]; if (st.step >= D.N) st.step = 0;
+  st.playing = true; $('play').textContent = '停止'; lastT = performance.now(); acc = 0; raf = requestAnimationFrame(tick);
+};
+$('step').oninput = e => { stopPlay(); st.step = +e.target.value; renderStep(); };
+
+/* ---- 盤面クリック ---- */
+function cellAt(ev) {
+  const r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+  let b = -1, bd = Infinity;
+  for (let p = 0; p < st.g.H * st.g.W; p++) { const [px, py] = center(p); const d = (px - x) ** 2 + (py - y) ** 2; if (d < bd) { bd = d; b = p; } }
+  return bd <= (L.R * 1.05) ** 2 ? b : -1;
+}
+cv.addEventListener('click', ev => {
+  if (!st.g) return; const p = cellAt(ev); if (p < 0) return;
+  const res = st.res;
+  if (st.clickMode === 'assign') {
+    const ks = st.g.spotAt.get(p); if (!ks) return toast('スポットのセルをクリックしてください');
+    const patrol = res.kinds.map((k, i) => k === 0 ? i : -1).filter(i => i >= 0);
+    if ($('assign').value !== 'manual' || !st.manual) { st.manual = {}; res.plan.owner.forEach((o, k) => { if (o >= 0) st.manual[k] = o; }); $('assign').value = 'manual'; }
+    for (const k of ks) {
+      const cur = st.manual[k] ?? -1, order = [-1, ...patrol], nx = order[(order.indexOf(cur) + 1) % order.length];
+      if (nx < 0) delete st.manual[k]; else st.manual[k] = nx;
+      toast(nx < 0 ? `系列${st.g.spots[k].brand}: 担当なし（誰でも取る）` : `系列${st.g.spots[k].brand}: 巡回車${nx}の担当`);
+    }
+    runOne();
+  } else {
+    if (st.g.cells[p] === 3) return toast('池には置けません');
+    const sup = Math.min(Math.round(num('supply')), st.g.starts.length - 1);
+    if (sup <= 0) return toast('補給車の台数を1台以上にしてください');
+    const i = st.hubs.indexOf(p);
+    if (i >= 0) st.hubs.splice(i, 1); else { st.hubs.push(p); while (st.hubs.length > sup) st.hubs.shift(); }
+    $('mode').value = 'hub';
+    toast(i >= 0 ? '拠点を外しました' : `拠点を置きました（${st.hubs.length}/${sup}）`);
+    runOne();
+  }
+});
+function setClickMode(m) {
+  st.clickMode = m; $('cmAssign').setAttribute('aria-pressed', m === 'assign'); $('cmHub').setAttribute('aria-pressed', m === 'hub');
+  $('clickHint').innerHTML = m === 'assign'
+    ? '<b>スポットをクリック</b>すると担当の巡回車が順に切り替わり、分け方は「手動で指定」になります。今の自動の割り当てを出発点にして直せます。'
+    : '<b>セルをクリック</b>すると補給車の待機拠点を置き、使い方は「拠点で待機」になります。もう一度押すと外れます。置かなかった台数分は自動で決めます。';
+}
+$('cmAssign').onclick = () => setClickMode('assign');
+$('cmHub').onclick = () => setClickMode('hub');
+
+/* ---- 入力の変更 ---- */
+function applyStage() {
+  const v = $('stage').value;
+  if (SAMPLE_STAGE[v]) { loadImported(SAMPLES[SAMPLE_STAGE[v][1]], `参考マップ ${SAMPLE_STAGE[v][1]}×${SAMPLE_STAGE[v][1]}`, true); return true; }
+  if (st.imported) { st.imported = null; st.exactDays = null; $('unImport').hidden = true; $('importMsg').textContent = ''; }
+  const s = STAGES[v]; if (!s) { $('brandRange').textContent = '自由設定'; return; }
+  $('size').value = s.size; $('agents').value = s.agents; $('spots').value = s.spots;
+  $('brands').value = Math.round(s.spots * 0.75); $('maxStock').value = s.agents;
+  const tr = { 16: [18, 18, 29], 24: [22, 21, 30], 32: [24, 31, 24] }[s.size]; if (tr) { $('pond').value = tr[0]; $('mount').value = tr[1]; $('roads').value = tr[2]; }
+  $('brandRange').textContent = `本選は ${s.brands[0]}〜${s.brands[1]}・参考マップはスポットの3/4`;
+}
+$('stage').onchange = () => { clearMapEdits(); if (!applyStage()) scheduleRun(); };
+function clearMapEdits() { st.manual = null; st.hubs = []; if ($('assign').value === 'manual') $('assign').value = 'free'; }
+['size', 'agents', 'spots', 'brands', 'maxStock', 'seed', 'pond', 'mount', 'roads', 'edgeBias', 'startMode'].forEach(id => $(id).addEventListener('change', () => { if (st.imported) { st.imported = null; st.exactDays = null; $('unImport').hidden = true; $('importMsg').textContent = ''; if (SAMPLE_STAGE[$('stage').value]) $('stage').value = SAMPLE_STAGE[$('stage').value][0]; } $('stage').value = ['size', 'agents', 'spots'].includes(id) ? 'custom' : $('stage').value; clearMapEdits(); scheduleRun(); }));
+['days', 'stepMul', 'jitter', 'fuelMul', 'busy', 'jammed', 'players', 'otherLoad'].forEach(id => $(id).addEventListener('change', () => { st.exactDays = null; scheduleRun(); }));
+['supply', 'mode', 'loopK', 'loopDirSel', 'outside', 'wb', 'wm', 'lam', 'K', 'planner', 'bw', 'bb', 'look', 'forecast', 'env'].forEach(id => $(id).addEventListener('change', () => scheduleRun()));
+$('assign').addEventListener('change', () => { if ($('assign').value === 'manual' && !st.manual) { st.manual = {}; st.res.plan.owner.forEach((o, k) => { if (o >= 0) st.manual[k] = o; }); } scheduleRun(); });
+$('newMap').onclick = () => { $('seed').value = Math.round(num('seed')) + 1; clearMapEdits(); scheduleRun(); };
+
+/* ---- コピー・入出力 ---- */
+async function copyText(t, ok) { try { await navigator.clipboard.writeText(t); toast(ok); } catch (e) { toast('コピーできませんでした。欄を選択してコピーしてください'); } }
+$('copyPlan').onclick = () => { $('planJson').select(); copyText($('planJson').value, '回答 JSON をコピーしました'); };
+function configJson() {
+  const g = st.g;
+  return JSON.stringify({ problem: { width: g.W, height: g.H, cells: Array.from({ length: g.H }, (_, y) => Array.from(g.cells.slice(y * g.W, y * g.W + g.W))),
+    spots: g.spots, agentStarts: g.starts, fuelLimits: g.fuelLimit, daySteps: g.daySteps, daySeconds: g.daySteps.map(() => 60),
+    busyThreshold: g.busy, jammedThreshold: g.jammed }, teams: Array.from({ length: g.players }, (_, i) => ({ name: `team${i}`, token: `token-p${i}` })) });
+}
+$('copyMap').onclick = () => { $('importText').value = configJson(); copyText($('importText').value, '設定 JSON をコピーしました'); };
+$('importBtn').onclick = () => {
+  try {
+    const j = JSON.parse($('importText').value);
+    let m;
+    if (j.problem) { const p = j.problem; m = { W: p.width, H: p.height, cells: p.cells.flat(), spots: p.spots, starts: p.agentStarts, daySteps: p.daySteps, fuelLimit: p.fuelLimits, busy: p.busyThreshold, jammed: p.jammedThreshold, players: (j.teams || []).length || 2 }; }
+    else if (j.map) { m = { W: j.map.width, H: j.map.height, cells: j.map.cells.flat(), spots: j.spots, starts: j.agents, daySteps: j.daySteps, fuelLimit: j.fuelLimits, busy: j.busyThreshold, jammed: j.jammedThreshold, players: j.players }; }
+    else throw new Error('problem か map を含む JSON ではありません');
+    if (m.cells.length !== m.W * m.H) throw new Error('cells の大きさが width×height と合いません');
+    loadImported(m, '', false);
+  } catch (e) { $('importMsg').textContent = '読み込めませんでした: ' + e.message; }
+};
+function loadImported(m, label, isSample) {
+    st.imported = m; st.exactDays = m.daySteps.slice();
+    if (!isSample) $('stage').value = 'custom';
+    $('size').value = m.W; $('agents').value = m.starts.length; $('spots').value = m.spots.length;
+    $('brands').value = new Set(m.spots.map(s => s.brand)).size; $('days').value = m.daySteps.length;
+    $('stepMul').value = (m.daySteps[0] / (m.W + m.H)).toFixed(2); $('fuelMul').value = (m.fuelLimit / m.daySteps[0]).toFixed(2);
+    $('busy').value = m.busy; $('jammed').value = m.jammed; $('players').value = m.players || 2;
+    $('jitter').value = m.daySteps.every(x => x === m.daySteps[0]) ? '0' : 'grow';
+    clearMapEdits(); $('unImport').hidden = isSample; $('importMsg').textContent = `${label || m.W + '×' + m.H}・スポット ${m.spots.length}・${m.daySteps.length}日（${m.daySteps.join(', ')} ステップ）を読み込みました。`;
+    $('brandRange').textContent = label ? `${label}のまま` : '読み込んだマップ';
+    runOne();
+}
+$('unImport').onclick = () => { st.imported = null; st.exactDays = null; $('unImport').hidden = true; $('importMsg').textContent = ''; $('stage').value = 'r1'; applyStage(); clearMapEdits(); runOne(); };
+
+/* ---- タブ ---- */
+function setTab(t) {
+  $('tab-one').setAttribute('aria-selected', t === 'one'); $('tab-batch').setAttribute('aria-selected', t === 'batch');
+  $('viewOne').hidden = t !== 'one'; $('viewBatch').hidden = t !== 'batch'; $('right').hidden = t !== 'one';
+  $('main').style.gridColumn = t === 'batch' ? 'span 2' : '';
+  if (t === 'one') { layoutBoard(); renderBoard(); }
+}
+$('tab-one').onclick = () => setTab('one');
+$('tab-batch').onclick = () => setTab('batch');
+
+/* ---- まとめて比べる ---- */
+const MODE_JA = { none: '', pair: '随伴', hub: '拠点' }, ASSIGN_JA = { free: '全員自由', region: '領域分割', brand: '系列分担', manual: '手動' };
+const PLANNER_JA = { greedy: '貪欲', roll: 'ビーム', beam: '単純ビーム' };
+const cfgName = c => `${c.showPlanner ? '[' + PLANNER_JA[c.planner] + '] ' : ''}${ASSIGN_JA[c.assign]}・補給${c.supply}${c.supply ? '(' + MODE_JA[c.mode] + ')' : ''}`;
+let batch = null;
+function checked(id) { return [...$(id).querySelectorAll('input:checked')].map(i => i.value); }
+$('bRun').onclick = () => {
+  const p = readParams(), base = readStrategy();
+  const assigns = checked('bAssign'), sups = checked('bSupply').map(Number), modes = checked('bMode');
+  const cfgs = [];
+  const PL = { greedy: { planner: 'greedy', beam: null, look: null }, roll: { planner: 'roll', beam: { W: base.beam ? base.beam.W : 20, B: base.beam ? base.beam.B : 4, tau: 10, roll: true } } };
+  const planners = checked('bPlanner').map(v => v === 'current' ? { planner: base.planner, beam: base.beam } : PL[v]).filter((x, i, arr) => arr.findIndex(y => y.planner === x.planner) === i);
+  if (!planners.length) planners.push({ planner: base.planner, beam: base.beam });
+  for (const pl of planners) for (const a of assigns) for (const s of sups) {
+    if (s >= p.agents) continue;
+    const extra = { ...pl, showPlanner: planners.length > 1 };
+    if (s === 0) cfgs.push({ ...base, ...extra, assign: a, supply: 0, mode: 'pair', manual: null, hubs: [] });
+    else for (const m of modes) cfgs.push({ ...base, ...extra, assign: a, supply: s, mode: m, manual: null, hubs: [] });
+  }
+  if (!cfgs.length) return toast('比べる戦略を1つ以上選んでください');
+  const stage = baseStage($('stage').value);
+  const sampleSz = SAMPLE_STAGE[$('stage').value] ? SAMPLE_STAGE[$('stage').value][1] : 0;
+  if ($('bMapSrc').value === 'sample' && !sampleSz) return toast('先に左の「段階」で参考マップを選んでください');
+  if (SAMPLE_STAGE[$('stage').value]) Object.assign(p, { size: stage.size, agents: stage.agents, spots: stage.spots });
+  batch = { p, cfgs, M: clamp(Math.round(num('bMaps')), 1, 500), seed0: Math.max(1, Math.round(num('bSeed'))), rand: +$('bRand').value, sample: $('bMapSrc').value === 'sample' ? SAMPLES[sampleSz] : null, stage, maps: [], i: 0, running: true, t0: performance.now() };
+  $('bRun').disabled = true; $('bStop').disabled = false;
+  stepBatch();
+};
+$('bStop').onclick = () => { if (batch) batch.running = false; };
+function mapParams(b, seed) {
+  const p = { ...b.p, seed };
+  if (b.rand) {
+    const r = mulberry(seed * 13 + 5), ri = (a, c) => a + Math.floor(r() * (c - a + 1));
+    const br = b.stage ? b.stage.brands : [Math.max(1, p.brands - 2), p.brands + 2];
+    p.brands = Math.min(ri(br[0], br[1]), p.spots); p.days = ri(4, 10);
+    p.stepMul = Math.round((1 + r() * 3) * 10) / 10; p.fuelMul = Math.round((1 + r() * 2) * 10) / 10;
+    p.busy = ri(1, 5); p.jammed = ri(Math.max(2, p.busy + 1), 10); p.maxStock = ri(1, p.agents);
+    if (b.rand === 2) { // 参考マップに近い条件
+      p.brands = Math.min(Math.round(p.spots * 0.75) + ri(-1, 1), p.spots); p.days = ri(4, 6);
+      p.stepMul = Math.round((1 + r() * 0.3) * 10) / 10; p.jitter = 'grow'; p.fuelMul = Math.round((1.2 + r() * 0.8) * 20) / 20;
+      p.busy = ri(1, 2); p.jammed = ri(p.busy + 2, 4); p.players = 10;
+    }
+  }
+  return p;
+}
+function stepBatch() {
+  const b = batch;
+  if (!b.running || b.i >= b.M) return finishBatch();
+  const seed = b.seed0 + b.i, p = mapParams(b, seed);
+  const m = b.sample ? b.sample : genMap({ H: p.size, W: p.size, pond: p.pond, mount: p.mount, roadFrac: p.roadFrac, edgeBias: p.edgeBias, spots: p.spots, brands: Math.min(p.brands, p.spots), agents: p.agents, maxStock: p.maxStock, startMode: p.startMode }, mulberry(seed));
+  const daySteps = makeDaySteps(p, seed, m.W, m.H);
+  const g = makeGame({ ...m, daySteps, fuelLimit: Math.max(1, Math.round(p.fuelMul * daySteps[0])), busy: p.busy, jammed: p.jammed, players: p.players });
+  const rs = b.cfgs.map(c => { const r = runMatch(g, c, seed, false); return { all: r.allBrands, daily: r.daily, udon: r.udon, full: r.fullDays, cov: r.daily / (r.nb * r.nd), nd: r.nd }; });
+  const key = r => r.all * 1e8 + r.daily * 1e4 + r.udon;
+  const sorted = rs.map((r, i) => [key(r), i]).sort((a, c) => c[0] - a[0]);
+  const rank = new Array(rs.length); sorted.forEach(([k, i], j) => { rank[i] = sorted.findIndex(x => x[0] === k) + 1; });
+  if (b.sample) p.brands = g.brands.length;
+  b.maps.push({ seed, p, rs, rank });
+  b.i++;
+  $('bProg').style.width = (b.i / b.M * 100) + '%';
+  $('bStatus').textContent = `${b.i} / ${b.M} マップ（${b.cfgs.length}戦略 × ${b.i} 試合）`;
+  if (b.i % 3 === 0 || b.i === b.M) renderBatch();
+  setTimeout(stepBatch, 0);
+}
+function finishBatch() {
+  const b = batch; b.running = false; $('bRun').disabled = false; $('bStop').disabled = true;
+  $('bStatus').textContent = `${b.maps.length} マップ × ${b.cfgs.length} 戦略 を比較（${((performance.now() - b.t0) / 1000).toFixed(1)} 秒）`;
+  renderBatch();
+}
+function summarize(b, maps) {
+  return b.cfgs.map((c, ci) => {
+    const n = maps.length || 1;
+    const avg = f => maps.reduce((a, m) => a + f(m.rs[ci], m), 0) / n;
+    return { ci, name: cfgName(c), all: avg(r => r.all), cov: avg(r => r.cov), full: avg(r => r.full / r.nd), udon: avg(r => r.udon / r.nd), wins: maps.filter(m => m.rank[ci] === 1).length, rank: avg((r, m) => m.rank[ci]) };
+  }).sort((a, c) => a.rank - c.rank);
+}
+const pct = v => (v * 100).toFixed(1) + '%';
+function renderBatch() {
+  const b = batch; if (!b || !b.maps.length) return;
+  const S = summarize(b, b.maps);
+  let h = `<h2 style="margin-top:14px">戦略ごとの成績（平均順位の良い順）</h2><div class="tablewrap"><table><thead><tr><th class="l">戦略</th><th>平均順位</th><th>1位の回数<br>（同率含む）</th><th>試合全体の種類</th><th>日別の系列カバー率</th><th>全系列を取れた日</th><th>1日の玉数</th></tr></thead><tbody>`;
+  S.forEach((s, i) => { h += `<tr><td class="l ${i === 0 ? 'best' : ''}">${s.name}</td><td>${s.rank.toFixed(2)}</td><td>${s.wins}</td><td>${s.all.toFixed(1)}/${(b.maps.reduce((a, m) => a + m.p.brands, 0) / b.maps.length).toFixed(1)}</td><td>${pct(s.cov)}</td><td>${pct(s.full)}</td><td>${s.udon.toFixed(1)}</td></tr>`; });
+  h += '</tbody></table></div>';
+  if (b.rand) {
+    const factors = [
+      ['燃料上限（1日目ステップの倍率）', m => m.p.fuelMul, b.rand === 2 ? [[1, 1.5, '1.20〜1.45 少ない'], [1.5, 1.75, '1.50〜1.70'], [1.75, 9, '1.75〜2.00 多い']] : [[1, 1.7, '1.0〜1.6 少ない'], [1.7, 2.4, '1.7〜2.3'], [2.4, 9, '2.4〜3.0 多い']]],
+      ['1日目のステップ数（W+H の倍率）', m => m.p.stepMul, b.rand === 2 ? [[1, 1.15, '1.0〜1.1'], [1.15, 9, '1.2〜1.3']] : [[1, 2, '1.0〜1.9 短い'], [2, 3, '2.0〜2.9'], [3, 9, '3.0〜4.0 長い']]],
+      ['渋滞基準値', m => m.p.jammed, [[2, 5, '2〜4 渋滞しやすい'], [5, 8, '5〜7'], [8, 11, '8〜10 しにくい']]],
+      ['日数', m => m.p.days, b.rand === 2 ? [[4, 5, '4日'], [5, 6, '5日'], [6, 7, '6日']] : [[4, 7, '4〜6日'], [7, 11, '7〜10日']]],
+      ['系列数', m => m.p.brands, b.stage ? [[0, (b.stage.brands[0] + b.stage.brands[1]) / 2, '少なめ'], [(b.stage.brands[0] + b.stage.brands[1]) / 2, 99, '多め']] : [[0, 99, '全体']]],
+    ];
+    h += `<h2 style="margin-top:16px">条件ごとに強い戦略</h2><p class="note">各区分のマップだけで平均順位を取り直した結果です。区分によって1位が入れ替わるなら、その条件を見て戦略を切り替える価値があります。</p><div class="tablewrap"><table class="heat"><thead><tr><th class="l">条件</th><th class="l">区分</th><th>マップ</th><th class="l">1位の戦略</th><th>カバー率</th><th class="l">2位</th><th>カバー率</th></tr></thead><tbody>`;
+    for (const [label, f, buckets] of factors) buckets.forEach(([lo, hi, name], bi) => {
+      const ms = b.maps.filter(m => f(m) >= lo && f(m) < hi); if (!ms.length) return;
+      const s = summarize(b, ms);
+      h += `<tr><td class="l">${bi === 0 ? label : ''}</td><td class="l">${name}</td><td>${ms.length}</td><td class="l best">${s[0].name}</td><td class="v">${pct(s[0].cov)}</td><td class="l">${s[1] ? s[1].name : '–'}</td><td class="v">${s[1] ? pct(s[1].cov) : ''}</td></tr>`;
+    });
+    h += '</tbody></table></div>';
+  }
+  h += `<h2 style="margin-top:16px">マップごとの結果</h2><p class="note">行をクリックすると、そのマップと1位の戦略を「1試合を見る」で開きます。</p><div class="tablewrap"><table><thead><tr><th>番号</th><th>系列</th><th>日数</th><th>歩数倍率</th><th>燃料倍率</th><th>混雑/渋滞</th><th class="l">1位の戦略</th><th>カバー率</th></tr></thead><tbody>`;
+  b.maps.forEach((m, mi) => {
+    const bi = m.rank.indexOf(1), ties = m.rank.filter(r => r === 1).length;
+    h += `<tr data-mi="${mi}"><td>${m.seed}</td><td>${m.p.brands}</td><td>${m.p.days}</td><td>${m.p.stepMul}</td><td>${m.p.fuelMul}</td><td>${m.p.busy}/${m.p.jammed}</td><td class="l">${cfgName(b.cfgs[bi])}${ties > 1 ? ` <span class="chip">ほか${ties - 1}戦略と同率</span>` : ''}</td><td>${pct(m.rs[bi].cov)}</td></tr>`;
+  });
+  h += '</tbody></table></div>';
+  $('bResults').innerHTML = h;
+  $('bResults').querySelectorAll('tr[data-mi]').forEach(tr => tr.onclick = () => openFromBatch(b.maps[+tr.dataset.mi]));
+}
+function openFromBatch(m) {
+  const b = batch, p = m.p, c = b.cfgs[m.rank.indexOf(1)];
+  st.imported = null; st.exactDays = null; $('unImport').hidden = true;
+  const set = (id, v) => $(id).value = v;
+  set('size', p.size); set('agents', p.agents); set('spots', p.spots); set('brands', p.brands); set('maxStock', p.maxStock); set('seed', m.seed);
+  set('days', p.days); set('stepMul', p.stepMul); set('fuelMul', p.fuelMul); set('busy', p.busy); set('jammed', p.jammed); set('jitter', p.jitter); set('players', p.players);
+  if (b.sample) { loadImported(b.sample, '参考マップ', true); st.exactDays = null; set('days', p.days); set('stepMul', p.stepMul); set('fuelMul', p.fuelMul); set('busy', p.busy); set('jammed', p.jammed); set('jitter', p.jitter); }
+  else if (SAMPLE_STAGE[$('stage').value]) $('stage').value = SAMPLE_STAGE[$('stage').value][0];
+  set('supply', c.supply); set('mode', c.mode); set('assign', c.assign); set('planner', c.planner);
+  st.manual = null; st.hubs = []; st.day = 0;
+  setTab('one'); runOne();
+  toast(`マップ ${m.seed} を ${cfgName(c)} で開きました`);
+}
+
+window.addEventListener('resize', () => { if (!$('viewOne').hidden) { layoutBoard(); renderBoard(); } });
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => renderBoard());
+new MutationObserver(() => renderBoard()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+$('stage').value = 's16'; applyStage();
+
+$('tlLegend').innerHTML = TL.map(x => `<span><i style="background:${x.col}"></i>${x.name}</span>`).join('') + '<span>● うどん獲得</span>';
+</script>
+
+</body></html>

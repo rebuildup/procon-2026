@@ -1,0 +1,147 @@
+{
+  "case": "hold-32-a8-d10-short-s5020.json",
+  "size": "32x32",
+  "agents": 8,
+  "days_total": 10,
+  "source_sha": "7f637da844f6a5c575243e0838eb24af1eb7d468",
+  "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cli_sha256": "10172dc74ba13cae47ffc458967b7ebd552f99c1dc74b4d522b7f90b81feb8a2",
+  "candidate": "fleet:budget=official:budget_ms=10000",
+  "kinds_flag": "auto",
+  "kinds_accepted": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "faults": [],
+  "kill_day": -1,
+  "kill_after_post": false,
+  "exit_codes": [
+    [
+      "exit",
+      0
+    ]
+  ],
+  "token_header_on_every_request": true,
+  "days": [
+    {
+      "day": 0,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        1
+      ],
+      "answer_seconds": 10.006,
+      "margin_seconds": 49.544
+    },
+    {
+      "day": 1,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        2
+      ],
+      "answer_seconds": 10.009,
+      "margin_seconds": 49.531
+    },
+    {
+      "day": 2,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        3
+      ],
+      "answer_seconds": 10.009,
+      "margin_seconds": 49.515
+    },
+    {
+      "day": 3,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        4
+      ],
+      "answer_seconds": 10.006,
+      "margin_seconds": 49.505
+    },
+    {
+      "day": 4,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        5
+      ],
+      "answer_seconds": 10.008,
+      "margin_seconds": 49.49
+    },
+    {
+      "day": 5,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        6
+      ],
+      "answer_seconds": 10.006,
+      "margin_seconds": 49.48
+    },
+    {
+      "day": 6,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        7
+      ],
+      "answer_seconds": 10.009,
+      "margin_seconds": 49.466
+    },
+    {
+      "day": 7,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        8
+      ],
+      "answer_seconds": 10.011,
+      "margin_seconds": 49.451
+    },
+    {
+      "day": 8,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        9
+      ],
+      "answer_seconds": 10.006,
+      "margin_seconds": 49.441
+    },
+    {
+      "day": 9,
+      "day_seconds": 60,
+      "post_attempts": 1,
+      "accepted": 1,
+      "revisions": [
+        10
+      ],
+      "answer_seconds": 10.006,
+      "margin_seconds": 49.432
+    }
+  ],
+  "missed_days": [],
+  "wall_seconds": 560.5,
+  "limitation": "Official simple server on localhost, idle opponents; proves protocol acceptance, not score.",
+  "verdict": "PASS"
+}

@@ -141,6 +141,13 @@ enum Cmd {
         #[arg(long, value_name = "PATTERN", value_parser = parse_kinds_pattern)]
         kinds: Option<KindsPattern>,
 
+        /// Choose the composition by simulating the match with the `fleet`
+        /// planner before `POST /agent` (Issue #371): one Supply (slot 0), or
+        /// no Supply when the tanks last the whole match. Meant for
+        /// `--candidate fleet:…`; an explicit `--kinds` wins.
+        #[arg(long, conflicts_with = "kinds")]
+        kinds_auto: bool,
+
         /// Only resolve config + print it. Do not actually start the loop.
         #[arg(long)]
         dry_run: bool,
@@ -383,6 +390,7 @@ async fn run(cli: Cli) -> Result<()> {
             loop_initial_strategy,
             loop_iterations,
             kinds,
+            kinds_auto,
             dry_run,
             state_output,
             exit_after_match,
@@ -401,7 +409,7 @@ async fn run(cli: Cli) -> Result<()> {
                 dry_run,
                 state_output,
                 exit_after_match,
-                ArenaFlags { arena, next, candidate, arena_evidence },
+                ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto },
             )
             .await?;
         }
@@ -489,6 +497,8 @@ struct ArenaFlags {
     candidate: Option<String>,
     /// `--arena-evidence` — evidence JSONL path override.
     arena_evidence: Option<PathBuf>,
+    /// `--kinds-auto` — simulate the match to choose the composition.
+    kinds_auto: bool,
 }
 
 /// One `--kinds` pattern, parsed once by [`parse_kinds_pattern`] while clap
@@ -589,7 +599,7 @@ async fn cmd_coordinator(
     exit_after_match: bool,
     arena_flags: ArenaFlags,
 ) -> Result<()> {
-    let ArenaFlags { arena, next, candidate, arena_evidence } = arena_flags;
+    let ArenaFlags { arena, next, candidate, arena_evidence, kinds_auto } = arena_flags;
     if next && !arena {
         anyhow::bail!(
             "--next requires --arena: the :00/:15/:30/:45 cadence and the \
@@ -760,7 +770,14 @@ async fn cmd_coordinator(
         // planning model (patrol fuel caps) matches the team the server
         // was told about.
         agent_kinds: kinds,
+        auto_kinds: kinds_auto,
         secret_redaction: profile.as_ref().map(|p| p.token.clone()),
+        // Issue #385: `PROCON_RESUME_RUNNING_MATCH=1` lets a (re)started
+        // process join a match that is already under way. Set by the
+        // match-day wrapper for the official server only; never in arena
+        // mode, whose lobby publishes `starts_at` before kinds are due.
+        resume_running_match: profile.is_none()
+            && std::env::var_os("PROCON_RESUME_RUNNING_MATCH").is_some_and(|v| v == "1"),
         ..Default::default()
     };
 

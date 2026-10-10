@@ -88,6 +88,10 @@ pub struct TournamentConfig {
     /// [`crate::evaluate::EvalConfig::oracle_refill`].
     #[serde(default)]
     pub oracle_refill: bool,
+    /// Maximum concurrent evaluations (Issue #331). `1` (default) is
+    /// sequential. `0` means auto ([`std::thread::available_parallelism`]).
+    #[serde(default)]
+    pub jobs: usize,
 }
 
 impl TournamentConfig {
@@ -110,7 +114,17 @@ impl TournamentConfig {
             worker_exe: None,
             kinds: None,
             oracle_refill: false,
+            jobs: 1,
         }
+    }
+
+    /// Set the maximum concurrent evaluations (Issue #331).
+    ///
+    /// `1` is sequential; `0` is auto ([`std::thread::available_parallelism`]).
+    #[must_use]
+    pub fn with_jobs(mut self, jobs: usize) -> Self {
+        self.jobs = jobs;
+        self
     }
 
     /// Set the agent-kind composition pattern (Issue #235).
@@ -331,6 +345,7 @@ impl TournamentRunner {
             // historical alternation (Issue #235).
             kinds: self.config.kinds.clone(),
             oracle_refill: self.config.oracle_refill,
+            jobs: self.config.jobs,
         };
         if let Some(exe) = self.config.worker_exe.clone().or_else(worker_executable) {
             eval_config = eval_config.with_process_isolation(exe);

@@ -1,0 +1,100 @@
+{
+  "suite": "release-smoke",
+  "source_sha": "bbb7c49d1afff9ea3adf38e7c81a803d4ad598fd",
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64"
+  },
+  "loadavg": [
+    3.15,
+    4.12,
+    4.03
+  ],
+  "candidate": {
+    "tiny_case": "smoke:tiny-8x8",
+    "eval_binary": "target/release/procon-eval",
+    "candidates": {
+      "coverage:budget=official:park=far": {
+        "kind": "required",
+        "ok": true,
+        "status": "success",
+        "scored": true,
+        "detail": null,
+        "variety": 3,
+        "total_balls": 6,
+        "elapsed_s": 0.01
+      },
+      "coverage:budget=official:park=none": {
+        "kind": "required",
+        "ok": true,
+        "status": "success",
+        "scored": true,
+        "detail": null,
+        "variety": 3,
+        "total_balls": 6,
+        "elapsed_s": 0.008
+      },
+      "anytime": {
+        "kind": "probe",
+        "ok": false,
+        "status": "invalid",
+        "scored": false,
+        "detail": "bad candidate \"anytime\": unknown algorithm \"anytime\"",
+        "variety": 0,
+        "total_balls": 0,
+        "elapsed_s": 0.007
+      },
+      "coverage:budget=official:park=far:fuelaware=true": {
+        "kind": "probe",
+        "ok": false,
+        "status": "invalid",
+        "scored": false,
+        "detail": "bad candidate \"coverage:budget=official:park=far:fuelaware=true\": algorithm \"coverage\" does not take parameter \"fuelaware\"",
+        "variety": 0,
+        "total_balls": 0,
+        "elapsed_s": 0.006
+      }
+    },
+    "required_ok": true,
+    "probe_facts": {
+      "anytime": {
+        "constructible": false,
+        "status": "invalid",
+        "detail": "bad candidate \"anytime\": unknown algorithm \"anytime\""
+      },
+      "coverage:budget=official:park=far:fuelaware=true": {
+        "constructible": false,
+        "status": "invalid",
+        "detail": "bad candidate \"coverage:budget=official:park=far:fuelaware=true\": algorithm \"coverage\" does not take parameter \"fuelaware\""
+      }
+    }
+  },
+  "official_cli": {
+    "ok": true,
+    "exit_code": 0,
+    "candidate": "coverage:budget=official:park=far",
+    "days": 10,
+    "revisions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "min_revision": 1,
+    "revision_floor": 1,
+    "source_sha": "bbb7c49d1afff9ea3adf38e7c81a803d4ad598fd",
+    "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+    "cli_sha256": "d09a83179fb54c47d94ac6df1547f7887d36023dd790aa3c7603ae84ba068b77",
+    "elapsed_s": 32.276,
+    "output_dir": "target/release-smoke/official-cli",
+    "stderr_tail": "",
+    "limitation": "Local official binary, single team, shortened windows; not arena score parity."
+  },
+  "overall": "PASS"
+}

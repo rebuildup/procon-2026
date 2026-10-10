@@ -1,0 +1,22 @@
+{
+  "source_sha": "96f779ce9e0f92c7bcb6cbe13be62f629da9c2b1",
+  "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
+  "cli_sha256": "7551bb9eb4f36542423d54df038f301bdac1c27b671199ade819878f5f93456f",
+  "candidate": "anytime:budget_ms=5000:seed=42:budget=official",
+  "kinds": "P,S",
+  "exit_code": 0,
+  "days": 10,
+  "revisions": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "limitation": "Local official binary, single team, shortened windows; not arena score parity."
+}

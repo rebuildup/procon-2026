@@ -127,6 +127,12 @@ struct Args {
     #[arg(long, default_value_t = false)]
     oracle_refill: bool,
 
+    /// Maximum concurrent evaluations (Issue #331). 1 = sequential (default).
+    /// 0 = auto (use available parallelism). Response times measured under
+    /// parallelism are unreliable for axis-4 ranking — re-measure sequentially.
+    #[arg(long, default_value_t = 1)]
+    jobs: usize,
+
     /// Comma-separated candidate ids, e.g.
     /// `loop:iterations=32:initial=greedy,greedy,wait`.
     #[arg(long)]
@@ -373,6 +379,7 @@ fn build_config(args: &Args, source_commit_sha: String) -> Result<TournamentConf
         .with_harness_margin_ms(args.harness_margin_ms)
         .with_kinds(kinds)
         .with_oracle_refill(args.oracle_refill)
+        .with_jobs(args.jobs)
         .with_output_dir(args.output_dir.clone()))
 }
 
@@ -424,6 +431,7 @@ fn worker_record(args: &Args) -> Result<RunRecord, String> {
         isolation: Isolation::Thread,
         kinds,
         oracle_refill: args.oracle_refill,
+        jobs: 1,
     };
     Ok(Evaluator::new(config).evaluate_one(&candidate, &case))
 }

@@ -13,9 +13,15 @@
 //! algorithms; one algorithm may expose many parameter sets. Neither needs a
 //! new crate.
 
+pub mod anytime_solver;
 pub mod astar_solver;
 pub mod astar_walk;
 pub mod context;
+pub mod coverage_solver;
+pub mod fleet_solver;
+pub use anytime_solver::AnytimeFactory;
+pub use coverage_solver::CoverageFactory;
+pub use fleet_solver::FleetFactory;
 pub mod greedy_solver;
 pub mod loop_solver;
 pub mod multiloop_solver;
@@ -93,3 +99,6 @@ pub(crate) fn reject_unknown_params(
     }
     Ok(())
 }
+
+pub mod search_solver;
+pub use search_solver::SearchFactory;

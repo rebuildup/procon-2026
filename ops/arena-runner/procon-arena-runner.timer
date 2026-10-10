@@ -1,0 +1,15 @@
+[Unit]
+Description=Start the Arena Runner three minutes before each match boundary
+
+[Timer]
+OnCalendar=*-*-* *:12:00 UTC
+OnCalendar=*-*-* *:27:00 UTC
+OnCalendar=*-*-* *:42:00 UTC
+OnCalendar=*-*-* *:57:00 UTC
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=false
+Unit=procon-arena-runner.service
+
+[Install]
+WantedBy=timers.target

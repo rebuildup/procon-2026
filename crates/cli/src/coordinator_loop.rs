@@ -28,8 +28,16 @@
 //!    told about; without the flag the historical conversion is unchanged.
 //! 4. **Start wait.** Re-poll `GET /setting` until `starts_at > 0`.
 //! 5. **Per-day loop.** `GET /` -> `solver.decide(&ctx)` -> adapter ->
-//!    `POST /`. If `revision < 0`, return [`CoordinatorLoopError::Rejected`]
-//!    without retrying. Otherwise sleep until `ends_at` and continue.
+//!    `POST /`, then sleep until `ends_at`. The loop follows the day the
+//!    server reports and keeps going when a day is lost (Issue #385): a plan
+//!    with no verdict is sent again while the answer window is open, a
+//!    rejected plan (`revision < 0`) or a solver that misses the window costs
+//!    that day only, and [`CoordinatorLoopError::Rejected`] is returned after
+//!    the last day rather than at the first rejection.
+//!
+//! A process started while a match is already running (`starts_at > 0` and
+//! `GET /` answers) skips phases 2 and 4 and joins at the server's day with
+//! the composition the server reports.
 //!
 //! ## Order rationale (issue #156)
 //!
@@ -60,7 +68,7 @@ use protocol::match_config::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::action_adapter::{AdapterError, decision_to_actions};
+use crate::action_adapter::decision_to_actions;
 use crate::arena::Secret;
 use crate::candidate_bridge::{apply_live_agents, apply_live_traffic};
 use crate::protocol_to_engine::{
@@ -114,6 +122,11 @@ pub struct CoordinatorLoopConfig {
     /// so the live flag and the offline `procon-eval --kinds` axis share
     /// one grammar and one rejection set.
     pub agent_kinds: Option<Vec<EngineAgentKind>>,
+    /// Choose the composition by simulating the match before `POST /agent`
+    /// (live `--kinds-auto`, Issue #371): one Supply (slot 0), or no Supply
+    /// when the simulation says the tanks last. Ignored when
+    /// [`agent_kinds`](Self::agent_kinds) is `Some`.
+    pub auto_kinds: bool,
     /// Maximum number of `POST /agent` attempts before giving up. Each
     /// attempt that returns `403 AccessTimeError` (kind window not yet
     /// open, or already closed) is retried up to this many times before
@@ -190,6 +203,17 @@ pub struct CoordinatorLoopConfig {
     /// [`Secret`]'s redacted `Debug` keeps the token out of any render of
     /// this config either way.
     pub secret_redaction: Option<Secret>,
+    /// Join a match that is already running instead of declaring kinds
+    /// (Issue #385): when `GET /setting` shows `starts_at > 0` and `GET /`
+    /// answers with a day, skip `POST /agent`, take the composition from the
+    /// server's agent list and continue from the server's day.
+    ///
+    /// Off by default because it trusts one thing about the server: that a
+    /// positive `starts_at` means the kind window is shut. The official
+    /// server works that way (it publishes `starts_at` only after the kind
+    /// deadline); a server that announces `starts_at` early and still expects
+    /// `POST /agent` would be left without our kinds.
+    pub resume_running_match: bool,
 }
 
 impl Default for CoordinatorLoopConfig {
@@ -200,6 +224,7 @@ impl Default for CoordinatorLoopConfig {
             setting_poll_max_attempts: 300,
             solver_name: "loop".to_owned(),
             agent_kinds: None,
+            auto_kinds: false,
             kind_submit_max_attempts: 30,
             kind_submit_backoff: Duration::from_millis(500),
             match_state_max_attempts: 30,
@@ -210,6 +235,7 @@ impl Default for CoordinatorLoopConfig {
             engine_setting_slot: None,
             live_state_slot: None,
             secret_redaction: None,
+            resume_running_match: false,
         }
     }
 }
@@ -245,6 +271,7 @@ impl CoordinatorLoopConfig {
             // No env override for the composition: `--kinds` is a CLI flag
             // so an invocation records exactly what it asked for.
             agent_kinds: None,
+            auto_kinds: false,
             // Use the documented defaults: 30 attempts × 500ms = 15s of
             // retry budget on `POST /agent`, which covers the official
             // 5s/60s `kind-deadline` plus poll jitter. Tweakable later via
@@ -264,6 +291,7 @@ impl CoordinatorLoopConfig {
             engine_setting_slot: None,
             live_state_slot: None,
             secret_redaction: None,
+            resume_running_match: false,
         })
     }
 }
@@ -558,13 +586,6 @@ pub enum CoordinatorLoopError {
     /// Protocol <-> engine conversion produced a malformed value.
     #[error("protocol/engine conversion failed: {0}")]
     Conversion(String),
-    /// The decision <-> action adapter produced a malformed value.
-    #[error("action adapter failed on day {day}: {source}")]
-    Adapter {
-        day: u32,
-        #[source]
-        source: AdapterError,
-    },
 }
 
 /// Drive one match end-to-end against `client` and `solver`.
@@ -632,6 +653,7 @@ pub async fn run_coordinator_loop(
             snap.revisions.push(*revision);
             snap.last_update_unix = unix_now();
             snap.error = Some(format!("rejected day={day} revision={revision}"));
+            tracing::error!(day, revision, "plan rejected by server");
             write_snapshot(&cfg, &snap);
         }
         Err(e) => {
@@ -713,24 +735,77 @@ where
     // window between "server became responsive" and "server flipped
     // starts_at", which is exactly the open kind window.
     let n_agents = wire_setting.agents.len();
-    let submitted_kinds = agent_kinds_for(n_agents, &cfg.solver_name, cfg.agent_kinds.as_deref());
-    // Evidence (Issue #243): log the composition being declared in the same
-    // `P,S,…` spelling `--kinds` takes, so a run log and the flag that
-    // produced it read the same words. Agent kinds are game state, never
-    // secrets — no token material reaches this line.
-    tracing::info!(
-        n_agents,
-        kinds = %bench::kinds::render_kinds(&submitted_kinds),
-        solver = %cfg.solver_name,
-        "agent kinds selected for POST /agent"
-    );
-    submit_agent_with_retry(
-        &client,
-        to_wire_kinds(&submitted_kinds),
-        cfg.kind_submit_max_attempts,
-        cfg.kind_submit_backoff,
-    )
-    .await?;
+    // Resume (Issue #385): a positive `starts_at` means the kind window is
+    // shut, so if `GET /` already answers with a day, this process was started
+    // (or restarted after a crash) in the middle of a match. `POST /agent`
+    // can only answer 403 from here on, and the server's own agent list says
+    // which composition is in play — pick the match up at the day it is on
+    // instead of dying on the kind submission.
+    let mut resumed_state = if cfg.resume_running_match && wire_setting.starts_at > 0 {
+        match client.get_match_state().await {
+            Ok(state) if state.agents.len() == n_agents => Some(state),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let resumed = resumed_state.is_some();
+    let simulated_kinds = cfg.auto_kinds && cfg.agent_kinds.is_none();
+    let submitted_kinds = if let Some(state) = resumed_state.as_ref() {
+        let kinds: Vec<EngineAgentKind> = state
+            .agents
+            .iter()
+            .map(|a| {
+                if a.kind == AgentKind::KIND_1 {
+                    EngineAgentKind::Supply
+                } else {
+                    EngineAgentKind::Patrol
+                }
+            })
+            .collect();
+        tracing::warn!(
+            day = state.day,
+            kinds = %bench::kinds::render_kinds(&kinds),
+            "match already in progress: resuming with the composition the server reports"
+        );
+        kinds
+    } else if simulated_kinds {
+        let team = PlayerId::new(&cfg.team_id)
+            .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
+        let (kinds, trials) =
+            bench::adapters::fleet_solver::choose_kinds(&wire_setting, &team, AUTO_KINDS_WINDOW);
+        for trial in &trials {
+            tracing::info!(
+                kinds = %bench::kinds::render_kinds(&trial.kinds),
+                variety = trial.score.0,
+                daily_variety = trial.score.1,
+                balls = trial.score.2,
+                "agent kinds trial"
+            );
+        }
+        kinds
+    } else {
+        agent_kinds_for(n_agents, &cfg.solver_name, cfg.agent_kinds.as_deref())
+    };
+    if !resumed {
+        // Evidence (Issue #243): log the composition being declared in the same
+        // `P,S,…` spelling `--kinds` takes, so a run log and the flag that
+        // produced it read the same words. Agent kinds are game state, never
+        // secrets — no token material reaches this line.
+        tracing::info!(
+            n_agents,
+            kinds = %bench::kinds::render_kinds(&submitted_kinds),
+            solver = %cfg.solver_name,
+            "agent kinds selected for POST /agent"
+        );
+        submit_agent_with_retry(
+            &client,
+            to_wire_kinds(&submitted_kinds),
+            cfg.kind_submit_max_attempts,
+            cfg.kind_submit_backoff,
+        )
+        .await?;
+    }
 
     // Kinds accepted -> Running snapshot. `day` stays `None` because
     // we have not yet entered the per-day driver.
@@ -747,10 +822,11 @@ where
     // `POST /agent` and the solver's world together. Without the flag this
     // is the historical call, verbatim — including its `wait` quirk, where
     // `POST /agent` sends all patrol while the local model keeps the
-    // alternation; `WaitSolver` never plans against that model.
+    // alternation; `WaitSolver` never plans against that model. A resumed
+    // match always plans against the composition the server reported.
     let team = PlayerId::new(&cfg.team_id)
         .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
-    let engine_setting = if cfg.agent_kinds.is_some() {
+    let engine_setting = if cfg.agent_kinds.is_some() || simulated_kinds || resumed {
         protocol_setting_to_engine_with_kinds(
             &wire_setting,
             team.clone(),
@@ -817,26 +893,49 @@ where
     // the very same `GET /` state and submitted plan the loop already has.
     let mut day_summaries: Vec<DaySummary> = Vec::with_capacity(total_days);
     let mut days_completed = 0_usize;
+    // Days that ended without an accepted plan, and the first rejection the
+    // server reported. Neither ends the match (Issue #385): one lost day
+    // costs that day's harvest, abandoning the loop costs every later day.
+    let mut unanswered_days: Vec<u32> = Vec::new();
+    let mut first_rejection: Option<(u32, i32)> = None;
+    let solver: Arc<dyn engine::solver::Solver> = Arc::from(solver);
+    let total_days_i32 = i32::try_from(total_days).unwrap_or(i32::MAX);
 
-    // Phase 5: per-day loop.
-    for day_idx in 0..total_days {
-        let day = u32::try_from(day_idx).unwrap_or(0);
+    // Phase 5: per-day loop, driven by the day the server reports.
+    let mut expected_day = resumed_state.as_ref().map_or(0, |s| s.day.max(0));
+    while expected_day < total_days_i32 {
+        let state = if let Some(state) = resumed_state.take() {
+            state
+        } else {
+            // Keep asking for as long as the match can still be running:
+            // a cable that is back two days later still gets the rest of
+            // the match answered.
+            let remaining_seconds: i64 = wire_setting
+                .day_seconds
+                .iter()
+                .skip(usize::try_from(expected_day).unwrap_or(0))
+                .map(|s| i64::from(*s))
+                .sum();
+            let patience = Duration::from_secs(u64::try_from(remaining_seconds).unwrap_or(0))
+                + cfg.match_state_backoff * cfg.match_state_max_attempts.max(1);
+            fetch_state_with_retry(&client, patience, cfg.match_state_backoff, expected_day).await?
+        };
+        if state.day >= total_days_i32 {
+            break;
+        }
+        if state.day > expected_day {
+            tracing::error!(
+                expected_day,
+                server_day = state.day,
+                "the server is ahead of us: the days in between went unanswered"
+            );
+            unanswered_days.extend((expected_day..state.day).filter_map(|d| u32::try_from(d).ok()));
+        }
+        let day_idx = usize::try_from(state.day).unwrap_or(0);
+        let day = u32::try_from(state.day).unwrap_or(0);
         let day_steps = u32::try_from(wire_setting.day_steps[day_idx])
             .map_err(|e| CoordinatorLoopError::Conversion(format!("day_steps[{day_idx}]={e}")))?;
-
-        let state = fetch_state_with_retry(
-            &client,
-            cfg.match_state_max_attempts,
-            cfg.match_state_backoff,
-            i32::try_from(day).unwrap_or(i32::MAX),
-        )
-        .await?;
-        if state.day != i32::try_from(day).unwrap_or(i32::MAX) {
-            return Err(CoordinatorLoopError::Conversion(format!(
-                "server reported day {} while we expected {day}",
-                state.day
-            )));
-        }
+        expected_day = state.day + 1;
 
         // Hand the live wire state to solvers that registered a slot
         // (candidate bridge). Default path: no slot, nothing happens.
@@ -849,7 +948,8 @@ where
 
         let snapshot =
             match_state_to_snapshot(&state, &match_id, &team).unwrap_or_else(dummy_match_snapshot);
-        let remaining_ms = solver_budget_ms(state.ends_at, Utc::now().timestamp_millis());
+        let now_ms = Utc::now().timestamp_millis();
+        let remaining_ms = solver_budget_ms(state.ends_at, now_ms);
         let ctx = engine::solver::SolverContext::new(
             snapshot,
             team.clone(),
@@ -859,20 +959,50 @@ where
             remaining_ms,
         );
 
-        let decision = solver.decide(&ctx);
-        let actions = decision_to_actions(&decision, &ctx)
-            .map_err(|source| CoordinatorLoopError::Adapter { day, source })?;
-
-        // Issue #226 — official conformance at the submission boundary.
-        // The server judges a *terrain-weighted* step sum
-        // (Σ origin-cell costs + waits == daySteps, see `engine::wire_plan`),
-        // while candidates and `decision_to_actions` speak the engine's
-        // element clock. Normalize here: both solver paths (CandidateBridge
-        // and EngineLoopAdapter) funnel through this single point, so the
-        // body we actually POST always fits the official budget — candidate
-        // output and offline scoring are untouched.
-        let actions = normalize_submission(&engine_setting, &state, day_steps, &actions)
-            .map_err(CoordinatorLoopError::Conversion)?;
+        // The solver runs off the async thread under a watchdog that fires
+        // `SUBMIT_RESERVE_MS` before the server's deadline: a plan that is not
+        // ready by then could only arrive after the day has rolled over, where
+        // it would be judged against the next day's positions.
+        let watchdog = Duration::from_millis(
+            u64::try_from(
+                state.ends_at.saturating_mul(1000).saturating_sub(now_ms) - SUBMIT_RESERVE_MS,
+            )
+            .unwrap_or(0)
+            .max(MIN_SOLVER_WINDOW_MS),
+        );
+        let planned = {
+            let solver = Arc::clone(&solver);
+            let engine_setting = engine_setting.clone();
+            let state = state.clone();
+            let task = tokio::task::spawn_blocking(move || {
+                let decision = solver.decide(&ctx);
+                let actions = decision_to_actions(&decision, &ctx)
+                    .map_err(|e| format!("action adapter: {e}"))?;
+                // Issue #226 — official conformance at the submission boundary.
+                // The server judges a *terrain-weighted* step sum
+                // (Σ origin-cell costs + waits == daySteps, see
+                // `engine::wire_plan`), while candidates and
+                // `decision_to_actions` speak the engine's element clock.
+                // Normalize here: both solver paths (CandidateBridge and
+                // EngineLoopAdapter) funnel through this single point, so the
+                // body we actually POST always fits the official budget.
+                normalize_submission(&engine_setting, &state, day_steps, &actions)
+            });
+            match tokio::time::timeout(watchdog, task).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(join)) => Err(format!("solver task failed: {join}")),
+                Err(_) => Err(format!("no plan within {watchdog:?} of the answer window")),
+            }
+        };
+        let actions = match planned {
+            Ok(actions) => actions,
+            Err(reason) => {
+                tracing::error!(day, reason = %reason, "no plan for this day; leaving it unanswered");
+                unanswered_days.push(day);
+                sleep_until_day_end(&state, expected_day < total_days_i32).await;
+                continue;
+            }
+        };
 
         // Issue #236 — summarise the day *before* `actions` is moved into
         // the submit call: day-start agent state (kind / pos / fuel) plus
@@ -906,35 +1036,51 @@ where
             );
         }
 
-        let accepted = match client.submit_actions(actions).await {
-            Ok(a) => a,
-            Err(protocol::HttpClientError::Http { status: 200, message })
-                if message.starts_with("rejected: revision=") =>
-            {
-                let revision =
-                    message.trim_start_matches("rejected: revision=").parse::<i32>().unwrap_or(-1);
-                return Err(CoordinatorLoopError::Rejected { day, revision });
+        let submitted_at_ms = Utc::now().timestamp_millis();
+        match submit_plan_until_deadline(&client, &actions, state.ends_at, day).await? {
+            DaySubmission::Accepted(revision) => {
+                tracing::info!(
+                    day,
+                    revision,
+                    answer_ms = Utc::now().timestamp_millis() - now_ms,
+                    submit_ms = Utc::now().timestamp_millis() - submitted_at_ms,
+                    margin_ms = state.ends_at.saturating_mul(1000) - Utc::now().timestamp_millis(),
+                    "plan accepted by server"
+                );
+                revisions.push(revision);
+                day_summaries.push(summary);
+                days_completed += 1;
+                // Per-day Running snapshot. The closure mutates `snap` and
+                // calls `write_snapshot` so the frontend sees incremental
+                // progress after each accepted day.
+                on_day_accepted(day, revision, snap);
             }
-            Err(e) => return Err(CoordinatorLoopError::ActionSubmit(e)),
-        };
-        // submit_actions returns Err on revision<0, so reaching here means
-        // the revision is non-negative. Store it and continue.
-        revisions.push(accepted.revision);
-        day_summaries.push(summary);
-        days_completed += 1;
-
-        // Per-day Running snapshot. The closure mutates `snap` and
-        // calls `write_snapshot` so the frontend sees incremental
-        // progress after each accepted day.
-        on_day_accepted(day, accepted.revision, snap);
-
-        if day + 1 < u32::try_from(total_days).unwrap_or(u32::MAX) {
-            let now = Utc::now().timestamp();
-            let diff = state.ends_at - now;
-            if diff > 0 {
-                tokio::time::sleep(Duration::from_secs(u64::try_from(diff).unwrap_or(0))).await;
+            DaySubmission::Rejected(revision) => {
+                tracing::error!(
+                    day,
+                    revision,
+                    "plan rejected by server; continuing with the next day"
+                );
+                first_rejection.get_or_insert((day, revision));
+                unanswered_days.push(day);
+            }
+            DaySubmission::Unanswered(reason) => {
+                tracing::error!(day, reason = %reason, "plan not delivered; continuing with the next day");
+                unanswered_days.push(day);
             }
         }
+
+        sleep_until_day_end(&state, expected_day < total_days_i32).await;
+    }
+
+    if !unanswered_days.is_empty() {
+        tracing::error!(
+            days = ?unanswered_days,
+            "match finished with days that have no accepted plan"
+        );
+    }
+    if let Some((day, revision)) = first_rejection {
+        return Err(CoordinatorLoopError::Rejected { day, revision });
     }
 
     Ok(CoordinatorOutcome {
@@ -945,6 +1091,99 @@ where
         days: day_summaries,
         kinds: submitted_kinds,
     })
+}
+
+/// Time kept back from the answer window for delivering the plan: the solver
+/// watchdog fires this long before the server's deadline.
+const SUBMIT_RESERVE_MS: i64 = 2500;
+
+/// The watchdog never gives the solver less than this, however little of the
+/// day is left (a late resume still gets one honest attempt).
+const MIN_SOLVER_WINDOW_MS: u64 = 500;
+
+/// Pause between `POST /` attempts while a plan is not through yet.
+const SUBMIT_RETRY_PAUSE: Duration = Duration::from_millis(200);
+
+/// What became of one day's plan.
+enum DaySubmission {
+    /// The server answered `revision >= 0`.
+    Accepted(i32),
+    /// The server answered `revision < 0`: the plan is illegal.
+    Rejected(i32),
+    /// No verdict before the day ended.
+    Unanswered(String),
+}
+
+/// Sleep to the day's deadline, unless this was the last day.
+async fn sleep_until_day_end(state: &WireMatchState, more_days: bool) {
+    if more_days {
+        let diff = state.ends_at - Utc::now().timestamp();
+        if diff > 0 {
+            tokio::time::sleep(Duration::from_secs(u64::try_from(diff).unwrap_or(0))).await;
+        }
+    }
+}
+
+/// `POST /` one day's plan until the server gives a verdict or the day ends.
+///
+/// Sending the same plan again is safe by the official contract: within a day
+/// the submission with the highest revision stands, so a repeat can only
+/// replace the plan with itself. That makes "the connection dropped, was it
+/// accepted?" answerable the simple way — ask again — while the answer window
+/// is still open. The window is the limit: a repeat that lands after the day
+/// has rolled over would be read as the *next* day's plan, so nothing is sent
+/// once the local clock passes `ends_at`.
+///
+/// A rejection (`revision < 0`) is a verdict on the plan, not a delivery
+/// problem, and is returned at once without another attempt.
+///
+/// # Errors
+/// Only an authentication failure — the one error no later attempt and no
+/// later day can recover from.
+async fn submit_plan_until_deadline(
+    client: &protocol::MatchClient,
+    actions: &ActionPlanBody,
+    ends_at: i64,
+    day: u32,
+) -> Result<DaySubmission, CoordinatorLoopError> {
+    let deadline_ms = ends_at.saturating_mul(1000);
+    let mut attempt = 0_u32;
+    loop {
+        attempt += 1;
+        let error = match client.submit_actions(actions.clone()).await {
+            Ok(accepted) => return Ok(DaySubmission::Accepted(accepted.revision)),
+            Err(protocol::HttpClientError::Http { status: 200, message })
+                if message.starts_with("rejected: revision=") =>
+            {
+                let revision =
+                    message.trim_start_matches("rejected: revision=").parse::<i32>().unwrap_or(-1);
+                return Ok(DaySubmission::Rejected(revision));
+            }
+            Err(
+                e @ (protocol::HttpClientError::Auth { .. }
+                | protocol::HttpClientError::InvalidUrl(_)),
+            ) => {
+                return Err(CoordinatorLoopError::ActionSubmit(e));
+            }
+            Err(protocol::HttpClientError::AccessTime { message }) => {
+                return Ok(DaySubmission::Unanswered(format!("answer window closed: {message}")));
+            }
+            Err(protocol::HttpClientError::Http { status, message })
+                if (400..500).contains(&status) && !matches!(status, 408 | 425 | 429) =>
+            {
+                return Ok(DaySubmission::Unanswered(format!("HTTP {status}: {message}")));
+            }
+            Err(e) => e,
+        };
+        let left_ms = deadline_ms - Utc::now().timestamp_millis();
+        if left_ms <= i64::try_from(SUBMIT_RETRY_PAUSE.as_millis()).unwrap_or(i64::MAX) {
+            return Ok(DaySubmission::Unanswered(format!(
+                "no verdict after {attempt} attempt(s): {error}"
+            )));
+        }
+        tracing::warn!(day, attempt, left_ms, error = %error, "POST / got no verdict; sending the same plan again");
+        tokio::time::sleep(SUBMIT_RETRY_PAUSE).await;
+    }
 }
 
 /// Normalize one day's answer body to the official terrain-weighted step
@@ -1066,35 +1305,48 @@ where
     })
 }
 
-/// Retry `GET /` while the server is still in the pre-start window
-/// (`-match-start-delay` may cause a brief `403 AccessTimeError` between
-/// `starts_at` flipping positive in `GET /setting` and the actual match
-/// start, see issue #164). All other errors propagate immediately.
+/// Poll `GET /` until the server reports `expected_day` or a later one.
 ///
-/// `max_attempts` × `backoff` covers the 1s default and 5s worst case
-/// of `-match-start-delay` with comfortable headroom (e.g. 30 × 500ms
-/// = 15s budget).
+/// Everything short of a verdict on our credentials is waited out, for up to
+/// `patience`: the `403 AccessTimeError` of the `-match-start-delay` gap
+/// (issue #164), a server still on the previous day because its clock runs
+/// behind ours, and — Issue #385 — transport failures, 5xx answers and bodies
+/// that do not parse. A venue switch that drops for ten seconds must cost at
+/// most the day it dropped in, not the match.
+///
+/// The caller sizes `patience` to the time the match can still be running.
+///
+/// # Errors
+/// An authentication failure at once; otherwise a `Conversion` error naming
+/// the last obstacle when `patience` runs out.
 async fn fetch_state_with_retry(
     client: &protocol::MatchClient,
-    max_attempts: u32,
+    patience: Duration,
     backoff: Duration,
     expected_day: i32,
 ) -> Result<protocol::match_config::MatchState, CoordinatorLoopError> {
-    for attempt in 0..max_attempts.max(1) {
-        match client.get_match_state().await {
+    let started = tokio::time::Instant::now();
+    loop {
+        let obstacle = match client.get_match_state().await {
             Ok(state) if state.day >= expected_day => return Ok(state),
-            Ok(_) => {}
-            Err(protocol::HttpClientError::AccessTime { .. })
-                if attempt + 1 < max_attempts.max(1) => {}
-            Err(err) => return Err(CoordinatorLoopError::State(err)),
+            Ok(state) => format!("server is still on day {}", state.day),
+            Err(
+                e @ (protocol::HttpClientError::Auth { .. }
+                | protocol::HttpClientError::InvalidUrl(_)),
+            ) => return Err(CoordinatorLoopError::State(e)),
+            Err(protocol::HttpClientError::AccessTime { message }) => message,
+            Err(e) => {
+                tracing::warn!(expected_day, error = %e, "GET / failed; asking again");
+                e.to_string()
+            }
+        };
+        if started.elapsed() >= patience {
+            return Err(CoordinatorLoopError::Conversion(format!(
+                "server did not advance to day {expected_day} within polling budget ({obstacle})"
+            )));
         }
-        if attempt + 1 < max_attempts.max(1) {
-            tokio::time::sleep(backoff).await;
-        }
+        tokio::time::sleep(backoff).await;
     }
-    Err(CoordinatorLoopError::Conversion(format!(
-        "server did not advance to day {expected_day} within polling budget"
-    )))
 }
 
 /// Reserve one request timeout for submission after the solver finishes.
@@ -1102,6 +1354,12 @@ fn solver_budget_ms(ends_at: i64, now_ms: i64) -> u64 {
     let deadline_ms = ends_at.saturating_mul(1000);
     u64::try_from(deadline_ms.saturating_sub(now_ms).saturating_sub(5000)).unwrap_or(0)
 }
+
+/// How long `--kinds-auto` may simulate before `POST /agent`. A missed kind
+/// deadline ends the run (`POST /agent` only ever answers 403 afterwards), and
+/// the official server's default window is 5 s from its start, so this stays
+/// far inside it; trials that are not done by then fall back to one Supply.
+const AUTO_KINDS_WINDOW: Duration = Duration::from_millis(1500);
 
 /// Resolve the `POST /agent` composition for a team of `n_agents`.
 ///
@@ -1200,7 +1458,9 @@ mod tests {
             .create_async()
             .await;
         let client = protocol::MatchClient::new(server.url(), "test").unwrap();
-        let state = fetch_state_with_retry(&client, 3, Duration::ZERO, 1).await.unwrap();
+        let state = fetch_state_with_retry(&client, Duration::from_secs(5), Duration::ZERO, 1)
+            .await
+            .unwrap();
         assert_eq!(state.day, 1);
         old.assert_async().await;
         new.assert_async().await;
@@ -1208,7 +1468,7 @@ mod tests {
 
     #[tokio::test]
     async fn previous_day_polling_is_bounded_and_future_days_are_not_retried() {
-        for (reported, succeeds, requests) in [(0, false, 2), (2, true, 1)] {
+        for (reported, succeeds) in [(0, false), (2, true)] {
             let mut server = mockito::Server::new_async().await;
             let mock = server
                 .mock("GET", "/")
@@ -1216,17 +1476,129 @@ mod tests {
                 .with_body(format!(
                     r#"{{"endsAt":200,"day":{reported},"agents":[],"others":[],"traffics":[]}}"#
                 ))
-                .expect(requests)
+                .expect(1)
                 .create_async()
                 .await;
             let client = protocol::MatchClient::new(server.url(), "test").unwrap();
-            let result = fetch_state_with_retry(&client, 2, Duration::ZERO, 1).await;
+            let result = fetch_state_with_retry(&client, Duration::ZERO, Duration::ZERO, 1).await;
             assert_eq!(result.is_ok(), succeeds);
             if let Ok(state) = result {
-                assert!(state.day > 1, "caller must reject the missed day");
+                assert!(state.day > 1, "the caller follows the server to the later day");
             }
             mock.assert_async().await;
         }
+    }
+
+    /// Issue #385: a body that does not parse and a 503 are waited out like a
+    /// 403, so a flaky venue link costs polls, not the match.
+    #[tokio::test]
+    async fn state_polling_outlasts_garbage_and_server_errors() {
+        let mut server = mockito::Server::new_async().await;
+        let garbage = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body("<html>502 Bad Gateway</html>")
+            .expect(1)
+            .create_async()
+            .await;
+        let good = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body(r#"{"endsAt":200,"day":1,"agents":[],"others":[],"traffics":[]}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let state = fetch_state_with_retry(&client, Duration::from_secs(5), Duration::ZERO, 1)
+            .await
+            .unwrap();
+        assert_eq!(state.day, 1);
+        garbage.assert_async().await;
+        good.assert_async().await;
+    }
+
+    /// Issue #385: bad credentials are the one thing no later poll can fix.
+    #[tokio::test]
+    async fn state_polling_stops_at_once_on_bad_credentials() {
+        let mut server = mockito::Server::new_async().await;
+        let denied = server
+            .mock("GET", "/")
+            .with_status(401)
+            .with_body(r#"{"code":"AuthError","message":"no"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let result =
+            fetch_state_with_retry(&client, Duration::from_secs(5), Duration::ZERO, 0).await;
+        assert!(matches!(result, Err(CoordinatorLoopError::State(_))), "{result:?}");
+        denied.assert_async().await;
+    }
+
+    fn far_deadline() -> i64 {
+        Utc::now().timestamp() + 30
+    }
+
+    /// Issue #385: a `POST /` that dies without a verdict is sent again while
+    /// the window is open, and the verdict of the repeat is what counts.
+    #[tokio::test]
+    async fn plan_without_a_verdict_is_sent_again_until_accepted() {
+        let mut server = mockito::Server::new_async().await;
+        let broken = server.mock("POST", "/").with_status(503).expect(1).create_async().await;
+        let unreadable = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_body("<html>")
+            .expect(1)
+            .create_async()
+            .await;
+        let accepted = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_body(r#"{"revision":7}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let plan: ActionPlanBody = vec![vec![-3]];
+        let verdict = submit_plan_until_deadline(&client, &plan, far_deadline(), 0).await.unwrap();
+        assert!(matches!(verdict, DaySubmission::Accepted(7)));
+        broken.assert_async().await;
+        unreadable.assert_async().await;
+        accepted.assert_async().await;
+    }
+
+    /// A rejection is a verdict on the plan: the same body is never repeated.
+    #[tokio::test]
+    async fn rejected_plan_is_not_sent_again() {
+        let mut server = mockito::Server::new_async().await;
+        let rejected = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_body(r#"{"revision":-1}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let plan: ActionPlanBody = vec![vec![-3]];
+        let verdict = submit_plan_until_deadline(&client, &plan, far_deadline(), 0).await.unwrap();
+        assert!(matches!(verdict, DaySubmission::Rejected(-1)));
+        rejected.assert_async().await;
+    }
+
+    /// Past the local deadline nothing is repeated: a late copy would be read
+    /// as the next day's plan.
+    #[tokio::test]
+    async fn plan_is_not_repeated_after_the_answer_window() {
+        let mut server = mockito::Server::new_async().await;
+        let broken = server.mock("POST", "/").with_status(503).expect(1).create_async().await;
+        let client = protocol::MatchClient::new(server.url(), "test").unwrap();
+        let plan: ActionPlanBody = vec![vec![-3]];
+        let verdict = submit_plan_until_deadline(&client, &plan, Utc::now().timestamp() - 1, 0)
+            .await
+            .unwrap();
+        assert!(matches!(verdict, DaySubmission::Unanswered(_)));
+        broken.assert_async().await;
     }
 
     #[test]

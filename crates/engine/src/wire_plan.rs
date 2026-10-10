@@ -21,11 +21,21 @@
 //! **one illegal action invalidates the whole day's plan**
 //! (`revision = -1`).
 //!
-//! # Fuel is billed on the departed cell too (Issue #245)
+//! # Fuel is billed on the departed cell only (Issue #245, settled by #342)
 //!
 //! The official server charges a move's **fuel** from the cell the agent
 //! leaves — the same cell that bills the step cost — not from the cell it
-//! enters. [`crate::transitions::try_move`] shares the same fuel transition. Probed against the official binary on
+//! enters, and executability is **`fuel >= fuel_cost(origin)` alone**: a
+//! move that merely cannot afford the *destination*'s fuel is legal. That
+//! departure-only boundary is settled against the official simple answer
+//! server (Q&A Q11/Q25 — `docs/evidence/campaign-311/official-server-parity/`:
+//! 平地 fuel=1 → 山地 is *accepted* at `revision = 1` and ends at fuel=0,
+//! 山地 fuel=1 → 平地 is rejected, and the threshold sits on `>=`); it is
+//! exactly what [`crate::rules::move_fuel`] pins and
+//! [`crate::transitions::try_move`] shares.
+//!
+//! The departure cell (as opposed to the entered cell) was first located by
+//! probing the official binary on
 //! localhost with match550's board (`busyThreshold 1`,
 //! `jammedThreshold 3`, 9 days, 7 agents, `--kinds P`,
 //! `loop:iterations=32:initial=greedy:lookahead=crossday:walk=astar`):
@@ -47,12 +57,14 @@
 //! | must afford `max(origin, entered)`, billed on that | wrong (days 6/7 predicted rejected) | correct |
 //! | strict `fuel > cost` | wrong (day 7 predicted rejected) | correct |
 //!
-//! The two surviving readings are indistinguishable from acceptance data
-//! alone, so this boundary enforces their **intersection**: a move must
-//! afford the fuel of both the departed and the entered cell, and the
-//! replay deducts the departed cell's cost. That is never weaker than the
-//! pre-#245 rule (it only adds the departed-cell check) and it rejects
-//! exactly the two observed cases. The step budget was never the problem:
+//! Those probes left two readings alive ("billed on the departed cell" and
+//! the stricter "must afford both cells, billed on the departed one") —
+//! acceptance data alone could not separate them. The #342 official-server
+//! probes above do: the destination-affordance reading is **wrong** (a
+//! patrol with less fuel than the destination costs still gets `revision:
+//! 1`), so this boundary charges and checks the **departed cell only**,
+//! never weaker than the pre-#245 entered-cell rule for the cases those
+//! probes observed. The step budget was never the problem:
 //! every day of both runs summed to `daySteps` exactly under the traffic
 //! `GET /` reported — the payload carries **all** road cells (246 entries
 //! for a 246-road map, every day of both runs), so the overlay has no
@@ -94,7 +106,7 @@
 //!
 //! so `Σ weighted == day_steps` **exactly**. Day normalization replays
 //! all controlled agents on a shared timeline, applying the same Supply
-//! contact and fuel transitions as `MatchSim`. `budget=official` candidates
+//! contact on the official terrain-weighted tick timeline. `budget=official` candidates
 //! call this same normalization before offline evaluation; live candidate
 //! construction requires that explicit budget parameter where supported.
 
@@ -107,11 +119,11 @@ use crate::transitions::phase_fuel;
 /// fuel cost)`.
 ///
 /// The cell the agent **departs** bills both the step budget (module table)
-/// and the fuel deduction; the move also has to afford the fuel of the cell
-/// it **enters**, which keeps this boundary at least as strict as it was
-/// before Issue #245 while adding the departed-cell check that the two
-/// localhost rejections needed. `Err` carries the reason the official
-/// server reports when it rejects the whole day for one illegal action.
+/// and the fuel deduction; executability is `fuel >= fuel_cost(origin)`
+/// alone (Q&A Q11/Q25, settled against the official server — Issue #342
+/// P0-C and `crate::rules::move_fuel`). `Err` carries the reason the
+/// official server reports when it rejects the whole day for one illegal
+/// action.
 ///
 /// An agent standing off the board is the caller's error path (a corrupted
 /// live state, not a bad action); an agent standing on a pond falls out of
@@ -315,69 +327,119 @@ pub fn normalize_day_plan(
                 .ok_or_else(|| format!("agent {id} missing from the live match state"))
         })
         .collect::<Result<_, _>>()?;
-    let n = shadow.len();
-    let mut out = vec![Vec::new(); n];
-    let mut used = vec![0u32; n];
-    let mut cursor = vec![0usize; n];
-    let mut waits = vec![0u32; n];
-    let mut stopped = vec![false; n];
+    let mut replay: Vec<WireCursor<'_>> = body.iter().map(|codes| WireCursor::new(codes)).collect();
     let mut events = Vec::new();
-    // Replay every agent on the engine's shared element timeline. Budget
-    // accounting remains origin-weighted; Supply contact follows MatchSim.
-    while used.iter().any(|&u| u < day_steps) {
-        let mut moves = Vec::new();
-        for i in 0..n {
-            if used[i] >= day_steps {
+    for tick in 0..=day_steps {
+        // Q6: all due moves consume fuel and reflect before any refueling.
+        // A move reserved at t reflects at t + origin terrain cost, not t+1.
+        for (i, cursor) in replay.iter_mut().enumerate() {
+            if cursor.due != tick || cursor.pending.is_none() {
                 continue;
             }
-            if waits[i] == 0 && !stopped[i] {
-                match body[i].get(cursor[i]).copied() {
-                    Some(code) if code < 0 => {
-                        waits[i] = code.unsigned_abs().min(day_steps - used[i]);
-                        cursor[i] += 1;
-                    }
-                    Some(code) => {
-                        let movement = direction_for_wire(code).and_then(|dir| {
-                            let origin = map.get(shadow[i].pos)?;
-                            official_move(&shadow[i], origin, dir, map).ok()
-                        });
-                        if let Some((to, step, fuel)) = movement {
-                            if step <= day_steps - used[i] {
-                                out[i].push(code);
-                                used[i] += step;
-                                cursor[i] += 1;
-                                moves.push((i, to, fuel));
-                                continue;
-                            }
-                        }
-                        stopped[i] = true;
-                    }
-                    None => stopped[i] = true,
+            let code = cursor.pending.take().expect("pending action");
+            if code >= 0 {
+                let movement = direction_for_wire(code).and_then(|dir| {
+                    let origin = map.get(shadow[i].pos)?;
+                    official_move(&shadow[i], origin, dir, map).ok()
+                });
+                let Some((to, _, fuel)) = movement else {
+                    cursor.stopped = true;
+                    continue;
+                };
+                let id = shadow[i].id;
+                phase_fuel(&mut shadow, &[(id, fuel)], &mut events);
+                shadow[i].pos = to;
+            }
+            cursor.out.push(code);
+            cursor.used = tick;
+        }
+        if tick > 0 {
+            let positions: Vec<_> = shadow.iter().map(|agent| agent.pos).collect();
+            for pos in positions {
+                crate::transitions::refill_fuel_if_supply_present(&mut shadow, pos, &mut events);
+            }
+        }
+        if tick < day_steps {
+            for (agent, cursor) in shadow.iter().zip(&mut replay) {
+                if !cursor.stopped && cursor.pending.is_none() {
+                    cursor.reserve(agent, map, tick, day_steps);
                 }
             }
-            // A stopped plan pads with waits, but still participates in
-            // Supply contact on each shared step.
-            if waits[i] > 0 {
-                waits[i] -= 1;
-            }
-            if let Some(last) = out[i].last_mut().filter(|c| **c < 0) {
-                *last -= 1;
-            } else {
-                out[i].push(-1);
-            }
-            used[i] += 1;
-        }
-        for (i, to, fuel) in moves {
-            let id = shadow[i].id;
-            shadow[i].pos = to;
-            phase_fuel(&mut shadow, &[(id, fuel)], &mut events);
-        }
-        let positions: Vec<_> = shadow.iter().map(|a| a.pos).collect();
-        for pos in positions {
-            crate::transitions::refill_fuel_if_supply_present(&mut shadow, pos, &mut events);
         }
     }
-    Ok(out)
+    Ok(replay
+        .into_iter()
+        .map(|mut cursor| {
+            let pad = day_steps - cursor.used;
+            if pad > 0 {
+                cursor.out.push(-i32::try_from(pad).unwrap_or(i32::MAX));
+            }
+            // Merge adjacent wait runs without expanding untrusted input.
+            let mut out: Vec<i32> = Vec::new();
+            for code in cursor.out {
+                if code < 0 {
+                    if let Some(last) = out.last_mut().filter(|last| **last < 0) {
+                        if let Some(sum) = last.checked_add(code) {
+                            *last = sum;
+                            continue;
+                        }
+                    }
+                }
+                out.push(code);
+            }
+            out
+        })
+        .collect())
+}
+
+struct WireCursor<'a> {
+    codes: std::slice::Iter<'a, i32>,
+    out: Vec<i32>,
+    pending: Option<i32>,
+    due: u32,
+    used: u32,
+    stopped: bool,
+}
+
+impl<'a> WireCursor<'a> {
+    fn new(codes: &'a [i32]) -> Self {
+        Self {
+            codes: codes.iter(),
+            out: Vec::new(),
+            pending: None,
+            due: 0,
+            used: 0,
+            stopped: false,
+        }
+    }
+
+    fn reserve(&mut self, agent: &Agent, map: &MapGrid, tick: u32, limit: u32) {
+        let Some(&code) = self.codes.next() else {
+            self.stopped = true;
+            return;
+        };
+        let remaining = limit - tick;
+        let (code, cost) = if code < 0 {
+            let wait = code.unsigned_abs().min(remaining).min(i32::MAX as u32);
+            (-i32::try_from(wait).expect("bounded wait"), wait)
+        } else {
+            // Fuel is checked at reflection: intervening ticks may refill
+            // this vehicle while it is still waiting at its origin (Q6 A).
+            let cost = direction_for_wire(code).and_then(|dir| {
+                let origin = map.get(agent.pos)?;
+                let target = map.get(dir.step(agent.pos))?;
+                target.terrain.traversable().then_some(())?;
+                terrain_step_cost(origin.terrain)
+            });
+            let Some(cost) = cost.filter(|cost| *cost <= remaining) else {
+                self.stopped = true;
+                return;
+            };
+            (code, cost)
+        };
+        self.pending = Some(code);
+        self.due = tick + cost;
+    }
 }
 
 #[cfg(test)]
@@ -463,6 +525,75 @@ mod tests {
         let body = vec![vec![2, 2, 2], vec![2, 2, 2]];
         let normalized = normalize_day_plan(&map, &[patrol, supply], &[0, 1], 6, &body).unwrap();
         assert_eq!(normalized, body, "shared contact must preserve the escort movement prefix");
+    }
+
+    #[test]
+    fn official_q6_eight_vehicle_example_preserves_every_action() {
+        let map = grid(&[
+            "rBbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb",
+            "bbbbbbbb",
+        ]);
+        let starts = [0, 0, 0, 0, 2, 3, 3];
+        let mut agents: Vec<_> = starts
+            .into_iter()
+            .enumerate()
+            .map(|(i, col)| {
+                let mut agent = patrol_at(col, 0, 3);
+                agent.id = u8::try_from(i).unwrap();
+                agent.fuel_cap = 3;
+                agent
+            })
+            .collect();
+        agents.push(Agent::supply(7, HexCoord::new(2, 0)));
+        let body = vec![
+            vec![2, 2, 2, -1],
+            vec![-1, 2, 2, 2],
+            vec![-2, 2, 2, -1],
+            vec![-3, 2, -2],
+            vec![5, 5, -2],
+            vec![5, 5, -2],
+            vec![-2, 5, 5],
+            vec![5, 5, -2],
+        ];
+        let ids: Vec<_> = (0..8).collect();
+        assert_eq!(normalize_day_plan(&map, &agents, &ids, 6, &body).unwrap(), body);
+    }
+
+    #[test]
+    fn same_tick_supply_arrival_cannot_pay_for_a_due_move() {
+        let map = grid(&FLAT);
+        let mut patrol = patrol_at(0, 0, 1);
+        patrol.fuel_cap = 3;
+        let supply = Agent::supply(1, HexCoord::new(3, 0));
+        // P reaches cell1 at tick2 (fuel0). S reaches cell2 at tick4,
+        // too late to pay P's cell1 -> cell2 move due on that same tick.
+        let body = vec![vec![2, 2], vec![-2, 5]];
+        let out = normalize_day_plan(&map, &[patrol, supply], &[0, 1], 4, &body).unwrap();
+        assert_eq!(out, vec![vec![2, -2], vec![-2, 5]]);
+    }
+
+    #[test]
+    fn unequal_terrain_clocks_do_not_create_phantom_supply_contact() {
+        let map = grid(&[
+            "brrbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb",
+            "bbbbbbbb",
+        ]);
+        let mut patrol = patrol_at(0, 0, 2);
+        patrol.fuel_cap = 2;
+        let supply = Agent::supply(1, HexCoord::new(2, 0));
+        let agents = vec![patrol, supply];
+        let body = vec![vec![2, 2, -1], vec![5, 5, -2]];
+        let out = normalize_day_plan(&map, &agents, &[0, 1], 4, &body).unwrap();
+        assert_eq!(out, vec![vec![2, -2], vec![5, 5, -2]]);
+        assert_eq!(normalize_day_plan(&map, &agents, &[0, 1], 4, &out).unwrap(), out);
+    }
+
+    #[test]
+    fn oversized_wait_is_bounded_without_expansion() {
+        let map = grid(&FLAT);
+        let agent = patrol_at(0, 0, 3);
+        let out = normalize_day_plan(&map, &[agent], &[0], 6, &vec![vec![i32::MIN]]).unwrap();
+        assert_eq!(out, vec![vec![-6]]);
     }
 
     #[test]
@@ -565,11 +696,30 @@ mod tests {
     /// Fuel is part of the official legality rules: a patrol that cannot pay
     /// for the next move has that move (and everything after it) dropped,
     /// rather than submitted and rejected wholesale.
+    ///
+    /// The settled boundary (342-fuel, official simple-server probes) is
+    /// **departure-only**: a move is fuel-short iff `fuel < fuel_cost(origin)`.
+    /// Carrying less than the *destination* costs is legal and must not be
+    /// dropped (Plain(fuel=1)→Mountain(cost=2) is accepted by the server).
     #[test]
     fn fuel_short_moves_are_dropped_not_submitted() {
         let map = map_with('r');
-        // Entering the road costs 2 fuel; the patrol carries only 1.
-        let broke = patrol_at(0, 0, 1);
+        // Entering the road costs 2 fuel *on the road*, but this move departs
+        // 平地 (cost 1): fuel=1 affords it under the settled departure-only
+        // rule, so the move must be kept — not dropped as the pre-342-fuel
+        // conservative `max(origin, destination)` guard did.
+        let thin = patrol_at(0, 0, 1);
+        let normalized = normalize_agent_plan(&thin, &map, 6, &[2, 2, 2, -3]);
+        assert_eq!(
+            normalized.as_slice(),
+            &[2, -4],
+            "fuel=1 departing 平地 must keep the first move (destination cost is not billed); \
+             the next move departs 道路 (fuel 2) and is dropped"
+        );
+        validate_agent_plan(&thin, &map, 6, &normalized).expect("padded plan validates");
+
+        // fuel=0 cannot even depart 平地 (cost 1): the move is dropped.
+        let broke = patrol_at(0, 0, 0);
         let normalized = normalize_agent_plan(&broke, &map, 6, &[2, 2, 2, -3]);
         assert_eq!(normalized.as_slice(), &[-6], "the unfuelable move must not be submitted");
         validate_agent_plan(&broke, &map, 6, &normalized).expect("padded plan validates");
@@ -608,10 +758,10 @@ mod tests {
     }
 
     /// The shadow tank deducts the **departed** cell's fuel, so it tracks
-    /// the official one move for move — the third step here would still be
-    /// affordable under the old entered-cell deduction (4 − 1 − 1 = 2) but
-    /// not under the official one (4 − 2 − 1 = 1, and entering the road at
-    /// `(3, 0)` costs 2).
+    /// the official one move for move. All three steps here are affordable
+    /// under the settled departure-only rule (4 − 2 − 1 − 1 = 0): the second
+    /// and third steps depart 平地 (cost 1) even though the third enters a
+    /// 道路 (cost 2 there) — only the departure is billed (Q&A Q11 / Q25).
     #[test]
     fn fuel_is_deducted_from_the_departed_cell() {
         let row = "rbbrbbbb";
@@ -620,8 +770,8 @@ mod tests {
         let normalized = normalize_agent_plan(&agent, &map, 6, &[2, 2, 2, -3]);
         assert_eq!(
             normalized.as_slice(),
-            &[2, 2, -3],
-            "the tank runs dry before the road at (3,0): 1 + 2 + 3 waits = 6"
+            &[2, 2, 2, -1],
+            "departure costs 2 + 1 + 1 drain the tank exactly: 1 + 2 + 2 + 1 wait = 6"
         );
         validate_agent_plan(&agent, &map, 6, &normalized).expect("padded plan validates");
     }

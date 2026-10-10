@@ -1,0 +1,209 @@
+{
+  "source_commit_sha": "8f4cc89bdbcacc461584fba807f461d5ecec5e09",
+  "issue": "#333",
+  "suite": "32x32 evaluation suite (9 cases)",
+  "candidates": [
+    "coverage:budget=official:park=none",
+    "coverage:budget=official:park=far",
+    "tour:budget=official"
+  ],
+  "results": [
+    {
+      "case": 0,
+      "pattern": "Uniform",
+      "greedy": {
+        "V": 27,
+        "D": 169,
+        "B": 188
+      },
+      "park_far": {
+        "V": 27,
+        "D": 174,
+        "B": 193
+      },
+      "tour": {
+        "V": 27,
+        "D": 117,
+        "B": 117
+      },
+      "valid": true
+    },
+    {
+      "case": 1,
+      "pattern": "Central",
+      "greedy": {
+        "V": 27,
+        "D": 169,
+        "B": 188
+      },
+      "park_far": {
+        "V": 27,
+        "D": 174,
+        "B": 193
+      },
+      "tour": {
+        "V": 27,
+        "D": 117,
+        "B": 117
+      },
+      "valid": true
+    },
+    {
+      "case": 2,
+      "pattern": "Peripheral",
+      "greedy": {
+        "V": 27,
+        "D": 169,
+        "B": 188
+      },
+      "park_far": {
+        "V": 27,
+        "D": 174,
+        "B": 193
+      },
+      "tour": {
+        "V": 27,
+        "D": 117,
+        "B": 117
+      },
+      "valid": true
+    },
+    {
+      "case": 3,
+      "pattern": "Uniform+road-heavy",
+      "greedy": {
+        "V": 27,
+        "D": 176,
+        "B": 204
+      },
+      "park_far": {
+        "V": 27,
+        "D": 179,
+        "B": 207
+      },
+      "tour": {
+        "V": 27,
+        "D": 150,
+        "B": 150
+      },
+      "valid": false
+    },
+    {
+      "case": 4,
+      "pattern": "Uniform+mountain-heavy",
+      "greedy": {
+        "V": 27,
+        "D": 160,
+        "B": 192
+      },
+      "park_far": {
+        "V": 26,
+        "D": 170,
+        "B": 200
+      },
+      "tour": {
+        "V": 27,
+        "D": 124,
+        "B": 124
+      },
+      "valid": true,
+      "note": "park=far V_LOSS"
+    },
+    {
+      "case": 5,
+      "pattern": "Uniform+fuel-tight",
+      "greedy": {
+        "V": 27,
+        "D": 170,
+        "B": 196
+      },
+      "park_far": {
+        "V": 27,
+        "D": 170,
+        "B": 192
+      },
+      "tour": {
+        "V": 25,
+        "D": 45,
+        "B": 45
+      },
+      "valid": false
+    },
+    {
+      "case": 6,
+      "pattern": "Uniform+short-day",
+      "greedy": {
+        "V": 27,
+        "D": 142,
+        "B": 151
+      },
+      "park_far": {
+        "V": 27,
+        "D": 142,
+        "B": 151
+      },
+      "tour": {
+        "V": 27,
+        "D": 96,
+        "B": 96
+      },
+      "valid": true
+    },
+    {
+      "case": 7,
+      "pattern": "Uniform+more-agents",
+      "greedy": {
+        "V": 27,
+        "D": 155,
+        "B": 165
+      },
+      "park_far": {
+        "V": 27,
+        "D": 125,
+        "B": 133
+      },
+      "tour": {
+        "V": 27,
+        "D": 109,
+        "B": 109
+      },
+      "valid": true,
+      "note": "park=far D_LOSS"
+    },
+    {
+      "case": 8,
+      "pattern": "Uniform+more-days",
+      "greedy": {
+        "V": 27,
+        "D": 241,
+        "B": 272
+      },
+      "park_far": {
+        "V": 27,
+        "D": 241,
+        "B": 271
+      },
+      "tour": {
+        "V": 27,
+        "D": 156,
+        "B": 156
+      },
+      "valid": true
+    }
+  ],
+  "summary": {
+    "d_axis_wins": {
+      "greedy": 4,
+      "park_far": 8,
+      "tour": 0
+    },
+    "tour_conclusion": "NEGATIVE - loses all 9 cases on D axis",
+    "park_far_conclusion": "wins 8/9 on D but V_LOSS on case 4, D_LOSS on case 7"
+  },
+  "_provenance": {
+    "note": "Pre-generator-fix snapshot. Cases 0-2 (Uniform/Central/Peripheral) are IDENTICAL because SeriesPattern placement was a no-op before commit 0ee22c4. Preserved verbatim for history; superseded by evaluation.json at 0ee22c4.",
+    "measured_at_commit": "8f4cc89bdbcacc461584fba807f461d5ecec5e09",
+    "superseded_by": "evaluation.json",
+    "superseding_commit": "0ee22c497b2348041e502da2ecaab2e9551b47d9"
+  }
+}

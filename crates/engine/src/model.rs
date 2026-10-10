@@ -16,7 +16,7 @@
 //! competing designs. The offline evaluation path deliberately drives
 //! [`Solver`] below, because that is what [`crate::sim::MatchSim`] consumes.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use domain::{MatchId, PlayerId};
 use serde::{Deserialize, Serialize};
@@ -478,6 +478,36 @@ pub struct AgentActions {
     pub actions: Vec<Action>,
 }
 
+/// An action accepted at a Q6 action phase and not yet fully reflected.
+///
+/// Official Q6 (問い合わせと回答その1 + 補足資料): the day's answer is a
+/// **sequential** action list — the next action is reserved only when the
+/// previous one completes. A Move is applied after the *departure* terrain's
+/// step count has elapsed (募集要項図4 / Q10), so between the order and the
+/// landing the agent carries one of these in-flight records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PendingAction {
+    /// A reserved move: lands at the reflection of `due_step`
+    /// (`issued_step + terrain_step_cost(origin)`). `fuel_cost` is the
+    /// departure terrain's fuel bill (Q25 — the pre-move terrain), charged
+    /// in that same reflection (Q6: 燃料の消費 → 移動の反映).
+    Move { to: HexCoord, due_step: u32, fuel_cost: u32 },
+    /// A 1-tick wait: the agent is busy until `until_step` and the next
+    /// queued action starts at that step's action phase.
+    Wait { until_step: u32 },
+}
+
+impl PendingAction {
+    /// The step at which this action completes (the reflection that applies
+    /// it).
+    #[must_use]
+    pub const fn due_step(&self) -> u32 {
+        match self {
+            Self::Move { due_step, .. } | Self::Wait { until_step: due_step } => *due_step,
+        }
+    }
+}
+
 impl AgentActions {
     #[must_use]
     pub fn new(actions: Vec<Action>) -> Self {
@@ -685,6 +715,27 @@ pub struct MatchState {
     /// 「順位決定」tier 2, 「各日の種類数の累積」). A series re-acquired on a
     /// later day counts again for that later day.
     pub series_acquired_by_day: BTreeMap<u32, BTreeSet<u32>>,
+    /// Per-agent queue of actions accepted at an action phase but not yet
+    /// started (Q6: the daily answer is a sequential action list — the next
+    /// action is reserved when the previous one completes).
+    #[serde(default)]
+    pub action_queues: BTreeMap<u8, VecDeque<Action>>,
+    /// The action each agent is currently executing (accepted, not yet
+    /// reflected). See [`PendingAction`].
+    #[serde(default)]
+    pub in_flight: BTreeMap<u8, PendingAction>,
+    /// Set when the *current* day's response contains an action the official
+    /// server would reject whole (Q6: 「回答全体をリジェクトします」 — any
+    /// illegal / fuel-short / step-mismatched action). Flushed into
+    /// [`Self::rejected_response_count`] at the day boundary.
+    #[serde(default)]
+    pub day_response_invalid: bool,
+    /// Number of daily responses the official server would have rejected
+    /// whole. The evaluator must treat a run with a non-zero count as a run
+    /// the live server would not have scored (see [`RunResult::
+    /// rejected_response_count`]).
+    #[serde(default)]
+    pub rejected_response_count: u32,
 }
 
 impl MatchState {
@@ -714,6 +765,10 @@ impl MatchState {
             series_acquired_by_day: BTreeMap::new(),
             illegal_action_count: 0,
             fuel_short_count: 0,
+            action_queues: BTreeMap::new(),
+            in_flight: BTreeMap::new(),
+            day_response_invalid: false,
+            rejected_response_count: 0,
             setting: MatchSetting { map, ..setting.clone() },
         })
     }
@@ -781,19 +836,19 @@ pub struct RunResult {
     /// must not treat the run as a clean `success`.
     ///
     /// Scope: **per-action** downgrades only (out of bounds, impassable
-    /// terrain, out of fuel). A *whole-plan* shape violation — wrong block
-    /// length, foreign or missing agent ids — is degraded to `Wait` for the
-    /// whole step without touching this counter, and `run_inner` pads or
-    /// truncates a wrong-length plan the same way. That is deliberate
-    /// divergence from Q&A Q6 (which rejects such an answer outright), and
-    /// it is *not* a hole in the evaluator: `bench` wraps every solver in
-    /// `TimingSolver`, which runs the same [`AgentActions::is_well_shaped`]
-    /// predicate against the same context and reports a failure as
-    /// `RunStatus::Invalid` — so a malformed candidate is never scored as a
-    /// clean success, whatever this counter says.
+    /// terrain, out of fuel). See [`Self::rejected_response_count`] for the
+    /// official whole-response verdict (Q&A Q6 rejects the *entire* day's
+    /// answer when any action is invalid / fuel-short / step-mismatched).
     pub illegal_action_count: u32,
     /// Subset of [`Self::illegal_action_count`] caused by fuel exhaustion.
     pub fuel_short_count: u32,
+    /// Daily responses the official server would have rejected **whole**
+    /// (Q&A Q6: 「回答全体をリジェクトします」). The simulator still
+    /// demotes the offending actions to `Wait` so the match completes and a
+    /// score can be produced, but a non-zero count means the live server
+    /// would have refused the answer — the evaluator must surface that as an
+    /// invalid run rather than ranking the demoted score.
+    pub rejected_response_count: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -831,13 +886,27 @@ pub struct SolverContext<'a> {
     pub day: u32,
     pub day_steps: u32,
     pub agent_ids: Vec<u8>,
+    /// Wall-clock budget left for answering this day, in milliseconds.
+    ///
+    /// The live bridge fills this from the coordinator's answer window
+    /// (Q&A Q3: `daySeconds[day]`, measured against the server deadline);
+    /// [`Self::from_state`] has no clock, so it reports `u32::MAX` and a
+    /// time-capped search degenerates to its explicit `time_budget_ms`.
+    pub remaining_ms: u32,
 }
 
 impl<'a> SolverContext<'a> {
     #[must_use]
     pub fn from_state(state: &'a MatchState) -> Self {
         let agent_ids = state.setting.agent_ids();
-        Self { team: state.team(), state, day: state.day, day_steps: state.day_steps(), agent_ids }
+        Self {
+            team: state.team(),
+            state,
+            day: state.day,
+            day_steps: state.day_steps(),
+            agent_ids,
+            remaining_ms: u32::MAX,
+        }
     }
 }
 
