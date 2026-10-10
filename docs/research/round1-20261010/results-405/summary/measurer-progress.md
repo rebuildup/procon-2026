@@ -190,3 +190,21 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   - B 比較は無意味（失敗盤面 0 記録）、holdout24 有効 15 盤面の B 合計 6254 は参考値にもならず
   - 判定: **seed123 は本命から排除**。seed 選定には「実行時間安全性」も辞書順と同時に評価する必要あり
   証跡: `wsl-corpus/param-chains8-seed{7,123}/runs.jsonl`（seed123 の status/status_detail に実測値あり）。
+- [22:39] **E2 証跡コミット**（b762ff6）。新セッションが引き継ぎ（binary 再ビルド済み sha256 `d5eb038d…`、source 2ed7906 = fuel_need/fuel_mix 取り込み後）。実行中計測なし・load 3.7→低下中を確認。
+- [22:44] **F3 開始**: `wsl-10s/f3-fuel-corpus9/` — スクリーニング 9 盤面 × 6 候補（clocked @10s・seed42・kinds `S,P,P,P,P,P,P,P`・同一実行内アンカー）:
+  - c4: `fleet:...budget_ms=10000:adapt=off:chains=4`（アンカー）
+  - c4f: `+fuel_need=50` / c4m: `+fuel_need=50:fuel_mix=on`
+  - c8: `+chains=8`（アンカー）/ c8f / c8m（同様）
+  fuel_need=50 は fuel-need-428 README の本命値。判定: §6.2 の分解式 `gain(chains=c, mix=on) − gain(chains=c, mix=off)` を c=4/8 で取り、比 ≥2 盤面（s5016 2.72 / s5013 2.78 / s5020 3.0）で利得 ≈0 を確認する。chains8 組合せは PR #433 README の未検証項。jobs 2・nice 15。先に openapi smoke 6 候補 success（`wsl-10s/f3-smoke/`）。
+- [22:5x] 並行: PR #435（bail=on / cluster=on、24×24/32×32 multi-rep 計測を WSL 担当へ委譲）の計測用 worktree `.worktrees/bail-435-verify`（eb2f5de）を作成し release ビルド開始。F3 完了後に bail 計測を実施。
+- [22:53] **F3 中断（証跡未書き出し）**: 別担当（`.worktrees/pr428-verify`・official Arena case 計測）と重なり load 20 超。fleet clocked は worker あたりコア数スレッドを張るため並走すると双方污染。当方 run は nice 15 で押されていたため、開始 13 分で停止。**他担当完了後に F3 を単独再実行する**（ smoke は `wsl-10s/f3-smoke/` に済み・候補 ID 6 件は動作確認済み）。
+- [23:07] **bail smoke 完了**: eb2f5de binary（sha256 `85119c9f…`）で `convoy:budget_ms=20000:seed=42` と `:bail=on` が openapi で V/D/B 同点（5/2/2・rt ~4.1s・illegal 0）。**cluster=on は eb2f5de に未実装**（PR #435 記載どおり実装中）— bail のみ計測可能。
+- [23:20] **F3-offline 開始**: `wsl-corpus/f3-offline-fuel/` — スクリーニング 9 + 同梱 fixture 9 × 6 候補（**clockless `iters=60000`**・seed42・kinds `S,P×7`）。clocked 版は 3 セッション並走（`pr428-verify` / `measure-435` / `measure-63a7e5e`・load 19）で汚染されるため、負荷非依存の決定論モードを先行。chains8 × fuel_need 組合せ（PR #433 README 未検証項）と §6.2 分解式を clockless で先に確定する。jobs 2・nice 19。
+- [00:1x] **F3-offline 完了（部分・19/108 セルが負荷起因 invalid/timeout）**: offline V/D/B は決定論なので success セルは有効、invalid は daySeconds 超過（nice 19 で他 3 セッションに押され wall 時間が日窓超過・`status_detail` に実測）。ウォール ~70 分。
+  **部分確定（同一実行内アンカー・決定論・`wsl-corpus/f3-offline-fuel/runs.jsonl`）**:
+  - **s9008 chains8 offline の D-loss が fuel_need=50 で回復**: c8 anchor `(20,175,226)` → c8 fuel `(20,180,263)`（**D+5・B+37**）/ c8 mix `(20,180,256)`。E1 の chains8 最悪ケース（s9008 dV−4 決定論再現）が消える。c4 mix は `(20,180,265)`（c4 anchor は invalid で同実行比較不可・E1 baseline 236 に対し +29）
+  - **s9012（32×32・比1.0）c4: fuel B+56（373→429）/ mix B+44（417）**。D189 同点
+  - 非拘束盤面は利得 ≈0（仮説 §6.1 どおり）: s5013（比2.78）fuel +1 / mix −1、s5016 c8 fuel 469 / mix 465（anchor invalid）
+  - s5001: fuel −9 / mix −1〜3（B-only 微減・D 同点）。s9003: 全候補同点
+  - 欠落セル（負荷 invalid）: s9005 c8×3、s9008 c4 anchor/fuel、s9012 c8 fuel/mix、s5016 c4×3+c8 anchor、s5023 c4 fuel/mix、s5020 全 6 — **静穏時に再実行**
+  分析ツール: `results-405/tools/fseries_gain.py`（gain/mix_effect 分解・DV-LOSS 列挙）
