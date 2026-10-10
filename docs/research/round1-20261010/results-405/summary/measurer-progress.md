@@ -242,3 +242,4 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   B は爆発盤面で #435 予測どおり +39/+57。s9012 −23 は負荷起因ノイズ域のため**静穏時 B 確認再実行を判定条件に追加**。正式分析ドキュメントはサブエージェントが `analysis/bail-435-wsl.md` に作成中。
 - [01:0x] **PR 証拠記録**: bail 計測結果を PR #435 へ途中報告（comment 6099437319）、F3-offline 分解結果を PR #433 へ途中報告（comment 6099438554）。いずれも採用判断は保留・事実と証跡パスのみ。
 - [01:0x] **バッチ計画確定**: サブエージェントが `summary/next-batch-plan.md` を作成。§6.1 fuel 比照合は不一致 0（36 盤面再計算・境界盤面 s5011=1.500 / s5006=2.000 を特定）。実行順序: A F3-clean（静穏必須）→ B F3-clocked → D depth ラダー → C E3 予算カーブ。並走中の他セッション（`measure-63a7e5e`）は holdout 24+32 で chains8/16+fuel_mix+convoy の検証バッチ（2 seed）を実行中 — 検証 27 盤面側の F 系裏取りが進んでいる。
+- [01:1x] **Batch A 開始（静穏確認済み・load 0.66・procon-eval 0 プロセス）**: `wsl-corpus/f3-clean-fuel/` — next-batch-plan バッチ A のとおり。判定基準: 全 54 runs scored・既知セルの完全一致・s5020 c8 fuel/mix 初記録。
