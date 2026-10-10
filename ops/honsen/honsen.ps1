@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     本選用 Windows ネイティブ起動スクリプト（WSL / Docker / Git Bash 不要）。
 
@@ -113,6 +113,10 @@ function Require-Server {
 }
 
 function Invoke-Preflight([string]$ExePath) {
+    # Windows PowerShell 5.1 は、stderr に何か書いたネイティブコマンドを
+    # 'Stop' の下ではエラー扱いにすることがある。procon.exe は通信ログを
+    # stderr に出すので、ネイティブコマンドを呼ぶ関数の中では 'Continue' にする。
+    $ErrorActionPreference = 'Continue'
     $script:Failed = $false
     Write-Host "== preflight: $Server"
 
@@ -159,7 +163,7 @@ function Invoke-Preflight([string]$ExePath) {
     $status = 0
     try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri ($Server.TrimEnd('/') + '/setting') `
-            -Headers @{ 'Procon-Token' = $env:PROCON_TOKEN } -TimeoutSec 5
+            -Headers @{ 'Procon-Token' = $env:PROCON_TOKEN } -TimeoutSec 5 -ErrorAction Stop
         $status = [int]$response.StatusCode
     }
     catch {
@@ -190,11 +194,54 @@ function Get-LatestRun {
     return $null
 }
 
+# 二重起動の防止。ロックファイルを「なければ作る」(CreateNew) で開く。これは 1 操作
+# なので、同時に 2 つの start を打っても片方しか通らない。中身は持ち主の PID。
+# 持ち主がもういなければ（前回の異常終了）引き継ぐ。PID がまだ書かれていない
+# ロックは作成途中かもしれないので、すぐには捨てず、少し待って読み直す。
+$LockFile = Join-Path $HonsenHome 'lock'
+
+function Enter-Lock {
+    for ($try = 0; $try -lt 2; $try++) {
+        try {
+            $stream = [System.IO.File]::Open($LockFile, [System.IO.FileMode]::CreateNew,
+                [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+            try {
+                $bytes = [System.Text.Encoding]::ASCII.GetBytes("$PID")
+                $stream.Write($bytes, 0, $bytes.Length)
+            }
+            finally { $stream.Dispose() }
+            return
+        }
+        catch [System.IO.IOException] {
+            $owner = 0
+            for ($read = 0; $read -lt 10 -and $owner -le 0; $read++) {
+                try { $owner = [int]([System.IO.File]::ReadAllText($LockFile).Trim()) } catch { $owner = 0 }
+                if ($owner -le 0) { Start-Sleep -Milliseconds 200 }
+            }
+            if ($owner -gt 0 -and (Get-Process -Id $owner -ErrorAction SilentlyContinue)) {
+                throw "別の honsen.ps1 start が動いています（PID $owner）。二重起動はできません。"
+            }
+            Remove-Item -LiteralPath $LockFile -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    throw "ロックを取得できません: $LockFile"
+}
+
+function Exit-Lock {
+    Remove-Item -LiteralPath $LockFile -Force -ErrorAction SilentlyContinue
+}
+
 function Invoke-Start([string]$ExePath) {
+    $ErrorActionPreference = 'Continue'
     if (Get-Process -Name 'procon' -ErrorAction SilentlyContinue) {
         throw '別の procon.exe が動いています。二重起動はできません。'
     }
+    $outcome = 'failed'
     Disable-QuickEdit
+    $before = @()
+    if (Test-Path -LiteralPath $RecordDir) {
+        $before = @(Get-ChildItem -LiteralPath $RecordDir -Directory | ForEach-Object { $_.Name })
+    }
     $began = Get-Date
     $restarts = 0
     while ($true) {
@@ -205,7 +252,23 @@ function Invoke-Start([string]$ExePath) {
         Write-Host "$(Get-Date -Format HH:mm:ss) honsen: coordinator が終了しました（終了コード $code）"
         if ($code -eq 0) {
             Write-Host '試合完了（正常終了）' -ForegroundColor Green
+            $outcome = 'completed'
             break
+        }
+        # 回答が拒否された日があると、coordinator は試合を最後まで進めたうえで 0 以外で
+        # 終了する。これはクラッシュではないので再起動しない（終わった試合へ入り直さない）。
+        $latest = Get-LatestRun
+        if ($latest) {
+            $statePath = Join-Path $latest 'state.json'
+            if (Test-Path -LiteralPath $statePath) {
+                $status = ''
+                try { $status = (Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).status } catch { }
+                if ($status -eq 'rejected') {
+                    Write-Host '試合は最後まで進みましたが、拒否された日があります（再起動しません）' -ForegroundColor Red
+                    $outcome = 'rejected'
+                    break
+                }
+            }
         }
         $restarts++
         if (((Get-Date) - $began).TotalMinutes -ge $MaxRunMinutes) {
@@ -214,12 +277,20 @@ function Invoke-Start([string]$ExePath) {
         }
         Start-Sleep -Seconds 1
     }
-    $latest = Get-LatestRun
-    if ($latest) {
-        Write-Host "記録: $latest"
-        & $ExePath record show $latest
+    # 再起動があると run ディレクトリが複数できる。今回の起動で増えたもののうち、
+    # 試合のイベントを持つものを古い順にすべて表示する（最後の空の再起動だけを見せない）。
+    $runs = @()
+    if (Test-Path -LiteralPath $RecordDir) {
+        $runs = @(Get-ChildItem -LiteralPath $RecordDir -Directory | Sort-Object Name |
+                Where-Object { ($before -notcontains $_.Name) -and (Test-Path (Join-Path $_.FullName 'events.jsonl')) })
     }
+    foreach ($run in $runs) {
+        Write-Host "記録: $($run.FullName)"
+        & $ExePath record show $run.FullName
+    }
+    if ($runs.Count -eq 0) { Write-Host "今回の起動では試合の記録ができていません: $RecordDir" -ForegroundColor Yellow }
     Write-Host "HTTP 通信ログ: $HttpLogDir"
+    return $outcome
 }
 
 if ($Command -eq 'help') {
@@ -249,7 +320,17 @@ try {
         $answer = Read-Host 'preflight に FAIL があります。それでも起動しますか？ 起動するなら YES と入力'
         if ($answer -ne 'YES') { throw '起動を中止しました。上の FAIL 行を直してください。' }
     }
-    Invoke-Start $exePath
+    Enter-Lock
+    $outcome = 'failed'
+    try {
+        # 関数の出力（record show の JSON など）はそのまま流し、最後の値だけを結果として受け取る。
+        Invoke-Start $exePath | ForEach-Object { $outcome = $_; $_ } | Select-Object -SkipLast 1
+    }
+    finally {
+        Exit-Lock
+    }
+    # 正常終了だけを 0 にする。拒否された日がある・再起動をあきらめた、は 1。
+    if ($outcome -ne 'completed') { exit 1 }
 }
 finally {
     if ($prompted) { Remove-Item Env:PROCON_TOKEN -ErrorAction SilentlyContinue }

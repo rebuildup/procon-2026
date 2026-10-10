@@ -126,6 +126,77 @@ impl From<AccessTimeError> for HttpClientError {
     }
 }
 
+/// One HTTP request and what came back, as seen on the wire (Issue #396).
+///
+/// Built only when an [`HttpObserver`] is attached. The token never leaves
+/// the client: its header value is replaced by [`MASKED`] here, before the
+/// observer sees anything.
+#[derive(Debug, Clone)]
+pub struct HttpExchange {
+    /// Identifies this exchange within the client (and its clones), from 1.
+    /// [`HttpObserver::decode_failed`] refers to an exchange by this id.
+    pub id: u64,
+    /// `GET` / `POST`.
+    pub method: String,
+    /// The full request URL.
+    pub url: String,
+    /// The headers this client set (`Procon-Token` masked, and
+    /// `Content-Type` for a POST). The HTTP library adds `host`, `accept`
+    /// and `content-length` below this layer; those are not listed.
+    pub request_headers: Vec<(String, String)>,
+    /// The request body, byte for byte. `None` for a GET.
+    pub request_body: Option<Vec<u8>>,
+    /// 1-based attempt within one client call (a GET may be repeated on a
+    /// transient failure; a POST never is).
+    pub attempt: u32,
+    /// Wall clock when the request was handed to the HTTP library.
+    pub started_at: std::time::SystemTime,
+    /// Time until the response body was complete, or until the failure.
+    pub elapsed: Duration,
+    /// What came back.
+    pub outcome: HttpOutcome,
+}
+
+/// The result of one [`HttpExchange`].
+#[derive(Debug, Clone)]
+pub enum HttpOutcome {
+    /// The server answered and the whole body arrived.
+    Response {
+        /// HTTP status code.
+        status: u16,
+        /// Response headers, in the order received.
+        headers: Vec<(String, String)>,
+        /// The response body, byte for byte.
+        body: Vec<u8>,
+    },
+    /// No complete response.
+    Failed {
+        /// `timeout`, `connect`, `body` (the body broke off) or `request`.
+        kind: &'static str,
+        /// The HTTP library's error text.
+        error: String,
+        /// The status line and headers, when they had arrived before the
+        /// body broke off.
+        partial: Option<(u16, Vec<(String, String)>)>,
+    },
+}
+
+/// Placeholder written instead of a secret header value.
+pub const MASKED: &str = "[MASKED]";
+
+/// Receives every HTTP exchange of a [`MatchClient`] (Issue #396).
+///
+/// Implementations must return quickly and must not block: they are called
+/// on the task that is talking to the contest server.
+pub trait HttpObserver: Send + Sync + std::fmt::Debug {
+    /// One request finished (with a response or with a failure).
+    fn exchange(&self, exchange: HttpExchange);
+
+    /// The response of exchange `exchange_id` arrived but could not be
+    /// decoded into the type the protocol promises.
+    fn decode_failed(&self, exchange_id: u64, error: &str);
+}
+
 /// Asynchronous HTTP client for the contest server.
 ///
 /// `MatchClient` is cheap to clone: the underlying [`reqwest::Client`]
@@ -137,6 +208,11 @@ pub struct MatchClient {
     http: reqwest::Client,
     retry_policy: RetryPolicy,
     request_timeout: Duration,
+    /// `None` on every default path: no observer, no change to how a
+    /// request is sent or how its body is read.
+    observer: Option<std::sync::Arc<dyn HttpObserver>>,
+    /// Source of [`HttpExchange::id`], shared by clones of this client.
+    exchange_ids: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl MatchClient {
@@ -163,7 +239,25 @@ impl MatchClient {
             token: token.into(),
             retry_policy: RetryPolicy::default(),
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            observer: None,
         }
+    }
+
+    /// Tell the observer, if any, that decoding the response of `exchange`
+    /// failed.
+    fn observed<T>(
+        &self,
+        exchange: u64,
+        result: Result<T, HttpClientError>,
+    ) -> Result<T, HttpClientError> {
+        if let (
+            Some(observer),
+            Err(e @ (HttpClientError::Decode(_) | HttpClientError::ApiDrift { .. })),
+        ) = (self.observer.as_ref(), result.as_ref())
+        {
+            observer.decode_failed(exchange, &e.to_string());
+        }
+        result
     }
 
     /// Submit the per-agent [`AgentKind`] assignments to `POST /agent`.
@@ -175,9 +269,9 @@ impl MatchClient {
         let url = self.endpoint("/agent")?;
         let body: AgentKindsBody = kinds;
         let body_bytes = serde_json::to_vec(&body)?;
-        let response =
-            self.execute_with_retry(reqwest::Method::POST, &url, Some(body_bytes)).await?;
-        handle_submit_response(response).await
+        let (response, exchange) =
+            self.execute(reqwest::Method::POST, &url, Some(body_bytes), true).await?;
+        self.observed(exchange, handle_submit_response(response).await)
     }
 
     /// Fetch the current [`MatchState`] snapshot from `GET /`.
@@ -187,8 +281,9 @@ impl MatchClient {
     /// See [`HttpClientError`].
     pub async fn get_match_state(&self) -> Result<MatchState, HttpClientError> {
         let url = self.endpoint("/")?;
-        let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
-        Self::decode_match_state(response).await
+        let (response, exchange) =
+            self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
+        self.observed(exchange, Self::decode_match_state(response).await)
     }
 
     /// Fetch the static match configuration from `GET /setting`.
@@ -202,8 +297,9 @@ impl MatchClient {
     /// See [`HttpClientError`].
     pub async fn get_match_setting(&self) -> Result<MatchSetting, HttpClientError> {
         let url = self.endpoint("/setting")?;
-        let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
-        Self::decode_setting_response(response).await
+        let (response, exchange) =
+            self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
+        self.observed(exchange, Self::decode_setting_response(response).await)
     }
 
     /// Submit the day's action plan for all agents to `POST /`.
@@ -226,9 +322,9 @@ impl MatchClient {
     ) -> Result<ActionAccepted, HttpClientError> {
         let url = self.endpoint("/")?;
         let body_bytes = serde_json::to_vec(&plan)?;
-        let response =
+        let (response, exchange) =
             self.execute_with_retry(reqwest::Method::POST, &url, Some(body_bytes)).await?;
-        Self::decode_action_accepted(response).await
+        self.observed(exchange, Self::decode_action_accepted(response).await)
     }
 
     /// Fetch an arbitrary protocol path and decode its body as `T`.
@@ -250,8 +346,9 @@ impl MatchClient {
         path: &str,
     ) -> Result<T, HttpClientError> {
         let url = self.endpoint(path)?;
-        let response = self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
-        Self::decode_success_json(response, path).await
+        let (response, exchange) =
+            self.execute_with_retry(reqwest::Method::GET, &url, None).await?;
+        self.observed(exchange, Self::decode_success_json(response, path).await)
     }
 
     /// Decode a `MatchSetting` from a successful response.
@@ -352,13 +449,31 @@ impl MatchClient {
         Ok(combined)
     }
 
-    /// Dispatch a request, retrying on transient failures.
+    /// Dispatch a request whose response body the caller will read.
     async fn execute_with_retry(
         &self,
         method: reqwest::Method,
         url: &str,
         body: Option<Vec<u8>>,
-    ) -> Result<reqwest::Response, HttpClientError> {
+    ) -> Result<(reqwest::Response, u64), HttpClientError> {
+        self.execute(method, url, body, false).await
+    }
+
+    /// Dispatch a request, retrying on transient failures.
+    ///
+    /// `body_unused_on_success` is set by callers that never read the body
+    /// of a 2xx answer (`POST /agent`). It only matters with an observer,
+    /// which reads every body in order to log it: a 2xx whose body breaks
+    /// off must then still count as the success it is without the observer.
+    async fn execute(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: Option<Vec<u8>>,
+        body_unused_on_success: bool,
+    ) -> Result<(reqwest::Response, u64), HttpClientError> {
+        // Id of the latest observed exchange; 0 without an observer.
+        let mut exchange = 0_u64;
         // POST outcomes can be ambiguous: only reads may be replayed.
         let max_retries =
             if method == reqwest::Method::GET { self.retry_policy.max_retries } else { 0 };
@@ -381,7 +496,26 @@ impl MatchClient {
                     .body(bytes.clone());
             }
 
-            match builder.send().await {
+            let sent = match self.observer.as_deref() {
+                None => builder.send().await.map_err(|error| SendFailure { error, in_body: false }),
+                Some(observer) => {
+                    exchange =
+                        self.exchange_ids.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    self.send_observed(
+                        observer,
+                        exchange,
+                        builder,
+                        &method,
+                        url,
+                        body.as_deref(),
+                        attempt,
+                        attempt < max_retries,
+                        body_unused_on_success,
+                    )
+                    .await
+                }
+            };
+            match sent {
                 Ok(response) => {
                     if Self::is_transient_status(response.status()) && attempt < max_retries {
                         last_error = Some(HttpClientError::Http {
@@ -390,10 +524,14 @@ impl MatchClient {
                         });
                         continue;
                     }
-                    return Ok(response);
+                    return Ok((response, exchange));
                 }
-                Err(err) => {
-                    let transient = err.is_timeout() || err.is_connect() || err.is_request();
+                Err(SendFailure { error: err, in_body }) => {
+                    // A body that broke off is never repeated here: without
+                    // an observer that failure surfaces in the decoder,
+                    // after this loop, and the caller decides what to do.
+                    let transient =
+                        !in_body && (err.is_timeout() || err.is_connect() || err.is_request());
                     if transient && attempt < max_retries {
                         last_error = Some(HttpClientError::Transport(err));
                         continue;
@@ -409,11 +547,195 @@ impl MatchClient {
         }))
     }
 
+    /// Send one request for an observer: buffer the whole response, report
+    /// it, and hand the decoders an equivalent response built from the
+    /// buffer.
+    ///
+    /// A body that breaks off is reported as a failure and then handled the
+    /// way the unobserved path would have handled it:
+    ///
+    /// - on a non-2xx status the caller only wants the status (the error
+    ///   classifier reads the body with `unwrap_or_default`), so the status
+    ///   is handed on with an empty body — retries on 5xx work as before;
+    /// - on a 2xx whose body the caller never reads (`POST /agent`), the
+    ///   success is handed on;
+    /// - otherwise the error is returned marked `in_body`, so it is not
+    ///   retried and reaches the caller as the same transport error the
+    ///   decoder would have produced.
+    #[allow(clippy::too_many_arguments, reason = "one call site; mirrors the request")]
+    async fn send_observed(
+        &self,
+        observer: &dyn HttpObserver,
+        id: u64,
+        builder: reqwest::RequestBuilder,
+        method: &reqwest::Method,
+        url: &str,
+        body: Option<&[u8]>,
+        attempt: usize,
+        will_retry_transient: bool,
+        body_unused_on_success: bool,
+    ) -> Result<reqwest::Response, SendFailure> {
+        let started_at = std::time::SystemTime::now();
+        let began = std::time::Instant::now();
+        let mut request_headers = vec![(TOKEN_HEADER.to_owned(), MASKED.to_owned())];
+        if body.is_some() {
+            request_headers.push(("Content-Type".to_owned(), "application/json".to_owned()));
+        }
+        let report = |outcome: HttpOutcome| {
+            observer.exchange(HttpExchange {
+                id,
+                method: method.as_str().to_owned(),
+                url: url.to_owned(),
+                request_headers: request_headers.clone(),
+                request_body: body.map(<[u8]>::to_vec),
+                attempt: u32::try_from(attempt).unwrap_or(u32::MAX).saturating_add(1),
+                started_at,
+                elapsed: began.elapsed(),
+                outcome,
+            });
+        };
+        let response = match builder.send().await {
+            Ok(response) => response,
+            Err(err) => {
+                report(HttpOutcome::Failed {
+                    kind: failure_kind(&err),
+                    error: error_chain(&err),
+                    partial: None,
+                });
+                return Err(SendFailure { error: err, in_body: false });
+            }
+        };
+        let status = response.status();
+        let version = response.version();
+        let header_map = response.headers().clone();
+        let headers: Vec<(String, String)> = header_map
+            .iter()
+            .map(|(name, value)| (name.as_str().to_owned(), header_text(value.as_bytes())))
+            .collect();
+        // A transient status that is about to be retried is thrown away by
+        // the caller without its body being read. Waiting for that body
+        // here would hold the retry back by up to the request timeout, so
+        // it is given a moment to arrive (it usually has) and no more.
+        let body = if will_retry_transient && Self::is_transient_status(status) {
+            match tokio::time::timeout(DISCARDED_BODY_WAIT, response.bytes()).await {
+                Ok(read) => read.map(Some),
+                Err(_) => Ok(None),
+            }
+        } else {
+            response.bytes().await.map(Some)
+        };
+        match body {
+            Ok(None) => {
+                report(HttpOutcome::Failed {
+                    kind: "body",
+                    error: format!(
+                        "the body had not arrived after {} ms and was not waited for: \
+                         this response is discarded and the request repeated",
+                        DISCARDED_BODY_WAIT.as_millis()
+                    ),
+                    partial: Some((status.as_u16(), headers)),
+                });
+                Ok(rebuild_response(status, version, header_map, bytes::Bytes::new()))
+            }
+            Ok(Some(bytes)) => {
+                report(HttpOutcome::Response {
+                    status: status.as_u16(),
+                    headers,
+                    body: bytes.to_vec(),
+                });
+                Ok(rebuild_response(status, version, header_map, bytes))
+            }
+            Err(err) => {
+                report(HttpOutcome::Failed {
+                    kind: if err.is_timeout() { "timeout" } else { "body" },
+                    error: error_chain(&err),
+                    partial: Some((status.as_u16(), headers)),
+                });
+                if !status.is_success() || body_unused_on_success {
+                    Ok(rebuild_response(status, version, header_map, bytes::Bytes::new()))
+                } else {
+                    Err(SendFailure { error: err, in_body: true })
+                }
+            }
+        }
+    }
+
     /// Decide whether a `4xx/5xx` status code is transient (worth retrying).
     fn is_transient_status(status: reqwest::StatusCode) -> bool {
         let code = status.as_u16();
         matches!(code, 408 | 425 | 429) || (500..600).contains(&code)
     }
+}
+
+/// How long an observer waits for the body of a response that is about to
+/// be discarded and retried.
+const DISCARDED_BODY_WAIT: Duration = Duration::from_millis(200);
+
+/// A header value as text. Bytes that are not UTF-8 are written as `\xNN`
+/// (and a literal backslash as `\\`), so different values never log alike.
+fn header_text(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(bytes.len() + 8);
+    for &byte in bytes {
+        if byte == b'\\' {
+            out.push_str("\\\\");
+        } else if byte.is_ascii_graphic() || byte == b' ' {
+            out.push(char::from(byte));
+        } else {
+            let _ = write!(out, "\\x{byte:02x}");
+        }
+    }
+    out
+}
+
+/// Why a request produced no usable response.
+struct SendFailure {
+    error: reqwest::Error,
+    /// The status line and headers arrived; the body did not.
+    in_body: bool,
+}
+
+/// A response equivalent to the one that was buffered for the observer.
+fn rebuild_response(
+    status: reqwest::StatusCode,
+    version: reqwest::Version,
+    headers: reqwest::header::HeaderMap,
+    body: bytes::Bytes,
+) -> reqwest::Response {
+    let mut rebuilt = http::Response::new(reqwest::Body::from(body));
+    *rebuilt.status_mut() = status;
+    *rebuilt.version_mut() = version;
+    *rebuilt.headers_mut() = headers;
+    reqwest::Response::from(rebuilt)
+}
+
+/// Name the failure for the log: the distinction an operator acts on.
+fn failure_kind(err: &reqwest::Error) -> &'static str {
+    if err.is_timeout() {
+        "timeout"
+    } else if err.is_connect() {
+        "connect"
+    } else if err.is_body() || err.is_decode() {
+        "body"
+    } else {
+        "request"
+    }
+}
+
+/// An error with its causes (`reqwest` keeps "connection refused" and the
+/// like in the source chain, not in its own message).
+fn error_chain(err: &reqwest::Error) -> String {
+    let mut text = err.to_string();
+    let mut source = std::error::Error::source(err);
+    while let Some(cause) = source {
+        text.push_str(": ");
+        text.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    text
 }
 
 /// Leading ASCII whitespace of `bytes`, without allocation.
@@ -477,9 +799,18 @@ pub struct MatchClientBuilder {
     token: String,
     retry_policy: RetryPolicy,
     request_timeout: Duration,
+    observer: Option<std::sync::Arc<dyn HttpObserver>>,
 }
 
 impl MatchClientBuilder {
+    /// Report every HTTP exchange to `observer` (Issue #396). Without this
+    /// call the client behaves exactly as before.
+    #[must_use]
+    pub fn observer(mut self, observer: std::sync::Arc<dyn HttpObserver>) -> Self {
+        self.observer = Some(observer);
+        self
+    }
+
     /// Override the retry policy.
     #[must_use]
     pub const fn retry_policy(mut self, policy: RetryPolicy) -> Self {
@@ -507,6 +838,8 @@ impl MatchClientBuilder {
             http,
             retry_policy: self.retry_policy,
             request_timeout: self.request_timeout,
+            observer: self.observer,
+            exchange_ids: std::sync::Arc::default(),
         })
     }
 }
@@ -515,6 +848,14 @@ impl MatchClientBuilder {
 mod tests {
     use super::*;
     use mockito::Server;
+
+    #[test]
+    fn header_text_keeps_utf8_and_escapes_everything_else() {
+        assert_eq!(header_text(b"application/json"), "application/json");
+        assert_eq!(header_text("日本語".as_bytes()), "日本語");
+        assert_eq!(header_text(b"a\xffb\\c\x00"), "a\\xffb\\\\c\\x00");
+        assert_ne!(header_text(b"\xff"), header_text(b"\xfe"));
+    }
 
     /// Build a client that targets a mockito server with zero backoff so
     /// tests run quickly.

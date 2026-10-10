@@ -1459,8 +1459,10 @@ dependencies = [
 name = "protocol"
 version = "0.4.0"
 dependencies = [
+ "bytes",
  "chrono",
  "domain",
+ "http",
  "mockito",
  "proptest",
  "reqwest",
