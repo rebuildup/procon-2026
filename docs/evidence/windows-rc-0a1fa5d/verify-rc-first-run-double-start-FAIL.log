@@ -1,0 +1,4 @@
+phase: double-start  started: 2026-10-11T02:06:54.9402800+09:00
+展開バンドル: C:\Users\rebui\Desktop\procon-wt\out\run1\double-start-smoke\bin\procon.exe
+ERROR: 1 回目の start がロック取得と coordinator 起動まで到達しません
+RESULT: FAIL
