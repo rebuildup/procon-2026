@@ -155,7 +155,7 @@ pub enum RecordEvent {
     /// Written by the recorder after `resume`: the earlier run of this match.
     Continues {
         /// Run id of the predecessor directory.
-        run_id: String,
+        previous_run_id: String,
         /// `starts_at` (same setting and same start time) or `setting_only`
         /// (same setting; the predecessor ended before the start was known).
         matched_by: String,
@@ -796,7 +796,10 @@ impl Writer {
                     let seq = self.seq.fetch_add(1, Ordering::Relaxed);
                     let mono_ms =
                         u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
-                    let link = RecordEvent::Continues { run_id, matched_by: matched_by.to_owned() };
+                    let link = RecordEvent::Continues {
+                        previous_run_id: run_id,
+                        matched_by: matched_by.to_owned(),
+                    };
                     self.write_event(seq, Utc::now().timestamp_millis(), mono_ms, &link);
                 }
             }
