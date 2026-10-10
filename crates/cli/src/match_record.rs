@@ -210,8 +210,8 @@ pub enum RecordEvent {
         /// Why.
         reason: String,
     },
-    /// One `POST /` call (the HTTP client may retry transport errors inside
-    /// a call; those are not visible here).
+    /// One `POST /` request (the HTTP client never repeats a POST on its
+    /// own, so one record is one request on the wire).
     SubmitAttempt {
         /// 0-based day.
         day: u32,

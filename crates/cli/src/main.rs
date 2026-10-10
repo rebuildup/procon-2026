@@ -366,7 +366,11 @@ async fn main() -> ExitCode {
         .with_target(false)
         .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")));
     let file = recorder.is_enabled().then(|| {
-        let level = std::env::var("PROCON_RECORD_LOG_LEVEL").unwrap_or_default();
+        // An empty filter would mean "errors only": fall back to `info`.
+        let level = std::env::var("PROCON_RECORD_LOG_LEVEL")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| "info".to_owned());
         tracing_subscriber::fmt::layer()
             .with_target(false)
             .with_ansi(false)
