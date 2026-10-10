@@ -19,7 +19,12 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 
-SOURCE_SHA = "5ddb153a16d44bb34c2c3ed5cea4aa8044f95bf0"
+# The one SHA this runner is allowed to submit with. Pinned to the
+# released competition state (`main` after PR #388): `fleet` from
+# PR #372 plus the lost-day/lost-connection coordinator fix `71a9c0f`
+# from Issue #385. `crates/` content is identical to release tip
+# `08aa550`; only this ops constant changed after the v0.4.0 tag.
+SOURCE_SHA = "13a0106aa5b1ac26dc0856bc93f731ca0e44f390"
 PRIMARY_CANDIDATE = "fleet:budget=official:budget_ms=10000"
 FALLBACK_CANDIDATE = "anytime:budget_ms=5000:seed=42:budget=official"
 ARENA_URL = "https://procon37arena.online"
