@@ -390,6 +390,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut option_log = Vec::new();
         let plan = if let Some(plans) = &scripted {
             plans[d].clone()
+        } else if let (0, Some(path)) = (d, args.values.get("first")) {
+            // `first=<json>`: a hand-built wire plan for day 0 (existence
+            // checks); the candidate answers from day 1 on.
+            let wire: Vec<Vec<i64>> = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+            wire_to_plan(&wire, steps)
         } else if mode == "submitted" {
             wire_to_plan(recorded.plans.get(d).ok_or("no recorded plan for the day")?, steps)
         } else if options.len() == 1 && cont.is_none() {

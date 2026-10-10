@@ -32,6 +32,7 @@
 )]
 use std::collections::{BinaryHeap, HashMap};
 use std::hash::{BuildHasherDefault, Hasher};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::adapters::coverage_solver::mix;
@@ -83,6 +84,12 @@ const PARAMS: &[ParamSpec] = &[
         key: "labels",
         required: false,
         doc: "label cap of one patrol-day search (default 1500000)",
+    },
+    ParamSpec {
+        key: "carry",
+        required: false,
+        doc: "off (default) | on: offer tomorrow the rest of the best whole-match path \
+              the rollout found today",
     },
 ];
 
@@ -145,6 +152,14 @@ impl CandidateFactory for ConvoyFactory {
             depth: parse(spec, "depth", 8u32)?,
             width: parse(spec, "width", 24usize)?.max(1),
             labels: parse(spec, "labels", 1_500_000usize)?,
+            keep: match spec.param("carry") {
+                None | Some("off") => false,
+                Some("on") => true,
+                Some(other) => {
+                    return Err(CandidateError::Build(format!("unknown carry mode {other:?}")));
+                }
+            },
+            carry: Mutex::new(None),
         }))
     }
 }
@@ -161,6 +176,28 @@ pub struct ConvoyCandidate {
     pub depth: u32,
     pub width: usize,
     pub labels: usize,
+    /// Carry the best whole-match path into the next day (Issue #421).
+    pub keep: bool,
+    carry: Mutex<Option<Carry>>,
+}
+
+/// The rest of yesterday's best whole-match path.
+struct Carry {
+    /// The day `plans[0]` answers.
+    day: u32,
+    /// Where yesterday's replay left every agent: `(col, row, fuel)`.
+    at: Vec<(i32, i32, u32)>,
+    plans: Vec<AgentActions>,
+}
+
+/// A day plan on the way from a root to a beam node.
+struct Link {
+    plan: AgentActions,
+    prev: Option<Arc<Link>>,
+}
+
+fn standing(state: &MatchState) -> Vec<(i32, i32, u32)> {
+    state.agents.iter().map(|a| (a.pos.col, a.pos.row, a.fuel)).collect()
 }
 
 const NONE: u32 = u32::MAX;
@@ -994,6 +1031,10 @@ impl ConvoyCandidate {
 struct Node {
     root: usize,
     state: MatchState,
+    /// Day plans played since the root's day.
+    path: Option<Arc<Link>>,
+    /// A carried path this node still follows, and the next plan in it.
+    script: Option<(Arc<Vec<AgentActions>>, usize)>,
 }
 
 fn rank(node: &Node) -> ((usize, u32, u32), u32) {
@@ -1028,7 +1069,7 @@ impl ConvoyCandidate {
         roots: usize,
         depth: u32,
         until: Option<Instant>,
-    ) -> (Vec<Option<Total>>, u32) {
+    ) -> (Vec<Option<(Total, Option<Arc<Link>>)>>, u32) {
         let threads = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 8);
         let mut reached = 0;
         for _ in 0..depth {
@@ -1049,6 +1090,14 @@ impl ConvoyCandidate {
             if let Some(k) = nodes.iter().position(|n| n.root == 0).filter(|&k| k >= self.width) {
                 nodes.swap(self.width - 1, k);
             }
+            // So does the carried path, one slot above it.
+            if self.width >= 2 {
+                if let Some(k) =
+                    nodes.iter().position(|n| n.script.is_some()).filter(|&k| k >= self.width - 1)
+                {
+                    nodes.swap(self.width - 2, k);
+                }
+            }
             nodes.truncate(self.width);
             let next = std::sync::atomic::AtomicUsize::new(0);
             let nodes_ref = &nodes;
@@ -1064,13 +1113,35 @@ impl ConvoyCandidate {
                                 }
                                 let node = &nodes_ref[k];
                                 let plans = self.day_plans(&node.state, false, until);
-                                mine.push((
-                                    k,
-                                    plans
-                                        .into_iter()
-                                        .map(|p| Node { root: node.root, state: p.state })
-                                        .collect(),
-                                ));
+                                let mut grown: Vec<Node> = plans
+                                    .into_iter()
+                                    .map(|p| Node {
+                                        root: node.root,
+                                        state: p.state,
+                                        path: Some(Arc::new(Link {
+                                            plan: p.plan,
+                                            prev: node.path.clone(),
+                                        })),
+                                        script: None,
+                                    })
+                                    .collect();
+                                if let Some((script, at)) = &node.script {
+                                    let scripted = script
+                                        .get(*at)
+                                        .and_then(|plan| play(&node.state, plan.clone()));
+                                    if let Some(p) = scripted {
+                                        grown.push(Node {
+                                            root: node.root,
+                                            state: p.state,
+                                            path: Some(Arc::new(Link {
+                                                plan: p.plan,
+                                                prev: node.path.clone(),
+                                            })),
+                                            script: Some((Arc::clone(script), at + 1)),
+                                        });
+                                    }
+                                }
+                                mine.push((k, grown));
                             }
                         })
                     })
@@ -1090,11 +1161,11 @@ impl ConvoyCandidate {
             nodes = grown;
             reached += 1;
         }
-        let mut best = vec![None; roots];
+        let mut best: Vec<Option<(Total, Option<Arc<Link>>)>> = vec![None; roots];
         for node in &nodes {
             let score = total(&node.state);
-            if best[node.root].is_none_or(|b| score > b) {
-                best[node.root] = Some(score);
+            if best[node.root].as_ref().is_none_or(|b| score > b.0) {
+                best[node.root] = Some((score, node.path.clone()));
             }
         }
         (best, reached)
@@ -1120,10 +1191,31 @@ impl Solver for ConvoyCandidate {
         if pool.is_empty() {
             return self.fleet.decide(ctx);
         }
+        // Yesterday's path, if today starts where its replay said it would.
+        let carried = self
+            .carry
+            .lock()
+            .ok()
+            .and_then(|mut c| c.take())
+            .filter(|c| self.keep && c.day == ctx.day && c.at == standing(ctx.state));
+        let mut script: Option<(usize, Arc<Vec<AgentActions>>)> = None;
+        if let Some(mut c) = carried {
+            if !c.plans.is_empty() {
+                let first = c.plans.remove(0);
+                if let Some(played) = play(ctx.state, first) {
+                    let root = pool.iter().position(|o| o.plan == played.plan).unwrap_or_else(|| {
+                        pool.push(played);
+                        pool.len() - 1
+                    });
+                    script = Some((root, Arc::new(c.plans)));
+                }
+            }
+        }
         let remaining = ctx.state.setting.num_days.saturating_sub(ctx.day + 1);
         let depth = self.depth.min(remaining);
         // Each road forecast gets an equal share of what is left.
         let mut sums: Vec<Option<Total>> = vec![Some((0, 0, 0)); pool.len()];
+        let mut paths: Vec<Option<Arc<Link>>> = vec![None; pool.len()];
         let mut complete = true;
         for (k, &busy) in self.scenarios.iter().enumerate() {
             let until = window.map(|w| {
@@ -1139,13 +1231,21 @@ impl Solver for ConvoyCandidate {
                     if busy {
                         congest(&mut state);
                     }
-                    Node { root, state }
+                    let script = script
+                        .as_ref()
+                        .filter(|(r, _)| *r == root)
+                        .map(|(_, plans)| (Arc::clone(plans), 0));
+                    Node { root, state, path: None, script }
                 })
                 .collect();
             let (best, reached) = self.ahead(nodes, pool.len(), depth, until);
             complete &= reached == depth;
-            for (sum, got) in sums.iter_mut().zip(best) {
-                *sum = sum.zip(got).map(|(a, b)| (a.0 + b.0, a.1 + b.1, a.2 + b.2));
+            for (root, (sum, got)) in sums.iter_mut().zip(best).enumerate() {
+                // The path to carry is the first forecast's.
+                if k == 0 {
+                    paths[root] = got.as_ref().and_then(|g| g.1.clone());
+                }
+                *sum = sum.zip(got).map(|(a, b)| (a.0 + b.0.0, a.1 + b.0.1, a.2 + b.0.2));
             }
         }
         // Leave `fleet`'s plan only for a strictly better whole-match score,
@@ -1163,6 +1263,36 @@ impl Solver for ConvoyCandidate {
             elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
             "convoy day plan"
         );
+        if std::env::var_os("CONVOY_DEBUG").is_some() {
+            eprintln!(
+                "day {} pool {} complete {} chosen {} sum_chosen {:?} sum_fleet {:?} script_root {:?} sum_script {:?} today {:?}",
+                ctx.day,
+                pool.len(),
+                complete,
+                best,
+                sums[best],
+                sums[0],
+                script.as_ref().map(|s| s.0),
+                script.as_ref().map(|s| sums[s.0]),
+                pool[best].today(),
+            );
+        }
+        if self.keep {
+            let mut plans = Vec::new();
+            let mut link = paths[best].take();
+            while let Some(l) = link {
+                plans.push(l.plan.clone());
+                link = l.prev.clone();
+            }
+            plans.reverse();
+            if let Ok(mut slot) = self.carry.lock() {
+                *slot = (!plans.is_empty()).then(|| Carry {
+                    day: ctx.day + 1,
+                    at: standing(&pool[best].state),
+                    plans,
+                });
+            }
+        }
         pool.swap_remove(best).plan
     }
 }
