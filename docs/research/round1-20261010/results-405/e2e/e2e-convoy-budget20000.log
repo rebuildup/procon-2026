@@ -1,0 +1,6 @@
+{"verdict": "PASS", "case": "round1-match3.case.json", "size": "16x16", "agents": 4, "days_total": 5, "missed_days": [], "exit_codes": [["exit", 0]], "wall_seconds": 254.6, "kinds_accepted": [1, 0, 0, 0], "record": {"runs": ["20261010T084850Z-p19382"], "event_lines": 25, "days_with_plan": [0, 1, 2, 3, 4], "days_observed": [0, 1, 2, 3, 4], "continues": [null], "problems": []}}
+  day 0 accepted posts=1 answer=11.074s margin=48.474s
+  day 1 accepted posts=1 answer=6.866s margin=52.598s
+  day 2 accepted posts=1 answer=6.516s margin=53.072s
+  day 3 accepted posts=1 answer=5.48s margin=53.578s
+  day 4 accepted posts=1 answer=4.102s margin=55.465s
