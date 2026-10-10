@@ -14,11 +14,12 @@
 //!
 //! The observer side ([`HttpLog`] as a [`protocol::http_client::HttpObserver`])
 //! runs on the task that talks to the server, so it does one thing: a
-//! `try_send` into a bounded queue. Formatting, masking, the console write
-//! and the file write (with `fsync` per entry) all happen on a writer
-//! thread. A console that stops accepting output (a paused Windows console
-//! window) or a failing disk therefore cannot delay a request; a full queue
-//! drops the entry and counts it.
+//! `try_send` into a bounded queue. A writer thread formats, masks and
+//! appends to the file (with `fsync` per entry), then hands the readable
+//! copy to a third thread that owns the console. A console that stops
+//! accepting output (a paused Windows console window) therefore delays
+//! neither a request nor the file; a failing disk delays neither a request
+//! nor the console. A full queue drops the entry and counts it.
 //!
 //! # Secrets
 //!
@@ -31,7 +32,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -104,6 +105,11 @@ enum Msg {
     Flush(SyncSender<()>),
 }
 
+enum ConsoleMsg {
+    Text(String),
+    Flush(SyncSender<()>),
+}
+
 /// Where the readable copy goes. `stderr` in the binary; a buffer in tests.
 pub type Console = Box<dyn Write + Send>;
 
@@ -113,8 +119,11 @@ pub type Console = Box<dyn Write + Send>;
 pub struct HttpLog {
     tx: SyncSender<Msg>,
     path: PathBuf,
-    dropped: AtomicU64,
+    dropped: Arc<AtomicU64>,
     write_errors: Arc<AtomicU64>,
+    /// The most recent exchange did not fit in the queue, so a decode
+    /// failure reported next has no entry to refer to.
+    last_exchange_dropped: AtomicBool,
 }
 
 impl HttpLog {
@@ -134,12 +143,18 @@ impl HttpLog {
         let path = dir.join("http.jsonl");
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
         let write_errors = Arc::new(AtomicU64::new(0));
+        let dropped = Arc::new(AtomicU64::new(0));
         let (tx, rx) = sync_channel(QUEUE_CAPACITY);
+        let (console_tx, console_rx) = sync_channel(QUEUE_CAPACITY);
+        std::thread::Builder::new()
+            .name("http-log-console".to_owned())
+            .spawn(move || run_console(console, &console_rx))?;
         let writer = Writer {
             run_id: run_id.to_owned(),
             path: path.clone(),
             file: Some(file),
-            console,
+            console: console_tx,
+            dropped: Arc::clone(&dropped),
             secrets,
             n: 0,
             day: None,
@@ -147,7 +162,13 @@ impl HttpLog {
             last_complaint: None,
         };
         std::thread::Builder::new().name("http-log".to_owned()).spawn(move || writer.run(&rx))?;
-        Ok(Arc::new(Self { tx, path, dropped: AtomicU64::new(0), write_errors }))
+        Ok(Arc::new(Self {
+            tx,
+            path,
+            dropped,
+            write_errors,
+            last_exchange_dropped: AtomicBool::new(false),
+        }))
     }
 
     /// The `http.jsonl` path.
@@ -162,10 +183,12 @@ impl HttpLog {
         (self.dropped.load(Ordering::Relaxed), self.write_errors.load(Ordering::Relaxed))
     }
 
-    fn send(&self, msg: Msg) {
-        if self.tx.try_send(msg).is_err() {
+    fn send(&self, msg: Msg) -> bool {
+        let queued = self.tx.try_send(msg).is_ok();
+        if !queued {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
+        queued
     }
 
     /// Wait until everything queued so far is printed and on disk, for at
@@ -194,10 +217,17 @@ impl HttpLog {
 
 impl HttpObserver for HttpLog {
     fn exchange(&self, exchange: HttpExchange) {
-        self.send(Msg::Exchange(Box::new(exchange)));
+        let queued = self.send(Msg::Exchange(Box::new(exchange)));
+        self.last_exchange_dropped.store(!queued, Ordering::Relaxed);
     }
 
     fn decode_failed(&self, error: &str) {
+        // Without its exchange the failure would be pinned on the request
+        // before it; count it as lost instead.
+        if self.last_exchange_dropped.load(Ordering::Relaxed) {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
         self.send(Msg::DecodeFailed(error.to_owned()));
     }
 }
@@ -207,7 +237,8 @@ struct Writer {
     run_id: String,
     path: PathBuf,
     file: Option<File>,
-    console: Console,
+    console: SyncSender<ConsoleMsg>,
+    dropped: Arc<AtomicU64>,
     secrets: Vec<Secret>,
     n: u64,
     day: Option<i64>,
@@ -242,8 +273,11 @@ impl Writer {
                     }
                 }
                 Msg::Flush(ack) => {
-                    let _ = self.console.flush();
-                    let _ = ack.try_send(());
+                    // The console thread acknowledges once it has printed
+                    // everything before this point. If it is stuck, the
+                    // caller's `flush` times out — it is never waited for
+                    // here.
+                    let _ = self.console.try_send(ConsoleMsg::Flush(ack));
                 }
             }
         }
@@ -336,24 +370,29 @@ impl Writer {
         entry
     }
 
+    fn print(&self, text: String) {
+        if self.console.try_send(ConsoleMsg::Text(text)).is_err() {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// File first: the durable copy must not wait for a console.
     fn emit(&mut self, entry: &HttpLogEntry) {
-        let _ = self.console.write_all(render(entry).as_bytes());
-        let _ = self.console.flush();
         let result = serde_json::to_string(entry).map_err(io::Error::other).and_then(|mut line| {
             line.push('\n');
             self.append(line.as_bytes())
         });
+        self.print(render(entry));
         if let Err(error) = result {
             self.write_errors.fetch_add(1, Ordering::Relaxed);
             self.file = None;
             let due = self.last_complaint.is_none_or(|at| at.elapsed() >= Duration::from_secs(5));
             if due {
                 self.last_complaint = Some(Instant::now());
-                let _ = writeln!(
-                    self.console,
-                    "http-log: writing {} failed ({error}). The match continues.",
+                self.print(format!(
+                    "http-log: writing {} failed ({error}). The match continues.\n",
                     self.path.display()
-                );
+                ));
             }
         }
     }
@@ -375,6 +414,23 @@ impl Writer {
         let Some(file) = self.file.as_mut() else { return Ok(()) };
         file.write_all(bytes)?;
         file.sync_data()
+    }
+}
+
+/// The console thread: the only place that touches the console, so a
+/// console that blocks holds up nothing else.
+fn run_console(mut console: Console, rx: &Receiver<ConsoleMsg>) {
+    while let Ok(msg) = rx.recv() {
+        match msg {
+            ConsoleMsg::Text(text) => {
+                let _ = console.write_all(text.as_bytes());
+                let _ = console.flush();
+            }
+            ConsoleMsg::Flush(ack) => {
+                let _ = console.flush();
+                let _ = ack.try_send(());
+            }
+        }
     }
 }
 

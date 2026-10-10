@@ -200,6 +200,10 @@ function Invoke-Start([string]$ExePath) {
         throw '別の procon.exe が動いています。二重起動はできません。'
     }
     Disable-QuickEdit
+    $before = @()
+    if (Test-Path -LiteralPath $RecordDir) {
+        $before = @(Get-ChildItem -LiteralPath $RecordDir -Directory | ForEach-Object { $_.Name })
+    }
     $began = Get-Date
     $restarts = 0
     while ($true) {
@@ -219,11 +223,18 @@ function Invoke-Start([string]$ExePath) {
         }
         Start-Sleep -Seconds 1
     }
-    $latest = Get-LatestRun
-    if ($latest) {
-        Write-Host "記録: $latest"
-        & $ExePath record show $latest
+    # 再起動があると run ディレクトリが複数できる。今回の起動で増えたもののうち、
+    # 試合のイベントを持つものを古い順にすべて表示する（最後の空の再起動だけを見せない）。
+    $runs = @()
+    if (Test-Path -LiteralPath $RecordDir) {
+        $runs = @(Get-ChildItem -LiteralPath $RecordDir -Directory | Sort-Object Name |
+                Where-Object { ($before -notcontains $_.Name) -and (Test-Path (Join-Path $_.FullName 'events.jsonl')) })
     }
+    foreach ($run in $runs) {
+        Write-Host "記録: $($run.FullName)"
+        & $ExePath record show $run.FullName
+    }
+    if ($runs.Count -eq 0) { Write-Host "今回の起動では試合の記録ができていません: $RecordDir" -ForegroundColor Yellow }
     Write-Host "HTTP 通信ログ: $HttpLogDir"
 }
 

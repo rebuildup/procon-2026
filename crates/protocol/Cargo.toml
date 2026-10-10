@@ -22,6 +22,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Only used to hand a buffered body back to the decoders when an
 # `HttpObserver` is attached (Issue #396); already in the tree via reqwest.
 http = "1"
+bytes = "1"
 
 [dev-dependencies]
 proptest = "1"

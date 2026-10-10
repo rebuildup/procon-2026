@@ -411,3 +411,131 @@ async fn a_log_that_cannot_be_written_does_not_disturb_requests() {
     assert_eq!(console.matches("-> 200 OK").count(), 3);
     assert!(console.contains("http-log: writing"));
 }
+
+/// A server that sends a status line and headers, promises more body than it
+/// delivers, and hangs up. Returns its URL and the number of connections it
+/// has accepted.
+async fn spawn_truncating(status_line: &'static str) -> (String, Arc<Mutex<u32>>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let url = format!("http://{}", listener.local_addr().expect("addr"));
+    let connections = Arc::new(Mutex::new(0_u32));
+    let counter = connections.clone();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            *counter.lock().expect("counter") += 1;
+            tokio::spawn(async move {
+                let mut request = [0_u8; 4096];
+                let _ = socket.read(&mut request).await;
+                let head = format!(
+                    "{status_line}\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n{{\"day\":"
+                );
+                let _ = socket.write_all(head.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            });
+        }
+    });
+    (url, connections)
+}
+
+/// A response body that breaks off must be handled the same with and without
+/// the log: the log reads bodies earlier than the decoders do, and that must
+/// not turn into extra requests or a different verdict.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_body_that_breaks_off_is_handled_the_same_with_and_without_the_log() {
+    // 200 on a JSON endpoint: a transport error, and no second request.
+    for with_log in [false, true] {
+        let (url, connections) = spawn_truncating("HTTP/1.1 200 OK").await;
+        let logged = with_log.then(start_log);
+        let result = client(&url, logged.as_ref(), 3).get_match_state().await;
+        assert!(matches!(result, Err(HttpClientError::Transport(_))), "log={with_log}: {result:?}");
+        assert_eq!(
+            *connections.lock().expect("counter"),
+            1,
+            "log={with_log}: the GET was repeated"
+        );
+        if let Some(logged) = logged.as_ref() {
+            let all = entries(logged);
+            assert_eq!(all.len(), 1);
+            assert_eq!(all[0].result, "failed");
+            assert_eq!(all[0].failure.as_deref(), Some("body"));
+            assert_eq!(all[0].status, Some(200), "the status that did arrive is kept");
+            assert!(logged.sink.text().contains("-> FAILED body after status 200 OK"));
+        }
+    }
+
+    // 200 on POST /agent, whose body nobody reads: still a success.
+    for with_log in [false, true] {
+        let (url, connections) = spawn_truncating("HTTP/1.1 200 OK").await;
+        let logged = with_log.then(start_log);
+        let kinds = vec![protocol::match_config::AgentKind::KIND_0; 4];
+        let result = client(&url, logged.as_ref(), 3).submit_agent(kinds).await;
+        assert!(result.is_ok(), "log={with_log}: {result:?}");
+        assert_eq!(*connections.lock().expect("counter"), 1);
+    }
+
+    // 503: the status drives the retries, as it does without the log.
+    for with_log in [false, true] {
+        let (url, connections) = spawn_truncating("HTTP/1.1 503 Service Unavailable").await;
+        let logged = with_log.then(start_log);
+        let result = client(&url, logged.as_ref(), 2).get_match_state().await;
+        assert!(
+            matches!(result, Err(HttpClientError::Http { status: 503, .. })),
+            "log={with_log}: {result:?}"
+        );
+        assert_eq!(*connections.lock().expect("counter"), 3, "log={with_log}: 1 try + 2 retries");
+    }
+}
+
+/// A console that stops accepting output must not stop the file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stuck_console_does_not_stop_the_file() {
+    struct Stuck(Arc<std::sync::atomic::AtomicBool>);
+    impl Write for Stuck {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            while self.0.load(std::sync::atomic::Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let seen = Seen::default();
+    let url = spawn(&seen).await;
+    let root = tempfile::tempdir().expect("tempdir");
+    let blocked = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let log = HttpLog::start(
+        &root.path().join("logs"),
+        "run-stuck",
+        vec![Secret::new(TOKEN.to_owned())],
+        Box::new(Stuck(blocked.clone())),
+    )
+    .expect("log starts");
+
+    let c = MatchClient::builder(&url, TOKEN)
+        .retry_policy(RetryPolicy { max_retries: 0, backoff_millis: &[] })
+        .request_timeout(Duration::from_secs(2))
+        .observer(log.clone())
+        .build()
+        .expect("client");
+    for _ in 0..5 {
+        let ok: Value = c.get_json("/setting").await.expect("requests are not held up");
+        assert_eq!(ok, setting());
+    }
+    // The console is still blocked; the file must fill up regardless.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let (entries, _) = load_http_log(log.path()).expect("http.jsonl");
+        if entries.len() == 5 {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "the file waited for the console");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(!log.flush(Duration::from_millis(100)), "flush reports the stuck console");
+    blocked.store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(log.flush(FLUSH), "and completes once the console is back");
+}

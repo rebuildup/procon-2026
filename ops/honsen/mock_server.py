@@ -12,7 +12,8 @@ move, and no score exists. It proves that a binary starts, talks the
 protocol, answers every day and writes its records — nothing about plan
 quality. Use ops/honsen/e2e.py with the official server for that.
 
-Listens on 127.0.0.1 only. Exits by itself two seconds after the last day.
+Listens on 127.0.0.1 only. Exits by itself two seconds after the last day
+(or after --wait-seconds if no team ever registers).
 """
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,6 +29,8 @@ p.add_argument('--token', default='local-e2e-token')
 p.add_argument('--days', type=int, default=3)
 p.add_argument('--day-seconds', type=int, default=6)
 p.add_argument('--start-delay', type=int, default=2, help='seconds between POST /agent and the first day')
+p.add_argument('--wait-seconds', type=int, default=600,
+               help='give up if no team has posted its agent kinds this long after launch')
 p.add_argument('--summary', type=Path, help='write what the server saw to this JSON file on exit')
 a = p.parse_args()
 
@@ -111,11 +114,14 @@ class Handler(BaseHTTPRequestHandler):
 server = ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 print(f'mock contest server on http://127.0.0.1:{a.port} ({days} days x {a.day_seconds}s)', flush=True)
-deadline = time.time() + 600
-while time.time() < deadline:
+launched = time.time()
+while True:
     with lock:
         started = state['starts_at']
+    # Once the match has started it always runs to its end, however long it is.
     if started and time.time() > started + days * a.day_seconds + 2:
+        break
+    if not started and time.time() > launched + a.wait_seconds:
         break
     time.sleep(0.2)
 server.shutdown()

@@ -3,9 +3,9 @@
   "size": "24x24",
   "agents": 5,
   "days_total": 4,
-  "source_sha": "2984c208f8962e01a47668026ac135b50f0a9221",
+  "source_sha": "321d390850f6576be43d30488eb7904ea768b6ab",
   "server_sha256": "cd552d93980c6b2a503c859dedc0357666823451662381cfa886260f5a81e041",
-  "cli_sha256": "5346ede261746705f377ee9b62b2500d09e93615407ad065339cfea81ae05ff9",
+  "cli_sha256": "538c383da14ed384ddff0a5e11ae2b2622c523840be9c6c48de4a49d1f040045",
   "candidate": "fleet:budget=official:budget_ms=10000",
   "kinds_flag": "auto",
   "kinds_accepted": [
@@ -45,8 +45,8 @@
       "revisions": [
         1
       ],
-      "answer_seconds": 2.596,
-      "margin_seconds": 9.355
+      "answer_seconds": 2.587,
+      "margin_seconds": 9.327
     },
     {
       "day": 1,
@@ -56,8 +56,8 @@
       "revisions": [
         2
       ],
-      "answer_seconds": 2.61,
-      "margin_seconds": 8.707
+      "answer_seconds": 2.618,
+      "margin_seconds": 8.683
     },
     {
       "day": 2,
@@ -67,8 +67,8 @@
       "revisions": [
         3
       ],
-      "answer_seconds": 3.002,
-      "margin_seconds": 8.694
+      "answer_seconds": 2.994,
+      "margin_seconds": 8.678
     },
     {
       "day": 3,
@@ -79,15 +79,15 @@
         4
       ],
       "answer_seconds": 2.587,
-      "margin_seconds": 9.103
+      "margin_seconds": 9.085
     }
   ],
   "missed_days": [],
-  "wall_seconds": 49.2,
+  "wall_seconds": 48.9,
   "limitation": "Official simple server on localhost, idle opponents; proves protocol acceptance, not score.",
   "record": {
     "runs": [
-      "20261010T022747Z-p67520"
+      "20261010T024956Z-p85198"
     ],
     "event_lines": 23,
     "days_with_plan": [

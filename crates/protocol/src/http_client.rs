@@ -259,8 +259,7 @@ impl MatchClient {
         let url = self.endpoint("/agent")?;
         let body: AgentKindsBody = kinds;
         let body_bytes = serde_json::to_vec(&body)?;
-        let response =
-            self.execute_with_retry(reqwest::Method::POST, &url, Some(body_bytes)).await?;
+        let response = self.execute(reqwest::Method::POST, &url, Some(body_bytes), true).await?;
         self.observed(handle_submit_response(response).await)
     }
 
@@ -436,12 +435,28 @@ impl MatchClient {
         Ok(combined)
     }
 
-    /// Dispatch a request, retrying on transient failures.
+    /// Dispatch a request whose response body the caller will read.
     async fn execute_with_retry(
         &self,
         method: reqwest::Method,
         url: &str,
         body: Option<Vec<u8>>,
+    ) -> Result<reqwest::Response, HttpClientError> {
+        self.execute(method, url, body, false).await
+    }
+
+    /// Dispatch a request, retrying on transient failures.
+    ///
+    /// `body_unused_on_success` is set by callers that never read the body
+    /// of a 2xx answer (`POST /agent`). It only matters with an observer,
+    /// which reads every body in order to log it: a 2xx whose body breaks
+    /// off must then still count as the success it is without the observer.
+    async fn execute(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: Option<Vec<u8>>,
+        body_unused_on_success: bool,
     ) -> Result<reqwest::Response, HttpClientError> {
         // POST outcomes can be ambiguous: only reads may be replayed.
         let max_retries =
@@ -466,10 +481,18 @@ impl MatchClient {
             }
 
             let sent = match self.observer.as_deref() {
-                None => builder.send().await,
+                None => builder.send().await.map_err(|error| SendFailure { error, in_body: false }),
                 Some(observer) => {
-                    self.send_observed(observer, builder, &method, url, body.as_deref(), attempt)
-                        .await
+                    self.send_observed(
+                        observer,
+                        builder,
+                        &method,
+                        url,
+                        body.as_deref(),
+                        attempt,
+                        body_unused_on_success,
+                    )
+                    .await
                 }
             };
             match sent {
@@ -483,8 +506,12 @@ impl MatchClient {
                     }
                     return Ok(response);
                 }
-                Err(err) => {
-                    let transient = err.is_timeout() || err.is_connect() || err.is_request();
+                Err(SendFailure { error: err, in_body }) => {
+                    // A body that broke off is never repeated here: without
+                    // an observer that failure surfaces in the decoder,
+                    // after this loop, and the caller decides what to do.
+                    let transient =
+                        !in_body && (err.is_timeout() || err.is_connect() || err.is_request());
                     if transient && attempt < max_retries {
                         last_error = Some(HttpClientError::Transport(err));
                         continue;
@@ -502,8 +529,20 @@ impl MatchClient {
 
     /// Send one request for an observer: buffer the whole response, report
     /// it, and hand the decoders an equivalent response built from the
-    /// buffer. Errors keep their type (a broken body is still a transport
-    /// error, as it is when the decoder reads the body itself).
+    /// buffer.
+    ///
+    /// A body that breaks off is reported as a failure and then handled the
+    /// way the unobserved path would have handled it:
+    ///
+    /// - on a non-2xx status the caller only wants the status (the error
+    ///   classifier reads the body with `unwrap_or_default`), so the status
+    ///   is handed on with an empty body — retries on 5xx work as before;
+    /// - on a 2xx whose body the caller never reads (`POST /agent`), the
+    ///   success is handed on;
+    /// - otherwise the error is returned marked `in_body`, so it is not
+    ///   retried and reaches the caller as the same transport error the
+    ///   decoder would have produced.
+    #[allow(clippy::too_many_arguments, reason = "one call site; mirrors the request")]
     async fn send_observed(
         &self,
         observer: &dyn HttpObserver,
@@ -512,7 +551,8 @@ impl MatchClient {
         url: &str,
         body: Option<&[u8]>,
         attempt: usize,
-    ) -> Result<reqwest::Response, reqwest::Error> {
+        body_unused_on_success: bool,
+    ) -> Result<reqwest::Response, SendFailure> {
         let started_at = std::time::SystemTime::now();
         let began = std::time::Instant::now();
         let mut request_headers = vec![(TOKEN_HEADER.to_owned(), MASKED.to_owned())];
@@ -539,7 +579,7 @@ impl MatchClient {
                     error: error_chain(&err),
                     partial: None,
                 });
-                return Err(err);
+                return Err(SendFailure { error: err, in_body: false });
             }
         };
         let status = response.status();
@@ -558,11 +598,7 @@ impl MatchClient {
                     headers,
                     body: bytes.to_vec(),
                 });
-                let mut rebuilt = http::Response::new(reqwest::Body::from(bytes));
-                *rebuilt.status_mut() = status;
-                *rebuilt.version_mut() = version;
-                *rebuilt.headers_mut() = header_map;
-                Ok(reqwest::Response::from(rebuilt))
+                Ok(rebuild_response(status, version, header_map, bytes))
             }
             Err(err) => {
                 report(HttpOutcome::Failed {
@@ -570,7 +606,11 @@ impl MatchClient {
                     error: error_chain(&err),
                     partial: Some((status.as_u16(), headers)),
                 });
-                Err(err)
+                if !status.is_success() || body_unused_on_success {
+                    Ok(rebuild_response(status, version, header_map, bytes::Bytes::new()))
+                } else {
+                    Err(SendFailure { error: err, in_body: true })
+                }
             }
         }
     }
@@ -580,6 +620,27 @@ impl MatchClient {
         let code = status.as_u16();
         matches!(code, 408 | 425 | 429) || (500..600).contains(&code)
     }
+}
+
+/// Why a request produced no usable response.
+struct SendFailure {
+    error: reqwest::Error,
+    /// The status line and headers arrived; the body did not.
+    in_body: bool,
+}
+
+/// A response equivalent to the one that was buffered for the observer.
+fn rebuild_response(
+    status: reqwest::StatusCode,
+    version: reqwest::Version,
+    headers: reqwest::header::HeaderMap,
+    body: bytes::Bytes,
+) -> reqwest::Response {
+    let mut rebuilt = http::Response::new(reqwest::Body::from(body));
+    *rebuilt.status_mut() = status;
+    *rebuilt.version_mut() = version;
+    *rebuilt.headers_mut() = headers;
+    reqwest::Response::from(rebuilt)
 }
 
 /// Name the failure for the log: the distinction an operator acts on.
