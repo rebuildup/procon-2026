@@ -1,0 +1,16 @@
+{
+  "day": null,
+  "daysTotal": 3,
+  "error": null,
+  "lastUpdateUnix": 1791648532,
+  "revision": 3,
+  "revisions": [
+    1,
+    2,
+    3
+  ],
+  "schemaVersion": 1,
+  "server": "http://127.0.0.1:18440",
+  "solver": "candidate:sized:budget=official:budget_ms=2000:convoy_ms=1000:seed=42",
+  "status": "completed"
+}
