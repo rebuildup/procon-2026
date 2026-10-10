@@ -1395,3 +1395,41 @@ pub fn choose_kinds(
     };
     (chosen, trials)
 }
+
+#[cfg(test)]
+mod rarity_scope_tests {
+    use super::*;
+    use crate::case::CaseSpec;
+    use domain::PlayerId;
+
+    #[test]
+    fn initial_rarity_does_not_change_fixed_route_evaluation() {
+        let case: CaseSpec = serde_json::from_str(include_str!(
+            "../../../../docs/evidence/campaign-311/fleet-371/corpus-hard/hard-24-a4-d7-short-s9007.json"
+        ))
+        .unwrap();
+        let kinds = [AgentKind::Supply, AgentKind::Patrol, AgentKind::Patrol, AgentKind::Patrol];
+        let setting = case
+            .to_engine_setting_with_kinds(&PlayerId::new("player-a").unwrap(), Some(&kinds))
+            .unwrap();
+        let state = MatchState::new(setting).unwrap();
+        let steps = state.setting.day_steps_for(0);
+        let later: Vec<_> =
+            (1..state.setting.num_days).map(|day| state.setting.day_steps_for(day)).collect();
+        let baseline = World::new(&state, steps, &later, 0);
+        let initial_rarity = World::new(&state, steps, &later, 2);
+        let mut route = baseline.initial();
+        let mut rng = Rng(42);
+        for mutation in 0..128 {
+            let before = baseline.evaluate(&route);
+            let after = initial_rarity.evaluate(&route);
+            assert_eq!(before.today, after.today, "fixed route {mutation}");
+            assert_eq!(
+                (before.score, before.tomorrow_series),
+                (after.score, after.tomorrow_series),
+                "seeding must not change the score of fixed route {mutation}"
+            );
+            baseline.mutate(&mut route, &mut rng);
+        }
+    }
+}
