@@ -360,6 +360,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(id) => Some(build(id)?),
         None => None,
     };
+    // `rollouts=K` (portfolio): play the days after today K times, each with
+    // its own `cont` seed, and rank the options on the summed outcome.
+    let rollouts: u64 = args.get("rollouts", "1").parse()?;
+    let conts: Vec<Box<dyn Solver>> = match args.values.get("cont") {
+        Some(id) if rollouts > 1 => {
+            (0..rollouts).map(|k| build(&format!("{id}:seed={}", 1000 + k))).collect::<Result<_, _>>()?
+        }
+        _ => Vec::new(),
+    };
+    let threads: usize = args.get("threads", "8").parse()?;
     let total_days = state.num_days();
     let scripted: Option<Vec<AgentActions>> = (mode == "beam").then(|| {
         beam(
@@ -399,7 +409,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Every option plans today, then `cont` plays the days after it
             // under the forecast road state; threads stand in for the cores a
             // live coordinator would spread the options over.
-            let outcomes: Vec<(AgentActions, (usize, u32, u32), bool)> =
+            let outcomes: Vec<(AgentActions, (usize, u32, u32), bool)> = if conts.is_empty() {
                 std::thread::scope(|scope| {
                     let handles: Vec<_> = options
                         .iter()
@@ -426,7 +436,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         })
                         .collect();
                     handles.into_iter().map(|h| h.join().expect("option thread")).collect()
+                })
+            } else {
+                let firsts: Vec<(AgentActions, MatchState, bool)> =
+                    parallel(options.len(), threads, |o| {
+                        let plan = options[o].decide(&SolverContext::from_state(&state));
+                        let mut future = state.clone();
+                        let before = (future.illegal_action_count, future.rejected_response_count);
+                        play_day(&sim, &mut future, &plan);
+                        let clean = (future.illegal_action_count, future.rejected_response_count)
+                            == before;
+                        (plan, future, clean)
+                    });
+                let k = conts.len();
+                let scores = parallel(options.len() * k, threads, |j| {
+                    let mut future = firsts[j / k].1.clone();
+                    let mut ahead = 0;
+                    while !future.is_finished() && ahead < horizon {
+                        set_roads(&mut future, persist.then_some(&today));
+                        let next = conts[j % k].decide(&SolverContext::from_state(&future));
+                        play_day(&sim, &mut future, &next);
+                        ahead += 1;
+                    }
+                    score(&future)
                 });
+                firsts
+                    .into_iter()
+                    .enumerate()
+                    .map(|(o, (plan, _, clean))| {
+                        let sum = scores[o * k..(o + 1) * k]
+                            .iter()
+                            .fold((0, 0, 0), |a, s| (a.0 + s.0, a.1 + s.1, a.2 + s.2));
+                        (plan, sum, clean)
+                    })
+                    .collect()
+            };
             let best = (0..outcomes.len())
                 .rev()
                 .max_by_key(|&k| (outcomes[k].2, outcomes[k].1))
