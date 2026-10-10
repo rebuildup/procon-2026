@@ -1,0 +1,7 @@
+[2m2026-10-10T14:37:48.972937Z[0m [32m INFO[0m agent kind composition selected [3mkinds[0m[2m=[0mP,S
+[2m2026-10-10T14:37:48.973045Z[0m [32m INFO[0m offline candidate selected for the live run [3mcandidate[0m[2m=[0mfleet:budget=official:budget_ms=59000:adapt=off
+[2m2026-10-10T14:37:48.973050Z[0m [32m INFO[0m coordinator loop strategy selected [3msolver[0m[2m=[0m"candidate"
+[2m2026-10-10T14:37:48.976928Z[0m [32m INFO[0m waiting for the arena pre-match window [3mseconds[0m[2m=[0m251 [3mopens_at[0m[2m=[0m2026-10-10 14:42:00 UTC [3mstarts_at[0m[2m=[0m2026-10-10 14:45:00 UTC
+[2m2026-10-10T14:42:00.001612Z[0m [32m INFO[0m registering for the arena match [3mpath[0m[2m=[0m"/setting" [3mattempts_budget[0m[2m=[0m18
+[2m2026-10-10T14:42:10.187614Z[0m [32m INFO[0m arena registration confirmed in the lobby [3mattempts[0m[2m=[0m2 [3mmatch_id[0m[2m=[0m2021 [3mdeparting_at_unix[0m[2m=[0m1791643500
+[2m2026-10-10T14:42:10.187646Z[0m [32m INFO[0m arena registration complete [3mattempts[0m[2m=[0m2 [3mregistered_at[0m[2m=[0m2026-10-10 14:42:10.187646155 UTC [3mmatch_id[0m[2m=[0mSome("2021")

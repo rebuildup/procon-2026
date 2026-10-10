@@ -1,0 +1,309 @@
+A new release of infisical is available: 0.43.139 -> 0.43.140
+[90m2026-10-10T00:13:09+09:00[0m [32mINF[0m Injecting 1 Infisical secrets into your application process
+    Finished `release` profile [optimized] target(s) in 0.21s
+     Running `<repo>/.worktrees/arena-bf17fd6-target/release/procon coordinator --arena --next --exit-after-match --candidate 'anytime:budget_ms=15000:seed=42:budget=official'`
+[2m2026-10-09T15:13:09.953383Z[0m [32m INFO[0m agent kind composition selected [3mkinds[0m[2m=[0mP,S
+[2m2026-10-09T15:13:09.953793Z[0m [32m INFO[0m offline candidate selected for the live run [3mcandidate[0m[2m=[0manytime:budget_ms=15000:seed=42:budget=official
+[2m2026-10-09T15:13:09.953802Z[0m [32m INFO[0m coordinator loop strategy selected [3msolver[0m[2m=[0m"candidate"
+[2m2026-10-09T15:13:09.960992Z[0m [32m INFO[0m registering for the arena match [3mpath[0m[2m=[0m"/setting" [3mattempts_budget[0m[2m=[0m12
+[2m2026-10-09T15:13:09.961297Z[0m [34mDEBUG[0m starting new connection: https://procon37arena.online/
+[2m2026-10-09T15:13:09.973348Z[0m [34mDEBUG[0m connecting to 104.21.67.61:443
+[2m2026-10-09T15:13:09.984794Z[0m [34mDEBUG[0m connected to 104.21.67.61:443
+[2m2026-10-09T15:13:10.066256Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:10.066397Z[0m [32m INFO[0m arena registration confirmed in the lobby [3mattempts[0m[2m=[0m1 [3mmatch_id[0m[2m=[0m1909 [3mdeparting_at_unix[0m[2m=[0m1791558900
+[2m2026-10-09T15:13:10.066418Z[0m [32m INFO[0m arena registration complete [3mattempts[0m[2m=[0m1 [3mregistered_at[0m[2m=[0m2026-10-09 15:13:10.066417 UTC [3mmatch_id[0m[2m=[0mSome("1909")
+[2m2026-10-09T15:13:10.066477Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:10.134672Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:10.134731Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m1 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:12.137049Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:12.189676Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:12.189745Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m2 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:14.192059Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:14.250749Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:14.250810Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m3 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:16.252923Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:16.311174Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:16.311217Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m4 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:18.312219Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:18.362089Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:18.362143Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m5 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:20.363772Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:20.417503Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:20.417570Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m6 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:22.423122Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:22.478287Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:22.478354Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m7 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:24.480441Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:24.545586Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:24.545642Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m8 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:26.547807Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:26.600418Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:26.600492Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m9 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:28.602595Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:28.657065Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:28.657137Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m10 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:30.662212Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:30.717438Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:30.717500Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m11 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:32.721243Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:32.778087Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:32.778160Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m12 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:34.779916Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:34.831022Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:34.831091Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m13 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:36.833046Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:36.933867Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:36.934201Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m14 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:38.936245Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:39.030435Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:39.030487Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m15 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:41.031541Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:41.120665Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:41.120734Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m16 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:43.122189Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:43.225911Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:43.225992Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m17 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:45.227615Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:45.315407Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:45.315544Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m18 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:47.317315Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:47.416448Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:47.416473Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m19 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:49.418531Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:49.512187Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:49.512213Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m20 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:51.514057Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:51.606439Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:51.606507Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m21 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:53.608322Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:53.661217Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:53.661336Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m22 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:55.663977Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:55.715416Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:55.715484Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m23 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:57.717027Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:57.784430Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:57.784622Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m24 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:13:59.786764Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:59.834492Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:13:59.834525Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m25 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:01.836701Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:01.899011Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:01.899070Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m26 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:03.902574Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:03.969737Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:03.969790Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m27 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:05.971868Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:06.028752Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:06.028793Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m28 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:08.030995Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:08.080022Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:08.080081Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m29 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:10.082980Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:10.132662Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:10.132691Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m30 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:12.134302Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:12.190341Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:12.190459Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m31 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:14.192611Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:14.665913Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:14.666079Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m32 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:16.668334Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:16.771594Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:16.771736Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m33 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:18.773810Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:18.870679Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:18.870826Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m34 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:20.872681Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:20.976579Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:20.976634Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m35 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:22.978798Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:23.065049Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:23.065145Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m36 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:25.067657Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:25.242443Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:25.242554Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m37 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:27.244738Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:27.297025Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:27.297125Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m38 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:29.299036Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:29.356475Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:29.356666Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m39 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:31.359130Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:31.454563Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:31.454731Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m40 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:33.456124Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:33.554792Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:33.554930Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m41 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:35.556663Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:35.680979Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:35.681091Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m42 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:37.683301Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:37.744187Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:37.744300Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m43 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:39.746440Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:39.841777Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:39.841956Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m44 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:41.843368Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:41.940294Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:41.940475Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m45 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:43.941942Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:44.036081Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:44.036237Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m46 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:46.038457Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:46.136851Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:46.136991Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m47 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:48.138512Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:48.246512Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:48.246559Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m48 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:50.248317Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:50.327897Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:50.328022Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m49 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:52.329359Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:52.455965Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:52.456004Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m50 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:54.458065Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:54.521995Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:54.522035Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m51 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:56.524095Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:56.620959Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:56.620988Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m52 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:14:58.623051Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:58.720358Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:14:58.720379Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m53 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:00.722447Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:00.817736Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:00.817780Z[0m [34mDEBUG[0m GET /setting still 403; waiting for the first snapshot [3mattempt[0m[2m=[0m54 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:02.819923Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:02.913998Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:02.914096Z[0m [32m INFO[0m agent kinds selected for POST /agent [3mn_agents[0m[2m=[0m4 [3mkinds[0m[2m=[0mP,S,P,S [3msolver[0m[2m=[0mcandidate:anytime:budget_ms=15000:seed=42:budget=official
+[2m2026-10-09T15:15:02.914126Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:02.974743Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:02.974834Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:03.132675Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:03.132846Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m1 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:05.134560Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:05.226448Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:05.226633Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m2 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:07.228783Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:07.318356Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:07.318428Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m3 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:09.320093Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:09.377384Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:09.377608Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m4 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:11.379787Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:11.691127Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:11.691349Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m5 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:13.693404Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:13.884323Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:13.884549Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m6 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:15.886768Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:15.979690Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:15.979860Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m7 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:17.982077Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:18.032515Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:18.032716Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m8 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:20.034876Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:20.139395Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:20.139484Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m9 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:22.141595Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:22.236153Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:22.236316Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m10 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:24.238514Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:24.321923Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:24.322128Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m11 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:26.324365Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:26.388858Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:26.389072Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m12 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:28.390653Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:28.491741Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:28.491957Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m13 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:30.493163Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:30.591115Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:30.591301Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m14 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:32.591984Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:32.649862Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:32.649941Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m15 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:34.651688Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:34.703610Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:34.703683Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m16 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:36.705782Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:36.808276Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:36.808345Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m17 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:38.809484Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:38.900795Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:38.900893Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m18 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:40.902976Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:41.018264Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:41.018308Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m19 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:43.020389Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:43.168772Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:43.168819Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m20 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:45.174381Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:45.452631Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:45.452706Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m21 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:47.454908Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:47.511837Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:47.511968Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m22 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:49.514073Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:49.611119Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:49.611150Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m23 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:51.613208Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:51.711598Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:51.711632Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m24 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:53.713685Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:53.779061Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:53.779099Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m25 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:55.780297Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:55.886418Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:55.886455Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m26 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:15:57.888519Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:58.094128Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:15:58.094180Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m27 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:16:00.096244Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:00.198829Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:00.198858Z[0m [34mDEBUG[0m waiting for `starts_at` to flip positive [3mattempt[0m[2m=[0m28 [3mmax[0m[2m=[0m300
+[2m2026-10-09T15:16:02.201750Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:02.298712Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:02.298766Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:02.347243Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:02.849311Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:02.918041Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:03.420094Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:03.479857Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:03.981943Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:04.031063Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:04.533144Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:04.591478Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:05.093478Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:05.190623Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:06.436564Z[0m [32m INFO[0m plan generated [3mcandidate[0m[2m=[0manytime:budget_ms=15000:seed=42:budget=official [3mn_agents[0m[2m=[0m4 [3mday_steps[0m[2m=[0m37 [3mmoves[0m[2m=[0m[27, 25, 23, 25] [3mwaits[0m[2m=[0m[10, 12, 14, 12]
+[2m2026-10-09T15:16:06.436611Z[0m [34mDEBUG[0m submitting plan [3mday[0m[2m=[0m0 [3mtraffic_entries[0m[2m=[0m72 [3mnon_smooth[0m[2m=[0m[] [3mbody[0m[2m=[0m[[3, 2, 4, 3, 3, 4, 4, 3, 3, 0, 5, 5, 5, 5, 5, 0, 0, 5, 2, 3, 2, 1, 1, 0, 0, 5, 5, -2], [5, 5, 5, 5, 0, 0, 1, 0, 0, 5, 0, 0, 1, 1, 0, 1, 5, 2, 1, 1, 2, 2, 2, 4, 4, -7], [3, 4, 1, 1, 0, 0, 5, 5, 0, 1, 1, 1, 1, 0, 5, 2, 1, 1, 2, 2, 2, 4, 4, -7], [0, 1, 1, 2, 3, 3, 3, 4, -1, 5, 5, 5, 5, 5, 0, 0, 5, 2, 3, 2, 1, 1, 0, 0, 5, 5, -2]]
+[2m2026-10-09T15:16:06.436645Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:16:06.498519Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:17:05.501016Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:17:05.600915Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:17:06.197386Z[0m [32m INFO[0m plan generated [3mcandidate[0m[2m=[0manytime:budget_ms=15000:seed=42:budget=official [3mn_agents[0m[2m=[0m4 [3mday_steps[0m[2m=[0m38 [3mmoves[0m[2m=[0m[23, 27, 27, 23] [3mwaits[0m[2m=[0m[15, 11, 11, 15]
+[2m2026-10-09T15:17:06.197435Z[0m [34mDEBUG[0m submitting plan [3mday[0m[2m=[0m1 [3mtraffic_entries[0m[2m=[0m72 [3mnon_smooth[0m[2m=[0m[(96, 1), (130, 1), (177, 1), (211, 1), (215, 1)] [3mbody[0m[2m=[0m[[-1, 2, 3, 2, 3, 4, 4, 3, 3, 3, 1, 2, 2, 2, 0, 0, 1, 2, 2, 0, 5, 0, 0, 1, -3], [-1, 1, 1, 5, 5, 4, 4, 4, 0, 5, 3, 4, 3, 3, 3, 2, 3, 2, 2, 1, 2, 3, 3, 3, 3, 5, 5, 4, -2], [-1, 1, 1, 5, 5, 4, 4, 4, 0, 5, 3, 4, 3, 3, 3, 2, 3, 2, 2, 1, 2, 3, 3, 3, 3, 5, 5, 4, -2], [-1, 2, 3, 2, 3, 4, 4, 3, 3, 3, 1, 2, 2, 2, 0, 0, 1, 2, 2, 0, 5, 0, 0, 1, -3]]
+[2m2026-10-09T15:17:06.197467Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:17:06.254442Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:18:05.256272Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:18:05.376648Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:18:06.266305Z[0m [32m INFO[0m plan generated [3mcandidate[0m[2m=[0manytime:budget_ms=15000:seed=42:budget=official [3mn_agents[0m[2m=[0m4 [3mday_steps[0m[2m=[0m36 [3mmoves[0m[2m=[0m[23, 20, 20, 23] [3mwaits[0m[2m=[0m[13, 16, 16, 13]
+[2m2026-10-09T15:18:06.266342Z[0m [34mDEBUG[0m submitting plan [3mday[0m[2m=[0m2 [3mtraffic_entries[0m[2m=[0m72 [3mnon_smooth[0m[2m=[0m[(3, 1), (4, 1), (21, 1), (33, 1), (65, 1), (81, 2), (96, 1), (97, 1), (118, 1), (129, 1), (130, 2), (135, 1), (144, 1), (152, 1), (160, 1), (163, 1), (168, 2), (177, 1), (179, 2), (183, 1), (184, 1), (193, 1), (195, 1), (211, 2), (213, 1), (215, 2), (227, 2), (228, 1), (229, 1), (230, 1)] [3mbody[0m[2m=[0m[[-1, 4, 5, 5, 5, 4, 5, 5, 0, 0, 1, 0, 1, 1, 0, 3, 2, 1, 1, 1, 2, 2, 4, 4], [-1, 1, 1, 4, 3, 3, 4, 5, 0, 0, 5, 5, 5, 0, 1, 1, 1, 2, 2, 2, 1, -2], [-1, 1, 1, 4, 3, 3, 4, 5, 0, 0, 5, 5, 5, 0, 1, 1, 1, 2, 2, 2, 1, -2], [-1, 4, 5, 5, 5, 4, 5, 5, 0, 0, 1, 0, 1, 1, 0, 3, 2, 1, 1, 1, 2, 2, 4, 4]]
+[2m2026-10-09T15:18:06.266367Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:18:06.367579Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:19:05.370012Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:19:05.476958Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:19:06.359886Z[0m [32m INFO[0m plan generated [3mcandidate[0m[2m=[0manytime:budget_ms=15000:seed=42:budget=official [3mn_agents[0m[2m=[0m4 [3mday_steps[0m[2m=[0m39 [3mmoves[0m[2m=[0m[23, 22, 22, 23] [3mwaits[0m[2m=[0m[16, 17, 17, 16]
+[2m2026-10-09T15:19:06.359928Z[0m [34mDEBUG[0m submitting plan [3mday[0m[2m=[0m3 [3mtraffic_entries[0m[2m=[0m72 [3mnon_smooth[0m[2m=[0m[(3, 1), (4, 1), (21, 1), (49, 1), (64, 1), (81, 1), (96, 1), (97, 1), (129, 1), (130, 1), (131, 1), (132, 1), (133, 1), (134, 1), (160, 1), (163, 1), (168, 1), (179, 1), (183, 1), (184, 1), (195, 1), (199, 1), (200, 2), (211, 1), (215, 2), (227, 1), (228, 1), (229, 1), (230, 1)] [3mbody[0m[2m=[0m[[-1, 1, 1, 5, 5, 4, 4, 4, 0, 5, 4, 3, 4, 3, 4, 3, 4, 3, 3, 3, 2, 0, 1, 1], [-1, 3, 4, 3, 2, 3, 3, 4, 4, 5, 5, 0, 1, 5, 4, 4, 4, 0, 0, 0, 0, 1, 1, -2], [-1, 3, 4, 3, 2, 3, 3, 4, 4, 5, 5, 0, 1, 5, 4, 4, 4, 0, 0, 0, 0, 1, 1, -2], [-1, 1, 1, 5, 5, 4, 4, 4, 0, 5, 4, 3, 4, 3, 4, 3, 4, 3, 3, 3, 2, 0, 1, 1]]
+[2m2026-10-09T15:19:06.359957Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:19:06.412284Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:20:05.419950Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:20:05.529213Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:20:06.925953Z[0m [32m INFO[0m plan generated [3mcandidate[0m[2m=[0manytime:budget_ms=15000:seed=42:budget=official [3mn_agents[0m[2m=[0m4 [3mday_steps[0m[2m=[0m43 [3mmoves[0m[2m=[0m[26, 26, 18, 18] [3mwaits[0m[2m=[0m[17, 17, 25, 25]
+[2m2026-10-09T15:20:06.926049Z[0m [34mDEBUG[0m submitting plan [3mday[0m[2m=[0m4 [3mtraffic_entries[0m[2m=[0m72 [3mnon_smooth[0m[2m=[0m[(3, 2), (4, 2), (21, 2), (33, 1), (49, 1), (64, 1), (81, 1), (96, 2), (112, 1), (131, 1), (132, 1), (133, 1), (134, 1), (144, 1), (151, 1), (160, 2), (168, 1), (177, 2), (183, 1), (184, 1), (193, 2), (195, 1), (197, 1), (199, 1), (200, 2), (201, 1), (211, 1), (214, 1), (227, 1), (228, 1), (230, 1), (245, 1)] [3mbody[0m[2m=[0m[[-1, 3, 4, 4, 3, 3, 3, 2, 2, 2, 1, 0, 0, 1, 1, 1, 0, 0, 2, 2, 2, 2, 5, 4, 4, 4, 3, -1], [-1, 3, 4, 4, 3, 3, 3, 2, 2, 2, 1, 0, 0, 1, 1, 1, 0, 0, 2, 2, 2, 2, 5, 4, 4, 4, 3, -1], [-1, 0, 5, 5, 1, 1, 0, 1, 1, 0, 5, 1, 2, 1, 2, 2, 2, 4, 4, -6], [-1, 0, 5, 5, 1, 1, 0, 1, 1, 0, 5, 1, 2, 1, 2, 2, 2, 4, 4, -6]]
+[2m2026-10-09T15:20:06.926112Z[0m [34mDEBUG[0m reuse idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:20:07.011622Z[0m [34mDEBUG[0m pooling idle connection for ("https", procon37arena.online)
+[2m2026-10-09T15:20:07.014036Z[0m [32m INFO[0m arena run recorded [3mstatus[0m[2m=[0mcompleted [3mpath[0m[2m=[0mtarget/arena/runs.jsonl [3mcandidate[0m[2m=[0m"anytime:budget_ms=15000:seed=42:budget=official"
+ARENA_EXIT=0

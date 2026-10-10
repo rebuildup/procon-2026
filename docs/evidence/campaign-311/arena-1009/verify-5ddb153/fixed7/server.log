@@ -1,0 +1,23 @@
+2026/10/10 05:42:11 INFO listening addr=127.0.0.1:51078
+2026/10/10 05:42:11 INFO agent kinds submitted team=0
+2026/10/10 05:42:14 INFO agent kinds closed startsAt=1791578535
+2026/10/10 05:42:15 INFO match started startsAt=1791578535
+2026/10/10 05:42:22 INFO actions submitted team=0 revision=1 t=7
+2026/10/10 05:42:30 INFO day advanced day=1
+2026/10/10 05:42:37 INFO actions submitted team=0 revision=2 t=22
+2026/10/10 05:42:45 INFO day advanced day=2
+2026/10/10 05:42:52 INFO actions submitted team=0 revision=3 t=37
+2026/10/10 05:43:00 INFO day advanced day=3
+2026/10/10 05:43:07 INFO actions submitted team=0 revision=4 t=52
+2026/10/10 05:43:15 INFO day advanced day=4
+2026/10/10 05:43:22 INFO actions submitted team=0 revision=5 t=67
+2026/10/10 05:43:30 INFO day advanced day=5
+2026/10/10 05:43:37 INFO actions submitted team=0 revision=6 t=82
+2026/10/10 05:43:45 INFO day advanced day=6
+2026/10/10 05:43:52 INFO actions submitted team=0 revision=7 t=97
+2026/10/10 05:44:00 INFO day advanced day=7
+2026/10/10 05:44:07 INFO actions submitted team=0 revision=8 t=112
+2026/10/10 05:44:15 INFO day advanced day=8
+2026/10/10 05:44:22 INFO actions submitted team=0 revision=9 t=127
+2026/10/10 05:44:30 INFO day advanced day=9
+2026/10/10 05:44:37 INFO actions submitted team=0 revision=10 t=142

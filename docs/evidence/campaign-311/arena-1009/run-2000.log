@@ -1,3 +1,5 @@
+A new release of infisical is available: 0.43.139 -> 0.43.140
+[90m2026-10-09T19:46:23+09:00[0m [32mINF[0m Injecting 1 Infisical secrets into your application process
     Finished `release` profile [optimized] target(s) in 0.09s
      Running `<repo>/target/release/procon coordinator --arena --next --exit-after-match --candidate 'anytime:budget_ms=5000:seed=42:budget=official'`
 [2m2026-10-09T10:46:23.915932Z[0m [32m INFO[0m agent kind composition selected [3mkinds[0m[2m=[0mP,S
