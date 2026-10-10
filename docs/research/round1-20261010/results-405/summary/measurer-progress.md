@@ -245,3 +245,21 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
 - [01:1x] **Batch A 開始（静穏確認済み・load 0.66・procon-eval 0 プロセス）**: `wsl-corpus/f3-clean-fuel/` — next-batch-plan バッチ A のとおり。判定基準: 全 54 runs scored・既知セルの完全一致・s5020 c8 fuel/mix 初記録。
 - [01:17] **Batch A 中断（証跡未書き出し）**: 開始 ~5 分後に新規セッション `arena-sized-e9e8af6` が worker 2 体（~180% CPU × 2）+ coordinator を起動、当方 worker は nice 15 で ~0.25 core に圧迫（0.66 → 12.63）。このままでは daySeconds invalid が再発するため停止。**静穏条件を緩和版として定義**: `procon-eval --worker` の他セッション起動 0 + load < 8 を連続 5 分確認後に Batch A 再実行（完全静穏は長く待てないため、worker CPU 配分が担保される水準を条件に緩和）。
 - [01:3x] **bail 分析ドキュメント確定**: `analysis/bail-435-wsl.md`（サブエージェント作成）。axis-4 改善の結論は頑健（parent の 20s 張付き + オーバーラン → bail ~5s は負荷ノイズより 1 桁大きい構造差）、残課題は s9012 B−23 の低負荷再実行確認。同時に `arena-sized-e9e8af6` が fleet@59s × fuel_mix の長時間バッチ（`eval-2034-ac`）を開始し静穏待ちが長期化 → **Batch B（F3-clocked）を負荷注記付き screen 実行に切り替え**（clocked は budget_ms 自己制限で daySeconds invalid にならず、同一実行内の大信号セル +37〜+56 は負荷ノイズ ±20 を超える。比仮説の「利得 ≈0」判定は負荷で偽陽性リスクがあるため確定判定は静穏再実行まで保留）。jobs 1・nice 19。
+- [02:4x] **Batch B（F3-clocked）完了**: `wsl-10s/f3-clocked-fuel/` — 全 54 runs success・illegal/fuel_short/rejected 0・timeout 0、maxday 10.0–10.6s（budget_ms 自己制限どおり・60s 日窓に余裕）。**load 8→27 変動（exp-fleet-split 並走）のため screen 実行・確定判定は静穏再実行まで保留**。
+  盤面別 B 利得（fuel / mix、同 chain アンカー比）:
+  | 盤面（比） | c4 fuel | c4 mix | c8 fuel | c8 mix |
+  |---|---|---|---|---|
+  | s9012 (1.0) | **+37** | **+40** | −2 | +23 |
+  | s9008 | −2 | +3 | **+20** | **+17** |
+  | s5023 (1.38) | +9 | **+32** | −18 | −2 |
+  | s9005 | 0 | +5 | +4 | +11 |
+  | s5001 | −10 | −1 | −8 | +1 |
+  | s5013 (2.78) | +1 | −2 | −1 | −2 |
+  | s5016 (2.72) | 0 | −2 | −1 | −10 |
+  | s5020 (3.0) | −1 | −14 | +2 | −12 |
+  | s9003 (1.0) | +1（**dV−1**） | +1（**dV−1**） | +1（**dV−1**） | +1（**dV−1**） |
+  - 合計: c4 fuel **+35** / c4 mix **+62** / c8 fuel −3 / c8 mix **+27**
+  - **D リスクセル新規: s9003（16×16・a3）で fuel 全変種が dV 106→105**（V 同点・B+1・辞書順では負けセル）。b10s 基準の fleet/chains8 dV106・convoy 105 の境界上の盤面で、clocked fuel が計画選択を動かして −1。**静穏 + seed 反転での確認が必須**（負荷起因の計画反転の可能性・決定論ではない）
+  - mix > fuel-only は clocked でも成立（c4 +62 vs +35、c8 +27 vs −3）— fuel 単独の非拘束盤面損（s5023 c8 −18 等）を mix が消す（README 機構どおり）
+  - 比仮説（利得が比 ≤1.5 に集中）は clocked screen では**非確認**: s5023（比1.38）で c4 mix +32 / c8 fuel −18 と分散、比 ≥2 の 3 盤面はほぼ中性。負荷ノイズが「≈0」判定を困難にするため静穏再実行で再判定
+  - 判定保留事項: s9003 dV−1 の再現性、s5020 c8 offline 欠落 2 セル（Batch A-slim）、比仮説の検証 27 盤面確認（`measure-63a7e5e` が進行）
