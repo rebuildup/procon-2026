@@ -128,3 +128,22 @@ chains16 @10s / fuel_need 系（F1〜F3）/ convoy 大盤面追加計測 / E3 �
 - chains8 full corpus: `b4-chains8-full`（#407 報告 16・branch `eval-convoy-415` @ `03c3ada`）
 
 本報告の数値は `target/eval-p1-s42/aggregate.json` から辞書順（V→D→B）比較を再計算し、PR #407 報告・チーム内共有値と一致することを確認済み（2026-10-11 00:22 JST）。
+
+---
+
+## 7. 最終確定（batch2 seed7 完了・2026-10-11 01:15 JST 追記）
+
+batch2（seed 7・125 レコード・01:06 完了）で §3 の打ち切り提案を確定した:
+
+| 対象 | seed42 | seed7 | **最終判定** |
+|---|---|---|---|
+| chains8 @10s | B+23・D−1 ×2 盤（s5014/s5016） | **B+24・劣化セルなし**（W11/T2/L3） | **B 利得は 2 seed 一貫（+23/+24）**。D−1 は seed42 のみの **seed 依存ノイズ**（s5014 は seed7 で D+2）。ただし **@59s 未確認のため本番設定変更の根拠にはならない**（採用基準どおり）→ **本選後の検証候補として記録し打ち切り** |
+| chains16 @10s | B−3 | B+15（ただし chains8 の +24 より低い） | **打ち切り確定**（両 seed で chains8 ≥ chains16・代替価値なし） |
+| fuel_need/fuel_mix | B−10 | B−2・D−1 ×1 盤 | **不採用確定**（両 seed で非正） |
+| convoy 20s | B−16・D−1 ×3 盤 | B−21・D−2 ×1 盤 | **不採用確定**（両 seed で辞書順劣化あり） |
+
+- V は全候補・全盤面・両 seed で **1 点も悪化なし**（24×24 盤 V=20・32×32 盤 V=27 に全候補一致）
+- timeout / illegal / fuel_short は全 run で 0
+- 詳細表は #425 の確定版報告（16:07Z・比較計測セッション）を参照
+
+**本番設定の最終判断: 変更なし**。`fleet:budget=official:budget_ms=59000:adapt=off` @ `13a0106` + `--kinds-auto` を維持。chains8 は B 利得が 2 seed 一貫しているものの、@59s での wall-clock 挙動と提出 margin の検証が本選前になし得ないため、採用基準（@10s 改善 × @59s 未確認 = 変更根拠にならず）により見送り。**本選後の最初の検証候補**: `fleet:budget=official:budget_ms=59000:adapt=off:chains=8` @ `63a7e5e` 以降。
