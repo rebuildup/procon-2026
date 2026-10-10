@@ -690,10 +690,12 @@ impl World {
     /// `intercept` for `midleg=on`: the supply stands on `cell` at `tick`
     /// and may also wait on a cell inside one of the patrol's legs, where
     /// the patrol is refuelled without stopping.
+    #[allow(clippy::too_many_arguments, reason = "the supply's state and the patrol's plan")]
     fn intercept_mid(
         &self,
         mid: &MidTables,
         line: &Timeline,
+        route: &[u16],
         m: usize,
         cell: usize,
         tick: u32,
@@ -750,6 +752,28 @@ impl World {
         if last.mid.is_some() {
             return None;
         }
+        if line.stalled {
+            // The tank does not cover the next leg, but it may cover the way
+            // to a cell on it where the supply can be waiting: set off and
+            // be refuelled there instead of standing still.
+            if let Some(&to) = route.get(line.next) {
+                let to = usize::from(to);
+                let within =
+                    mid.legs[m][last.node * self.nn + to].iter().find_map(|&(c, time, fuel)| {
+                        let at = last.dep + time;
+                        let r = reach(c as usize);
+                        (fuel <= line.fuel
+                            && r != NONE
+                            && at >= 1
+                            && at <= self.steps
+                            && tick + r <= at)
+                            .then_some((MidLeg { to, cell: c as usize, time, fuel }, at))
+                    });
+                if let Some((leg, at)) = within {
+                    return Some(Meet::Mid(k, leg, at));
+                }
+            }
+        }
         let r = reach(self.nodes[last.node]);
         if r == NONE {
             return None;
@@ -774,7 +798,9 @@ impl World {
                 let q = usize::from(q);
                 let escort = i + 1 == list.len();
                 let m = usize::from(sol.metric[q]);
-                let Some(meet) = self.intercept_mid(mid, &lines[q], m, cell, tick, escort) else {
+                let Some(meet) =
+                    self.intercept_mid(mid, &lines[q], &sol.routes[q], m, cell, tick, escort)
+                else {
                     continue;
                 };
                 let line = &mut lines[q];
