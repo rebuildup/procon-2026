@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "title": "第37回高専プロコン 競技部門 1回戦／第1～3試合の順位表示の転記",
+  "evidence_provenance": "event_display_screenshot",
+  "context": {
+    "notes": [
+      "参加試合の初期スポット配置および4車両位置が setting.json と符合するのは第3試合の盤面画像。第3試合の宇部3位を保存済みrun_idに紐づける。",
+      "各試合の順位画像は上位6名だけを表示。未表示順位や10人全員のスコアを推測しない。",
+      "盤面スクリーンショットは途中経過の画面であり、結果・完全行動履歴・公式初期設定ではない。",
+      "6枚のアップロード原本はPNG。GitHubにはWebP quality=88に再符号化した2048x1151画像を掲載し、原本PNG SHA256も残す。",
+      "時間は画面表示をそのままmm:ss文字列として記録し、CLIにおける単発 answer_ms と同一視しない。"
+    ],
+    "ranking_sort": "V desc, D desc, B desc, displayed_response_time asc"
+  },
+  "matches": [
+    {
+      "round": 1,
+      "match": 1,
+      "image_map": "screenshots/match-1-map.webp",
+      "image_results": "screenshots/match-1-results.webp",
+      "map_capture": "2/5日目、21/32 Step、残り00:26の時点",
+      "rank_top_six": [
+        {
+          "rank": 1,
+          "team": "松江",
+          "V": 10,
+          "D": 41,
+          "B": 55,
+          "T": "00:17"
+        },
+        {
+          "rank": 2,
+          "team": "石川",
+          "V": 10,
+          "D": 40,
+          "B": 50,
+          "T": "01:50"
+        },
+        {
+          "rank": 3,
+          "team": "大分",
+          "V": 10,
+          "D": 39,
+          "B": 56,
+          "T": "00:31"
+        },
+        {
+          "rank": 4,
+          "team": "神山",
+          "V": 10,
+          "D": 35,
+          "B": 44,
+          "T": "00:00"
+        },
+        {
+          "rank": 5,
+          "team": "舞鶴",
+          "V": 10,
+          "D": 32,
+          "B": 40,
+          "T": "00:25"
+        },
+        {
+          "rank": 6,
+          "team": "豊田",
+          "V": 10,
+          "D": 31,
+          "B": 41,
+          "T": "04:20"
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "match": 2,
+      "image_map": "screenshots/match-2-map.webp",
+      "image_results": "screenshots/match-2-results.webp",
+      "map_capture": "0/5日目、車種選択中、残り00:49の時点",
+      "rank_top_six": [
+        {
+          "rank": 1,
+          "team": "香川(高松)",
+          "V": 10,
+          "D": 46,
+          "B": 56,
+          "T": "00:01"
+        },
+        {
+          "rank": 2,
+          "team": "福井",
+          "V": 10,
+          "D": 46,
+          "B": 54,
+          "T": "03:23"
+        },
+        {
+          "rank": 3,
+          "team": "群馬",
+          "V": 10,
+          "D": 44,
+          "B": 55,
+          "T": "01:08"
+        },
+        {
+          "rank": 4,
+          "team": "長野",
+          "V": 10,
+          "D": 44,
+          "B": 51,
+          "T": "02:09"
+        },
+        {
+          "rank": 5,
+          "team": "近畿大",
+          "V": 10,
+          "D": 41,
+          "B": 44,
+          "T": "03:49"
+        },
+        {
+          "rank": 6,
+          "team": "弓削商船",
+          "V": 10,
+          "D": 39,
+          "B": 47,
+          "T": "00:04"
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "match": 3,
+      "image_map": "screenshots/match-3-map.webp",
+      "image_results": "screenshots/match-3-results.webp",
+      "map_capture": "1/5日目、残り00:54の時点（ステップ値の表示なし）",
+      "linked_run_id": "20261010T044644Z-p28796",
+      "linked_run_attribution": "盤面上のスポット位置及び車両初期配置と setting.json の照合",
+      "rank_top_six": [
+        {
+          "rank": 1,
+          "team": "ハノイ国家大",
+          "V": 10,
+          "D": 44,
+          "B": 57,
+          "T": "04:31"
+        },
+        {
+          "rank": 2,
+          "team": "新居浜",
+          "V": 10,
+          "D": 44,
+          "B": 55,
+          "T": "01:50"
+        },
+        {
+          "rank": 3,
+          "team": "宇部",
+          "V": 10,
+          "D": 44,
+          "B": 51,
+          "T": "00:54"
+        },
+        {
+          "rank": 4,
+          "team": "鶴岡",
+          "V": 10,
+          "D": 39,
+          "B": 53,
+          "T": "03:07"
+        },
+        {
+          "rank": 5,
+          "team": "奈良",
+          "V": 10,
+          "D": 38,
+          "B": 53,
+          "T": "00:04"
+        },
+        {
+          "rank": 6,
+          "team": "一関",
+          "V": 0,
+          "D": 0,
+          "B": 0,
+          "T": "05:00"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "index": 3,
+      "file": "screenshots/match-1-map.webp",
+      "source_name": "image(3).png",
+      "source_png_sha256": "f952334e518f59ca0c863552f254cd8c35fd9dd1c6c571418fa741f8e12aae6c",
+      "git_blob_sha": "60d6ac1ce2571154e914d6b7d414c2ced0853234"
+    },
+    {
+      "index": 4,
+      "file": "screenshots/match-1-results.webp",
+      "source_name": "image(4).png",
+      "source_png_sha256": "8ca63ac6ec6d63086e273b4f036b017733647ca1630891f62841710cd0db056a",
+      "git_blob_sha": "94e8ba03f816fabeb177b028340befeb37fbf18c"
+    },
+    {
+      "index": 5,
+      "file": "screenshots/match-2-map.webp",
+      "source_name": "image(5).png",
+      "source_png_sha256": "0e1c70f15eb29c4e15741cd3e05a69c91f851f32e90da0d8038cb8e8deb5a092",
+      "git_blob_sha": "97f4798cc79712963a38ba3dba890dfe5afb142f"
+    },
+    {
+      "index": 6,
+      "file": "screenshots/match-2-results.webp",
+      "source_name": "image(6).png",
+      "source_png_sha256": "99f70465f87c69fe3338a9977b06b9da85e1cbaab6791f2551e5f25ea31c11cb",
+      "git_blob_sha": "9179f60031680bf569e69525a97c2e9ce9972b45"
+    },
+    {
+      "index": 7,
+      "file": "screenshots/match-3-map.webp",
+      "source_name": "image(7).png",
+      "source_png_sha256": "85905e3d57f07fa9c5d2e64274ff2d45ad79807a16977bb6f8e4adeeedb254ac",
+      "git_blob_sha": "73697bbbc3da434db8c49d9211cab7a2355cc166"
+    },
+    {
+      "index": 8,
+      "file": "screenshots/match-3-results.webp",
+      "source_name": "image(8).png",
+      "source_png_sha256": "b9b800442ef9805e8085dff91c5d18c11804a7d0da60ab953772c90b98386aa3",
+      "git_blob_sha": "6260e08e1d01816105a977766c9e0de4ee5f794c"
+    }
+  ]
+}
