@@ -1,16 +1,17 @@
 {
   "schema_version": 1,
-  "title": "第37回高専プロコン 競技部門 1回戦／第1～3試合の順位表示の転記",
+  "title": "第37回高専プロコン 競技部門 1回戦／第1～6試合の順位表示の転記",
   "evidence_provenance": "event_display_screenshot",
   "context": {
     "notes": [
       "参加試合の初期スポット配置および4車両位置が setting.json と符合するのは第3試合の盤面画像。第3試合の宇部3位を保存済みrun_idに紐づける。",
-      "各試合の順位画像は上位6名だけを表示。未表示順位や10人全員のスコアを推測しない。",
+      "第1～6試合の順位画像は上位6名だけを表示。未表示順位や10人全員のスコアを推測しない。",
       "盤面スクリーンショットは途中経過の画面であり、結果・完全行動履歴・公式初期設定ではない。",
-      "6枚のアップロード原本はPNG。GitHubにはWebP quality=88に再符号化した2048x1151画像を掲載し、原本PNG SHA256も残す。",
+      "12枚のアップロード原本はPNG。GitHubにはWebP quality=88に再符号化した2048x1151画像を掲載し、原本PNG SHA256も残す。",
       "時間は画面表示をそのままmm:ss文字列として記録し、CLIにおける単発 answer_ms と同一視しない。"
     ],
-    "ranking_sort": "V desc, D desc, B desc, displayed_response_time asc"
+    "ranking_sort": "V desc, D desc, B desc, displayed_response_time asc",
+    "capture_coverage": "第1試合～第6試合：途中経過盤面と最終順位画面をそれぞれ1枚。第3試合以外は本プロジェクトの実戦ログに対応しない"
   },
   "matches": [
     {
@@ -185,6 +186,177 @@
           "T": "05:00"
         }
       ]
+    },
+    {
+      "round": 1,
+      "match": 4,
+      "image_map": "screenshots/match-4-map.webp",
+      "image_results": "screenshots/match-4-results.webp",
+      "map_capture": "1/5日目、残り00:37の時点（ステップ値の表示なし）",
+      "rank_top_six": [
+        {
+          "rank": 1,
+          "team": "明石",
+          "V": 10,
+          "D": 42,
+          "B": 64,
+          "T": "03:05"
+        },
+        {
+          "rank": 2,
+          "team": "茨城",
+          "V": 10,
+          "D": 39,
+          "B": 55,
+          "T": "00:23"
+        },
+        {
+          "rank": 3,
+          "team": "新モンゴル",
+          "V": 10,
+          "D": 36,
+          "B": 44,
+          "T": "00:18"
+        },
+        {
+          "rank": 4,
+          "team": "都立(品川)",
+          "V": 10,
+          "D": 35,
+          "B": 47,
+          "T": "01:15"
+        },
+        {
+          "rank": 5,
+          "team": "サレジオ",
+          "V": 10,
+          "D": 35,
+          "B": 46,
+          "T": "00:00"
+        },
+        {
+          "rank": 6,
+          "team": "米子",
+          "V": 10,
+          "D": 30,
+          "B": 39,
+          "T": "00:05"
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "match": 5,
+      "image_map": "screenshots/match-5-map.webp",
+      "image_results": "screenshots/match-5-results.webp",
+      "map_capture": "1/5日目、残り00:42の時点（ステップ値の表示なし）",
+      "rank_top_six": [
+        {
+          "rank": 1,
+          "team": "東京",
+          "V": 10,
+          "D": 44,
+          "B": 59,
+          "T": "03:03"
+        },
+        {
+          "rank": 2,
+          "team": "八戸",
+          "V": 10,
+          "D": 41,
+          "B": 51,
+          "T": "01:12"
+        },
+        {
+          "rank": 3,
+          "team": "モンゴル科技大",
+          "V": 10,
+          "D": 40,
+          "B": 47,
+          "T": "00:06"
+        },
+        {
+          "rank": 4,
+          "team": "富山(射水)",
+          "V": 10,
+          "D": 39,
+          "B": 49,
+          "T": "02:04"
+        },
+        {
+          "rank": 5,
+          "team": "釧路",
+          "V": 10,
+          "D": 39,
+          "B": 45,
+          "T": "01:40"
+        },
+        {
+          "rank": 6,
+          "team": "徳山",
+          "V": 10,
+          "D": 38,
+          "B": 44,
+          "T": "00:16"
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "match": 6,
+      "image_map": "screenshots/match-6-map.webp",
+      "image_results": "screenshots/match-6-results.webp",
+      "map_capture": "1/5日目、残り00:43の時点（ステップ値の表示なし）",
+      "rank_top_six": [
+        {
+          "rank": 1,
+          "team": "仙台(広瀬)",
+          "V": 10,
+          "D": 44,
+          "B": 54,
+          "T": "04:30"
+        },
+        {
+          "rank": 2,
+          "team": "長岡",
+          "V": 10,
+          "D": 39,
+          "B": 48,
+          "T": "00:42"
+        },
+        {
+          "rank": 3,
+          "team": "大島商船",
+          "V": 10,
+          "D": 36,
+          "B": 52,
+          "T": "00:03"
+        },
+        {
+          "rank": 4,
+          "team": "香川(詫間)",
+          "V": 10,
+          "D": 36,
+          "B": 47,
+          "T": "02:18"
+        },
+        {
+          "rank": 5,
+          "team": "津山",
+          "V": 10,
+          "D": 36,
+          "B": 39,
+          "T": "01:09"
+        },
+        {
+          "rank": 6,
+          "team": "和歌山",
+          "V": 10,
+          "D": 35,
+          "B": 46,
+          "T": "02:44"
+        }
+      ]
     }
   ],
   "screenshots": [
@@ -229,6 +401,48 @@
       "source_name": "image(8).png",
       "source_png_sha256": "b9b800442ef9805e8085dff91c5d18c11804a7d0da60ab953772c90b98386aa3",
       "git_blob_sha": "6260e08e1d01816105a977766c9e0de4ee5f794c"
+    },
+    {
+      "index": 9,
+      "file": "screenshots/match-4-map.webp",
+      "source_name": "image(9).png",
+      "source_png_sha256": "310fdcac0a2066fd87b424f28c23ba454c28aa4dfeaddea117d077724902275d",
+      "git_blob_sha": "a0eb76c23a7179d4129afd9a16561a6e27f31a3f"
+    },
+    {
+      "index": 10,
+      "file": "screenshots/match-4-results.webp",
+      "source_name": "image(10).png",
+      "source_png_sha256": "accaced5d4422334269e322c43ba5a4faa6dc7266e8d2a6b1cf55592c6f80c9e",
+      "git_blob_sha": "39f2a254da5260e21639d817f8371a101c114dff"
+    },
+    {
+      "index": 11,
+      "file": "screenshots/match-5-map.webp",
+      "source_name": "image(20261010-053210).png",
+      "source_png_sha256": "fcac86af3579a449f42436c35242842b893def64c155cb095fc492f8482753e3",
+      "git_blob_sha": "113ccf5085d06ec20fdf1f1738b1173237effe16"
+    },
+    {
+      "index": 12,
+      "file": "screenshots/match-5-results.webp",
+      "source_name": "image(20261010-053919).png",
+      "source_png_sha256": "33392df27fe27b52c5e58d4baa11fe4d94e5345260e17f24fb5f62ce125e9360",
+      "git_blob_sha": "f4faf000c8cf2bb16380ea878f2de1b9a5ca86d8"
+    },
+    {
+      "index": 13,
+      "file": "screenshots/match-6-map.webp",
+      "source_name": "image(20261010-054732).png",
+      "source_png_sha256": "591de7e4789169a8ff2222aa9c7fccb0774354fd958e0b6a227909b29bee3c7b",
+      "git_blob_sha": "7c5af72c17616fe9f449dcb32b46546e2299ec83"
+    },
+    {
+      "index": 14,
+      "file": "screenshots/match-6-results.webp",
+      "source_name": "image(20261010-055436).png",
+      "source_png_sha256": "9fafe23355949f1e70a19f1106d8f4e7dbe767eeb1de8281e9d248e1415db70c",
+      "git_blob_sha": "18005419131c3c344a0e6a335d4f2b8ee0974a6b"
     }
   ]
 }
