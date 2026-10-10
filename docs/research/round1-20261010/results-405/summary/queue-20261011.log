@@ -11,3 +11,7 @@ wrote 20 records to /home/basic/work/procon-2026/.worktrees/bail-435-verify/eval
 wrote 104 records to docs/research/round1-20261010/results-405/wsl-10s/e3-budget-ladder/runs.jsonl and docs/research/round1-20261010/results-405/wsl-10s/e3-budget-ladder/aggregate.json
 [06:10:21] batch C done
 [06:10:21] waiting for quiet (batch: A-SLIM)
+[06:15:36] quiet confirmed, starting batch: A-SLIM
+wrote 30 records to docs/research/round1-20261010/results-405/wsl-corpus/f3-a-slim/runs.jsonl and docs/research/round1-20261010/results-405/wsl-corpus/f3-a-slim/aggregate.json
+[06:18:16] batch A-slim done
+[06:18:16] ALL BATCHES COMPLETE

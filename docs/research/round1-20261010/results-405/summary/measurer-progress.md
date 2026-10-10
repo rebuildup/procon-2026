@@ -275,3 +275,8 @@ binary sha256: `a6737883ae651d799bc7106fef0703c1e3a0b34ab1ad6ce8366f1c5eec14a6c7
   - **chains4 は s9012 で ~10s 飽和**: 2500:339 → 5000:375 → 10k:405 → 20k:396。s5023/s5020/s9008 は予算非感度（448-456 / 662-674 / 248-278）
   - S2 補完: embedded fleet 相当（c4@2.5s = 339、c8@2.5s = 414）vs convoy@10s 369 — **beam が s9012 級大盤面の B に寄与しないことを再裏取り**（convoy の pool[0] が 2.5s 弱計画でも chains8 計画なら実用級）
   - 注意: 単一実行・D は c4@5k s9008 のみ 178（−1）。予算ラダーの B 差は ±20 ルールで解釈
+- [06:2x] **Batch A-slim 完了・全バッチ完了**: `wsl-corpus/f3-a-slim/`（s5020 × c8 3 候補 + fixture 9 × 3・30 runs 全 success・静穏 load ~4）。
+  - **s5020 c8 欠落セル確定**: anchor (27,270,**666**・F3-offline invalid 記録値 666 と完全一致 = 決定論再現・バイナリ同一性確認の代替達成)、fuel (27,270,**665**、−1) / mix (27,270,**655**、−11)
+  - **F 系列 offline 合計（36 盤面確定・inv 記録値込み）**: fuel-only c4 **+29** / c8 **+25**、mix c4 **+44** / c8 **+39**。D 下落セル 0（offline）
+  - Batch A（full 54-run clean 再実行）は不要に: 全セルの決定論値が A-slim の再現一致で妥当性確認済み（scored フラグの inv は wall 時間起因のみ）
+  残タスク（次の測定ラウンドへ）: ① F3-clocked 静穏再実行（とくに s9003 dV−1 の再現性確認・seed 反転）② 検証 27 盤面の fuel 確認（`measure-63a7e5e` 進行中）③ convoy depth B の静穏再実行 ④ chains12 clocked（R1 差し替え候補の実時間確認）
