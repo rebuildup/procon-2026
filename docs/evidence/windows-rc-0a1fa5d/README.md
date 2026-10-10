@@ -46,3 +46,10 @@ WSL・Docker 不使用。**本番サーバーには一切接続していない**
 - 59s の全日・全盤面の時間予算は今回 1 日分のみ。
 - 目視は未実施: ZIP 展開直後に別ユーザー環境で開く手順（実環境の PSModulePath が汚れていなければ修正 1 は不要だが害もない）。
 - monitor（#429/#436）は未統合のため未検証。
+
+## 追記: ブランチ先端での再実行（`7115b3e`）
+
+並行して `origin/443-verify-rc` に `9933f10`（verify-rc.ps1 の環境変数・When ガード修正）が入ったためマージし、
+先端 `7115b3ec2d09ce57ca970d50816515390e489cea`（exe SHA256 `3FB21DC8A358ABB4C6AE3C1E8F82D399DC2D3D5B90A184899A3F650AA0E245D4`）で
+`verify-rc.ps1 -ExpectedSha` を再実行: PASS=7 / FAIL=0 / SKIP=2（e2e-official・telemetry）。`verify-rc-tip-7115b3e-summary.txt`。
+上記の個別ログは `0a1fa5d` 時点の実行。59s・PS7 展開 ZIP の実測は `0a1fa5d` の exe で取得（`7115b3e` では未再実施。差分は verify-rc.ps1 のみ）。
