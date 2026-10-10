@@ -812,7 +812,7 @@ where
     } else if simulated_kinds {
         let team = PlayerId::new(&cfg.team_id)
             .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
-        let (mut kinds, trials) =
+        let (kinds, trials) =
             bench::adapters::fleet_solver::choose_kinds(&wire_setting, &team, AUTO_KINDS_WINDOW);
         for trial in &trials {
             tracing::info!(
@@ -822,30 +822,6 @@ where
                 balls = trial.score.2,
                 "agent kinds trial"
             );
-        }
-        // Which start becomes the one Supply (Issue #428): opt-in, because it
-        // spends more of the `POST /agent` window.
-        let one_supply = kinds.iter().filter(|&&k| k == EngineAgentKind::Supply).count() == 1;
-        if let Some(window) = supply_slot_window().filter(|_| one_supply) {
-            let (slot, slot_trials) =
-                bench::adapters::fleet_solver::choose_supply_slot(&wire_setting, &team, window);
-            for trial in &slot_trials {
-                tracing::info!(
-                    slot = trial.slot,
-                    matches = trial.matches,
-                    variety = trial.total.0,
-                    daily_variety = trial.total.1,
-                    balls = trial.total.2,
-                    "supply slot trial"
-                );
-            }
-            if let Some(slot) = slot {
-                for (i, kind) in kinds.iter_mut().enumerate() {
-                    *kind =
-                        if i == slot { EngineAgentKind::Supply } else { EngineAgentKind::Patrol };
-                }
-            }
-            tracing::info!(slot = ?slot, "supply slot selected");
         }
         kinds
     } else {
@@ -890,6 +866,97 @@ where
             error: submitted.as_ref().err().map(ToString::to_string),
         });
         submitted?;
+    }
+    // Which start becomes the one Supply (Issue #428), opt-in. The composition
+    // above is already accepted, so this can only improve on it: the trials
+    // run after that first `POST /agent`, and a better slot is sent as a
+    // second one (the server keeps the last submission). If the kind window
+    // has closed by then, the first composition simply stands.
+    let mut submitted_kinds = submitted_kinds;
+    let one_supply = submitted_kinds.iter().filter(|&&k| k == EngineAgentKind::Supply).count() == 1;
+    if let Some(window) = supply_slot_window(wire_setting.starts_at)
+        .filter(|_| !resumed && simulated_kinds && one_supply)
+    {
+        let team = PlayerId::new(&cfg.team_id)
+            .map_err(|e| CoordinatorLoopError::Conversion(format!("invalid team id: {e}")))?;
+        let (slot, slot_trials) =
+            bench::adapters::fleet_solver::choose_supply_slot(&wire_setting, &team, window);
+        for trial in &slot_trials {
+            tracing::info!(
+                slot = trial.slot,
+                matches = trial.matches,
+                variety = trial.total.0,
+                daily_variety = trial.total.1,
+                balls = trial.total.2,
+                "supply slot trial"
+            );
+        }
+        let refined: Option<Vec<EngineAgentKind>> =
+            slot.filter(|&s| submitted_kinds.get(s) == Some(&EngineAgentKind::Patrol)).map(|s| {
+                (0..n_agents)
+                    .map(|i| if i == s { EngineAgentKind::Supply } else { EngineAgentKind::Patrol })
+                    .collect()
+            });
+        if let Some(refined) = refined {
+            // 403: the window is shut and nothing changed. Anything else —
+            // accepted, or an answer that never arrived — is settled by the
+            // server's own agent list once the match has started, so the
+            // plans are always made for the composition the server holds.
+            let verify = match client.submit_agent(to_wire_kinds(&refined)).await {
+                Ok(_) => {
+                    tracing::info!(
+                        kinds = %bench::kinds::render_kinds(&refined),
+                        "supply slot resubmitted and accepted"
+                    );
+                    submitted_kinds = refined;
+                    true
+                }
+                Err(protocol::HttpClientError::AccessTime { message }) => {
+                    tracing::warn!(
+                        kinds = %bench::kinds::render_kinds(&submitted_kinds),
+                        message = %message,
+                        "kind window closed before the supply slot was resubmitted; \
+                         the first composition stands"
+                    );
+                    false
+                }
+                Err(error) => {
+                    tracing::warn!(error = %error, "supply slot resubmission unconfirmed");
+                    true
+                }
+            };
+            if verify {
+                let patience = std::time::Instant::now() + SLOT_READBACK_PATIENCE;
+                let mut confirmed = false;
+                while std::time::Instant::now() < patience {
+                    match client.get_match_state().await {
+                        Ok(state) if state.agents.len() == n_agents => {
+                            submitted_kinds = state
+                                .agents
+                                .iter()
+                                .map(|a| {
+                                    if a.kind == AgentKind::KIND_1 {
+                                        EngineAgentKind::Supply
+                                    } else {
+                                        EngineAgentKind::Patrol
+                                    }
+                                })
+                                .collect();
+                            confirmed = true;
+                            break;
+                        }
+                        _ => tokio::time::sleep(Duration::from_millis(250)).await,
+                    }
+                }
+                tracing::info!(
+                    confirmed,
+                    kinds = %bench::kinds::render_kinds(&submitted_kinds),
+                    "composition in play after the supply slot resubmission"
+                );
+            }
+        } else {
+            tracing::info!(slot = ?slot, "supply slot unchanged");
+        }
     }
 
     // Kinds accepted -> Running snapshot. `day` stays `None` because
@@ -1561,13 +1628,26 @@ fn solver_budget_ms(ends_at: i64, now_ms: i64) -> u64 {
 /// far inside it; trials that are not done by then fall back to one Supply.
 const AUTO_KINDS_WINDOW: Duration = Duration::from_millis(1500);
 
-/// `PROCON_SUPPLY_SLOT_WINDOW_MS`: extra time `--kinds-auto` spends choosing
-/// which agent is the Supply, after the composition trial. Unset, empty or
-/// `0` keeps the Supply in slot 0. Capped at 30 s; the operator must keep
-/// `AUTO_KINDS_WINDOW` plus this inside the server's `POST /agent` window.
-fn supply_slot_window() -> Option<Duration> {
+/// How long the composition is polled for after a second `POST /agent`
+/// (the match has to start before `GET /` answers).
+const SLOT_READBACK_PATIENCE: Duration = Duration::from_secs(600);
+
+/// `PROCON_SUPPLY_SLOT_WINDOW_MS`: time spent after the first accepted
+/// `POST /agent` on choosing which agent is the Supply. Unset, empty or `0`
+/// keeps the Supply where the composition trial put it. Capped at 30 s and,
+/// when the setting already names the start, at three seconds before it, so
+/// the trials never run into the first day.
+fn supply_slot_window(starts_at: i64) -> Option<Duration> {
     let ms: u64 = std::env::var("PROCON_SUPPLY_SLOT_WINDOW_MS").ok()?.trim().parse().ok()?;
-    (ms > 0).then(|| Duration::from_millis(ms.min(30_000)))
+    let mut ms = ms.min(30_000);
+    if starts_at > 0 {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+        let left = starts_at.saturating_mul(1000).saturating_sub(now_ms).saturating_sub(3000);
+        ms = ms.min(u64::try_from(left).unwrap_or(0));
+    }
+    (ms > 0).then(|| Duration::from_millis(ms))
 }
 
 /// Resolve the `POST /agent` composition for a team of `n_agents`.
