@@ -75,6 +75,10 @@ pub const RECORD_SCHEMA_VERSION: u32 = 1;
 /// retry-storm headroom, and bounds memory at a few MB if the disk stalls.
 const QUEUE_CAPACITY: usize = 8192;
 
+/// Backlog at which `coordinator.log` lines stop being queued, leaving the
+/// other half of the queue to match events.
+const LOG_BACKLOG_LIMIT: u64 = 4096;
+
 /// Minimum gap between two write-failure reports on stderr.
 const COMPLAINT_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -299,6 +303,8 @@ struct Inner {
     dropped: AtomicU64,
     write_errors: Arc<AtomicU64>,
     reported: AtomicU64,
+    /// Messages queued and not yet taken by the writer.
+    depth: Arc<AtomicU64>,
 }
 
 /// Counters of records that did not make it to the disk.
@@ -385,6 +391,7 @@ impl MatchRecorder {
 
         let write_errors = Arc::new(AtomicU64::new(0));
         let seq = Arc::new(AtomicU64::new(0));
+        let depth = Arc::new(AtomicU64::new(0));
         let writer = Writer {
             dir: dir.clone(),
             root: root.to_path_buf(),
@@ -396,6 +403,7 @@ impl MatchRecorder {
             setting: None,
             seq: Arc::clone(&seq),
             write_errors: Arc::clone(&write_errors),
+            depth: Arc::clone(&depth),
             last_complaint: None,
             started: Instant::now(),
         };
@@ -418,6 +426,7 @@ impl MatchRecorder {
                 dropped: AtomicU64::new(0),
                 write_errors,
                 reported: AtomicU64::new(0),
+                depth,
             })),
         })
     }
@@ -441,8 +450,17 @@ impl MatchRecorder {
     }
 
     fn send(inner: &Inner, msg: Msg) {
+        // Log lines give way first: once the queue is half full they are
+        // dropped, so a burst of logging cannot push out a plan or a verdict.
+        let backlog = inner.depth.load(Ordering::Relaxed);
+        if matches!(msg, Msg::Log(_)) && backlog >= LOG_BACKLOG_LIMIT {
+            inner.dropped.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
         match inner.tx.try_send(msg) {
-            Ok(()) => {}
+            Ok(()) => {
+                inner.depth.fetch_add(1, Ordering::Relaxed);
+            }
             Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
                 inner.dropped.fetch_add(1, Ordering::Relaxed);
             }
@@ -523,7 +541,10 @@ impl MatchRecorder {
         let mut msg = Msg::Flush(ack_tx);
         loop {
             match inner.tx.try_send(msg) {
-                Ok(()) => break,
+                Ok(()) => {
+                    inner.depth.fetch_add(1, Ordering::Relaxed);
+                    break;
+                }
                 Err(TrySendError::Disconnected(_)) => return false,
                 Err(TrySendError::Full(back)) => {
                     if Instant::now() >= deadline {
@@ -667,6 +688,7 @@ struct Writer {
     setting: Option<Value>,
     seq: Arc<AtomicU64>,
     write_errors: Arc<AtomicU64>,
+    depth: Arc<AtomicU64>,
     last_complaint: Option<Instant>,
     started: Instant,
 }
@@ -690,6 +712,7 @@ impl Writer {
             self.save_manifest();
         }
         while let Ok(msg) = rx.recv() {
+            self.depth.fetch_sub(1, Ordering::Relaxed);
             self.handle(msg);
         }
     }
@@ -702,7 +725,13 @@ impl Writer {
             }
             Msg::Setting(setting) => self.save_setting(&setting),
             Msg::State(bytes) => {
-                let text = self.redact(&String::from_utf8_lossy(&bytes));
+                let text = match serde_json::from_slice::<Value>(&bytes) {
+                    Ok(mut value) => {
+                        self.redact_json(&mut value);
+                        serde_json::to_string_pretty(&value).unwrap_or_default()
+                    }
+                    Err(_) => self.redact(&String::from_utf8_lossy(&bytes)),
+                };
                 let result = write_atomic(&self.dir.join("state.json"), text.as_bytes());
                 self.check("state.json", result);
             }
@@ -728,18 +757,26 @@ impl Writer {
         }
     }
 
+    /// Redact plain text (log lines).
     fn redact(&self, text: &str) -> String {
-        let mut out = text.to_owned();
-        for secret in &self.secrets {
-            out = secret.redact(&out);
-            // The same token as it appears inside a JSON string.
-            let escaped = serde_json::to_string(secret.expose()).unwrap_or_default();
-            let escaped = escaped.trim_matches('"');
-            if !escaped.is_empty() && escaped != secret.expose() {
-                out = out.replace(escaped, "[REDACTED]");
+        self.secrets.iter().fold(text.to_owned(), |acc, secret| secret.redact(&acc))
+    }
+
+    /// Redact every string inside a JSON value. Working on the values, not
+    /// on the serialised text, means a token can never be "found" inside a
+    /// number or a key, so redaction cannot break the document.
+    fn redact_json(&self, value: &mut Value) {
+        match value {
+            Value::String(text) => {
+                if self.secrets.iter().any(|s| !s.expose().is_empty() && text.contains(s.expose()))
+                {
+                    *text = self.redact(text);
+                }
             }
+            Value::Array(items) => items.iter_mut().for_each(|item| self.redact_json(item)),
+            Value::Object(map) => map.values_mut().for_each(|item| self.redact_json(item)),
+            Value::Null | Value::Bool(_) | Value::Number(_) => {}
         }
-        out
     }
 
     fn check(&mut self, what: &str, result: io::Result<()>) {
@@ -768,8 +805,11 @@ impl Writer {
             mono_ms,
             event: event.clone(),
         };
-        let result = serde_json::to_string(&line).map_err(io::Error::other).and_then(|json| {
-            let mut text = self.redact(&json);
+        let json = serde_json::to_value(&line).and_then(|mut value| {
+            self.redact_json(&mut value);
+            serde_json::to_string(&value)
+        });
+        let result = json.map_err(io::Error::other).and_then(|mut text| {
             text.push('\n');
             let path = self.dir.join("events.jsonl");
             append(&self.dir, &path, &mut self.events, text.as_bytes(), true)
@@ -829,7 +869,7 @@ impl Writer {
         };
         let result = serde_json::to_string_pretty(&value)
             .map_err(io::Error::other)
-            .and_then(|t| write_atomic(&self.dir.join("setting.json"), self.redact(&t).as_bytes()));
+            .and_then(|t| write_atomic(&self.dir.join("setting.json"), t.as_bytes()));
         self.check("setting.json", result);
         merge(
             &mut self.manifest,
@@ -849,8 +889,10 @@ impl Writer {
     }
 
     fn write_manifest(&self) -> io::Result<()> {
-        let text = serde_json::to_string_pretty(&self.manifest).map_err(io::Error::other)?;
-        write_atomic(&self.dir.join("manifest.json"), self.redact(&text).as_bytes())
+        let mut value = Value::Object(self.manifest.clone());
+        self.redact_json(&mut value);
+        let text = serde_json::to_string_pretty(&value).map_err(io::Error::other)?;
+        write_atomic(&self.dir.join("manifest.json"), text.as_bytes())
     }
 
     fn save_manifest(&mut self) {
@@ -1439,6 +1481,73 @@ mod tests {
     }
 
     #[test]
+    fn a_token_that_looks_like_data_cannot_break_the_json() {
+        let root = tempfile::tempdir().expect("tempdir");
+        // A token made of digits and one that equals a key: text replacement
+        // on the serialised line would hit timestamps and field names.
+        let secrets = vec![Secret::new("17".to_owned()), Secret::new("seq".to_owned())];
+        let rec = start(root.path(), secrets);
+        rec.event(RecordEvent::Plan {
+            day: 17,
+            day_steps: 17,
+            budget_ms: 1717,
+            solve_ms: 17,
+            actions: vec![vec![1, 7, -17]],
+        });
+        rec.event(RecordEvent::RequestFailed {
+            endpoint: "GET /".to_owned(),
+            day: Some(17),
+            error: "token 17 refused, seq broken".to_owned(),
+        });
+        rec.state_snapshot(br#"{"revision":17,"error":"saw 17"}"#.to_vec());
+        assert!(rec.flush(FLUSH));
+        let loaded = load_record(rec.dir().expect("dir")).expect("load");
+        assert_eq!(loaded.unparsed_lines, 0, "redaction broke a line");
+        assert_eq!(loaded.plans()[&17], &vec![vec![1, 7, -17]]);
+        assert!(loaded.lines.iter().any(|l| matches!(
+            &l.event,
+            RecordEvent::RequestFailed { error, .. }
+                if error == "token [REDACTED] refused, [REDACTED] broken"
+        )));
+        let state: Value = serde_json::from_slice(
+            &std::fs::read(rec.dir().expect("dir").join("state.json")).expect("state"),
+        )
+        .expect("state.json is still JSON");
+        assert_eq!(state, json!({ "revision": 17, "error": "saw [REDACTED]" }));
+    }
+
+    #[test]
+    fn log_lines_give_way_to_match_events() {
+        let (tx, rx) = sync_channel(QUEUE_CAPACITY);
+        let inner = Inner {
+            run_id: "r".to_owned(),
+            dir: PathBuf::from("unused"),
+            tx,
+            started: Instant::now(),
+            seq: Arc::new(AtomicU64::new(0)),
+            dropped: AtomicU64::new(0),
+            write_errors: Arc::new(AtomicU64::new(0)),
+            reported: AtomicU64::new(0),
+            depth: Arc::new(AtomicU64::new(0)),
+        };
+        let rec = MatchRecorder { inner: Some(Arc::new(inner)) };
+        // Nobody drains the queue: a log storm fills its half and stops.
+        for _ in 0..QUEUE_CAPACITY * 2 {
+            let mut line = tracing_subscriber::fmt::MakeWriter::make_writer(&rec.log_writer());
+            line.write_all(b"noise\n").expect("log");
+        }
+        let after_logs = rec.health().dropped;
+        assert!(after_logs > 0, "the log storm must have been cut off");
+        // Events still fit.
+        for day in 0..1000 {
+            rec.event(RecordEvent::PlanFailed { day, solve_ms: 0, reason: String::new() });
+        }
+        assert_eq!(rec.health().dropped, after_logs, "an event was dropped behind log lines");
+        let queued = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+        assert_eq!(queued.iter().filter(|m| matches!(m, Msg::Event { .. })).count(), 1000);
+    }
+
+    #[test]
     fn a_vanished_directory_is_counted_and_recording_recovers() {
         let root = tempfile::tempdir().expect("tempdir");
         let rec = start(root.path(), Vec::new());
@@ -1495,6 +1604,7 @@ mod tests {
             dropped: AtomicU64::new(0),
             write_errors: Arc::new(AtomicU64::new(0)),
             reported: AtomicU64::new(0),
+            depth: Arc::new(AtomicU64::new(0)),
         };
         let rec = MatchRecorder { inner: Some(Arc::new(inner)) };
         let began = Instant::now();
