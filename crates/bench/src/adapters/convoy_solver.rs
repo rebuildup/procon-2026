@@ -91,6 +91,19 @@ const PARAMS: &[ParamSpec] = &[
               instead of burning the rest of the window on a one-node beam: on | off \
               (default off)",
     },
+    ParamSpec {
+        key: "cluster",
+        required: false,
+        doc: "partition the spots into geographic clusters, one per patrol, and count \
+              only the patrol's own cluster's spots in its label-search mask: on | off \
+              (default off)",
+    },
+    ParamSpec {
+        key: "clusters",
+        required: false,
+        doc: "cluster count when cluster=on, 1..=8; 0 = auto (min(patrols, 4)) \
+              (default 0)",
+    },
 ];
 
 fn parse<T: std::str::FromStr>(
@@ -159,6 +172,23 @@ impl CandidateFactory for ConvoyFactory {
                     return Err(CandidateError::Build(format!("unknown bail mode {other:?}")));
                 }
             },
+            cluster: match spec.param("cluster") {
+                None | Some("off") => false,
+                Some("on") => true,
+                Some(other) => {
+                    return Err(CandidateError::Build(format!("unknown cluster mode {other:?}")));
+                }
+            },
+            clusters: {
+                let k = parse(spec, "clusters", 0u32)?;
+                if k > 8 {
+                    return Err(CandidateError::Build(format!("clusters must be 0..=8, got {k}")));
+                }
+                if k > 0 && spec.param("cluster") != Some("on") {
+                    return Err(CandidateError::Build("clusters requires cluster=on".into()));
+                }
+                k
+            },
         }))
     }
 }
@@ -182,6 +212,13 @@ pub struct ConvoyCandidate {
     /// to the fleet — the fleet has already searched with a quarter of the
     /// window, and returning early is what keeps the live response short.
     pub bail: bool,
+    /// Partition the board's spots into geographic clusters so each patrol's
+    /// label-search mask only carries its own cluster's spots (Issue #432):
+    /// the mask dimension drops from 2^(all spots) to 2^(cluster spots).
+    pub cluster: bool,
+    /// Cluster count when [`Self::cluster`] is on; `0` = auto, resolved per
+    /// day as `min(patrols, 4)`.
+    pub clusters: u32,
 }
 
 const NONE: u32 = u32::MAX;
@@ -216,6 +253,55 @@ fn cell_index(width: usize, col: i32, row: i32) -> usize {
         + usize::try_from(col).expect("in-bounds col")
 }
 
+/// Partition the board's spots into geographic clusters: repeated median
+/// splits of the largest group on its wider axis (column vs row span, ties
+/// toward columns), member spots ordered by coordinate and then spot index.
+/// Deterministic, coordinates only, no randomness. Patrol `p` is responsible
+/// for cluster `p % groups`; with `k == 0` the count is `min(patrols, 4)`.
+fn split_clusters(coords: &[(i32, i32)], patrols: usize, k: u32) -> Clusters {
+    let k = match k {
+        0 => patrols.min(4),
+        k => (k as usize).clamp(1, patrols),
+    };
+    let mut members: Vec<Vec<usize>> = vec![(0..coords.len()).collect()];
+    while members.len() < k {
+        let g = (0..members.len())
+            .min_by_key(|&i| (std::cmp::Reverse(members[i].len()), i))
+            .expect("groups");
+        if members[g].len() < 2 {
+            break;
+        }
+        let (mut lo_c, mut hi_c, mut lo_r, mut hi_r) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
+        for &s in &members[g] {
+            let (c, r) = coords[s];
+            lo_c = lo_c.min(c);
+            hi_c = hi_c.max(c);
+            lo_r = lo_r.min(r);
+            hi_r = hi_r.max(r);
+        }
+        let by_col = hi_c - lo_c >= hi_r - lo_r;
+        let mut sorted = members[g].clone();
+        sorted.sort_by_key(|&s| if by_col { (coords[s].0, s) } else { (coords[s].1, s) });
+        let half = sorted.len() / 2;
+        let upper = sorted.split_off(half);
+        members[g] = sorted;
+        members.push(upper);
+    }
+    // A spot outside the patrol's cluster gets no bit: passing through it is
+    // free, picking it scores balls only (in the replay, never the search).
+    let bit: Vec<Vec<u32>> = (0..patrols)
+        .map(|p| {
+            let cluster = p % members.len();
+            let mut row = vec![NONE; coords.len()];
+            for (b, &s) in members[cluster].iter().enumerate() {
+                row[s] = u32::try_from(b).expect("cluster size");
+            }
+            row
+        })
+        .collect();
+    Clusters { bit }
+}
+
 /// One day's static board.
 struct Board {
     time: Vec<u32>,
@@ -230,6 +316,18 @@ struct Board {
     steps: u32,
     patrols: Vec<Unit>,
     supplies: Vec<Unit>,
+    /// `cluster=on`: spot clusters and each patrol's spot→mask-bit tables.
+    /// `None` keeps the global spot-index bit of the unpartitioned search.
+    cluster: Option<Clusters>,
+}
+
+/// Geographic spot clusters (Issue #432). A series whose spots fall in two
+/// clusters lands in both clusters' masks: both patrols may pick it, and
+/// `tally` charges the stock per visitor as before.
+struct Clusters {
+    /// `bit[p][s]` = the bit of global spot `s` in patrol `p`'s mask, or
+    /// `NONE` when `s` is outside `p`'s cluster (picked balls only).
+    bit: Vec<Vec<u32>>,
 }
 
 #[derive(Clone, Copy)]
@@ -241,7 +339,7 @@ struct Unit {
 }
 
 impl Board {
-    fn new(state: &MatchState, steps: u32) -> Option<Self> {
+    fn new(state: &MatchState, steps: u32, cluster: Option<u32>) -> Option<Self> {
         let map = &state.setting.map;
         let width = usize::from(map.size.width);
         let cells = map.cells();
@@ -304,6 +402,18 @@ impl Board {
                 patrol.fuel = patrol.cap;
             }
         }
+        let cluster = cluster.filter(|_| !series.is_empty() && !patrols.is_empty()).map(|k| {
+            let coords: Vec<(i32, i32)> = spot_at
+                .iter()
+                .enumerate()
+                .filter(|&(_, s)| *s != NONE)
+                .map(|(i, _)| {
+                    let c = &cells[i].coord;
+                    (c.col, c.row)
+                })
+                .collect();
+            split_clusters(&coords, patrols.len(), k)
+        });
         Some(Self {
             time,
             fuel,
@@ -316,6 +426,7 @@ impl Board {
             steps,
             patrols,
             supplies,
+            cluster,
         })
     }
 
@@ -395,6 +506,7 @@ impl Board {
         mode: Supplied<'_>,
         last_day: bool,
         (cap_labels, deadline): (usize, Option<Instant>),
+        spot_bit: &[u32],
     ) -> Option<PatrolDay> {
         let steps = u16::try_from(self.steps).ok()?;
         let (supply_at, touch) = match mode {
@@ -454,8 +566,14 @@ impl Board {
             }
         };
         let start = u16::try_from(unit.cell).ok()?;
-        let start_mask =
-            if self.spot_at[unit.cell] == NONE { 0 } else { 1u32 << self.spot_at[unit.cell] };
+        let start_spot = self.spot_at[unit.cell];
+        let start_mask = match start_spot {
+            NONE => 0,
+            spot => match spot_bit[spot as usize] {
+                NONE => 0,
+                bit => 1u32 << bit,
+            },
+        };
         push(
             &mut labels,
             &mut buckets,
@@ -524,10 +642,13 @@ impl Board {
                     } else {
                         label.fuel - u16::try_from(df).ok()?
                     };
-                    let mask = if self.spot_at[to] == NONE {
-                        label.mask
-                    } else {
-                        label.mask | (1u32 << self.spot_at[to])
+                    let spot = self.spot_at[to];
+                    let mask = match spot {
+                        NONE => label.mask,
+                        spot => match spot_bit[spot as usize] {
+                            NONE => label.mask,
+                            bit => label.mask | (1u32 << bit),
+                        },
                     };
                     let arrived = Label {
                         cell: u16::try_from(to).ok()?,
@@ -586,12 +707,21 @@ impl Board {
         Some(PatrolDay { labels, options })
     }
 
-    /// `(new series, series, balls)` of one mask per patrol.
+    /// `(new series, series, balls)` of one mask per patrol. Clustered
+    /// masks hold patrol-local bits, so the visit test goes through the
+    /// patrol's spot→bit table.
     fn tally(&self, masks: &[u32]) -> (i64, i64, i64) {
+        let visits = |p: usize, m: u32, spot: usize| match &self.cluster {
+            None => m >> spot & 1 == 1,
+            Some(cl) => {
+                let bit = cl.bit[p][spot];
+                bit != NONE && m >> bit & 1 == 1
+            }
+        };
         let mut seen = vec![false; self.series_count];
         let (mut fresh, mut series, mut balls) = (0, 0, 0);
         for (spot, &stock) in self.stock.iter().enumerate() {
-            let visitors = masks.iter().filter(|m| *m >> spot & 1 == 1).count();
+            let visitors = masks.iter().enumerate().filter(|&(p, &m)| visits(p, m, spot)).count();
             let got = i64::from(stock).min(i64::try_from(visitors).unwrap_or(i64::MAX));
             if got == 0 {
                 continue;
@@ -829,7 +959,8 @@ impl ConvoyCandidate {
         keep(&mut out, fleet.decide(&ctx));
         let limits = (self.labels, deadline);
         let steps = state.day_steps();
-        let Some(board) = Board::new(state, steps) else { return out };
+        let k = self.cluster.then_some(self.clusters);
+        let Some(board) = Board::new(state, steps, k) else { return out };
         let np = board.patrols.len();
         if np == 0 || np > 8 || state.agents.iter().enumerate().any(|(i, a)| usize::from(a.id) != i)
         {
@@ -838,12 +969,19 @@ impl ConvoyCandidate {
         let late = || deadline.is_some_and(|d| Instant::now() >= d);
         let last_day = state.day + 1 >= state.setting.num_days;
         let n_agents = state.agents.len();
+        // Patrol `p`'s spot→bit table: its cluster's when clustered, else
+        // the identity (every spot keeps its global bit).
+        let identity: Vec<u32> =
+            (0..u32::try_from(board.spot_at.len()).unwrap_or(u32::MAX)).collect();
+        let spot_bits =
+            |p: usize| -> &[u32] { board.cluster.as_ref().map_or(&identity, |cl| &cl.bit[p]) };
         let mut tank = Vec::with_capacity(np);
-        for &unit in &board.patrols {
+        for (p, &unit) in board.patrols.iter().enumerate() {
             if late() {
                 return out;
             }
-            let Some(day) = board.patrol_day(unit, Supplied::Tank, last_day, limits) else {
+            let Some(day) = board.patrol_day(unit, Supplied::Tank, last_day, limits, spot_bits(p))
+            else {
                 return out;
             };
             tank.push(day);
@@ -881,12 +1019,24 @@ impl ConvoyCandidate {
         let (lead_at, lead_prev) = board.reach(lead.cell);
         let mut escort: Vec<Option<PatrolDay>> = Vec::with_capacity(np);
         let mut touch: Vec<Option<PatrolDay>> = Vec::with_capacity(np);
-        for &unit in &board.patrols {
+        for (p, &unit) in board.patrols.iter().enumerate() {
             if late() {
                 return out;
             }
-            escort.push(board.patrol_day(unit, Supplied::Escort(&lead_at), last_day, limits));
-            touch.push(board.patrol_day(unit, Supplied::Touch(&lead_at), last_day, limits));
+            escort.push(board.patrol_day(
+                unit,
+                Supplied::Escort(&lead_at),
+                last_day,
+                limits,
+                spot_bits(p),
+            ));
+            touch.push(board.patrol_day(
+                unit,
+                Supplied::Touch(&lead_at),
+                last_day,
+                limits,
+                spot_bits(p),
+            ));
         }
         let extra: Vec<(Unit, Vec<u32>, Tree)> = board.supplies[1..]
             .iter()
@@ -913,6 +1063,7 @@ impl ConvoyCandidate {
                                 Supplied::Escort(at),
                                 last_day,
                                 limits,
+                                spot_bits(p),
                             )
                         })
                         .flatten()
@@ -958,6 +1109,7 @@ impl ConvoyCandidate {
                                             Supplied::Escort(&at),
                                             last_day,
                                             limits,
+                                            spot_bits(b),
                                         )
                                         .map(std::rc::Rc::new)
                                 })
