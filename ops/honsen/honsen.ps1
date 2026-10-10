@@ -6,25 +6,27 @@
     procon.exe coordinator を、試合記録（records\）と HTTP 通信ログ（logs\）を
     有効にした状態で起動する。Windows PowerShell 5.1 と PowerShell 7 の両方で動く。
 
-      .\honsen.ps1 preflight   .env の PROCON_SERVER / PROCON_TOKEN から接続前検査
-      .\honsen.ps1 start       .env の設定で起動し、落ちたら途中から再開
-      .\honsen.ps1 show      [-RunDir <dir>]              保存した記録を読み戻して要約を表示（既定は最新）
+      .\ops\honsen\honsen.ps1 preflight   .\.env による接続前検査
+      .\ops\honsen\honsen.ps1 start       .\.env による本選起動
+      .\ops\honsen\honsen.ps1 show        試合記録を表示
 
-    PROCON_SERVER / PROCON_TOKEN は .env から読み取る（既存の環境変数や
-    明示 -Server の方を優先）。場所はスクリプト横、HONSEN_HOME 直下、実行中の
-    カレントディレクトリの順。HONSEN_ENV_FILE で別のパスも指定可能。
-    .env がなければ従来どおり環境変数・入力を使う。
+    操作時のカレントディレクトリは procon-2026 のリポジトリ直下。
+    スクリプト自体は配置場所からリポジトリルートを解決する。
 
-    保存先（既定 %USERPROFILE%\procon-honsen、HONSEN_HOME で変更可）:
-      records\<run-id>\  manifest.json / setting.json / events.jsonl / coordinator.log / state.json
-      logs\<run-id>\     http.jsonl
+    .\.env に定義された PROCON_SERVER / PROCON_TOKEN を使う。
+    .env がある場合はプロセス環境変数より優先。明示 -Server は最優先。
+    .env がない場合は従来どおり環境変数・入力へフォールバック。
+
+    保存先（すべて procon-2026 を起点とする）:
+      .\records\<run-id>\  manifest.json / setting.json / events.jsonl / coordinator.log / state.json
+      .\logs\<run-id>\     http.jsonl
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
     [ValidateSet('preflight', 'start', 'show', 'help')]
     [string]$Command = 'help',
-    [string]$Server = $env:PROCON_SERVER,
+    [string]$Server = '',
     [string]$Exe = '',
     [string]$Candidate = 'fleet:budget=official:budget_ms=10000',
     [string[]]$KindsArgs = @('--kinds-auto'),
@@ -34,38 +36,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$HonsenHome = if ($env:HONSEN_HOME) { $env:HONSEN_HOME } else { Join-Path $HOME 'procon-honsen' }
-$RecordDir = Join-Path $HonsenHome 'records'
-$HttpLogDir = Join-Path $HonsenHome 'logs'
+$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
+$RecordDir = Join-Path $RepoRoot 'records'
+$HttpLogDir = Join-Path $RepoRoot 'logs'
 
 # .env は PowerShell と procon.exe では自動で読み込まれない。
-# 必要な2キーだけをデータとして読み込む。Invoke-Expression 等でコード実行しない。
-# 値はコンソールへ表示しない。既存のプロセス環境変数は優先する。
+# 許可した2キーだけをデータとして取り出し、任意のコードとして実行しない。
+# .env の値は環境変数の古い値（練習用のものを含む）より優先する。
 function Import-HonsenEnv {
-    $paths = @()
-    if ($env:HONSEN_ENV_FILE) {
-        $paths += $env:HONSEN_ENV_FILE
-    }
-    else {
-        $paths += (Join-Path $PSScriptRoot '.env')
-        $paths += (Join-Path $HonsenHome '.env')
-        $paths += (Join-Path (Get-Location).Path '.env')
-    }
-    $chosen = $null
-    foreach ($file in $paths) {
-        if (Test-Path -LiteralPath $file -PathType Leaf) {
-            $chosen = $file
-            break
-        }
-    }
-    if (-not $chosen) {
-        if ($env:HONSEN_ENV_FILE) { throw "指定された .env ファイルが存在しません: $($env:HONSEN_ENV_FILE)" }
-        return
-    }
-    foreach ($line in (Get-Content -LiteralPath $chosen -Encoding UTF8)) {
+    $file = Join-Path $RepoRoot '.env'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return }
+    foreach ($line in (Get-Content -LiteralPath $file -Encoding UTF8)) {
         if ($line -match '^\s*(?:export\s+)?(PROCON_SERVER|PROCON_TOKEN)\s*=\s*(.*?)\s*$') {
             $name = $Matches[1]
-            if ([Environment]::GetEnvironmentVariable($name, 'Process')) { continue }
             $value = $Matches[2].Trim()
             if ($value.Length -ge 2 -and (
                 ($value.StartsWith('"') -and $value.EndsWith('"')) -or
@@ -90,14 +73,13 @@ function Resolve-Exe {
     $candidates = @()
     if ($Exe) { $candidates += $Exe }
     if ($env:HONSEN_EXE) { $candidates += $env:HONSEN_EXE }
-    $candidates += (Join-Path $PSScriptRoot 'procon.exe')
-    $candidates += (Join-Path $HonsenHome 'bin\procon.exe')
+    $candidates += (Join-Path $RepoRoot 'target\release\procon.exe')
     foreach ($path in $candidates) {
         if (Test-Path -LiteralPath $path -PathType Leaf) {
             return (Resolve-Path -LiteralPath $path).Path
         }
     }
-    throw "procon.exe が見つかりません。-Exe <path> で指定するか、このスクリプトと同じフォルダに置いてください。"
+    throw "procon.exe が見つかりません。procon-2026\target\release\procon.exe を用意してください。"
 }
 
 function Read-Token {
@@ -190,7 +172,7 @@ function Invoke-Preflight([string]$ExePath) {
         }
     }
 
-    $drive = (Get-Item -LiteralPath $HonsenHome).PSDrive
+    $drive = (Get-Item -LiteralPath $RepoRoot).PSDrive
     if ($drive -and $null -ne $drive.Free) {
         $freeGb = [math]::Round($drive.Free / 1GB, 1)
         if ($drive.Free -lt 1GB) { Fail "空き容量が ${freeGb} GB しかありません" } else { Ok "空き容量: ${freeGb} GB" }
@@ -239,7 +221,7 @@ function Get-LatestRun {
 # なので、同時に 2 つの start を打っても片方しか通らない。中身は持ち主の PID。
 # 持ち主がもういなければ（前回の異常終了）引き継ぐ。PID がまだ書かれていない
 # ロックは作成途中かもしれないので、すぐには捨てず、少し待って読み直す。
-$LockFile = Join-Path $HonsenHome 'lock'
+$LockFile = Join-Path $RepoRoot '.honsen.lock'
 
 function Enter-Lock {
     for ($try = 0; $try -lt 2; $try++) {
@@ -340,7 +322,7 @@ if ($Command -eq 'help') {
 }
 
 $exePath = Resolve-Exe
-New-Item -ItemType Directory -Force -Path $HonsenHome | Out-Null
+New-Item -ItemType Directory -Force -Path $RecordDir, $HttpLogDir | Out-Null
 
 if ($Command -eq 'show') {
     $target = if ($RunDir) { $RunDir } else { Get-LatestRun }
