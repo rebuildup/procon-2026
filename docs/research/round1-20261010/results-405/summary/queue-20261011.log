@@ -3,3 +3,11 @@
 wrote 33 records to docs/research/round1-20261010/results-405/wsl-10s/d-depth-ladder/runs.jsonl and docs/research/round1-20261010/results-405/wsl-10s/d-depth-ladder/aggregate.json
 [03:53:41] batch D done
 [03:53:41] waiting for quiet (batch: BAIL-S9012)
+[04:43:12] quiet confirmed, starting batch: BAIL-S9012
+wrote 20 records to /home/basic/work/procon-2026/.worktrees/bail-435-verify/eval-bail-s9012-quiet/runs.jsonl and /home/basic/work/procon-2026/.worktrees/bail-435-verify/eval-bail-s9012-quiet/aggregate.json
+[04:47:42] bail s9012 quiet rerun done
+[04:47:42] waiting for quiet (batch: C)
+[05:43:13] quiet confirmed, starting batch: C
+wrote 104 records to docs/research/round1-20261010/results-405/wsl-10s/e3-budget-ladder/runs.jsonl and docs/research/round1-20261010/results-405/wsl-10s/e3-budget-ladder/aggregate.json
+[06:10:21] batch C done
+[06:10:21] waiting for quiet (batch: A-SLIM)
