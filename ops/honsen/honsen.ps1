@@ -194,11 +194,40 @@ function Get-LatestRun {
     return $null
 }
 
+# 二重起動の防止。ディレクトリの作成は「なければ作る」が 1 操作なので、同時に
+# 2 つの start を打っても片方しか通らない。持ち主の PID を書いておき、その
+# プロセスがもういなければ（前回の異常終了）引き継ぐ。
+$LockDir = Join-Path $HonsenHome 'lock'
+
+function Enter-Lock {
+    for ($try = 0; $try -lt 2; $try++) {
+        try {
+            New-Item -ItemType Directory -Path $LockDir -ErrorAction Stop | Out-Null
+            Set-Content -LiteralPath (Join-Path $LockDir 'pid') -Value $PID
+            return
+        }
+        catch {
+            $owner = 0
+            try { $owner = [int](Get-Content -LiteralPath (Join-Path $LockDir 'pid') -ErrorAction Stop) } catch { }
+            if ($owner -gt 0 -and (Get-Process -Id $owner -ErrorAction SilentlyContinue)) {
+                throw "別の honsen.ps1 start が動いています（PID $owner）。二重起動はできません。"
+            }
+            Remove-Item -LiteralPath $LockDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    throw "ロックを取得できません: $LockDir"
+}
+
+function Exit-Lock {
+    Remove-Item -LiteralPath $LockDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Invoke-Start([string]$ExePath) {
     $ErrorActionPreference = 'Continue'
     if (Get-Process -Name 'procon' -ErrorAction SilentlyContinue) {
         throw '別の procon.exe が動いています。二重起動はできません。'
     }
+    $outcome = 'failed'
     Disable-QuickEdit
     $before = @()
     if (Test-Path -LiteralPath $RecordDir) {
@@ -214,6 +243,7 @@ function Invoke-Start([string]$ExePath) {
         Write-Host "$(Get-Date -Format HH:mm:ss) honsen: coordinator が終了しました（終了コード $code）"
         if ($code -eq 0) {
             Write-Host '試合完了（正常終了）' -ForegroundColor Green
+            $outcome = 'completed'
             break
         }
         # 回答が拒否された日があると、coordinator は試合を最後まで進めたうえで 0 以外で
@@ -226,6 +256,7 @@ function Invoke-Start([string]$ExePath) {
                 try { $status = (Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).status } catch { }
                 if ($status -eq 'rejected') {
                     Write-Host '試合は最後まで進みましたが、拒否された日があります（再起動しません）' -ForegroundColor Red
+                    $outcome = 'rejected'
                     break
                 }
             }
@@ -250,6 +281,7 @@ function Invoke-Start([string]$ExePath) {
     }
     if ($runs.Count -eq 0) { Write-Host "今回の起動では試合の記録ができていません: $RecordDir" -ForegroundColor Yellow }
     Write-Host "HTTP 通信ログ: $HttpLogDir"
+    return $outcome
 }
 
 if ($Command -eq 'help') {
@@ -279,7 +311,17 @@ try {
         $answer = Read-Host 'preflight に FAIL があります。それでも起動しますか？ 起動するなら YES と入力'
         if ($answer -ne 'YES') { throw '起動を中止しました。上の FAIL 行を直してください。' }
     }
-    Invoke-Start $exePath
+    Enter-Lock
+    $outcome = 'failed'
+    try {
+        # 関数の出力（record show の JSON など）はそのまま流し、最後の値だけを結果として受け取る。
+        Invoke-Start $exePath | ForEach-Object { $outcome = $_; $_ } | Select-Object -SkipLast 1
+    }
+    finally {
+        Exit-Lock
+    }
+    # 正常終了だけを 0 にする。拒否された日がある・再起動をあきらめた、は 1。
+    if ($outcome -ne 'completed') { exit 1 }
 }
 finally {
     if ($prompted) { Remove-Item Env:PROCON_TOKEN -ErrorAction SilentlyContinue }

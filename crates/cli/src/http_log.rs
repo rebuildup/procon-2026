@@ -101,6 +101,14 @@ pub struct HttpLogEntry {
     pub response_headers: Vec<(String, String)>,
     /// Response body, complete. `None` when none arrived.
     pub response_body: Option<String>,
+    /// The request body as lowercase hex — present only when the bytes are
+    /// not valid UTF-8, in which case `request_body` shows them with
+    /// replacement characters and this field is the exact record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_body_hex: Option<String>,
+    /// The response body as lowercase hex, under the same rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_body_hex: Option<String>,
 }
 
 enum Msg {
@@ -256,6 +264,8 @@ impl Writer {
                             request_body: None,
                             response_headers: Vec::new(),
                             response_body: None,
+                            request_body_hex: None,
+                            response_body_hex: None,
                             ..entry
                         },
                     ));
@@ -311,6 +321,27 @@ impl Writer {
         self.redact(&String::from_utf8_lossy(bytes))
     }
 
+    /// Bytes that are not UTF-8 cannot be shown as text without loss, so
+    /// they are also kept exactly, as hex. A token is ASCII, so a registered
+    /// one is looked for in the bytes and the exact copy withheld if found.
+    fn hex_if_not_text(&self, bytes: &[u8]) -> Option<String> {
+        use std::fmt::Write as _;
+        if std::str::from_utf8(bytes).is_ok() {
+            return None;
+        }
+        let leaks = self.secrets.iter().map(|s| s.expose().as_bytes()).any(|token| {
+            !token.is_empty() && bytes.windows(token.len()).any(|window| window == token)
+        });
+        if leaks {
+            return Some("[REDACTED: the bytes contain a token]".to_owned());
+        }
+        let mut hex = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            let _ = write!(hex, "{byte:02x}");
+        }
+        Some(hex)
+    }
+
     fn entry(&mut self, exchange: &HttpExchange) -> HttpLogEntry {
         self.n += 1;
         let unix_ms = exchange
@@ -341,6 +372,11 @@ impl Writer {
             request_body: exchange.request_body.as_deref().map(|b| self.body(b)),
             response_headers: Vec::new(),
             response_body: None,
+            request_body_hex: exchange
+                .request_body
+                .as_deref()
+                .and_then(|b| self.hex_if_not_text(b)),
+            response_body_hex: None,
         };
         match &exchange.outcome {
             HttpOutcome::Response { status, headers, body } => {
@@ -349,6 +385,7 @@ impl Writer {
                 entry.status_text = status_text(*status);
                 entry.response_headers = self.headers(headers);
                 entry.response_body = Some(self.body(body));
+                entry.response_body_hex = self.hex_if_not_text(body);
                 // A `GET /` answer opens a day: later requests belong to it.
                 if exchange.method == "GET" && (200..300).contains(status) {
                     if let Some(day) = serde_json::from_slice::<Value>(body)
@@ -516,11 +553,17 @@ pub fn render(entry: &HttpLogEntry) -> String {
     if let Some(body) = &entry.request_body {
         let _ = writeln!(out, "  > body: {body}");
     }
+    if let Some(hex) = &entry.request_body_hex {
+        let _ = writeln!(out, "  > body (not UTF-8, hex): {hex}");
+    }
     for (name, value) in &entry.response_headers {
         let _ = writeln!(out, "  < {name}: {value}");
     }
     if let Some(body) = &entry.response_body {
         let _ = writeln!(out, "  < body: {body}");
+    }
+    if let Some(hex) = &entry.response_body_hex {
+        let _ = writeln!(out, "  < body (not UTF-8, hex): {hex}");
     }
     if let Some(error) = &entry.error {
         let _ = writeln!(out, "  ! error: {error}");

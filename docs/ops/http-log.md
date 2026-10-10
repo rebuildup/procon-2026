@@ -82,6 +82,7 @@
 | `failure` / `error` | 失敗の種別（`timeout` / `connect` / `request` / `body` / `decode`）とエラー文 |
 | `request_headers` / `request_body` | 送信した内容（本文は文字列で全文） |
 | `response_headers` / `response_body` | 受信した内容（本文は文字列で全文） |
+| `request_body_hex` / `response_body_hex` | 本文が UTF-8 として読めない場合だけ付く、バイト列そのままの 16 進表記。このとき `*_body` は読めないバイトを `�` に置き換えた表示用の文字列 |
 
 コンソールの表示は、この各行を整形したものです。`cli::http_log::render` が同じ関数で、テストは「コンソール出力 = 全行の `render` の連結」を確認しています。
 

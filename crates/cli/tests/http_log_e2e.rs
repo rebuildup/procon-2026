@@ -565,17 +565,30 @@ fn a_decode_error_is_attached_to_its_own_exchange() {
     let logged = start_log();
     logged.log.exchange(exchange(1, "/a"));
     logged.log.exchange(exchange(2, "/b"));
+    // A body that is not UTF-8 is kept exactly as hex next to the lossy text.
+    let mut broken = exchange(3, "/c");
+    broken.outcome = HttpOutcome::Response {
+        status: 200,
+        headers: Vec::new(),
+        body: vec![b'{', 0xff, 0xfe, b'}'],
+    };
+    logged.log.exchange(broken);
     logged.log.decode_failed(1, "not JSON");
     logged.log.decode_failed(99, "its exchange was never logged");
     assert!(logged.log.flush(FLUSH));
 
     let (all, unparsed) = load_http_log(logged.log.path()).expect("load");
     assert_eq!(unparsed, 0);
-    assert_eq!(all.len(), 3);
+    assert_eq!(all.len(), 4);
+    assert_eq!(all[0].response_body_hex, None, "valid UTF-8 needs no second copy");
+    assert_eq!(all[2].response_body_hex.as_deref(), Some("7bfffe7d"));
+    assert_eq!(all[2].response_body.as_deref(), Some("{\u{fffd}\u{fffd}}"));
+    assert!(logged.sink.text().contains("  < body (not UTF-8, hex): 7bfffe7d\n"));
     assert_eq!(
-        (all[2].kind.as_str(), all[2].n, all[2].url.as_str()),
+        (all[3].kind.as_str(), all[3].n, all[3].url.as_str()),
         ("decode_error", 1, "http://server/a")
     );
-    assert_eq!(all[2].error.as_deref(), Some("not JSON"));
+    assert_eq!(all[3].error.as_deref(), Some("not JSON"));
+    assert_console_matches_file(&logged, &all);
     assert_eq!(logged.log.lost().0, 1, "the orphan failure is counted, not misattributed");
 }
